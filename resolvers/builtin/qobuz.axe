@@ -1,0 +1,40 @@
+{
+  "manifest": {
+    "id": "qobuz",
+    "name": "Qobuz",
+    "version": "1.0.0",
+    "author": "Harmonix Team",
+    "description": "High-quality audio streaming with 30-second previews. Subscription required for full playback.",
+    "icon": "\ud83c\udfb5",
+    "color": "#0E7EBF",
+    "homepage": "https://qobuz.com",
+    "email": "support@harmonix.app"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": false
+  },
+  "settings": {
+    "requiresAuth": false,
+    "authType": "apikey",
+    "configurable": {
+      "appId": {
+        "type": "text",
+        "label": "App ID",
+        "default": "285473059",
+        "readonly": true,
+        "description": "Public demo app ID"
+      }
+    }
+  },
+  "implementation": {
+    "search": "async function(query, config) { if (query.trim().length < 3) { console.log('Qobuz: Query too short (min 3 chars), skipping'); return []; } try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Harmonix/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }",
+    "resolve": "async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }",
+    "play": "async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }",
+    "init": "async function(config) { console.log('Qobuz resolver initialized'); }",
+    "cleanup": "async function() { console.log('Qobuz resolver cleanup'); }"
+  }
+}

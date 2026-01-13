@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment variables (contains API secrets!)
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build output
+dist/
+build/
+out/
+
+# Electron
+.electron/

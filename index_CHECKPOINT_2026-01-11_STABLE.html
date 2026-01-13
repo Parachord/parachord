@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Harmonix</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; -webkit-app-region: drag; }
+    button, input, .no-drag { -webkit-app-region: no-drag; }
+    #root { height: 100vh; }
+    
+    /* Custom scrollbar styles - always visible */
+    /* For Firefox */
+    .scrollable-content {
+      scrollbar-width: auto;
+      scrollbar-color: #7c3aed #1e293b;
+    }
+    
+    /* For Chrome, Edge, and Safari */
+    .scrollable-content::-webkit-scrollbar {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .scrollable-content::-webkit-scrollbar-track {
+      background: #1e293b;
+      border-radius: 0;
+    }
+    
+    .scrollable-content::-webkit-scrollbar-thumb {
+      background: #7c3aed;
+      border-radius: 7px;
+      border: 3px solid #1e293b;
+    }
+    
+    .scrollable-content::-webkit-scrollbar-thumb:hover {
+      background: #8b5cf6;
+    }
+    
+    .scrollable-content::-webkit-scrollbar-thumb:active {
+      background: #6d28d9;
+    }
+    
+    /* Force scrollbar to always be visible */
+    .scrollable-content::-webkit-scrollbar-track {
+      visibility: visible !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <!-- Load React first -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Try loading lucide-react from a different CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.263.1/dist/umd/lucide-react.min.js"></script>
+  
+  <!-- Load app after everything else -->
+  <script>
+    // Wait for lucide to load
+    window.addEventListener('load', () => {
+      console.log('Window loaded');
+      console.log('React:', typeof React);
+      console.log('ReactDOM:', typeof ReactDOM);
+      console.log('lucideReact:', typeof lucideReact);
+      
+      if (typeof lucideReact !== 'undefined') {
+        console.log('Lucide icons available:', Object.keys(lucideReact).slice(0, 10));
+      }
+      
+      // Load app
+      const script = document.createElement('script');
+      script.src = 'app.js';
+      document.body.appendChild(script);
+    });
+  </script>
+</body>
+</html>

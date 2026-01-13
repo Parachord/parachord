@@ -1,0 +1,67 @@
+{
+  "name": "parachord-desktop",
+  "version": "0.1.0",
+  "description": "Parachord Desktop - Multi-source music player with cross-platform resolver support",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "keywords": [
+    "music",
+    "player",
+    "spotify",
+    "bandcamp",
+    "qobuz",
+    "resolver",
+    "streaming",
+    "electron"
+  ],
+  "author": "Parachord Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "electron-store": "^8.1.0",
+    "express": "^4.18.2"
+  },
+  "build": {
+    "appId": "com.parachord.desktop",
+    "productName": "Parachord",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/{.DS_Store,.git,.gitignore,npm-debug.log,dist,node_modules,*.md}"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "AudioVideo"
+    }
+  }
+}

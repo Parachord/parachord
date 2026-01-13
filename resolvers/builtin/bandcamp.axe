@@ -1,0 +1,39 @@
+{
+  "manifest": {
+    "id": "bandcamp",
+    "name": "Bandcamp",
+    "version": "1.0.0",
+    "author": "Harmonix Team",
+    "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
+    "icon": "🎸",
+    "color": "#629AA9",
+    "homepage": "https://bandcamp.com",
+    "email": "support@harmonix.app"
+  },
+  
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": false,
+    "browse": false,
+    "urlLookup": true
+  },
+  
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  },
+  
+  "implementation": {
+    "search": "async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }",
+    
+    "resolve": "async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }",
+    
+    "play": "async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }",
+    
+    "init": "async function(config) { console.log('Bandcamp resolver initialized'); }",
+    
+    "cleanup": "async function() { console.log('Bandcamp resolver cleanup'); }"
+  }
+}
