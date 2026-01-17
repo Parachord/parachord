@@ -1086,25 +1086,44 @@ const Parachord = () => {
       artist: recording['artist-credit']?.[0]?.name || 'Unknown',
       duration: Math.floor((recording.length || 180000) / 1000), // Convert ms to seconds
       album: recording.releases?.[0]?.title || '',
+      length: recording.length, // Keep original length in ms for confidence calculation
       sources: {}
     };
 
-    // Query each active resolver (limit to first 2 to avoid slow searches)
-    const resolversToTry = activeResolvers.slice(0, 2);
+    console.log(`🔍 Resolving recording: ${track.artist} - ${track.title}`);
 
-    for (const resolverId of resolversToTry) {
-      const resolver = allResolvers.find(r => r.id === resolverId);
-      if (!resolver?.capabilities.resolve) continue;
+    // Query enabled resolvers in priority order (limit to first 2 to avoid slow searches)
+    const enabledResolvers = resolverOrder
+      .filter(id => activeResolvers.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(Boolean)
+      .slice(0, 2);
+
+    // Parallel resolution with confidence scoring
+    const resolverPromises = enabledResolvers.map(async (resolver) => {
+      if (!resolver.capabilities.resolve) return;
 
       try {
-        const config = getResolverConfig(resolverId);
-        const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-        if (resolved) {
-          track.sources[resolverId] = resolved;
+        const config = getResolverConfig(resolver.id);
+        const result = await resolver.resolve(track.artist, track.title, track.album, config);
+
+        if (result) {
+          track.sources[resolver.id] = {
+            ...result,
+            confidence: calculateConfidence(track, result)
+          };
+          console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(track.sources[resolver.id].confidence * 100).toFixed(0)}%)`);
         }
       } catch (error) {
-        console.error(`Resolver ${resolverId} error:`, error);
+        console.error(`  ❌ ${resolver.name} resolve error:`, error);
       }
+    });
+
+    // Wait for all resolvers to complete
+    await Promise.all(resolverPromises);
+
+    if (Object.keys(track.sources).length > 0) {
+      console.log(`✅ Found ${Object.keys(track.sources).length} source(s) for: ${track.title}`);
     }
 
     return track;
