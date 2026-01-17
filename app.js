@@ -494,8 +494,15 @@ const Parachord = () => {
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchResults, setSearchResults] = useState({
+    artists: [],
+    albums: [],
+    tracks: [],
+    playlists: []
+  });
   const [isSearching, setIsSearching] = useState(false);
+  const [searchDrawerOpen, setSearchDrawerOpen] = useState(false);
+  const searchTimeoutRef = useRef(null);
   const [resultFilters, setResultFilters] = useState([]); // Which resolvers to show in results
   const [activeView, setActiveView] = useState('library');
   const [playlists, setPlaylists] = useState([]);
