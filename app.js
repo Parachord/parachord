@@ -527,6 +527,9 @@ const Parachord = () => {
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerUrl, setDrawerUrl] = useState(null);
+  const [drawerHeight, setDrawerHeight] = useState(400); // Default height in pixels
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
 
@@ -760,20 +763,32 @@ const Parachord = () => {
 
   const handlePlay = async (track) => {
     console.log('🎵 Playing track:', track.title, 'by', track.artist);
-    
+
     // Detect which resolver to use from track.sources
     const resolverId = track.sources?.[0];
     if (!resolverId) {
       console.error('❌ No resolver found for track');
       return;
     }
-    
+
     const resolver = allResolvers.find(r => r.id === resolverId);
     if (!resolver) {
       console.error(`❌ Resolver ${resolverId} not found`);
       return;
     }
-    
+
+    // Check if track has a URL that should be embedded (YouTube, etc.)
+    if (track.youtubeUrl && resolverId === 'youtube') {
+      console.log('🎥 Opening YouTube in drawer...');
+      const embedUrl = track.youtubeUrl.replace('watch?v=', 'embed/');
+      setDrawerUrl(embedUrl);
+      setDrawerOpen(true);
+      setCurrentTrack(track);
+      setIsPlaying(true);
+      setProgress(0);
+      return;
+    }
+
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
       // For non-streaming resolvers (like Bandcamp, MusicBrainz)
@@ -787,14 +802,14 @@ const Parachord = () => {
         return;
       }
     }
-    
+
     // Use resolver's play method
     try {
       const config = getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
-      
+
       const success = await resolver.play(track, config);
-      
+
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
         setCurrentTrack(track);
@@ -3526,6 +3541,70 @@ useEffect(() => {
         )
       )
     )
+    ),
+
+    // Embedded Player Drawer
+    React.createElement('div', {
+      className: 'fixed left-0 right-0 bg-slate-900 border-t border-white/20 shadow-2xl transition-all duration-300 ease-in-out z-40',
+      style: {
+        bottom: drawerOpen ? 0 : -drawerHeight,
+        height: drawerHeight + 'px'
+      }
+    },
+      // Drawer header with drag handle
+      React.createElement('div', {
+        className: 'flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-white/10 cursor-ns-resize',
+        onMouseDown: (e) => {
+          const startY = e.clientY;
+          const startHeight = drawerHeight;
+
+          const handleMouseMove = (moveEvent) => {
+            const deltaY = startY - moveEvent.clientY;
+            const newHeight = Math.max(200, Math.min(800, startHeight + deltaY));
+            setDrawerHeight(newHeight);
+          };
+
+          const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        }
+      },
+        React.createElement('div', {
+          className: 'flex items-center gap-2'
+        },
+          React.createElement('div', {
+            className: 'w-8 h-1 bg-white/30 rounded-full'
+          }),
+          React.createElement('span', {
+            className: 'text-sm text-gray-400'
+          }, 'Embedded Player')
+        ),
+        React.createElement('button', {
+          onClick: () => setDrawerOpen(false),
+          className: 'p-1 hover:bg-white/10 rounded transition-colors'
+        }, React.createElement(X))
+      ),
+
+      // Drawer content - webview container
+      React.createElement('div', {
+        className: 'w-full h-full',
+        style: { height: (drawerHeight - 40) + 'px' }
+      },
+        drawerUrl ? React.createElement('webview', {
+          src: drawerUrl,
+          className: 'w-full h-full',
+          style: { border: 'none' },
+          partition: 'persist:drawer',
+          allowpopups: true,
+          useragent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }) : React.createElement('div', {
+          className: 'flex items-center justify-center h-full text-gray-500'
+        }, 'No content loaded')
+      )
     )
   );
 };
