@@ -36,6 +36,11 @@ yarn-error.log*
 playlists/*.xspf
 !playlists/example-playlist.xspf
 
+# Resolvers - track default resolvers, but users can add/remove locally
+# (Default resolvers are committed so marketplace can download them)
+
 # Temp files
 *.tmp
 .temp/
+# MCP configuration should be committed for team consistency
+# .mcp.json

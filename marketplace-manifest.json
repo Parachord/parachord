@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-01-17T16:00:00Z",
+  "resolvers": [
+    {
+      "id": "spotify",
+      "name": "Spotify",
+      "version": "1.0.0",
+      "author": "Harmonix Team",
+      "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
+      "icon": "♫",
+      "color": "#1DB954",
+      "homepage": "https://spotify.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/spotify.axe",
+      "category": "streaming",
+      "tags": ["streaming", "subscription", "premium"]
+    },
+    {
+      "id": "bandcamp",
+      "name": "Bandcamp",
+      "version": "1.0.0",
+      "author": "Harmonix Team",
+      "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
+      "icon": "🎸",
+      "color": "#629AA9",
+      "homepage": "https://bandcamp.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": false,
+        "browse": false,
+        "urlLookup": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/bandcamp.axe",
+      "category": "purchase",
+      "tags": ["purchase", "independent", "discovery"]
+    },
+    {
+      "id": "qobuz",
+      "name": "Qobuz",
+      "version": "1.0.0",
+      "author": "Harmonix Team",
+      "description": "High-quality audio streaming with 30-second previews. Subscription required for full playback.",
+      "icon": "🎵",
+      "color": "#0E7EBF",
+      "homepage": "https://qobuz.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/qobuz.axe",
+      "category": "streaming",
+      "tags": ["streaming", "hi-res", "audiophile", "preview"]
+    },
+    {
+      "id": "musicbrainz",
+      "name": "MusicBrainz",
+      "version": "1.0.0",
+      "author": "Harmonix Team",
+      "description": "Open music encyclopedia providing metadata and artist information. Does not provide streaming.",
+      "icon": "📚",
+      "color": "#BA478F",
+      "homepage": "https://musicbrainz.org",
+      "capabilities": {
+        "resolve": false,
+        "search": true,
+        "stream": false,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/musicbrainz.axe",
+      "category": "metadata",
+      "tags": ["metadata", "free", "encyclopedia", "open-source"]
+    }
+  ],
+  "categories": ["streaming", "purchase", "metadata"]
+}

@@ -51,12 +51,15 @@ contextBridge.exposeInMainWorld('electron', {
     pickFile: () => ipcRenderer.invoke('resolvers-pick-file'),
     install: (axeContent, filename) => ipcRenderer.invoke('resolvers-install', axeContent, filename),
     uninstall: (resolverId) => ipcRenderer.invoke('resolvers-uninstall', resolverId),
-    showContextMenu: (resolverId, isUserInstalled) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId, isUserInstalled),
+    showContextMenu: (resolverId) => ipcRenderer.invoke('resolvers-show-context-menu', resolverId),
     onContextMenuAction: (callback) => {
       ipcRenderer.on('resolver-context-menu-action', (event, data) => {
         callback(data);
       });
-    }
+    },
+    // Marketplace operations
+    getMarketplaceManifest: () => ipcRenderer.invoke('marketplace-get-manifest'),
+    downloadResolver: (url) => ipcRenderer.invoke('marketplace-download-resolver', url)
   },
 
   // Playlist operations

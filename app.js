@@ -519,6 +519,12 @@ const Parachord = () => {
   const [currentSource, setCurrentSource] = useState(null);
   const [startTime, setStartTime] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace'
+  const [marketplaceManifest, setMarketplaceManifest] = useState(null);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
+  const [marketplaceCategory, setMarketplaceCategory] = useState('all');
+  const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [qobuzToken, setQobuzToken] = useState(null);
@@ -527,9 +533,24 @@ const Parachord = () => {
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
+  const loadedResolversRef = useRef([]);
 
   // Cache for album art URLs (releaseId -> imageUrl)
   const albumArtCache = useRef({});
+
+  // Cache for artist data (artistName -> { data, timestamp })
+  const artistDataCache = useRef({});
+
+  // Cache for track sources (trackKey -> { sources, timestamp })
+  // trackKey format: "artist|title|album"
+  const trackSourcesCache = useRef({});
+
+  // Cache TTLs (in milliseconds)
+  const CACHE_TTL = {
+    albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
+    artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
+    trackSources: 7 * 24 * 60 * 60 * 1000  // 7 days (track availability changes)
+  };
 
   const sampleTracks = [
     { id: 1, title: 'Midnight Dreams', artist: 'Luna Echo', album: 'Nocturnal', duration: 245, sources: ['youtube', 'soundcloud'] },
@@ -588,10 +609,16 @@ const Parachord = () => {
     initResolvers();
   }, []);
 
-  // Listen for context menu actions
+  // Keep ref updated with latest resolver list
+  useEffect(() => {
+    loadedResolversRef.current = loadedResolvers;
+  }, [loadedResolvers]);
+
+  // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {
       window.electron.resolvers.onContextMenuAction(async (data) => {
+        console.log('Context menu action received:', data);
         if (data.action === 'uninstall') {
           await handleUninstallResolver(data.resolverId);
         }
@@ -745,9 +772,30 @@ const Parachord = () => {
         }
       } else {
         console.error(`❌ ${resolver.name} playback failed`);
+
+        // Playback failed - cached source may be invalid
+        // Try to re-resolve and find alternative sources
+        if (track.artist && track.title) {
+          console.log('🔄 Attempting to re-resolve track with fresh sources...');
+          const artistName = track.artist;
+          const trackData = { position: track.position || 1, title: track.title, length: track.duration };
+
+          // Force refresh to bypass cache
+          await resolveTrack(trackData, artistName, true);
+
+          alert(`Playback failed. Track has been re-resolved. Please try playing again.`);
+        }
       }
     } catch (error) {
       console.error(`❌ Error playing with ${resolver.name}:`, error);
+
+      // On error, also try to re-resolve
+      if (track.artist && track.title) {
+        console.log('🔄 Playback error - attempting to re-resolve...');
+        const artistName = track.artist;
+        const trackData = { position: track.position || 1, title: track.title, length: track.duration };
+        await resolveTrack(trackData, artistName, true);
+      }
     }
   };
 
@@ -929,13 +977,123 @@ const Parachord = () => {
     }
   };
 
+  // Cache utility functions
+  const loadCacheFromStore = async () => {
+    if (!window.electron?.store) return;
+
+    try {
+      // Load album art cache
+      const albumArtData = await window.electron.store.get('cache_album_art');
+      if (albumArtData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(albumArtData).filter(
+          ([_, entry]) => now - entry.timestamp < CACHE_TTL.albumArt
+        );
+        albumArtCache.current = Object.fromEntries(
+          validEntries.map(([key, entry]) => [key, entry.url])
+        );
+        console.log(`📦 Loaded ${validEntries.length} album art entries from cache`);
+      }
+
+      // Load artist data cache
+      const artistData = await window.electron.store.get('cache_artist_data');
+      if (artistData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(artistData).filter(
+          ([_, entry]) => now - entry.timestamp < CACHE_TTL.artistData
+        );
+        artistDataCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} artist data entries from cache`);
+      }
+
+      // Load track sources cache
+      const trackSourcesData = await window.electron.store.get('cache_track_sources');
+      if (trackSourcesData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(trackSourcesData).filter(
+          ([_, entry]) => now - entry.timestamp < CACHE_TTL.trackSources
+        );
+        trackSourcesCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} track source entries from cache`);
+      }
+    } catch (error) {
+      console.error('Failed to load cache from store:', error);
+    }
+  };
+
+  const saveCacheToStore = async () => {
+    if (!window.electron?.store) return;
+
+    try {
+      // Save album art cache with timestamps
+      const albumArtData = Object.fromEntries(
+        Object.entries(albumArtCache.current).map(([key, url]) => [
+          key,
+          { url, timestamp: Date.now() }
+        ])
+      );
+      await window.electron.store.set('cache_album_art', albumArtData);
+
+      // Save artist data cache (already has timestamps)
+      await window.electron.store.set('cache_artist_data', artistDataCache.current);
+
+      // Save track sources cache (already has timestamps)
+      await window.electron.store.set('cache_track_sources', trackSourcesCache.current);
+
+      console.log('💾 Cache saved to persistent storage');
+    } catch (error) {
+      console.error('Failed to save cache to store:', error);
+    }
+  };
+
+  // Load cache on mount
+  useEffect(() => {
+    loadCacheFromStore();
+
+    // Save cache periodically (every 5 minutes)
+    const cacheInterval = setInterval(saveCacheToStore, 5 * 60 * 1000);
+
+    // Save cache on unmount
+    return () => {
+      clearInterval(cacheInterval);
+      saveCacheToStore();
+    };
+  }, []);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
     setLoadingArtist(true);
     setActiveView('artist'); // Show artist page immediately with loading animation
-    
+
+    // Check cache first
+    const cacheKey = artistName.toLowerCase();
+    const cachedData = artistDataCache.current[cacheKey];
+    const now = Date.now();
+
+    if (cachedData && (now - cachedData.timestamp) < CACHE_TTL.artistData) {
+      console.log('📦 Using cached artist data for:', artistName);
+      setCurrentArtist(cachedData.artist);
+
+      // Pre-populate releases with cached album art
+      const releasesWithCache = cachedData.releases.map(release => ({
+        ...release,
+        albumArt: albumArtCache.current[release.id] || null
+      }));
+
+      setArtistReleases(releasesWithCache);
+      setLoadingArtist(false);
+
+      // Still fetch album art in background for any missing covers
+      fetchAlbumArtLazy(cachedData.releases);
+      return;
+    }
+
+    console.log('🌐 Fetching fresh artist data from MusicBrainz...');
+
     try {
       // Step 1: Search for artist by name to get MBID
       const searchResponse = await fetch(
@@ -1003,24 +1161,34 @@ const Parachord = () => {
         return dateB.localeCompare(dateA);
       });
       
-      setCurrentArtist({
+      const artistData = {
         name: artist.name,
         mbid: artist.id,
         country: artist.country,
         disambiguation: artist.disambiguation,
         type: artist.type
-      });
-      
+      };
+
+      setCurrentArtist(artistData);
+
+      // Cache the artist data
+      artistDataCache.current[cacheKey] = {
+        artist: artistData,
+        releases: allReleases,
+        timestamp: Date.now()
+      };
+      console.log('💾 Cached artist data for:', artistName);
+
       // Pre-populate releases with cached album art
       const releasesWithCache = allReleases.map(release => ({
         ...release,
         albumArt: albumArtCache.current[release.id] || null
       }));
-      
+
       // Show page immediately (with cached album art if available)
       setArtistReleases(releasesWithCache);
       setLoadingArtist(false);
-      
+
       // Fetch album art in background (lazy loading) - only for releases without cache
       fetchAlbumArtLazy(allReleases);
       
@@ -1118,26 +1286,119 @@ const Parachord = () => {
     }
   };
 
-  // Resolve a single track across all active resolvers
-  const resolveTrack = async (track, artistName) => {
-    const trackKey = `${track.position}-${track.title}`;
-    console.log(`🔍 Resolving: ${artistName} - ${track.title}`);
-    
-    const sources = {};
-    
+  // Validate cached sources in background and update if changed
+  const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
+    console.log(`🔍 Validating cached sources for: ${track.title}`);
+
+    const freshSources = {};
+
     // Query enabled resolvers in priority order
     const enabledResolvers = resolverOrder
       .filter(id => activeResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
-    
+
     const resolverPromises = enabledResolvers.map(async (resolver) => {
       if (!resolver.capabilities.resolve) return;
-      
+
       try {
         const config = getResolverConfig(resolver.id);
         const result = await resolver.resolve(artistName, track.title, null, config);
-        
+
+        if (result) {
+          freshSources[resolver.id] = {
+            ...result,
+            confidence: calculateConfidence(track, result)
+          };
+        }
+      } catch (error) {
+        console.error(`  ❌ ${resolver.name} validation error:`, error);
+      }
+    });
+
+    await Promise.all(resolverPromises);
+
+    // Compare with cached sources
+    const cachedResolverIds = Object.keys(cachedSources).sort();
+    const freshResolverIds = Object.keys(freshSources).sort();
+    const sourcesChanged = JSON.stringify(cachedResolverIds) !== JSON.stringify(freshResolverIds);
+
+    if (sourcesChanged) {
+      console.log(`⚠️ Sources changed for: ${track.title}`);
+      console.log(`  Old: ${cachedResolverIds.join(', ') || 'none'}`);
+      console.log(`  New: ${freshResolverIds.join(', ') || 'none'}`);
+
+      // Update cache with fresh data
+      if (Object.keys(freshSources).length > 0) {
+        trackSourcesCache.current[cacheKey] = {
+          sources: freshSources,
+          timestamp: Date.now()
+        };
+
+        // Update UI with fresh sources
+        setTrackSources(prev => ({
+          ...prev,
+          [trackKey]: freshSources
+        }));
+
+        console.log(`✅ Cache updated with ${Object.keys(freshSources).length} fresh source(s)`);
+      } else {
+        // No sources found - invalidate cache
+        delete trackSourcesCache.current[cacheKey];
+        console.log(`❌ No sources found - cache invalidated`);
+      }
+    } else {
+      console.log(`✅ Sources still valid, refreshing timestamp`);
+      // Sources unchanged, just refresh timestamp
+      trackSourcesCache.current[cacheKey].timestamp = Date.now();
+    }
+  };
+
+  // Resolve a single track across all active resolvers
+  const resolveTrack = async (track, artistName, forceRefresh = false) => {
+    const trackKey = `${track.position}-${track.title}`;
+    const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
+
+    // Check cache first (unless force refresh)
+    const cachedData = trackSourcesCache.current[cacheKey];
+    const now = Date.now();
+
+    if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_TTL.trackSources) {
+      const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
+      console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h)`);
+
+      // Use cached sources immediately for fast UI
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: cachedData.sources
+      }));
+
+      // Background validation: if cache is > 24 hours old, validate in background
+      if (cacheAge >= 24) {
+        console.log(`🔄 Cache > 24h old, validating in background...`);
+        setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
+      }
+
+      return;
+    }
+
+    console.log(`🔍 Resolving: ${artistName} - ${track.title}${forceRefresh ? ' (forced refresh)' : ''}`);
+
+    const sources = {};
+
+    // Query enabled resolvers in priority order
+    const enabledResolvers = resolverOrder
+      .filter(id => activeResolvers.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(Boolean);
+
+    const resolverPromises = enabledResolvers.map(async (resolver) => {
+      if (!resolver.capabilities.resolve) return;
+
+      try {
+        const config = getResolverConfig(resolver.id);
+        const result = await resolver.resolve(artistName, track.title, null, config);
+
         if (result) {
           sources[resolver.id] = {
             ...result,
@@ -1149,17 +1410,24 @@ const Parachord = () => {
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
       }
     });
-    
+
     // Wait for all resolvers to complete
     await Promise.all(resolverPromises);
-    
+
     // Update state with found sources
     if (Object.keys(sources).length > 0) {
       setTrackSources(prev => ({
         ...prev,
         [trackKey]: sources
       }));
-      console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title}`);
+
+      // Cache the resolved sources
+      trackSourcesCache.current[cacheKey] = {
+        sources: sources,
+        timestamp: Date.now()
+      };
+
+      console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
     }
   };
   
@@ -1177,19 +1445,21 @@ const Parachord = () => {
   };
 
   // Resolve all tracks in a release
-  const resolveAllTracks = async (release, artistName) => {
-    console.log(`🔍 Starting resolution for ${release.tracks.length} tracks...`);
-    
-    // Clear previous track sources
-    setTrackSources({});
-    
+  const resolveAllTracks = async (release, artistName, forceRefresh = false) => {
+    console.log(`🔍 Starting resolution for ${release.tracks.length} tracks...${forceRefresh ? ' (force refresh)' : ''}`);
+
+    // Clear previous track sources only if force refresh
+    if (forceRefresh) {
+      setTrackSources({});
+    }
+
     // Resolve tracks one at a time with small delay
     for (const track of release.tracks) {
-      await resolveTrack(track, artistName);
+      await resolveTrack(track, artistName, forceRefresh);
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    
+
     console.log('✅ Track resolution complete');
   };
 
@@ -1351,8 +1621,7 @@ const Parachord = () => {
       
       // Hot-reload: Load the new resolver without restarting
       try {
-        axe._userInstalled = true;
-        axe._filename = filename;
+                axe._filename = filename;
         const newResolverInstance = await resolverLoader.current.loadResolver(axe);
         
         if (existing) {
@@ -1385,52 +1654,164 @@ const Parachord = () => {
     }
   };
 
-  // Uninstall resolver (hot-reload, no restart)
+  // Uninstall resolver (permanently delete from disk)
   const handleUninstallResolver = async (resolverId) => {
-    const resolver = allResolvers.find(r => r.id === resolverId);
-    
+    console.log('=== handleUninstallResolver called ===');
+    console.log('  Resolver ID:', resolverId);
+    console.log('  Loaded resolvers count (ref):', loadedResolversRef.current.length);
+    console.log('  Loaded resolver IDs (ref):', loadedResolversRef.current.map(r => r.id));
+
+    const resolver = loadedResolversRef.current.find(r => r.id === resolverId);
+
     if (!resolver) {
-      console.error('Resolver not found:', resolverId);
+      console.error('❌ Resolver not found:', resolverId);
+      alert(`Resolver "${resolverId}" not found. This might be a bug.`);
       return;
     }
-    
-    if (!resolver._userInstalled) {
-      alert('Cannot uninstall built-in resolvers.');
-      return;
-    }
-    
-    const shouldUninstall = confirm(
-      `Are you sure you want to uninstall "${resolver.name}"?\n\n` +
-      `This will remove the resolver from your system.`
-    );
-    
+
+    console.log('  Found resolver:', resolver.name);
+
+    const confirmMessage = `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
+
+    const shouldUninstall = confirm(confirmMessage);
+
     if (!shouldUninstall) {
       return;
     }
-    
+
     console.log(`🗑️ Uninstalling resolver: ${resolver.name}`);
-    
+
     try {
+      // Delete the resolver file from disk
       const result = await window.electron.resolvers.uninstall(resolverId);
-      
+
       if (!result.success) {
         alert(`Failed to uninstall: ${result.error}`);
         return;
       }
-      
+
       console.log(`✅ Uninstalled ${resolver.name}`);
-      
+
       // Hot-reload: Remove from state without restarting
       setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
-      
+
       alert(`✅ Successfully uninstalled "${resolver.name}"!`);
     } catch (error) {
       console.error('Error uninstalling resolver:', error);
       alert(`Error uninstalling resolver: ${error.message}`);
     }
   };
+
+  // Marketplace functions
+  const loadMarketplaceManifest = async () => {
+    if (!window.electron?.resolvers?.getMarketplaceManifest) {
+      console.error('Marketplace not available');
+      return;
+    }
+
+    setMarketplaceLoading(true);
+
+    try {
+      const result = await window.electron.resolvers.getMarketplaceManifest();
+
+      if (result.success) {
+        setMarketplaceManifest(result.manifest);
+        console.log(`✅ Loaded marketplace with ${result.manifest.resolvers.length} resolvers`);
+      } else {
+        console.error('Failed to load marketplace:', result.error);
+        setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+      }
+    } catch (error) {
+      console.error('Marketplace load error:', error);
+      setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+    } finally {
+      setMarketplaceLoading(false);
+    }
+  };
+
+  // Install resolver from marketplace
+  const handleInstallFromMarketplace = async (marketplaceResolver) => {
+    const { id, name, downloadUrl } = marketplaceResolver;
+
+    // Check if already installing
+    if (installingResolvers.has(id)) {
+      return;
+    }
+
+    setInstallingResolvers(prev => new Set(prev).add(id));
+
+    console.log(`📦 Installing ${name} from marketplace...`);
+
+    try {
+      // Download resolver from URL
+      const downloadResult = await window.electron.resolvers.downloadResolver(downloadUrl);
+
+      if (!downloadResult.success) {
+        alert(`Failed to download ${name}: ${downloadResult.error}`);
+        return;
+      }
+
+      const { content, filename, resolver: axe } = downloadResult;
+      const resolverName = axe.manifest.name;
+      const resolverId = axe.manifest.id;
+
+      // Check if already installed
+      const existing = allResolvers.find(r => r.id === resolverId);
+      if (existing) {
+        const shouldOverwrite = confirm(
+          `Resolver "${resolverName}" is already installed.\n\n` +
+          `Installed version: ${existing.version}\n` +
+          `Marketplace version: ${axe.manifest.version}\n\n` +
+          `Do you want to update it?`
+        );
+        if (!shouldOverwrite) {
+          return;
+        }
+      }
+
+      // Install via IPC (reuse existing install handler)
+      const installResult = await window.electron.resolvers.install(content, filename);
+
+      if (!installResult.success) {
+        alert(`Failed to install ${resolverName}: ${installResult.error}`);
+        return;
+      }
+
+      // Hot-reload
+            axe._filename = filename;
+      const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+
+      if (existing) {
+        setLoadedResolvers(prev => prev.map(r =>
+          r.id === resolverId ? newResolverInstance : r
+        ));
+        alert(`✅ Successfully updated "${resolverName}"!`);
+      } else {
+        setLoadedResolvers(prev => [...prev, newResolverInstance]);
+        setResolverOrder(prev => [...prev, resolverId]);
+        setActiveResolvers(prev => [...prev, resolverId]);
+        alert(`✅ Successfully installed "${resolverName}"!`);
+      }
+    } catch (error) {
+      console.error('Marketplace install error:', error);
+      alert(`Installation failed: ${error.message}`);
+    } finally {
+      setInstallingResolvers(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  // Load marketplace when settings modal opens to marketplace tab
+  useEffect(() => {
+    if (showSettings && settingsTab === 'marketplace' && !marketplaceManifest) {
+      loadMarketplaceManifest();
+    }
+  }, [showSettings, settingsTab, marketplaceManifest]);
 
   // Playlist functions
   const parseXSPF = (xspfString) => {
@@ -1701,7 +2082,7 @@ const Parachord = () => {
 // Listen for Spotify auth events
 useEffect(() => {
   checkSpotifyToken();
-  
+
   if (window.electron?.spotify) {
     window.electron.spotify.onAuthSuccess((data) => {
       console.log('Spotify auth success!', {
@@ -1725,6 +2106,14 @@ useEffect(() => {
       alert('Spotify authentication failed: ' + error);
     });
   }
+
+  // Periodically check and refresh token every 5 minutes
+  const tokenRefreshInterval = setInterval(() => {
+    console.log('⏰ Periodic token refresh check...');
+    checkSpotifyToken();
+  }, 5 * 60 * 1000); // 5 minutes
+
+  return () => clearInterval(tokenRefreshInterval);
 }, []);
 
 // Spotify Connect - Get available devices
@@ -2692,8 +3081,9 @@ useEffect(() => {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50'
     },
       React.createElement('div', {
-        className: 'bg-slate-800 rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto'
+        className: 'bg-slate-800 rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col'
       },
+        // Header
         React.createElement('div', {
           className: 'flex items-center justify-between mb-6'
         },
@@ -2703,9 +3093,35 @@ useEffect(() => {
             className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
           }, React.createElement(X))
         ),
-        
-        // Content Resolvers Section
-        React.createElement('div', { className: 'space-y-6' },
+
+        // Tab Navigation
+        React.createElement('div', {
+          className: 'flex gap-2 mb-6 border-b border-white/10'
+        },
+          React.createElement('button', {
+            onClick: () => setSettingsTab('installed'),
+            className: `px-4 py-2 font-semibold transition-colors ${
+              settingsTab === 'installed'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-gray-400 hover:text-gray-200'
+            }`
+          }, '🔌 Installed Resolvers'),
+          React.createElement('button', {
+            onClick: () => setSettingsTab('marketplace'),
+            className: `px-4 py-2 font-semibold transition-colors ${
+              settingsTab === 'marketplace'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-gray-400 hover:text-gray-200'
+            }`
+          }, '🛒 Browse Marketplace')
+        ),
+
+        // Tab Content Container
+        React.createElement('div', {
+          className: 'flex-1 overflow-y-auto'
+        },
+          // Installed Resolvers Tab
+          settingsTab === 'installed' && React.createElement('div', { className: 'space-y-6' },
           React.createElement('div', null,
             React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, '🔌 Resolver Plugins'),
             React.createElement('p', { className: 'text-sm text-gray-400 mb-4' },
@@ -2724,19 +3140,24 @@ useEffect(() => {
                   onDragOver: handleResolverDragOver,
                   onDrop: (e) => handleResolverDrop(e, resolver.id),
                   onContextMenu: (e) => {
+                    console.log('Context menu triggered for:', resolver.name);
                     e.preventDefault();
-                    if (resolver._userInstalled && window.electron?.resolvers?.showContextMenu) {
-                      window.electron.resolvers.showContextMenu(resolver.id, true);
+                    if (window.electron?.resolvers?.showContextMenu) {
+                      console.log('Showing context menu for:', resolver.id);
+                      window.electron.resolvers.showContextMenu(resolver.id);
+                    } else {
+                      console.log('showContextMenu not available');
                     }
                   },
                   className: `p-4 rounded-lg border transition-all ${
-                    isDragging 
-                      ? 'opacity-50 bg-purple-900/20 border-purple-500' 
+                    isDragging
+                      ? 'opacity-50 bg-purple-900/20 border-purple-500'
                       : isActive
                         ? 'bg-white/10 border-white/20 hover:bg-white/15'
                         : 'bg-white/5 border-white/10 hover:bg-white/8'
                   }`,
-                  style: { userSelect: 'none' }
+                  style: { userSelect: 'none' },
+                  title: 'Right-click to uninstall'
                 },
                   React.createElement('div', { className: 'flex items-start gap-3' },
                     // Drag handle (only this part is draggable)
@@ -2765,10 +3186,6 @@ useEffect(() => {
                       React.createElement('div', { className: 'flex items-center gap-2 mb-1' },
                         React.createElement('span', { className: 'text-lg' }, resolver.icon),
                         React.createElement('span', { className: 'font-semibold' }, resolver.name),
-                        resolver._userInstalled && React.createElement('span', {
-                          className: 'text-xs px-2 py-0.5 bg-blue-900/30 text-blue-400 rounded-full',
-                          title: 'User-installed resolver (right-click to uninstall)'
-                        }, '📦 User'),
                         resolver.requiresAuth && React.createElement('span', {
                           className: 'text-xs px-2 py-0.5 bg-yellow-900/30 text-yellow-400 rounded-full'
                         }, '🔑 Auth Required')
@@ -2859,13 +3276,178 @@ useEffect(() => {
             React.createElement('div', { className: 'text-sm text-gray-400 space-y-2' },
               React.createElement('p', null, 'Parachord Desktop v1.0.0'),
               React.createElement('p', null, 'A modern multi-source music player inspired by Tomahawk.'),
-              React.createElement('p', null, 
+              React.createElement('p', null,
                 'Built with Electron, React, and Tailwind CSS.'
               )
             )
           )
+        ),
+
+        // Marketplace Tab
+        settingsTab === 'marketplace' && React.createElement('div', { className: 'space-y-4' },
+          // Search and Filter Bar
+          React.createElement('div', {
+            className: 'flex gap-4 mb-4'
+          },
+            // Search input
+            React.createElement('input', {
+              type: 'text',
+              placeholder: 'Search resolvers...',
+              value: marketplaceSearchQuery,
+              onChange: (e) => setMarketplaceSearchQuery(e.target.value),
+              className: 'flex-1 px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500'
+            }),
+
+            // Category filter
+            React.createElement('select', {
+              value: marketplaceCategory,
+              onChange: (e) => setMarketplaceCategory(e.target.value),
+              className: 'px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500'
+            },
+              React.createElement('option', { value: 'all' }, 'All Categories'),
+              React.createElement('option', { value: 'streaming' }, 'Streaming'),
+              React.createElement('option', { value: 'purchase' }, 'Purchase'),
+              React.createElement('option', { value: 'metadata' }, 'Metadata'),
+              React.createElement('option', { value: 'radio' }, 'Radio')
+            )
+          ),
+
+          // Loading state
+          marketplaceLoading && React.createElement('div', {
+            className: 'text-center py-12 text-gray-400'
+          }, '⏳ Loading marketplace...'),
+
+          // Error state (empty marketplace)
+          !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers.length === 0 &&
+            React.createElement('div', {
+              className: 'text-center py-12 text-gray-400'
+            }, 'No resolvers available in marketplace yet.'),
+
+          // Resolver grid
+          !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers.length > 0 &&
+            React.createElement('div', {
+              className: 'grid grid-cols-1 md:grid-cols-2 gap-4'
+            },
+              marketplaceManifest.resolvers
+                .filter(resolver => {
+                  // Filter by search query
+                  if (marketplaceSearchQuery) {
+                    const query = marketplaceSearchQuery.toLowerCase();
+                    const matchesName = resolver.name.toLowerCase().includes(query);
+                    const matchesDesc = resolver.description.toLowerCase().includes(query);
+                    const matchesAuthor = resolver.author.toLowerCase().includes(query);
+                    if (!matchesName && !matchesDesc && !matchesAuthor) return false;
+                  }
+
+                  // Filter by category
+                  if (marketplaceCategory !== 'all' && resolver.category !== marketplaceCategory) {
+                    return false;
+                  }
+
+                  return true;
+                })
+                .map(resolver => {
+                  const isInstalled = allResolvers.some(r => r.id === resolver.id);
+                  const isInstalling = installingResolvers.has(resolver.id);
+                  const installedVersion = allResolvers.find(r => r.id === resolver.id)?.version;
+                  const hasUpdate = isInstalled && installedVersion !== resolver.version;
+
+                  return React.createElement('div', {
+                    key: resolver.id,
+                    className: 'p-4 bg-white/5 border border-white/10 rounded-lg hover:bg-white/8 transition-colors'
+                  },
+                    // Header
+                    React.createElement('div', {
+                      className: 'flex items-start gap-3 mb-3'
+                    },
+                      // Icon
+                      React.createElement('div', {
+                        className: 'text-3xl flex-shrink-0',
+                        style: { color: resolver.color }
+                      }, resolver.icon),
+
+                      // Name and author
+                      React.createElement('div', {
+                        className: 'flex-1 min-w-0'
+                      },
+                        React.createElement('h4', {
+                          className: 'font-semibold text-lg truncate'
+                        }, resolver.name),
+                        React.createElement('p', {
+                          className: 'text-xs text-gray-400 truncate'
+                        }, 'by ', resolver.author),
+
+                        // Version badge
+                        React.createElement('span', {
+                          className: 'inline-block text-xs px-2 py-0.5 bg-white/10 text-gray-300 rounded-full mt-1'
+                        }, 'v', resolver.version)
+                      ),
+
+                      // Status badge
+                      isInstalled && React.createElement('span', {
+                        className: `text-xs px-2 py-0.5 rounded-full ${
+                          hasUpdate
+                            ? 'bg-orange-900/30 text-orange-400'
+                            : 'bg-green-900/30 text-green-400'
+                        }`
+                      }, hasUpdate ? '🔄 Update' : '✅ Installed')
+                    ),
+
+                    // Description
+                    React.createElement('p', {
+                      className: 'text-sm text-gray-300 mb-3 line-clamp-2'
+                    }, resolver.description),
+
+                    // Capabilities
+                    React.createElement('div', {
+                      className: 'flex flex-wrap gap-1.5 mb-3'
+                    },
+                      Object.entries(resolver.capabilities).map(([cap, enabled]) => {
+                        if (!enabled) return null;
+                        const icons = {
+                          resolve: '🎯',
+                          search: '🔍',
+                          stream: '▶️',
+                          browse: '📁',
+                          urlLookup: '🔗'
+                        };
+                        return React.createElement('span', {
+                          key: cap,
+                          className: 'text-xs px-2 py-0.5 bg-white/10 text-gray-300 rounded-full'
+                        }, icons[cap], ' ', cap);
+                      })
+                    ),
+
+                    // Auth requirement
+                    resolver.requiresAuth && React.createElement('div', {
+                      className: 'text-xs text-yellow-400 mb-3'
+                    }, '🔑 Requires authentication'),
+
+                    // Install button
+                    React.createElement('button', {
+                      onClick: () => handleInstallFromMarketplace(resolver),
+                      disabled: isInstalling,
+                      className: `w-full px-4 py-2 rounded-lg font-semibold transition-colors ${
+                        isInstalling
+                          ? 'bg-gray-600 cursor-not-allowed'
+                          : hasUpdate
+                            ? 'bg-orange-600 hover:bg-orange-700'
+                            : isInstalled
+                              ? 'bg-green-600/50 hover:bg-green-600'
+                              : 'bg-purple-600 hover:bg-purple-700'
+                      }`
+                    },
+                      isInstalling ? '⏳ Installing...' :
+                      hasUpdate ? '🔄 Update' :
+                      isInstalled ? 'Reinstall' :
+                      'Install'
+                    )
+                  );
+                })
+            )
         )
       )
+    )
     )
   );
 };

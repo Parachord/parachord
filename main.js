@@ -248,25 +248,73 @@ ipcMain.handle('spotify-auth', async () => {
   return { success: true };
 });
 
-// Check if token exists
-ipcMain.handle('spotify-check-token', () => {
+// Check if token exists and auto-refresh if expired
+ipcMain.handle('spotify-check-token', async () => {
   console.log('=== Spotify Check Token Handler Called ===');
   const token = store.get('spotify_token');
   const expiry = store.get('spotify_token_expiry');
   const refreshToken = store.get('spotify_refresh_token');
-  
+
   console.log('Token exists:', !!token);
   console.log('Expiry:', expiry);
   console.log('Refresh token exists:', !!refreshToken);
   console.log('Current time:', Date.now());
   console.log('Is expired:', expiry && Date.now() >= expiry);
-  
+
+  // If token is valid, return it
   if (token && expiry && Date.now() < expiry) {
     console.log('✓ Returning valid token');
     return { token, expiresAt: expiry };
   }
-  
-  console.log('✗ No valid token found');
+
+  // If token is expired but we have a refresh token, try to refresh
+  if (refreshToken && clientId && clientSecret) {
+    console.log('🔄 Token expired, attempting automatic refresh...');
+
+    try {
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        })
+      });
+
+      if (!response.ok) {
+        console.error('❌ Token refresh failed:', response.status, response.statusText);
+        throw new Error(`Token refresh failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Token refreshed successfully');
+
+      // Calculate expiry time (tokens typically last 1 hour)
+      const expiresIn = data.expires_in || 3600; // Default to 1 hour
+      const newExpiry = Date.now() + (expiresIn * 1000);
+
+      // Save new token
+      store.set('spotify_token', data.access_token);
+      store.set('spotify_token_expiry', newExpiry);
+
+      // Update refresh token if a new one was provided
+      if (data.refresh_token) {
+        store.set('spotify_refresh_token', data.refresh_token);
+      }
+
+      console.log('New token expiry:', new Date(newExpiry).toISOString());
+
+      return { token: data.access_token, expiresAt: newExpiry };
+    } catch (error) {
+      console.error('Failed to refresh token:', error);
+      // Fall through to return null
+    }
+  }
+
+  console.log('✗ No valid token found and refresh failed or not available');
   return null;
 });
 
@@ -309,69 +357,44 @@ ipcMain.handle('resolvers-load-builtin', async () => {
   console.log('=== Load All Resolvers ===');
   const fs = require('fs').promises;
   const path = require('path');
-  
+
   const resolvers = [];
-  
-  // Load built-in resolvers
-  const builtinFiles = [
-    'spotify.axe',
-    'bandcamp.axe',
-    'qobuz.axe',
-    'musicbrainz.axe'
-  ];
-  
-  const builtinDir = path.join(__dirname, 'resolvers', 'builtin');
-  console.log('Loading built-in resolvers from:', builtinDir);
-  
-  for (const filename of builtinFiles) {
-    const filepath = path.join(builtinDir, filename);
-    try {
-      console.log(`  Reading ${filename}...`);
-      const content = await fs.readFile(filepath, 'utf8');
-      const axe = JSON.parse(content);
-      axe._userInstalled = false; // Mark as built-in
-      axe._filename = filename;
-      resolvers.push(axe);
-      console.log(`  ✅ Loaded ${axe.manifest.name}`);
-    } catch (error) {
-      console.error(`  ❌ Failed to load ${filename}:`, error.message);
-    }
-  }
-  
-  // Load user-installed resolvers
-  const userDir = path.join(__dirname, 'resolvers', 'user');
-  console.log('Loading user resolvers from:', userDir);
-  
+
+  // Load all resolvers from resolvers directory
+  const resolversDir = path.join(__dirname, 'resolvers');
+  console.log('Loading resolvers from:', resolversDir);
+
   try {
-    const userFiles = await fs.readdir(userDir);
-    const axeFiles = userFiles.filter(f => f.endsWith('.axe'));
-    
+    // Ensure directory exists
+    await fs.mkdir(resolversDir, { recursive: true });
+
+    const files = await fs.readdir(resolversDir);
+    const axeFiles = files.filter(f => f.endsWith('.axe'));
+
     for (const filename of axeFiles) {
-      const filepath = path.join(userDir, filename);
+      const filepath = path.join(resolversDir, filename);
       try {
         console.log(`  Reading ${filename}...`);
         const content = await fs.readFile(filepath, 'utf8');
         const axe = JSON.parse(content);
-        
+
         // Check for duplicates
         if (resolvers.find(r => r.manifest.id === axe.manifest.id)) {
           console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
           continue;
         }
-        
-        axe._userInstalled = true; // Mark as user-installed
+
         axe._filename = filename;
         resolvers.push(axe);
-        console.log(`  ✅ Loaded ${axe.manifest.name} (user-installed)`);
+        console.log(`  ✅ Loaded ${axe.manifest.name}`);
       } catch (error) {
         console.error(`  ❌ Failed to load ${filename}:`, error.message);
       }
     }
   } catch (error) {
-    // User directory doesn't exist yet - that's ok
-    console.log('  No user resolvers directory (this is normal on first run)');
+    console.error('  ❌ Failed to read resolvers directory:', error.message);
   }
-  
+
   console.log(`✅ Loaded ${resolvers.length} resolver(s) total`);
   return resolvers;
 });
@@ -434,12 +457,12 @@ ipcMain.handle('resolvers-install', async (event, axeContent, filename) => {
     const axe = JSON.parse(axeContent);
     console.log(`  Resolver: ${axe.manifest.name} v${axe.manifest.version}`);
     
-    // Create user resolvers directory if it doesn't exist
-    const userResolversDir = path.join(__dirname, 'resolvers', 'user');
-    await fs.mkdir(userResolversDir, { recursive: true });
-    
-    // Save to user resolvers directory
-    const targetPath = path.join(userResolversDir, filename);
+    // Create resolvers directory if it doesn't exist
+    const resolversDir = path.join(__dirname, 'resolvers');
+    await fs.mkdir(resolversDir, { recursive: true });
+
+    // Save to resolvers directory
+    const targetPath = path.join(resolversDir, filename);
     await fs.writeFile(targetPath, axeContent, 'utf8');
     
     console.log(`  ✅ Installed to: ${targetPath}`);
@@ -459,25 +482,25 @@ ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
     const fs = require('fs').promises;
     const path = require('path');
     
-    const userDir = path.join(__dirname, 'resolvers', 'user');
-    
+    const resolversDir = path.join(__dirname, 'resolvers');
+
     // Find the .axe file for this resolver
-    const userFiles = await fs.readdir(userDir);
-    const axeFiles = userFiles.filter(f => f.endsWith('.axe'));
-    
+    const files = await fs.readdir(resolversDir);
+    const axeFiles = files.filter(f => f.endsWith('.axe'));
+
     for (const filename of axeFiles) {
-      const filepath = path.join(userDir, filename);
+      const filepath = path.join(resolversDir, filename);
       const content = await fs.readFile(filepath, 'utf8');
       const axe = JSON.parse(content);
-      
+
       if (axe.manifest.id === resolverId) {
         await fs.unlink(filepath);
         console.log(`  ✅ Uninstalled: ${filename}`);
         return { success: true, name: axe.manifest.name };
       }
     }
-    
-    return { success: false, error: 'Resolver not found in user directory' };
+
+    return { success: false, error: 'Resolver not found' };
   } catch (error) {
     console.error('  ❌ Uninstall failed:', error.message);
     return { success: false, error: error.message };
@@ -485,23 +508,17 @@ ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
 });
 
 // Show context menu for resolver
-ipcMain.handle('resolvers-show-context-menu', async (event, resolverId, isUserInstalled) => {
+ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
   console.log('=== Show Resolver Context Menu ===');
   console.log('  Resolver ID:', resolverId);
-  console.log('  User installed:', isUserInstalled);
-  
-  if (!isUserInstalled) {
-    console.log('  Built-in resolver - no context menu');
-    return null;
-  }
-  
+
   const { Menu } = require('electron');
-  
+
   const menu = Menu.buildFromTemplate([
     {
       label: 'Uninstall Resolver',
       click: () => {
-        // Send back to renderer via return value
+        // Send back to renderer
         mainWindow.webContents.send('resolver-context-menu-action', {
           action: 'uninstall',
           resolverId: resolverId
@@ -509,10 +526,69 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId, isUserIn
       }
     }
   ]);
-  
+
   menu.popup({ window: mainWindow });
-  
+
   return { shown: true };
+});
+
+// Marketplace handlers
+ipcMain.handle('marketplace-get-manifest', async () => {
+  console.log('=== Get Marketplace Manifest ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  try {
+    // Try to load embedded manifest
+    const manifestPath = path.join(__dirname, 'marketplace-manifest.json');
+    const content = await fs.readFile(manifestPath, 'utf8');
+    const manifest = JSON.parse(content);
+
+    console.log(`✅ Loaded ${manifest.resolvers.length} marketplace resolvers`);
+    return { success: true, manifest };
+  } catch (error) {
+    console.error('Failed to load marketplace manifest:', error.message);
+    return { success: false, error: error.message, manifest: { version: '1.0.0', resolvers: [] } };
+  }
+});
+
+ipcMain.handle('marketplace-download-resolver', async (event, url) => {
+  console.log('=== Download Resolver from URL ===');
+  console.log('  URL:', url);
+
+  try {
+    // Validate URL
+    const urlObj = new URL(url);
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      throw new Error('Only HTTP and HTTPS URLs are allowed');
+    }
+
+    // Fetch the .axe file
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const content = await response.text();
+
+    // Validate it's valid JSON
+    const axe = JSON.parse(content);
+
+    // Validate required fields
+    if (!axe.manifest || !axe.manifest.id || !axe.manifest.name) {
+      throw new Error('Invalid .axe file: missing required manifest fields');
+    }
+
+    console.log(`✅ Downloaded resolver: ${axe.manifest.name}`);
+
+    // Generate filename from resolver ID
+    const filename = `${axe.manifest.id}.axe`;
+
+    return { success: true, content, filename, resolver: axe };
+  } catch (error) {
+    console.error('  ❌ Download failed:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 // Playlist handlers
