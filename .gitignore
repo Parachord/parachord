@@ -44,3 +44,4 @@ playlists/*.xspf
 .temp/
 # MCP configuration should be committed for team consistency
 # .mcp.json
+.worktrees/
