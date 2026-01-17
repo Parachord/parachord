@@ -1079,6 +1079,37 @@ const Parachord = () => {
     }, 300);
   };
 
+  const resolveRecording = async (recording) => {
+    const track = {
+      id: recording.id,
+      title: recording.title,
+      artist: recording['artist-credit']?.[0]?.name || 'Unknown',
+      duration: Math.floor((recording.length || 180000) / 1000), // Convert ms to seconds
+      album: recording.releases?.[0]?.title || '',
+      sources: {}
+    };
+
+    // Query each active resolver (limit to first 2 to avoid slow searches)
+    const resolversToTry = activeResolvers.slice(0, 2);
+
+    for (const resolverId of resolversToTry) {
+      const resolver = allResolvers.find(r => r.id === resolverId);
+      if (!resolver?.capabilities.resolve) continue;
+
+      try {
+        const config = getResolverConfig(resolverId);
+        const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
+        if (resolved) {
+          track.sources[resolverId] = resolved;
+        }
+      } catch (error) {
+        console.error(`Resolver ${resolverId} error:`, error);
+      }
+    }
+
+    return track;
+  };
+
   // Cache utility functions
   const loadCacheFromStore = async () => {
     if (!window.electron?.store) return;
