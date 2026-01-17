@@ -76,17 +76,26 @@ const FALLBACK_RESOLVERS = [
 
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) => {
-  const isSpotifyTrack = track.sources?.includes('spotify');
-  const isMusicBrainzTrack = track.sources?.includes('musicbrainz');
-  const isBandcampTrack = track.sources?.includes('bandcamp');
-  const isQobuzTrack = track.sources?.includes('qobuz');
-  
+  // Get available sources (track.sources is an object with resolver IDs as keys)
+  const availableSources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources)
+    ? Object.keys(track.sources)
+    : [];
+
+  // Resolver metadata for badge display
+  const resolverMeta = {
+    spotify: { label: '♫ Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
+    youtube: { label: '🎥 YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
+    musicbrainz: { label: '♪ MusicBrainz', bgColor: 'bg-purple-600/20', textColor: 'text-purple-400' },
+    bandcamp: { label: '▶ Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
+    qobuz: { label: '◆ Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' }
+  };
+
   return React.createElement('div', {
     className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-white/10 transition-colors no-drag'
   },
     // Album art or play button
     React.createElement('div', { className: 'relative w-12 h-12 flex-shrink-0' },
-      track.albumArt ? 
+      track.albumArt ?
         React.createElement('img', {
           src: track.albumArt,
           alt: track.album,
@@ -99,7 +108,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) =>
       React.createElement('button', {
         onClick: () => handlePlay(track),
         className: 'absolute inset-0 flex items-center justify-center rounded bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity'
-      }, 
+      },
         React.createElement('div', { className: 'w-8 h-8 flex items-center justify-center rounded-full bg-purple-600 text-sm' },
           isPlaying ? React.createElement(Pause) : React.createElement(Play)
         )
@@ -118,18 +127,22 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) =>
           className: 'text-sm text-gray-400 truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
           title: `View ${track.artist}'s discography`
         }, track.artist),
-        isSpotifyTrack && React.createElement('span', {
-          className: 'text-xs px-2 py-0.5 bg-green-600/20 text-green-400 rounded-full'
-        }, '♫ Spotify'),
-        isMusicBrainzTrack && React.createElement('span', {
-          className: 'text-xs px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded-full'
-        }, '♪ MusicBrainz'),
-        isBandcampTrack && React.createElement('span', {
-          className: 'text-xs px-2 py-0.5 bg-cyan-600/20 text-cyan-400 rounded-full'
-        }, '▶ Bandcamp'),
-        isQobuzTrack && React.createElement('span', {
-          className: 'text-xs px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full'
-        }, '◆ Qobuz')
+        // Resolver badges - clickable for manual override
+        ...availableSources.map(resolverId => {
+          const meta = resolverMeta[resolverId];
+          if (!meta) return null;
+
+          return React.createElement('button', {
+            key: resolverId,
+            onClick: (e) => {
+              e.stopPropagation();
+              // Play from this specific resolver
+              handlePlay(track.sources[resolverId]);
+            },
+            className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
+            title: `Play from ${meta.label} (manual override)`
+          }, meta.label);
+        })
       )
     ),
     React.createElement('div', { className: 'text-sm text-gray-400 truncate max-w-[200px]' }, track.album),
@@ -355,32 +368,16 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
               className: 'flex items-center gap-4 p-3 rounded-lg hover:bg-white/5 cursor-pointer transition-colors no-drag group',
               onClick: () => {
                 console.log('Track row clicked:', track.title);
-                
-                // If we have resolved sources, play the best one based on priority AND confidence
+
+                // Create a track object with sources for handlePlay to select the best one
                 if (availableResolvers.length > 0) {
-                  // Sort sources by: 1) resolver priority (lower index = higher priority), 2) confidence
-                  const sortedSources = availableResolvers.map(resolverId => ({
-                    resolverId,
-                    source: sources[resolverId],
-                    priority: resolverOrder.indexOf(resolverId),
-                    confidence: sources[resolverId].confidence || 0
-                  }))
-                  .filter(s => activeResolvers.includes(s.resolverId)) // Only enabled resolvers
-                  .sort((a, b) => {
-                    // First sort by priority (lower index = higher priority)
-                    if (a.priority !== b.priority) {
-                      return a.priority - b.priority;
-                    }
-                    // If same priority, sort by confidence (higher = better)
-                    return b.confidence - a.confidence;
-                  });
-                  
-                  const best = sortedSources[0];
-                  const bestSource = best.source;
-                  const bestResolver = best.resolverId;
-                  
-                  console.log(`🎵 Playing from ${bestResolver} (priority #${best.priority + 1}, confidence: ${(best.confidence * 100).toFixed(0)}%)`);
-                  handlePlay(bestSource);
+                  const trackWithSources = {
+                    ...track,
+                    artist: release.artist.name,
+                    album: release.title,
+                    sources: sources
+                  };
+                  handlePlay(trackWithSources);
                 } else {
                   // No resolved sources yet, fall back to search
                   console.log('No resolved sources, searching...');
@@ -802,14 +799,60 @@ const Parachord = () => {
     setStartTime(audioContext.currentTime);
   };
 
-  const handlePlay = async (track) => {
-    console.log('🎵 Playing track:', track.title, 'by', track.artist);
+  const handlePlay = async (trackOrSource) => {
+    console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
 
-    // Detect which resolver to use from track.sources
-    const resolverId = track.sources?.[0];
-    if (!resolverId) {
-      console.error('❌ No resolver found for track');
-      return;
+    // Determine if we were passed a track with multiple sources or a specific source
+    let resolverId;
+    let sourceToPlay = trackOrSource;
+
+    if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
+      // We have a track with multiple sources - select the best one
+      const availableResolvers = Object.keys(trackOrSource.sources);
+
+      if (availableResolvers.length === 0) {
+        console.error('❌ No resolver found for track');
+        return;
+      }
+
+      // Sort sources by: 1) resolver priority (lower index = higher priority), 2) confidence
+      const sortedSources = availableResolvers.map(resId => ({
+        resolverId: resId,
+        source: trackOrSource.sources[resId],
+        priority: resolverOrder.indexOf(resId),
+        confidence: trackOrSource.sources[resId].confidence || 0
+      }))
+      .filter(s => activeResolvers.includes(s.resolverId)) // Only enabled resolvers
+      .sort((a, b) => {
+        // First sort by priority (lower index = higher priority)
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        // If same priority, sort by confidence (higher = better)
+        return b.confidence - a.confidence;
+      });
+
+      if (sortedSources.length === 0) {
+        console.error('❌ No enabled resolvers found for track');
+        return;
+      }
+
+      const best = sortedSources[0];
+      resolverId = best.resolverId;
+      sourceToPlay = best.source;
+
+      console.log(`🎵 Selected ${resolverId} (priority #${best.priority + 1}, confidence: ${(best.confidence * 100).toFixed(0)}%)`);
+    } else {
+      // We were passed a specific source object - detect resolver from it
+      // Check which resolver this source came from by examining resolver-specific fields
+      if (trackOrSource.spotifyId) resolverId = 'spotify';
+      else if (trackOrSource.youtubeId) resolverId = 'youtube';
+      else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
+      else if (trackOrSource.qobuzId) resolverId = 'qobuz';
+      else {
+        console.error('❌ Could not determine resolver for source');
+        return;
+      }
     }
 
     const resolver = allResolvers.find(r => r.id === resolverId);
@@ -824,10 +867,10 @@ const Parachord = () => {
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
       // For non-streaming resolvers (like Bandcamp, MusicBrainz)
-      if (resolverId === 'bandcamp' && track.bandcampUrl) {
+      if (resolverId === 'bandcamp' && sourceToPlay.bandcampUrl) {
         console.log('🎸 Opening Bandcamp in browser...');
         const config = getResolverConfig(resolverId);
-        await resolver.play(track, config);
+        await resolver.play(sourceToPlay, config);
         return;
       } else if (resolverId === 'musicbrainz') {
         alert('MusicBrainz provides metadata only. Try searching for this track on Spotify to play it.');
@@ -840,11 +883,11 @@ const Parachord = () => {
       const config = getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
 
-      const success = await resolver.play(track, config);
+      const success = await resolver.play(sourceToPlay, config);
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
-        setCurrentTrack(track);
+        setCurrentTrack(sourceToPlay);
         setIsPlaying(true);
         setProgress(0);
         if (audioContext) {
@@ -855,10 +898,10 @@ const Parachord = () => {
 
         // Playback failed - cached source may be invalid
         // Try to re-resolve and find alternative sources
-        if (track.artist && track.title) {
+        if (sourceToPlay.artist && sourceToPlay.title) {
           console.log('🔄 Attempting to re-resolve track with fresh sources...');
-          const artistName = track.artist;
-          const trackData = { position: track.position || 1, title: track.title, length: track.duration };
+          const artistName = sourceToPlay.artist;
+          const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
 
           // Force refresh to bypass cache
           await resolveTrack(trackData, artistName, true);
@@ -870,10 +913,10 @@ const Parachord = () => {
       console.error(`❌ Error playing with ${resolver.name}:`, error);
 
       // On error, also try to re-resolve
-      if (track.artist && track.title) {
+      if (sourceToPlay.artist && sourceToPlay.title) {
         console.log('🔄 Playback error - attempting to re-resolve...');
-        const artistName = track.artist;
-        const trackData = { position: track.position || 1, title: track.title, length: track.duration };
+        const artistName = sourceToPlay.artist;
+        const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
         await resolveTrack(trackData, artistName, true);
       }
     }
