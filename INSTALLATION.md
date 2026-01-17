@@ -55,10 +55,10 @@ No errors about missing credentials!
 
 ## ✅ What Changed
 
-### Before (Hardcoded):
+### Before (Hardcoded - DO NOT DO THIS):
 ```javascript
-const clientId = 'c040c0ee133344b282e6342198bcbeea';
-const clientSecret = 'a215de9c8678409e8465f96d1209090f';
+const clientId = 'YOUR_CLIENT_ID_HERE';  // ❌ Never hardcode credentials!
+const clientSecret = 'YOUR_CLIENT_SECRET_HERE';  // ❌ Security risk!
 ```
 
 ### After (Environment Variables):
