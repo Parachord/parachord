@@ -744,6 +744,19 @@ const Parachord = () => {
     }
   }, [activeResolvers, resolverOrder]);
 
+  // Save resolver settings when they change
+  useEffect(() => {
+    // Skip on initial mount
+    if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
+
+    // Debounce the save to avoid saving too frequently
+    const timeoutId = setTimeout(() => {
+      saveCacheToStore();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeResolvers, resolverOrder]);
+
   const playDemoAudio = (track) => {
     if (!audioContext) return;
     if (currentSource) {
@@ -1058,6 +1071,20 @@ const Parachord = () => {
         trackSourcesCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} track source entries from cache`);
       }
+
+      // Load resolver settings
+      const savedActiveResolvers = await window.electron.store.get('active_resolvers');
+      const savedResolverOrder = await window.electron.store.get('resolver_order');
+
+      if (savedActiveResolvers) {
+        setActiveResolvers(savedActiveResolvers);
+        console.log(`📦 Loaded ${savedActiveResolvers.length} active resolvers from storage`);
+      }
+
+      if (savedResolverOrder) {
+        setResolverOrder(savedResolverOrder);
+        console.log(`📦 Loaded resolver order from storage (${savedResolverOrder.length} resolvers)`);
+      }
     } catch (error) {
       console.error('Failed to load cache from store:', error);
     }
@@ -1082,7 +1109,11 @@ const Parachord = () => {
       // Save track sources cache (already has timestamps)
       await window.electron.store.set('cache_track_sources', trackSourcesCache.current);
 
-      console.log('💾 Cache saved to persistent storage');
+      // Save resolver settings
+      await window.electron.store.set('active_resolvers', activeResolvers);
+      await window.electron.store.set('resolver_order', resolverOrder);
+
+      console.log('💾 Cache and resolver settings saved to persistent storage');
     } catch (error) {
       console.error('Failed to save cache to store:', error);
     }
