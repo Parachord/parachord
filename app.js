@@ -715,6 +715,32 @@ const Parachord = () => {
     }
   }, [isPlaying, audioContext, currentTrack, startTime]);
 
+  // Re-resolve tracks when resolver settings change (enabled/priority)
+  useEffect(() => {
+    // Skip on initial mount (when both are empty)
+    if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
+
+    // Re-resolve release tracks if viewing an artist release
+    if (currentRelease && currentRelease.tracks) {
+      console.log('🔄 Resolver settings changed, re-resolving release tracks...');
+      const artistName = currentArtist?.name || 'Unknown Artist';
+      currentRelease.tracks.forEach(track => {
+        // Force refresh to bypass cache
+        resolveTrack(track, artistName, true);
+      });
+    }
+
+    // Re-resolve playlist tracks if viewing a playlist
+    if (selectedPlaylist && playlistTracks.length > 0) {
+      console.log('🔄 Resolver settings changed, re-resolving playlist tracks...');
+      playlistTracks.forEach(track => {
+        const artistName = track.artist || 'Unknown Artist';
+        // Force refresh to bypass cache
+        resolveTrack(track, artistName, true);
+      });
+    }
+  }, [activeResolvers, resolverOrder]);
+
   const playDemoAudio = (track) => {
     if (!audioContext) return;
     if (currentSource) {
