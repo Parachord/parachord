@@ -782,7 +782,7 @@ const Parachord = () => {
       console.log('🎥 Opening YouTube in drawer...');
       // Extract video ID and create proper embed URL with autoplay
       const videoId = track.youtubeUrl.match(/[?&]v=([^&]+)/)?.[1] || track.youtubeUrl.split('/').pop();
-      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${window.location.origin}`;
+      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
       setDrawerUrl(embedUrl);
       setDrawerOpen(true);
       setCurrentTrack(track);
@@ -3591,18 +3591,17 @@ useEffect(() => {
         }, React.createElement(X))
       ),
 
-      // Drawer content - webview container
+      // Drawer content - iframe container
       React.createElement('div', {
-        className: 'w-full h-full',
+        className: 'w-full h-full bg-black',
         style: { height: (drawerHeight - 40) + 'px' }
       },
-        drawerUrl ? React.createElement('webview', {
+        drawerUrl ? React.createElement('iframe', {
           src: drawerUrl,
           className: 'w-full h-full',
           style: { border: 'none' },
-          partition: 'persist:drawer',
-          allowpopups: true,
-          useragent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+          allow: 'autoplay; encrypted-media; picture-in-picture',
+          allowFullScreen: true
         }) : React.createElement('div', {
           className: 'flex items-center justify-center h-full text-gray-500'
         }, 'No content loaded')
