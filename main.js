@@ -267,6 +267,10 @@ ipcMain.handle('spotify-check-token', async () => {
     return { token, expiresAt: expiry };
   }
 
+  // Get credentials from environment
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+
   // If token is expired but we have a refresh token, try to refresh
   if (refreshToken && clientId && clientSecret) {
     console.log('🔄 Token expired, attempting automatic refresh...');
