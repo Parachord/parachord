@@ -736,11 +736,39 @@ const Parachord = () => {
     // Re-resolve playlist tracks if viewing a playlist
     if (selectedPlaylist && playlistTracks.length > 0) {
       console.log('🔄 Resolver settings changed, re-resolving playlist tracks...');
-      playlistTracks.forEach(track => {
-        const artistName = track.artist || 'Unknown Artist';
-        // Force refresh to bypass cache
-        resolveTrack(track, artistName, true);
-      });
+
+      // Re-resolve each playlist track with new resolver settings
+      const reResolvePlaylistTracks = async () => {
+        const updatedTracks = [];
+
+        for (const track of playlistTracks) {
+          const trackWithSources = { ...track, sources: {} };
+
+          // Query enabled resolvers in priority order
+          for (const resolverId of activeResolvers) {
+            const resolver = allResolvers.find(r => r.id === resolverId);
+            if (!resolver || !resolver.capabilities.resolve) continue;
+
+            try {
+              const config = getResolverConfig(resolverId);
+              const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
+
+              if (resolved) {
+                trackWithSources.sources[resolverId] = resolved;
+              }
+            } catch (error) {
+              console.error(`Error resolving with ${resolver.name}:`, error);
+            }
+          }
+
+          updatedTracks.push(trackWithSources);
+        }
+
+        setPlaylistTracks(updatedTracks);
+        console.log('✅ Playlist tracks re-resolved');
+      };
+
+      reResolvePlaylistTracks();
     }
   }, [activeResolvers, resolverOrder]);
 
