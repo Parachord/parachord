@@ -85,6 +85,27 @@
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/musicbrainz.axe",
       "category": "metadata",
       "tags": ["metadata", "free", "encyclopedia", "open-source"]
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube Music",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Search and stream music from YouTube. Free with ads. Access millions of songs and music videos.",
+      "icon": "🎥",
+      "color": "#FF0000",
+      "homepage": "https://youtube.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/youtube.axe",
+      "category": "streaming",
+      "tags": ["streaming", "free", "video", "youtube"]
     }
   ],
   "categories": ["streaming", "purchase", "metadata"]
