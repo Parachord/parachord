@@ -88,10 +88,10 @@
     },
     {
       "id": "youtube",
-      "name": "YouTube Music",
+      "name": "YouTube",
       "version": "1.0.0",
       "author": "Parachord Team",
-      "description": "Search and stream music from YouTube. Free with ads. Access millions of songs and music videos.",
+      "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
       "icon": "🎥",
       "color": "#FF0000",
       "homepage": "https://youtube.com",

@@ -1,10 +1,10 @@
 {
   "manifest": {
     "id": "youtube",
-    "name": "YouTube Music",
+    "name": "YouTube",
     "version": "1.0.0",
     "author": "Parachord Team",
-    "description": "Search and stream music from YouTube. Free with ads. Access millions of songs and music videos.",
+    "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
     "icon": "🎥",
     "color": "#FF0000",
     "homepage": "https://youtube.com",
@@ -32,8 +32,8 @@
 
     "play": "async function(track, config) { if (!track.youtubeUrl) { console.error('No YouTube URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.youtubeUrl); return result && result.success; } else { const newWindow = window.open(track.youtubeUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open YouTube link:', error); return false; } }",
 
-    "init": "async function(config) { console.log('YouTube Music resolver initialized'); }",
+    "init": "async function(config) { console.log('YouTube resolver initialized'); }",
 
-    "cleanup": "async function() { console.log('YouTube Music resolver cleanup'); }"
+    "cleanup": "async function() { console.log('YouTube resolver cleanup'); }"
   }
 }
