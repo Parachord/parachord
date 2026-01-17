@@ -1199,9 +1199,23 @@ const Parachord = () => {
       }
       
       console.log(`Found ${allReleases.length} releases for ${artist.name}`);
-      
+
+      // De-duplicate releases (same title + date can appear multiple times)
+      const seenReleases = new Map();
+      const uniqueReleases = [];
+
+      for (const release of allReleases) {
+        const key = `${release.title.toLowerCase()}|${release.date || 'unknown'}`;
+        if (!seenReleases.has(key)) {
+          seenReleases.set(key, true);
+          uniqueReleases.push(release);
+        }
+      }
+
+      console.log(`After de-duplication: ${uniqueReleases.length} unique releases`);
+
       // Sort by date (newest first)
-      allReleases.sort((a, b) => {
+      uniqueReleases.sort((a, b) => {
         const dateA = a.date || '0000';
         const dateB = b.date || '0000';
         return dateB.localeCompare(dateA);
@@ -1220,14 +1234,14 @@ const Parachord = () => {
       // Cache the artist data with resolver settings hash
       artistDataCache.current[cacheKey] = {
         artist: artistData,
-        releases: allReleases,
+        releases: uniqueReleases,
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash()
       };
       console.log('💾 Cached artist data for:', artistName);
 
       // Pre-populate releases with cached album art
-      const releasesWithCache = allReleases.map(release => ({
+      const releasesWithCache = uniqueReleases.map(release => ({
         ...release,
         albumArt: albumArtCache.current[release.id] || null
       }));
@@ -1237,7 +1251,7 @@ const Parachord = () => {
       setLoadingArtist(false);
 
       // Fetch album art in background (lazy loading) - only for releases without cache
-      fetchAlbumArtLazy(allReleases);
+      fetchAlbumArtLazy(uniqueReleases);
       
     } catch (error) {
       console.error('Error fetching artist data:', error);
