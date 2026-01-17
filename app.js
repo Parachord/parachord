@@ -552,6 +552,13 @@ const Parachord = () => {
     trackSources: 7 * 24 * 60 * 60 * 1000  // 7 days (track availability changes)
   };
 
+  // Generate a hash of current resolver settings for cache invalidation
+  const getResolverSettingsHash = () => {
+    const sortedActive = [...activeResolvers].sort().join(',');
+    const sortedOrder = [...resolverOrder].join(',');
+    return `${sortedActive}|${sortedOrder}`;
+  };
+
   const sampleTracks = [
     { id: 1, title: 'Midnight Dreams', artist: 'Luna Echo', album: 'Nocturnal', duration: 245, sources: ['youtube', 'soundcloud'] },
     { id: 2, title: 'Electric Pulse', artist: 'Neon Waves', album: 'Synthwave', duration: 198, sources: ['youtube'] },
@@ -1073,8 +1080,17 @@ const Parachord = () => {
     const cacheKey = artistName.toLowerCase();
     const cachedData = artistDataCache.current[cacheKey];
     const now = Date.now();
+    const currentResolverHash = getResolverSettingsHash();
 
-    if (cachedData && (now - cachedData.timestamp) < CACHE_TTL.artistData) {
+    // Cache is valid if:
+    // 1. Data exists
+    // 2. Not expired
+    // 3. Resolver settings haven't changed
+    const cacheValid = cachedData &&
+                      (now - cachedData.timestamp) < CACHE_TTL.artistData &&
+                      cachedData.resolverHash === currentResolverHash;
+
+    if (cacheValid) {
       console.log('📦 Using cached artist data for:', artistName);
       setCurrentArtist(cachedData.artist);
 
@@ -1090,6 +1106,10 @@ const Parachord = () => {
       // Still fetch album art in background for any missing covers
       fetchAlbumArtLazy(cachedData.releases);
       return;
+    }
+
+    if (cachedData && cachedData.resolverHash !== currentResolverHash) {
+      console.log('🔄 Resolver settings changed, invalidating cache for:', artistName);
     }
 
     console.log('🌐 Fetching fresh artist data from MusicBrainz...');
@@ -1171,11 +1191,12 @@ const Parachord = () => {
 
       setCurrentArtist(artistData);
 
-      // Cache the artist data
+      // Cache the artist data with resolver settings hash
       artistDataCache.current[cacheKey] = {
         artist: artistData,
         releases: allReleases,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        resolverHash: getResolverSettingsHash()
       };
       console.log('💾 Cached artist data for:', artistName);
 
@@ -1332,7 +1353,8 @@ const Parachord = () => {
       if (Object.keys(freshSources).length > 0) {
         trackSourcesCache.current[cacheKey] = {
           sources: freshSources,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          resolverHash: getResolverSettingsHash()
         };
 
         // Update UI with fresh sources
@@ -1349,8 +1371,9 @@ const Parachord = () => {
       }
     } else {
       console.log(`✅ Sources still valid, refreshing timestamp`);
-      // Sources unchanged, just refresh timestamp
+      // Sources unchanged, just refresh timestamp and resolver hash
       trackSourcesCache.current[cacheKey].timestamp = Date.now();
+      trackSourcesCache.current[cacheKey].resolverHash = getResolverSettingsHash();
     }
   };
 
@@ -1358,12 +1381,22 @@ const Parachord = () => {
   const resolveTrack = async (track, artistName, forceRefresh = false) => {
     const trackKey = `${track.position}-${track.title}`;
     const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
+    const currentResolverHash = getResolverSettingsHash();
 
     // Check cache first (unless force refresh)
     const cachedData = trackSourcesCache.current[cacheKey];
     const now = Date.now();
 
-    if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_TTL.trackSources) {
+    // Cache is valid if:
+    // 1. Not forcing refresh
+    // 2. Data exists and not expired
+    // 3. Resolver settings haven't changed
+    const cacheValid = !forceRefresh &&
+                      cachedData &&
+                      (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
+                      cachedData.resolverHash === currentResolverHash;
+
+    if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
       console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h)`);
 
@@ -1380,6 +1413,10 @@ const Parachord = () => {
       }
 
       return;
+    }
+
+    if (cachedData && cachedData.resolverHash !== currentResolverHash) {
+      console.log(`🔄 Resolver settings changed, re-resolving: ${track.title}`);
     }
 
     console.log(`🔍 Resolving: ${artistName} - ${track.title}${forceRefresh ? ' (forced refresh)' : ''}`);
@@ -1421,10 +1458,11 @@ const Parachord = () => {
         [trackKey]: sources
       }));
 
-      // Cache the resolved sources
+      // Cache the resolved sources with resolver settings hash
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        resolverHash: getResolverSettingsHash()
       };
 
       console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
