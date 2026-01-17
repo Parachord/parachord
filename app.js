@@ -780,7 +780,9 @@ const Parachord = () => {
     // Check if track has a URL that should be embedded (YouTube, etc.)
     if (track.youtubeUrl && resolverId === 'youtube') {
       console.log('🎥 Opening YouTube in drawer...');
-      const embedUrl = track.youtubeUrl.replace('watch?v=', 'embed/');
+      // Extract video ID and create proper embed URL with autoplay
+      const videoId = track.youtubeUrl.match(/[?&]v=([^&]+)/)?.[1] || track.youtubeUrl.split('/').pop();
+      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${window.location.origin}`;
       setDrawerUrl(embedUrl);
       setDrawerOpen(true);
       setCurrentTrack(track);
