@@ -1055,70 +1055,28 @@ const Parachord = () => {
     }
   };
 
-  const handleSearch = async (query) => {
-    setSearchQuery(query);
-    
-    // Initialize filters with all active resolvers when starting a new search
-    if (query.trim()) {
-      setResultFilters(activeResolvers.slice()); // Copy of active resolvers
-      setIsSearching(true);
-      
-      // Search local library
-      const localResults = library.filter(track =>
-        track.title.toLowerCase().includes(query.toLowerCase()) ||
-        track.artist.toLowerCase().includes(query.toLowerCase())
-      );
-      
-      // Search using resolver plugins
-      const searchPromises = activeResolvers.map(async (resolverId) => {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.search) {
-          return [];
-        }
-        
-        try {
-          const config = getResolverConfig(resolverId);
-          const results = await resolver.search(query, config);
-          console.log(`🔍 ${resolver.name}: Found ${results.length} results`);
-          return results;
-        } catch (error) {
-          console.error(`❌ ${resolver.name} search error:`, error);
-          return [];
-        }
-      });
-      
-      try {
-        const results = await Promise.all(searchPromises);
-        const allRemoteResults = results.flat();
+  const handleSearchInput = (value) => {
+    setSearchQuery(value);
 
-        // Combine local and remote results
-        const combined = [...localResults, ...allRemoteResults];
-
-        // Group results by entity type
-        setSearchResults({
-          artists: [], // TODO: Extract unique artists from tracks
-          albums: [],  // TODO: Extract unique albums from tracks
-          tracks: combined
-        });
-        console.log(`✅ Total search results: ${combined.length}`);
-      } catch (err) {
-        console.error('Search error:', err);
-        setSearchResults({
-          artists: [],
-          albums: [],
-          tracks: localResults
-        }); // Fall back to local only
-      }
-
-      setIsSearching(false);
-    } else {
-      setSearchResults({
-        artists: [],
-        albums: [],
-        tracks: []
-      });
-      setIsSearching(false);
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
+
+    // Close drawer if search cleared
+    if (!value) {
+      setSearchDrawerOpen(false);
+      setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
+      return;
+    }
+
+    // Debounce search by 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      if (value.length >= 2) {
+        performSearch(value);
+        setSearchDrawerOpen(true);
+      }
+    }, 300);
   };
 
   // Cache utility functions
@@ -2531,7 +2489,7 @@ useEffect(() => {
           type: 'text',
           placeholder: 'Search music...',
           value: searchQuery,
-          onChange: (e) => handleSearch(e.target.value),
+          onChange: (e) => handleSearchInput(e.target.value),
           className: 'w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500'
         })
       ),
