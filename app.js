@@ -1090,19 +1090,33 @@ const Parachord = () => {
       try {
         const results = await Promise.all(searchPromises);
         const allRemoteResults = results.flat();
-        
+
         // Combine local and remote results
         const combined = [...localResults, ...allRemoteResults];
-        setSearchResults(combined);
+
+        // Group results by entity type
+        setSearchResults({
+          artists: [], // TODO: Extract unique artists from tracks
+          albums: [],  // TODO: Extract unique albums from tracks
+          tracks: combined
+        });
         console.log(`✅ Total search results: ${combined.length}`);
       } catch (err) {
         console.error('Search error:', err);
-        setSearchResults(localResults); // Fall back to local only
+        setSearchResults({
+          artists: [],
+          albums: [],
+          tracks: localResults
+        }); // Fall back to local only
       }
-      
+
       setIsSearching(false);
     } else {
-      setSearchResults([]);
+      setSearchResults({
+        artists: [],
+        albums: [],
+        tracks: []
+      });
       setIsSearching(false);
     }
   };
@@ -2194,14 +2208,14 @@ const Parachord = () => {
   // Filter results based on selected resolvers
   const getFilteredResults = () => {
     if (!searchQuery) return library;
-    
+
     // If all resolvers are active (no filtering), show all results
     if (resultFilters.length === activeResolvers.length || resultFilters.length === 0) {
-      return searchResults;
+      return searchResults.tracks;
     }
-    
+
     // Filter results to only show tracks from selected resolvers
-    return searchResults.filter(track => {
+    return searchResults.tracks.filter(track => {
       // Check if track is from any of the selected resolvers
       return track.sources?.some(source => resultFilters.includes(source));
     });
@@ -3089,8 +3103,8 @@ useEffect(() => {
             ),
             // Show result count and reset button
             !isSearching && React.createElement('div', { className: 'flex items-center gap-2 ml-2' },
-              React.createElement('span', { className: 'text-gray-500' }, 
-                `${getFilteredResults().length}${resultFilters.length < activeResolvers.length ? `/${searchResults.length}` : ''} results`
+              React.createElement('span', { className: 'text-gray-500' },
+                `${getFilteredResults().length}${resultFilters.length < activeResolvers.length ? `/${searchResults.tracks.length}` : ''} results`
               ),
               resultFilters.length < activeResolvers.length && React.createElement('button', {
                 onClick: () => setResultFilters(activeResolvers.slice()),
@@ -3121,7 +3135,7 @@ useEffect(() => {
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
                 // Set queue to search results or library when playing from library view
-                setCurrentQueue(searchQuery ? searchResults : library);
+                setCurrentQueue(searchQuery ? searchResults.tracks : library);
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData
