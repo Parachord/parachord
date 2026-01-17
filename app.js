@@ -777,19 +777,8 @@ const Parachord = () => {
       return;
     }
 
-    // Check if track has a URL that should be embedded (YouTube, etc.)
-    if (track.youtubeUrl && resolverId === 'youtube') {
-      console.log('🎥 Opening YouTube in drawer...');
-      // Extract video ID and create proper embed URL with autoplay
-      const videoId = track.youtubeUrl.match(/[?&]v=([^&]+)/)?.[1] || track.youtubeUrl.split('/').pop();
-      const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
-      setDrawerUrl(embedUrl);
-      setDrawerOpen(true);
-      setCurrentTrack(track);
-      setIsPlaying(true);
-      setProgress(0);
-      return;
-    }
+    // YouTube embedding is blocked in Electron, use resolver's play method instead
+    // (which opens in external browser)
 
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
