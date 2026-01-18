@@ -789,6 +789,18 @@ const Parachord = () => {
     return () => clearTimeout(timeoutId);
   }, [activeResolvers, resolverOrder]);
 
+  // Keyboard shortcuts - Escape closes search drawer
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && searchDrawerOpen) {
+        setSearchDrawerOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchDrawerOpen]);
+
   const playDemoAudio = (track) => {
     if (!audioContext) return;
     if (currentSource) {
