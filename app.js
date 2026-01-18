@@ -1204,6 +1204,19 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // Clean up any active polling or timeouts
+    if (playbackPollerRef.current) {
+      clearInterval(playbackPollerRef.current);
+      playbackPollerRef.current = null;
+    }
+    if (externalTrackTimeoutRef.current) {
+      clearTimeout(externalTrackTimeoutRef.current);
+      externalTrackTimeoutRef.current = null;
+    }
+    setIsExternalPlayback(false);
+    setShowExternalPrompt(false);
+    setPendingExternalTrack(null);
+
     const isSpotifyTrack = currentTrack?.sources?.includes('spotify') || currentTrack?.spotifyUri;
     
     if (isSpotifyTrack && spotifyToken) {
@@ -1245,8 +1258,21 @@ const Parachord = () => {
   };
 
   const handlePrevious = async () => {
+    // Clean up any active polling or timeouts
+    if (playbackPollerRef.current) {
+      clearInterval(playbackPollerRef.current);
+      playbackPollerRef.current = null;
+    }
+    if (externalTrackTimeoutRef.current) {
+      clearTimeout(externalTrackTimeoutRef.current);
+      externalTrackTimeoutRef.current = null;
+    }
+    setIsExternalPlayback(false);
+    setShowExternalPrompt(false);
+    setPendingExternalTrack(null);
+
     if (!currentTrack) return;
-    
+
     const isSpotifyTrack = currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri;
     
     if (isSpotifyTrack && spotifyToken) {
