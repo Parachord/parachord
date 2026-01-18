@@ -627,6 +627,155 @@ const Parachord = () => {
     }
   };
 
+  // Handle URL drop - main entry point
+  const handleUrlDrop = async (url, zone) => {
+    console.log(`🔗 URL dropped on ${zone}:`, url);
+
+    // Find resolver for this URL
+    const resolverId = resolverLoaderRef.current?.findResolverForUrl(url);
+    if (!resolverId) {
+      console.error('❌ No resolver found for URL:', url);
+      return;
+    }
+
+    console.log(`📎 Matched resolver: ${resolverId}`);
+
+    // Create placeholder track
+    const placeholderId = `pending-${Date.now()}`;
+    const placeholder = {
+      id: placeholderId,
+      status: 'loading',
+      sourceUrl: url,
+      sourceDomain: getUrlDomain(url),
+      title: null,
+      artist: null,
+      album: null,
+      duration: null,
+      albumArt: null,
+      sources: {},
+      errorMessage: null
+    };
+
+    // Determine where to insert
+    const hasQueue = currentQueue.length > 0;
+    const shouldPlayImmediately = zone === 'now-playing' || !hasQueue;
+
+    if (shouldPlayImmediately) {
+      // Set as current track (loading state)
+      setCurrentTrack(placeholder);
+    } else {
+      // Insert at position 1 (next up)
+      setCurrentQueue(prev => {
+        const newQueue = [...prev];
+        newQueue.splice(1, 0, placeholder);
+        return newQueue;
+      });
+      // Trigger queue icon animation
+      triggerQueueAnimation();
+    }
+
+    // Look up track metadata
+    try {
+      const result = await resolverLoaderRef.current.lookupUrl(url);
+
+      if (!result || !result.track) {
+        throw new Error('Could not load track metadata');
+      }
+
+      const { track: trackMeta } = result;
+      console.log(`✅ URL lookup success:`, trackMeta.title, '-', trackMeta.artist);
+
+      // Create proper track object
+      const trackId = `${trackMeta.artist}-${trackMeta.title}-${trackMeta.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const resolvedTrack = {
+        id: trackId,
+        status: 'ready',
+        title: trackMeta.title,
+        artist: trackMeta.artist,
+        album: trackMeta.album || 'Single',
+        duration: trackMeta.duration || 180,
+        albumArt: trackMeta.albumArt,
+        sourceUrl: url,
+        sources: {}
+      };
+
+      // Now resolve across all enabled resolvers for playable sources
+      console.log(`🔍 Resolving playable sources...`);
+      const enabledResolvers = resolverOrder
+        .filter(id => activeResolvers.includes(id))
+        .map(id => allResolvers.find(r => r.id === id))
+        .filter(r => r && r.capabilities.resolve);
+
+      const resolvePromises = enabledResolvers.map(async (resolver) => {
+        try {
+          const config = getResolverConfig(resolver.id);
+          const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config);
+          if (result) {
+            resolvedTrack.sources[resolver.id] = {
+              ...result,
+              confidence: 0.9
+            };
+            console.log(`  ✅ ${resolver.name}: Found match`);
+          }
+        } catch (error) {
+          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        }
+      });
+
+      await Promise.all(resolvePromises);
+
+      // Update the placeholder with resolved data
+      if (shouldPlayImmediately) {
+        setCurrentTrack(prev => {
+          if (prev?.id === placeholderId) {
+            return resolvedTrack;
+          }
+          return prev;
+        });
+        // Actually play it
+        handlePlay(resolvedTrack);
+      } else {
+        setCurrentQueue(prev => prev.map(t =>
+          t.id === placeholderId ? resolvedTrack : t
+        ));
+      }
+
+    } catch (error) {
+      console.error('❌ URL lookup failed:', error);
+
+      // Update placeholder to error state
+      const errorTrack = {
+        ...placeholder,
+        status: 'error',
+        errorMessage: error.message || 'Could not load track'
+      };
+
+      if (shouldPlayImmediately) {
+        setCurrentTrack(prev => {
+          if (prev?.id === placeholderId) {
+            return errorTrack;
+          }
+          return prev;
+        });
+      } else {
+        setCurrentQueue(prev => prev.map(t =>
+          t.id === placeholderId ? errorTrack : t
+        ));
+      }
+    }
+  };
+
+  // Queue animation trigger
+  const triggerQueueAnimation = () => {
+    setQueueAnimating(true);
+    if (queueAnimationRef.current) {
+      clearTimeout(queueAnimationRef.current);
+    }
+    queueAnimationRef.current = setTimeout(() => {
+      setQueueAnimating(false);
+    }, 300);
+  };
+
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
