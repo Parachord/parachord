@@ -1463,33 +1463,43 @@ const Parachord = () => {
     try {
       console.log('Fetching release data for:', release.title);
 
-      // First, check if we have a release-group ID - convert it to a release ID
-      const releaseResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+      // Try fetching as a direct release ID first (for artist discography)
+      let releaseId = release.id;
+      let releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
 
-      if (!releaseResponse.ok) {
-        throw new Error(`Release-group not found (HTTP ${releaseResponse.status})`);
-      }
+      // If that fails (404), it might be a release-group ID (from search)
+      // Try converting release-group to release ID
+      if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
+        console.log('Not a release ID, trying as release-group...');
 
-      const releaseGroupData = await releaseResponse.json();
+        const releaseGroupResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
 
-      if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) {
-        throw new Error('No official releases found for this release-group');
-      }
-
-      // Use the first official release ID
-      const releaseId = releaseGroupData.releases[0].id;
-      console.log('Converted release-group to release ID:', releaseId);
-
-      // Fetch full release details including recordings (tracks)
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        {
-          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+        if (!releaseGroupResponse.ok) {
+          throw new Error(`Failed to fetch release or release-group (HTTP ${releaseGroupResponse.status})`);
         }
-      );
+
+        const releaseGroupData = await releaseGroupResponse.json();
+
+        if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) {
+          throw new Error('No official releases found for this release-group');
+        }
+
+        // Use the first official release ID
+        releaseId = releaseGroupData.releases[0].id;
+        console.log('Converted release-group to release ID:', releaseId);
+
+        // Fetch again with the converted ID
+        releaseDetailsResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+      }
 
       if (!releaseDetailsResponse.ok) {
         throw new Error('Release not found');
