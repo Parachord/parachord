@@ -323,7 +323,7 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
       // Metadata
       React.createElement('div', { className: 'flex-1' },
         React.createElement('div', { className: 'space-y-2 text-sm' },
-          React.createElement('div', {},
+          release.releaseType && React.createElement('div', {},
             React.createElement('span', { className: 'text-gray-400' }, 'Type: '),
             React.createElement('span', {
               className: `inline-block px-2 py-0.5 rounded-full text-xs ${
@@ -1599,7 +1599,12 @@ const Parachord = () => {
 
       // Fetch release data using the release-group ID
       // This reuses existing fetchReleaseData which handles the release-group -> release conversion
-      await fetchReleaseData({ id: album.id, title: album.title }, artist);
+      // Include primary-type if available (Album, EP, Single, etc.)
+      await fetchReleaseData({
+        id: album.id,
+        title: album.title,
+        releaseType: album['primary-type']?.toLowerCase() || 'album'
+      }, artist);
 
       // Switch to artist view to show the release
       setActiveView('artist');
