@@ -3845,91 +3845,141 @@ useEffect(() => {
     currentTrack && React.createElement('div', {
       className: 'bg-black/40 backdrop-blur-xl border-t border-white/10 p-4 no-drag'
     },
-      React.createElement('div', { className: 'flex items-center justify-between mb-2' },
-        React.createElement('div', { className: 'flex items-center gap-4' },
-          currentTrack.albumArt ?
-            React.createElement('img', {
-              src: currentTrack.albumArt,
-              alt: currentTrack.album,
-              className: 'w-14 h-14 rounded-lg object-cover'
-            })
-          :
-            React.createElement('div', {
-              className: 'w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
-            }, React.createElement(Music)),
-          React.createElement('div', null,
-            React.createElement('div', { className: 'font-semibold' }, currentTrack.title),
-            React.createElement('div', { className: 'text-sm text-gray-400 flex items-center gap-2' }, 
-              React.createElement('button', {
-                onClick: () => {
-                  console.log('Navigating to artist:', currentTrack.artist);
-                  fetchArtistData(currentTrack.artist);
+      isExternalPlayback ?
+        // External Playback State
+        React.createElement('div', { className: 'flex flex-col items-center space-y-4 w-full' },
+          React.createElement('div', { className: 'text-center' },
+            React.createElement('div', { className: 'text-sm text-slate-400 mb-2' }, '🌐 Playing in browser'),
+            React.createElement('div', { className: 'text-lg font-semibold text-white' }, currentTrack.title),
+            React.createElement('div', { className: 'text-sm text-slate-400' }, currentTrack.artist),
+            React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
+              'via ',
+              allResolvers.find(r =>
+                r.id === (currentTrack.bandcampUrl ? 'bandcamp' :
+                         currentTrack.youtubeUrl || currentTrack.youtubeId ? 'youtube' : 'unknown')
+              )?.name || 'External'
+            )
+          ),
+
+          // Grayed out progress bar
+          React.createElement('div', { className: 'w-full max-w-md' },
+            React.createElement('div', { className: 'h-1 bg-slate-700 rounded-full opacity-50 border border-dashed border-slate-600' }),
+            React.createElement('div', { className: 'flex justify-between text-xs text-slate-500 mt-1' },
+              React.createElement('span', null, '0:00'),
+              React.createElement('span', null, currentTrack.duration ? Math.floor(currentTrack.duration / 60) + ':' + String(Math.floor(currentTrack.duration % 60)).padStart(2, '0') : '--:--')
+            )
+          ),
+
+          // Done button
+          React.createElement('button', {
+            onClick: handleDoneWithExternalTrack,
+            className: 'bg-green-600 hover:bg-green-700 text-white py-3 px-8 rounded-lg font-medium transition-colors flex items-center gap-2'
+          },
+            React.createElement('span', null, '✓'),
+            React.createElement('span', null, 'Done - Play Next')
+          ),
+
+          // Navigation buttons (grayed)
+          React.createElement('div', { className: 'flex gap-4 opacity-50' },
+            React.createElement('button', {
+              onClick: handlePrevious,
+              className: 'w-10 h-10 flex items-center justify-center rounded-full bg-slate-700 text-white'
+            }, '⏮'),
+            React.createElement('button', {
+              onClick: handleNext,
+              className: 'w-10 h-10 flex items-center justify-center rounded-full bg-slate-700 text-white'
+            }, '⏭')
+          )
+        )
+      :
+        // Normal player controls
+        React.createElement(React.Fragment, null,
+          React.createElement('div', { className: 'flex items-center justify-between mb-2' },
+            React.createElement('div', { className: 'flex items-center gap-4' },
+              currentTrack.albumArt ?
+                React.createElement('img', {
+                  src: currentTrack.albumArt,
+                  alt: currentTrack.album,
+                  className: 'w-14 h-14 rounded-lg object-cover'
+                })
+              :
+                React.createElement('div', {
+                  className: 'w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
+                }, React.createElement(Music)),
+              React.createElement('div', null,
+                React.createElement('div', { className: 'font-semibold' }, currentTrack.title),
+                React.createElement('div', { className: 'text-sm text-gray-400 flex items-center gap-2' },
+                  React.createElement('button', {
+                    onClick: () => {
+                      console.log('Navigating to artist:', currentTrack.artist);
+                      fetchArtistData(currentTrack.artist);
+                    },
+                    className: 'hover:text-purple-400 hover:underline transition-colors cursor-pointer no-drag',
+                    style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
+                  }, currentTrack.artist),
+                  currentTrack.sources?.includes('spotify') && React.createElement('span', {
+                    className: 'text-xs px-2 py-0.5 bg-green-600/20 text-green-400 rounded-full'
+                  }, '♫ Spotify')
+                )
+              )
+            ),
+            React.createElement('button', {
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(Heart))
+          ),
+          React.createElement('div', { className: 'flex items-center gap-4' },
+            React.createElement('span', { className: 'text-sm text-gray-400 w-12 text-right' }, formatTime(progress)),
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: currentTrack.duration,
+                value: progress,
+                onChange: async (e) => {
+                  const newPosition = Number(e.target.value);
+                  setProgress(newPosition);
+
+                  // Seek in Spotify if playing Spotify track
+                  if ((currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri) && spotifyPlayer) {
+                    try {
+                      await spotifyPlayer.seek(newPosition * 1000); // Convert to milliseconds
+                      console.log('Seeked to', newPosition);
+                    } catch (err) {
+                      console.error('Seek error:', err);
+                    }
+                  }
                 },
-                className: 'hover:text-purple-400 hover:underline transition-colors cursor-pointer no-drag',
-                style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
-              }, currentTrack.artist),
-              currentTrack.sources?.includes('spotify') && React.createElement('span', {
-                className: 'text-xs px-2 py-0.5 bg-green-600/20 text-green-400 rounded-full'
-              }, '♫ Spotify')
+                className: 'w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+              })
+            ),
+            React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
+          ),
+          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
+            React.createElement('button', {
+              onClick: handlePrevious,
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(SkipBack)),
+            React.createElement('button', {
+              onClick: handlePlayPause,
+              className: 'p-4 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-xl'
+            }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
+            React.createElement('button', {
+              onClick: handleNext,
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(SkipForward)),
+            React.createElement('div', { className: 'flex items-center gap-2 ml-8' },
+              React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: volume,
+                onChange: (e) => setVolume(Number(e.target.value)),
+                className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+              })
             )
           )
-        ),
-        React.createElement('button', {
-          className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-        }, React.createElement(Heart))
-      ),
-      React.createElement('div', { className: 'flex items-center gap-4' },
-        React.createElement('span', { className: 'text-sm text-gray-400 w-12 text-right' }, formatTime(progress)),
-        React.createElement('div', { className: 'flex-1' },
-          React.createElement('input', {
-            type: 'range',
-            min: '0',
-            max: currentTrack.duration,
-            value: progress,
-            onChange: async (e) => {
-              const newPosition = Number(e.target.value);
-              setProgress(newPosition);
-              
-              // Seek in Spotify if playing Spotify track
-              if ((currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri) && spotifyPlayer) {
-                try {
-                  await spotifyPlayer.seek(newPosition * 1000); // Convert to milliseconds
-                  console.log('Seeked to', newPosition);
-                } catch (err) {
-                  console.error('Seek error:', err);
-                }
-              }
-            },
-            className: 'w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
-          })
-        ),
-        React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
-      ),
-      React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
-        React.createElement('button', {
-          onClick: handlePrevious,
-          className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-        }, React.createElement(SkipBack)),
-        React.createElement('button', {
-          onClick: handlePlayPause,
-          className: 'p-4 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-xl'
-        }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
-        React.createElement('button', {
-          onClick: handleNext,
-          className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-        }, React.createElement(SkipForward)),
-        React.createElement('div', { className: 'flex items-center gap-2 ml-8' },
-          React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
-          React.createElement('input', {
-            type: 'range',
-            min: '0',
-            max: '100',
-            value: volume,
-            onChange: (e) => setVolume(Number(e.target.value)),
-            className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
-          })
         )
-      )
     ),
 
     // Settings Modal
