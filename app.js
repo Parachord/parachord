@@ -3150,7 +3150,8 @@ const Parachord = () => {
   };
 
   // Import playlist from URL (hosted XSPF)
-  const handleImportPlaylistFromUrl = async (url) => {
+  // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -3198,9 +3199,12 @@ const Parachord = () => {
       setPlaylists(prev => [...prev, newPlaylist]);
 
       // Save URL to persistent storage for reload on app start
-      const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
-      hostedPlaylists.push({ url, id, addedAt: Date.now() });
-      await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
+      // Skip this when loading from storage to avoid duplicates
+      if (!skipStorageUpdate) {
+        const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
+        hostedPlaylists.push({ url, id, addedAt: Date.now() });
+        await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
+      }
 
       console.log(`✅ Imported hosted playlist: ${parsed.title}`);
       return { updated: false, playlist: parsed };
@@ -3310,14 +3314,30 @@ const Parachord = () => {
   // Load hosted playlists on app start
   useEffect(() => {
     const loadHostedPlaylists = async () => {
-      const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
+      let hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
       if (hostedPlaylistUrls.length === 0) return;
+
+      // Deduplicate by URL (in case duplicates accumulated from previous bug)
+      const seenUrls = new Set();
+      const deduped = hostedPlaylistUrls.filter(item => {
+        if (seenUrls.has(item.url)) return false;
+        seenUrls.add(item.url);
+        return true;
+      });
+
+      // Save deduped list back to storage if we removed duplicates
+      if (deduped.length < hostedPlaylistUrls.length) {
+        console.log(`🧹 Cleaned up ${hostedPlaylistUrls.length - deduped.length} duplicate hosted playlist entries`);
+        await window.electron?.store?.set('hosted_playlists', deduped);
+        hostedPlaylistUrls = deduped;
+      }
 
       console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
 
       for (const { url } of hostedPlaylistUrls) {
         try {
-          await handleImportPlaylistFromUrl(url);
+          // Pass true to skip storage update (already in storage)
+          await handleImportPlaylistFromUrl(url, true);
         } catch (error) {
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
