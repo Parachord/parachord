@@ -74,7 +74,7 @@ const FALLBACK_RESOLVERS = [
 
 
 // TrackRow component - defined outside to prevent recreation on every render
-const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) => {
+const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allResolvers, resolverOrder, activeResolvers }) => {
   // Get available sources (track.sources is an object with resolver IDs as keys)
   const availableSources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources)
     ? Object.keys(track.sources)
@@ -87,6 +87,26 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) =>
     bandcamp: { label: '▶ Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
     qobuz: { label: '◆ Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' }
   };
+
+  // Determine which resolver will be used (based on priority)
+  const getPrimaryResolver = () => {
+    if (!availableSources.length || !resolverOrder || !activeResolvers || !allResolvers) return null;
+
+    const sortedSources = availableSources
+      .map(resId => ({
+        resolverId: resId,
+        priority: resolverOrder.indexOf(resId)
+      }))
+      .filter(s => activeResolvers.includes(s.resolverId))
+      .sort((a, b) => a.priority - b.priority);
+
+    if (sortedSources.length === 0) return null;
+
+    const primaryResolverId = sortedSources[0].resolverId;
+    return allResolvers.find(r => r.id === primaryResolverId);
+  };
+
+  const primaryResolver = getPrimaryResolver();
 
   return React.createElement('div', {
     className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-white/10 transition-colors no-drag'
@@ -141,7 +161,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) =>
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
         })
-      )
+      ),
+      primaryResolver && React.createElement('div', { className: 'text-xs text-slate-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),
     React.createElement('div', { className: 'text-sm text-gray-400 truncate max-w-[200px]' }, track.album),
     React.createElement('div', { className: 'text-sm text-gray-400 w-12 text-right' },
@@ -3174,7 +3195,10 @@ useEffect(() => {
                     onArtistClick: (artistName) => {
                       setSearchDrawerOpen(false);
                       fetchArtistData(artistName);
-                    }
+                    },
+                    allResolvers: allResolvers,
+                    resolverOrder: resolverOrder,
+                    activeResolvers: activeResolvers
                   })
                 ),
                 displayLimits.tracks < searchResults.tracks.length &&
@@ -3690,14 +3714,19 @@ useEffect(() => {
                   className: 'text-gray-400 w-8 text-center',
                   style: { pointerEvents: 'none' }
                 }, index + 1),
-                React.createElement('div', { 
+                React.createElement('div', {
                   className: 'flex-1 min-w-0',
                   style: { pointerEvents: 'none' }
                 },
-                  React.createElement('div', { 
-                    className: `font-medium truncate ${hasResolved ? 'group-hover:text-purple-400' : ''}` 
+                  React.createElement('div', {
+                    className: `font-medium truncate ${hasResolved ? 'group-hover:text-purple-400' : ''}`
                   }, track.title),
-                  React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, track.artist)
+                  React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, track.artist),
+                  (() => {
+                    const resolverId = determineResolverIdFromTrack(track);
+                    const resolver = allResolvers.find(r => r.id === resolverId);
+                    return resolver ? React.createElement('div', { className: 'text-xs text-slate-400 mt-0.5' }, `via ${resolver.name}`) : null;
+                  })()
                 ),
                 React.createElement('div', { 
                   className: 'hidden md:block text-sm text-gray-400 truncate w-48',
@@ -3787,7 +3816,10 @@ useEffect(() => {
                 setCurrentQueue(library);
                 handlePlay(track);
               },
-              onArtistClick: fetchArtistData
+              onArtistClick: fetchArtistData,
+              allResolvers: allResolvers,
+              resolverOrder: resolverOrder,
+              activeResolvers: activeResolvers
             })
           )
         ),
