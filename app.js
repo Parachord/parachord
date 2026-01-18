@@ -591,6 +591,42 @@ const Parachord = () => {
   const [queueAnimating, setQueueAnimating] = useState(false);
   const resolverLoaderRef = useRef(null);
 
+  // URL drag & drop helpers
+  const isValidUrl = (string) => {
+    try {
+      const url = new URL(string);
+      return url.protocol === 'http:' || url.protocol === 'https:' || string.startsWith('spotify:');
+    } catch {
+      return false;
+    }
+  };
+
+  const extractUrlFromDrop = (dataTransfer) => {
+    // Try text/uri-list first (standard for URL drops)
+    let url = dataTransfer.getData('text/uri-list');
+    if (url && isValidUrl(url.split('\n')[0])) {
+      return url.split('\n')[0].trim();
+    }
+
+    // Fallback to text/plain
+    url = dataTransfer.getData('text/plain');
+    if (url && isValidUrl(url.trim())) {
+      return url.trim();
+    }
+
+    return null;
+  };
+
+  const getUrlDomain = (url) => {
+    try {
+      if (url.startsWith('spotify:')) return 'spotify.com';
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace(/^www\./, '');
+    } catch {
+      return 'unknown';
+    }
+  };
+
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
