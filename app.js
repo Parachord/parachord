@@ -987,6 +987,19 @@ const Parachord = () => {
     loadedResolversRef.current = loadedResolvers;
   }, [loadedResolvers]);
 
+  // Sync resolverOrder with loadedResolvers - add any new resolvers not in the order
+  useEffect(() => {
+    if (loadedResolvers.length === 0) return;
+
+    const loadedIds = loadedResolvers.map(r => r.id);
+    const missingFromOrder = loadedIds.filter(id => !resolverOrder.includes(id));
+
+    if (missingFromOrder.length > 0) {
+      console.log(`📎 Adding ${missingFromOrder.length} new resolver(s) to order:`, missingFromOrder.join(', '));
+      setResolverOrder(prev => [...prev, ...missingFromOrder]);
+    }
+  }, [loadedResolvers]);
+
   // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {
