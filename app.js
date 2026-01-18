@@ -3094,6 +3094,32 @@ const Parachord = () => {
     }
   };
 
+  // Keep queue in sync with playlistTracks as they get resolved
+  // This ensures queue items get their sources updated without re-setting the entire queue
+  useEffect(() => {
+    if (currentQueue.length === 0 || playlistTracks.length === 0) return;
+
+    // Check if queue tracks match playlist tracks (by id)
+    const queueIds = new Set(currentQueue.map(t => t.id));
+    const playlistIds = new Set(playlistTracks.map(t => t.id));
+
+    // Only sync if the queue was created from this playlist
+    const isQueueFromPlaylist = currentQueue.every(t => playlistIds.has(t.id));
+    if (!isQueueFromPlaylist) return;
+
+    // Update queue items with resolved sources from playlistTracks
+    setCurrentQueue(prevQueue =>
+      prevQueue.map(queueTrack => {
+        const playlistTrack = playlistTracks.find(t => t.id === queueTrack.id);
+        if (playlistTrack && Object.keys(playlistTrack.sources || {}).length > Object.keys(queueTrack.sources || {}).length) {
+          // Playlist track has more sources, update the queue track
+          return { ...queueTrack, sources: { ...queueTrack.sources, ...playlistTrack.sources } };
+        }
+        return queueTrack;
+      })
+    );
+  }, [playlistTracks]);
+
   // Playlist import/export functions
   const handleImportPlaylist = async () => {
     try {
@@ -4303,13 +4329,13 @@ useEffect(() => {
               React.createElement('div', { className: 'flex items-center gap-4' },
                 React.createElement('button', {
                   onClick: () => {
-                    const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
-                    if (playableQueue.length > 0) {
-                      setCurrentQueue(playableQueue);
-                      handlePlay(playableQueue[0]);
+                    // Add all tracks to queue (resolved or not) - they'll resolve when played
+                    if (playlistTracks.length > 0) {
+                      setCurrentQueue(playlistTracks);
+                      handlePlay(playlistTracks[0]);
                     }
                   },
-                  disabled: playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0).length === 0,
+                  disabled: playlistTracks.length === 0,
                   className: 'px-8 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-full font-semibold transition-colors flex items-center gap-2 no-drag'
                 },
                   React.createElement(Play),
@@ -4357,14 +4383,14 @@ useEffect(() => {
               
               return React.createElement('div', {
                 key: index,
-                className: `group flex items-center gap-4 p-3 rounded-lg transition-colors ${
-                  hasResolved ? 'hover:bg-white/5 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                className: `group flex items-center gap-4 p-3 rounded-lg transition-colors hover:bg-white/5 cursor-pointer ${
+                  isResolving ? 'opacity-60' : ''
                 }`,
-                onClick: hasResolved ? () => {
-                  const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
-                  setCurrentQueue(playableQueue);
-                  handlePlay(track);  // Pass full track object, not just source
-                } : undefined
+                onClick: () => {
+                  // Add all tracks to queue starting from clicked track
+                  setCurrentQueue(playlistTracks);
+                  handlePlay(track);  // Pass full track object - will resolve if needed
+                }
               },
                 React.createElement('div', { 
                   className: 'text-gray-400 w-8 text-center',
@@ -4407,8 +4433,8 @@ useEffect(() => {
                           className: 'no-drag',
                           onClick: (e) => {
                             e.stopPropagation();
-                            const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
-                            setCurrentQueue(playableQueue);
+                            // Add all tracks to queue
+                            setCurrentQueue(playlistTracks);
                             // Pass track with preferredResolver hint so queue ID is preserved
                             handlePlay({ ...track, preferredResolver: resolverId });
                           },
