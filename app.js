@@ -4689,12 +4689,12 @@ useEffect(() => {
             // Queue button
             React.createElement('button', {
               onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''}`,
+              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
               title: `Queue (${currentQueue.length} tracks)`
             },
               React.createElement(List),
               currentQueue.length > 0 && React.createElement('span', {
-                className: 'absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1'
+                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           )
