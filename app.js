@@ -1150,6 +1150,7 @@ const Parachord = () => {
       artist: recording['artist-credit']?.[0]?.name || 'Unknown',
       duration: Math.floor((recording.length || 180000) / 1000), // Convert ms to seconds
       album: recording.releases?.[0]?.title || '',
+      releaseId: recording.releases?.[0]?.id || null, // Store release ID for album art
       length: recording.length, // Keep original length in ms for confidence calculation
       sources: {}
     };
@@ -1245,6 +1246,7 @@ const Parachord = () => {
           artist: recording['artist-credit']?.[0]?.name || 'Unknown',
           duration: Math.floor((recording.length || 180000) / 1000),
           album: recording.releases?.[0]?.title || '',
+          releaseId: recording.releases?.[0]?.id || null, // Store release ID for album art
           length: recording.length,
           sources: {}
         }));
@@ -1259,10 +1261,80 @@ const Parachord = () => {
 
       setSearchResults(results);
       console.log('🔍 Search results:', results);
+
+      // Fetch album art lazily in background (don't block search results)
+      fetchSearchAlbumArt(results.albums, results.tracks);
     } catch (error) {
       console.error('Search error:', error);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  // Fetch album art for search results (albums and tracks)
+  const fetchSearchAlbumArt = async (albums, tracks) => {
+    // Fetch album art for albums (release-groups need to be converted to releases first)
+    for (const album of albums.slice(0, 10)) { // Limit to first 10 for performance
+      if (album.albumArt) continue; // Skip if already has art
+
+      try {
+        // Get first release for this release-group
+        const releaseResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+
+        if (releaseResponse.ok) {
+          const releaseData = await releaseResponse.json();
+          if (releaseData.releases && releaseData.releases.length > 0) {
+            const releaseId = releaseData.releases[0].id;
+
+            // Fetch album art for this release
+            const artResponse = await fetch(
+              `https://coverartarchive.org/release/${releaseId}`,
+              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+            );
+
+            if (artResponse.ok) {
+              const artData = await artResponse.json();
+              const frontCover = artData.images.find(img => img.front);
+              if (frontCover) {
+                album.albumArt = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
+
+                // Update search results to trigger re-render
+                setSearchResults(prev => ({ ...prev, albums: [...prev.albums] }));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Silently fail - album art is optional
+      }
+    }
+
+    // Fetch album art for tracks (from their releases)
+    for (const track of tracks.slice(0, 10)) { // Limit to first 10 for performance
+      if (track.albumArt || !track.releaseId) continue; // Skip if already has art or no release ID
+
+      try {
+        const artResponse = await fetch(
+          `https://coverartarchive.org/release/${track.releaseId}`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+
+        if (artResponse.ok) {
+          const artData = await artResponse.json();
+          const frontCover = artData.images.find(img => img.front);
+          if (frontCover) {
+            track.albumArt = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
+
+            // Update search results to trigger re-render
+            setSearchResults(prev => ({ ...prev, tracks: [...prev.tracks] }));
+          }
+        }
+      } catch (error) {
+        // Silently fail - album art is optional
+      }
     }
   };
 
@@ -2795,11 +2867,29 @@ useEffect(() => {
                       setSearchDrawerOpen(false);
                       handleAlbumClick(album);
                     },
-                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                    className: 'w-full text-left p-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-3'
                   },
-                    React.createElement('div', { className: 'font-medium truncate' }, album.title),
-                    React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
-                      `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
+                    // Album art thumbnail
+                    React.createElement('div', {
+                      className: 'w-12 h-12 flex-shrink-0 rounded overflow-hidden bg-white/5'
+                    },
+                      album.albumArt ?
+                        React.createElement('img', {
+                          src: album.albumArt,
+                          alt: album.title,
+                          className: 'w-full h-full object-cover'
+                        })
+                      :
+                        React.createElement('div', {
+                          className: 'w-full h-full flex items-center justify-center text-gray-600 text-xl'
+                        }, '💿')
+                    ),
+                    // Album info
+                    React.createElement('div', { className: 'flex-1 min-w-0' },
+                      React.createElement('div', { className: 'font-medium truncate' }, album.title),
+                      React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
+                        `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
+                      )
                     )
                   )
                 ),
