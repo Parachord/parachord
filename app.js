@@ -983,6 +983,7 @@ const Parachord = () => {
       const trackToSet = trackOrSource.sources ?
         { ...sourceToPlay, ...trackOrSource, sources: trackOrSource.sources } :
         sourceToPlay;
+      console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
       showExternalTrackPromptUI(trackToSet);
       return; // Don't play yet, wait for user confirmation
