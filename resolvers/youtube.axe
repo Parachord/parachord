@@ -14,7 +14,7 @@
   "capabilities": {
     "resolve": true,
     "search": true,
-    "stream": true,
+    "stream": false,
     "browse": false,
     "urlLookup": true
   },

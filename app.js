@@ -955,13 +955,10 @@ const Parachord = () => {
 
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
-      // For non-streaming resolvers (like Bandcamp)
-      if (resolverId === 'bandcamp' && sourceToPlay.bandcampUrl) {
-        console.log('🎸 Opening Bandcamp in browser...');
-        const config = getResolverConfig(resolverId);
-        await resolver.play(sourceToPlay, config);
-        return;
-      }
+      // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
+      console.log('🌐 External browser track detected, showing prompt...');
+      showExternalTrackPromptUI(sourceToPlay);
+      return; // Don't play yet, wait for user confirmation
     }
 
     // Use resolver's play method
@@ -979,7 +976,14 @@ const Parachord = () => {
         if (audioContext) {
           setStartTime(audioContext.currentTime);
         }
-      } else {
+      }
+
+      // Start auto-advance polling for streaming tracks
+      if (resolver.capabilities.stream && success) {
+        startAutoAdvancePolling(resolverId, sourceToPlay, config);
+      }
+
+      if (!success) {
         console.error(`❌ ${resolver.name} playback failed`);
 
         // Playback failed - cached source may be invalid
