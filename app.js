@@ -501,6 +501,13 @@ const Parachord = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchDrawerOpen, setSearchDrawerOpen] = useState(false);
   const searchTimeoutRef = useRef(null);
+  // Pagination state - how many items to show per column
+  const [displayLimits, setDisplayLimits] = useState({
+    artists: 5,
+    albums: 5,
+    tracks: 8,
+    playlists: 5
+  });
   const [activeView, setActiveView] = useState('library');
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -1111,8 +1118,13 @@ const Parachord = () => {
     if (!value) {
       setSearchDrawerOpen(false);
       setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
+      // Reset pagination
+      setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
       return;
     }
+
+    // Reset pagination on new search
+    setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
 
     // Debounce search by 300ms
     searchTimeoutRef.current = setTimeout(() => {
@@ -1121,6 +1133,14 @@ const Parachord = () => {
         setSearchDrawerOpen(true);
       }
     }, 300);
+  };
+
+  // Load more results for a specific category
+  const handleLoadMore = (category) => {
+    setDisplayLimits(prev => ({
+      ...prev,
+      [category]: prev[category] + (category === 'tracks' ? 8 : 5)
+    }));
   };
 
   const resolveRecording = async (recording) => {
@@ -1183,9 +1203,9 @@ const Parachord = () => {
     };
 
     try {
-      // Search MusicBrainz for artists
+      // Search MusicBrainz for artists (fetch more than we initially display)
       const artistResponse = await fetch(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=25`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (artistResponse.ok) {
@@ -1195,7 +1215,7 @@ const Parachord = () => {
 
       // Search MusicBrainz for albums (release-groups)
       const albumResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=15`,
+        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=30`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (albumResponse.ok) {
@@ -1205,16 +1225,31 @@ const Parachord = () => {
 
       // Search MusicBrainz for tracks (recordings)
       const trackResponse = await fetch(
-        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=20`,
+        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=50`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (trackResponse.ok) {
         const data = await trackResponse.json();
         const recordings = data.recordings || [];
 
-        // Resolve each recording (happens in parallel)
-        const trackPromises = recordings.map(recording => resolveRecording(recording));
-        results.tracks = await Promise.all(trackPromises);
+        // Only resolve the first batch of tracks for performance
+        // Rest will be resolved on-demand when "Load more" is clicked or when played
+        const initialBatchSize = 8;
+        const trackPromises = recordings.slice(0, initialBatchSize).map(recording => resolveRecording(recording));
+        const resolvedTracks = await Promise.all(trackPromises);
+
+        // Store unresolved tracks without sources (will resolve on-demand)
+        const unresolvedTracks = recordings.slice(initialBatchSize).map(recording => ({
+          id: recording.id,
+          title: recording.title,
+          artist: recording['artist-credit']?.[0]?.name || 'Unknown',
+          duration: Math.floor((recording.length || 180000) / 1000),
+          album: recording.releases?.[0]?.title || '',
+          length: recording.length,
+          sources: {}
+        }));
+
+        results.tracks = [...resolvedTracks, ...unresolvedTracks];
       }
 
       // Search local playlists
@@ -2720,8 +2755,8 @@ useEffect(() => {
               `🎤 Artists (${searchResults.artists.length})`
             ),
             React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
-              searchResults.artists.length > 0 ?
-                searchResults.artists.map(artist =>
+              searchResults.artists.length > 0 ? [
+                ...searchResults.artists.slice(0, displayLimits.artists).map(artist =>
                   React.createElement('button', {
                     key: artist.id,
                     onClick: () => {
@@ -2733,7 +2768,14 @@ useEffect(() => {
                     React.createElement('div', { className: 'font-medium truncate' }, artist.name),
                     artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, artist.disambiguation)
                   )
-                )
+                ),
+                displayLimits.artists < searchResults.artists.length &&
+                  React.createElement('button', {
+                    key: 'load-more-artists',
+                    onClick: () => handleLoadMore('artists'),
+                    className: 'w-full text-center p-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 transition-colors text-purple-400 text-sm font-medium'
+                  }, `Load more (${searchResults.artists.length - displayLimits.artists} remaining)`)
+              ]
               :
                 React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No artists found')
             )
@@ -2745,8 +2787,8 @@ useEffect(() => {
               `💿 Albums (${searchResults.albums.length})`
             ),
             React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
-              searchResults.albums.length > 0 ?
-                searchResults.albums.map(album =>
+              searchResults.albums.length > 0 ? [
+                ...searchResults.albums.slice(0, displayLimits.albums).map(album =>
                   React.createElement('button', {
                     key: album.id,
                     onClick: () => {
@@ -2760,7 +2802,14 @@ useEffect(() => {
                       `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
                     )
                   )
-                )
+                ),
+                displayLimits.albums < searchResults.albums.length &&
+                  React.createElement('button', {
+                    key: 'load-more-albums',
+                    onClick: () => handleLoadMore('albums'),
+                    className: 'w-full text-center p-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 transition-colors text-purple-400 text-sm font-medium'
+                  }, `Load more (${searchResults.albums.length - displayLimits.albums} remaining)`)
+              ]
               :
                 React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No albums found')
             )
@@ -2772,8 +2821,8 @@ useEffect(() => {
               `🎵 Tracks (${searchResults.tracks.length})`
             ),
             React.createElement('div', { className: 'overflow-y-auto space-y-1 flex-1' },
-              searchResults.tracks.length > 0 ?
-                searchResults.tracks.map(track =>
+              searchResults.tracks.length > 0 ? [
+                ...searchResults.tracks.slice(0, displayLimits.tracks).map(track =>
                   React.createElement(TrackRow, {
                     key: track.id,
                     track: track,
@@ -2784,7 +2833,14 @@ useEffect(() => {
                       fetchArtistData(artistName);
                     }
                   })
-                )
+                ),
+                displayLimits.tracks < searchResults.tracks.length &&
+                  React.createElement('button', {
+                    key: 'load-more-tracks',
+                    onClick: () => handleLoadMore('tracks'),
+                    className: 'w-full text-center p-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 transition-colors text-purple-400 text-sm font-medium mt-2'
+                  }, `Load more (${searchResults.tracks.length - displayLimits.tracks} remaining)`)
+              ]
               :
                 React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No tracks found')
             )
@@ -2796,8 +2852,8 @@ useEffect(() => {
               `📋 Playlists (${searchResults.playlists.length})`
             ),
             React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
-              searchResults.playlists.length > 0 ?
-                searchResults.playlists.map(playlist =>
+              searchResults.playlists.length > 0 ? [
+                ...searchResults.playlists.slice(0, displayLimits.playlists).map(playlist =>
                   React.createElement('button', {
                     key: playlist.title,
                     onClick: () => {
@@ -2811,7 +2867,14 @@ useEffect(() => {
                       `${playlist.tracks?.length || 0} tracks`
                     )
                   )
-                )
+                ),
+                displayLimits.playlists < searchResults.playlists.length &&
+                  React.createElement('button', {
+                    key: 'load-more-playlists',
+                    onClick: () => handleLoadMore('playlists'),
+                    className: 'w-full text-center p-3 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 transition-colors text-purple-400 text-sm font-medium'
+                  }, `Load more (${searchResults.playlists.length - displayLimits.playlists} remaining)`)
+              ]
               :
                 React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No playlists found')
             )
