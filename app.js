@@ -2345,22 +2345,6 @@ const Parachord = () => {
     });
   };
 
-  // Filter results based on selected resolvers
-  const getFilteredResults = () => {
-    if (!searchQuery) return library;
-
-    // If all resolvers are active (no filtering), show all results
-    if (resultFilters.length === activeResolvers.length || resultFilters.length === 0) {
-      return searchResults.tracks;
-    }
-
-    // Filter results to only show tracks from selected resolvers
-    return searchResults.tracks.filter(track => {
-      // Check if track is from any of the selected resolvers
-      return track.sources?.some(source => resultFilters.includes(source));
-    });
-  };
-
   // Add Spotify authentication functions
   const checkSpotifyToken = async () => {
     console.log('Checking Spotify token...');
@@ -3341,71 +3325,28 @@ useEffect(() => {
         }
       },
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-          React.createElement('h2', { className: 'text-2xl font-bold' }, 
-            searchQuery ? 'Search Results' : 
-            activeView === 'library' ? 'My Library' : 
-            activeView === 'playlists' ? 'Playlists' : 
+          React.createElement('h2', { className: 'text-2xl font-bold' },
+            activeView === 'library' ? 'My Library' :
+            activeView === 'playlists' ? 'Playlists' :
             activeView === 'playlist-view' && selectedPlaylist ? selectedPlaylist.title :
-            activeView === 'friends' ? 'Friends' : 
+            activeView === 'friends' ? 'Friends' :
             'Discover'
-          ),
-          // Show active resolvers when searching - now clickable filters
-          searchQuery && React.createElement('div', { className: 'flex items-center gap-3 text-xs' },
-            React.createElement('span', { className: 'text-gray-400' }, 'Filter:'),
-            React.createElement('div', { className: 'flex items-center gap-2' },
-              activeResolvers.map(resolverId => {
-                const resolver = resolvers.find(r => r.id === resolverId);
-                const isActive = resultFilters.includes(resolverId);
-                return React.createElement('button', {
-                  key: resolverId,
-                  onClick: () => toggleResultFilter(resolverId),
-                  className: `px-2 py-1 rounded-full transition-all cursor-pointer hover:scale-105 ${
-                    isActive ? '' : 'opacity-30 grayscale'
-                  }`,
-                  style: { 
-                    backgroundColor: resolver.color + '33', 
-                    color: resolver.color,
-                    border: isActive ? `2px solid ${resolver.color}` : '2px solid transparent'
-                  },
-                  title: isActive ? `Hide ${resolver.name} results` : `Show ${resolver.name} results`
-                }, resolver.name);
-              })
-            ),
-            // Show result count and reset button
-            !isSearching && React.createElement('div', { className: 'flex items-center gap-2 ml-2' },
-              React.createElement('span', { className: 'text-gray-500' },
-                `${getFilteredResults().length}${resultFilters.length < activeResolvers.length ? `/${searchResults.tracks.length}` : ''} results`
-              ),
-              resultFilters.length < activeResolvers.length && React.createElement('button', {
-                onClick: () => setResultFilters(activeResolvers.slice()),
-                className: 'text-purple-400 hover:text-purple-300 underline',
-                title: 'Show all results'
-              }, 'show all')
-            )
           )
         ),
-        // Loading indicator
-        isSearching && React.createElement('div', { className: 'text-center py-8 text-gray-400' },
-          React.createElement('div', { className: 'animate-spin w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full mx-auto mb-2' }),
-          React.createElement('div', null, 'Searching...')
-        ),
-        // Library/Search results
-        activeView === 'library' && !isSearching && React.createElement('div', { className: 'space-y-2' },
-          getFilteredResults().length === 0 && searchQuery ?
+        // Library view - always shows library tracks
+        activeView === 'library' && React.createElement('div', { className: 'space-y-2' },
+          library.length === 0 ?
             React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-              resultFilters.length < activeResolvers.length ? 
-                '🔍 No results from selected sources. Try clicking more filter badges above.' :
-                '🔍 No results found for "' + searchQuery + '"'
+              'Your library is empty. Search for music to add tracks!'
             )
           :
-          getFilteredResults().map(track =>
+          library.map(track =>
             React.createElement(TrackRow, {
               key: track.id,
               track: track,
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
-                // Set queue to search results or library when playing from library view
-                setCurrentQueue(searchQuery ? searchResults.tracks : library);
+                setCurrentQueue(library);
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData
