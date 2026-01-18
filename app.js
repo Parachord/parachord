@@ -979,9 +979,17 @@ const Parachord = () => {
       // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
       // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
-      // Merge source with original track, but preserve the ORIGINAL track ID for queue matching
+      // Merge source with original track, explicitly preserving queue-essential properties
       const trackToSet = trackOrSource.sources ?
-        { ...sourceToPlay, ...trackOrSource, sources: trackOrSource.sources } :
+        {
+          ...sourceToPlay,
+          id: trackOrSource.id,  // MUST preserve queue ID
+          artist: trackOrSource.artist,
+          title: trackOrSource.title,
+          album: trackOrSource.album,
+          duration: sourceToPlay.duration || trackOrSource.duration,
+          sources: trackOrSource.sources
+        } :
         sourceToPlay;
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
@@ -998,9 +1006,17 @@ const Parachord = () => {
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
-        // Merge source with original track, but preserve the ORIGINAL track ID for queue matching
+        // Merge source with original track, explicitly preserving queue-essential properties
         const trackToSet = trackOrSource.sources ?
-          { ...sourceToPlay, ...trackOrSource, sources: trackOrSource.sources } :
+          {
+            ...sourceToPlay,
+            id: trackOrSource.id,  // MUST preserve queue ID
+            artist: trackOrSource.artist,
+            title: trackOrSource.title,
+            album: trackOrSource.album,
+            duration: sourceToPlay.duration || trackOrSource.duration,
+            sources: trackOrSource.sources
+          } :
           sourceToPlay;
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
