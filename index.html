@@ -70,6 +70,28 @@
     .animate-spin {
       animation: spin 1s linear infinite;
     }
+
+    /* Queue icon pulse animation */
+    @keyframes queue-pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+
+    .queue-pulse {
+      animation: queue-pulse 0.3s ease-out;
+    }
+
+    /* Queue badge flash */
+    @keyframes badge-flash {
+      0% { background-color: rgb(147, 51, 234); }
+      50% { background-color: rgb(192, 132, 252); }
+      100% { background-color: rgb(147, 51, 234); }
+    }
+
+    .badge-flash {
+      animation: badge-flash 0.3s ease-out;
+    }
   </style>
 </head>
 <body class="bg-slate-900 text-white no-select">
