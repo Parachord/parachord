@@ -2622,17 +2622,16 @@ useEffect(() => {
   return React.createElement('div', {
     className: 'h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white flex flex-col'
   },
-    // Header (draggable window area)
+    // Header (no drag - causes rendering issues)
     React.createElement('div', {
-      className: 'flex items-center justify-between p-4 border-b border-white/10',
-      style: { WebkitAppRegion: 'drag' }
+      className: 'flex items-center justify-between p-4 border-b border-white/10'
     },
       React.createElement('div', { className: 'flex items-center gap-3' },
         React.createElement('div', {
           className: 'w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
         }, React.createElement(Music))
       ),
-      React.createElement('div', { className: 'flex-1 max-w-2xl mx-8 no-drag' },
+      React.createElement('div', { className: 'flex-1 max-w-2xl mx-8' },
         React.createElement('input', {
           type: 'text',
           placeholder: 'Search music...',
@@ -2643,17 +2642,17 @@ useEffect(() => {
       ),
       React.createElement('button', {
         onClick: () => setShowSettings(!showSettings),
-        className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl no-drag'
+        className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
       }, React.createElement(Settings))
     ),
 
-    // Search Drawer - slides down from header
-    React.createElement('div', {
-      className: `fixed left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-white/20 shadow-2xl transition-all duration-300 ease-in-out z-30 overflow-hidden`,
+    // Search Drawer - slides down from header (fixed positioning to avoid covering header)
+    searchDrawerOpen && React.createElement('div', {
+      className: `fixed left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-white/20 shadow-2xl transition-all duration-300 ease-in-out overflow-hidden`,
       style: {
         top: '64px', // Below header
         height: '45vh',
-        transform: searchDrawerOpen ? 'translateY(0)' : 'translateY(-100%)'
+        zIndex: 30
       }
     },
       // Scrollable results container
@@ -3051,7 +3050,7 @@ useEffect(() => {
         },
           React.createElement(ReleasePage, {
             release: currentRelease,
-            handleSearch: handleSearch,
+            handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             trackSources: trackSources,
             resolvers: resolvers
