@@ -16,9 +16,16 @@
     "search": true,
     "stream": true,
     "browse": false,
-    "urlLookup": false
+    "urlLookup": true
   },
-  
+
+  "urlPatterns": [
+    "open.spotify.com/track/*",
+    "open.spotify.com/intl-*/track/*",
+    "spotify.link/*",
+    "spotify:track:*"
+  ],
+
   "settings": {
     "requiresAuth": true,
     "authType": "oauth",
@@ -42,6 +49,8 @@
     
     "init": "async function(config) { console.log('Spotify resolver initialized'); }",
     
-    "cleanup": "async function() { console.log('Spotify resolver cleanup'); }"
+    "cleanup": "async function() { console.log('Spotify resolver cleanup'); }",
+
+    "lookupUrl": "async function(url, config) { try { let trackId = null; if (url.startsWith('spotify:track:')) { trackId = url.replace('spotify:track:', ''); } else if (url.includes('spotify.link/')) { const response = await fetch(url, { redirect: 'follow' }); const finalUrl = response.url; const match = finalUrl.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } else { const match = url.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } if (!trackId) return null; if (!config.token) { console.error('Spotify token required for URL lookup'); return null; } const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const track = await response.json(); return { title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), albumArt: track.album.images[0]?.url, sourceUrl: url, spotifyId: track.id, spotifyUri: track.uri }; } catch (error) { console.error('Spotify URL lookup error:', error); return null; } }"
   }
 }
