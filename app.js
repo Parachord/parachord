@@ -1598,6 +1598,18 @@ const Parachord = () => {
     }
   };
 
+  // Handle playlist click from search
+  const handlePlaylistClick = (playlist) => {
+    setSelectedPlaylist(playlist);
+    setActiveView('playlists');
+
+    // Load playlist tracks if not already loaded
+    if (playlistTracks.length === 0 || playlistTracks[0]?.playlistTitle !== playlist.title) {
+      // Playlist tracks will be loaded by the useEffect that watches selectedPlaylist
+      console.log('Switched to playlist:', playlist.title);
+    }
+  };
+
   // Validate cached sources in background and update if changed
   const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
     console.log(`🔍 Validating cached sources for: ${track.title}`);
