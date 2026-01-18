@@ -551,6 +551,16 @@ const Parachord = () => {
   const [loadedResolvers, setLoadedResolvers] = useState([]);
   const loadedResolversRef = useRef([]);
 
+  // Cleanup polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackPollerRef.current) {
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+    };
+  }, []);
+
   // Cache for album art URLs (releaseId -> imageUrl)
   const albumArtCache = useRef({});
 
@@ -983,6 +993,66 @@ const Parachord = () => {
         await resolveTrack(trackData, artistName, true);
       }
     }
+  };
+
+  // Auto-advance: Start polling for track completion
+  const startAutoAdvancePolling = (resolverId, track, config) => {
+    // Clear any existing poller
+    if (playbackPollerRef.current) {
+      clearInterval(playbackPollerRef.current);
+      playbackPollerRef.current = null;
+    }
+
+    if (resolverId === 'spotify' && config.token) {
+      console.log('🔄 Starting Spotify playback polling for auto-advance (5s interval)...');
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const response = await fetch('https://api.spotify.com/v1/me/player', {
+            headers: {
+              'Authorization': `Bearer ${config.token}`
+            }
+          });
+
+          if (!response.ok) {
+            if (response.status === 401) {
+              // Token expired
+              console.error('Spotify token expired during polling');
+              clearInterval(pollInterval);
+              playbackPollerRef.current = null;
+              return;
+            }
+            throw new Error(`Spotify API error: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          // Check if we're still playing the same track
+          if (data.item && data.item.uri === track.spotifyUri) {
+            const progressMs = data.progress_ms;
+            const durationMs = data.item.duration_ms;
+
+            // If within 1 second of end, trigger next
+            if (progressMs >= durationMs - 1000) {
+              console.log('🎵 Track ending, auto-advancing to next...');
+              clearInterval(pollInterval);
+              playbackPollerRef.current = null;
+              handleNext();
+            }
+          } else if (!data.item || !data.is_playing) {
+            // Playback stopped or track changed externally
+            clearInterval(pollInterval);
+            playbackPollerRef.current = null;
+          }
+        } catch (error) {
+          console.error('Spotify polling error:', error);
+          // Don't clear interval on first error, wait for next poll
+        }
+      }, 5000); // Poll every 5 seconds (consistent with existing playback polling)
+
+      playbackPollerRef.current = pollInterval;
+    }
+    // For future HTML5 audio resolvers, add event listener logic here
   };
 
   const handlePlayPause = async () => {
