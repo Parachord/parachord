@@ -2712,95 +2712,108 @@ useEffect(() => {
             searchQuery ? `No results found for "${searchQuery}"` : 'Type to search...'
           )
         :
-        React.createElement('div', { className: 'space-y-6' },
-          // Artists section
-          searchResults.artists?.length > 0 && React.createElement('div', {},
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+        // 4-column grid layout
+        React.createElement('div', { className: 'grid grid-cols-4 gap-4 h-full' },
+          // Artists column
+          React.createElement('div', { className: 'flex flex-col overflow-hidden' },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3 flex-shrink-0' },
               `🎤 Artists (${searchResults.artists.length})`
             ),
-            React.createElement('div', { className: 'space-y-2' },
-              searchResults.artists.map(artist =>
-                React.createElement('button', {
-                  key: artist.id,
-                  onClick: () => {
-                    setSearchDrawerOpen(false);
-                    fetchArtistData(artist.name);
+            React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
+              searchResults.artists.length > 0 ?
+                searchResults.artists.map(artist =>
+                  React.createElement('button', {
+                    key: artist.id,
+                    onClick: () => {
+                      setSearchDrawerOpen(false);
+                      fetchArtistData(artist.name);
+                    },
+                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
                   },
-                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
-                },
-                  React.createElement('div', { className: 'font-medium' }, artist.name),
-                  artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500' }, artist.disambiguation)
+                    React.createElement('div', { className: 'font-medium truncate' }, artist.name),
+                    artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, artist.disambiguation)
+                  )
                 )
-              )
+              :
+                React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No artists found')
             )
           ),
 
-          // Albums section
-          searchResults.albums?.length > 0 && React.createElement('div', {},
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+          // Albums column
+          React.createElement('div', { className: 'flex flex-col overflow-hidden' },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3 flex-shrink-0' },
               `💿 Albums (${searchResults.albums.length})`
             ),
-            React.createElement('div', { className: 'space-y-2' },
-              searchResults.albums.map(album =>
-                React.createElement('button', {
-                  key: album.id,
-                  onClick: () => {
-                    setSearchDrawerOpen(false);
-                    handleAlbumClick(album);
+            React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
+              searchResults.albums.length > 0 ?
+                searchResults.albums.map(album =>
+                  React.createElement('button', {
+                    key: album.id,
+                    onClick: () => {
+                      setSearchDrawerOpen(false);
+                      handleAlbumClick(album);
+                    },
+                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
                   },
-                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
-                },
-                  React.createElement('div', { className: 'font-medium' }, album.title),
-                  React.createElement('div', { className: 'text-xs text-gray-500' },
-                    `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
+                    React.createElement('div', { className: 'font-medium truncate' }, album.title),
+                    React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
+                      `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
+                    )
                   )
                 )
-              )
+              :
+                React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No albums found')
             )
           ),
 
-          // Tracks section
-          searchResults.tracks?.length > 0 && React.createElement('div', {},
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+          // Tracks column
+          React.createElement('div', { className: 'flex flex-col overflow-hidden' },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3 flex-shrink-0' },
               `🎵 Tracks (${searchResults.tracks.length})`
             ),
-            React.createElement('div', { className: 'space-y-2' },
-              searchResults.tracks.map(track =>
-                React.createElement(TrackRow, {
-                  key: track.id,
-                  track: track,
-                  isPlaying: isPlaying && currentTrack?.id === track.id,
-                  handlePlay: handlePlay,
-                  onArtistClick: (artistName) => {
-                    setSearchDrawerOpen(false);
-                    fetchArtistData(artistName);
-                  }
-                })
-              )
+            React.createElement('div', { className: 'overflow-y-auto space-y-1 flex-1' },
+              searchResults.tracks.length > 0 ?
+                searchResults.tracks.map(track =>
+                  React.createElement(TrackRow, {
+                    key: track.id,
+                    track: track,
+                    isPlaying: isPlaying && currentTrack?.id === track.id,
+                    handlePlay: handlePlay,
+                    onArtistClick: (artistName) => {
+                      setSearchDrawerOpen(false);
+                      fetchArtistData(artistName);
+                    }
+                  })
+                )
+              :
+                React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No tracks found')
             )
           ),
 
-          // Playlists section
-          searchResults.playlists?.length > 0 && React.createElement('div', {},
-            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+          // Playlists column
+          React.createElement('div', { className: 'flex flex-col overflow-hidden' },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3 flex-shrink-0' },
               `📋 Playlists (${searchResults.playlists.length})`
             ),
-            React.createElement('div', { className: 'space-y-2' },
-              searchResults.playlists.map(playlist =>
-                React.createElement('button', {
-                  key: playlist.title,
-                  onClick: () => {
-                    setSearchDrawerOpen(false);
-                    handlePlaylistClick(playlist);
+            React.createElement('div', { className: 'overflow-y-auto space-y-2 flex-1' },
+              searchResults.playlists.length > 0 ?
+                searchResults.playlists.map(playlist =>
+                  React.createElement('button', {
+                    key: playlist.title,
+                    onClick: () => {
+                      setSearchDrawerOpen(false);
+                      handlePlaylistClick(playlist);
+                    },
+                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
                   },
-                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
-                },
-                  React.createElement('div', { className: 'font-medium' }, playlist.title),
-                  React.createElement('div', { className: 'text-xs text-gray-500' },
-                    `${playlist.tracks?.length || 0} tracks`
+                    React.createElement('div', { className: 'font-medium truncate' }, playlist.title),
+                    React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
+                      `${playlist.tracks?.length || 0} tracks`
+                    )
                   )
                 )
-              )
+              :
+                React.createElement('div', { className: 'text-gray-500 text-sm' }, 'No playlists found')
             )
           )
         )
