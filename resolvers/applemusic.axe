@@ -1,4 +1,20 @@
 {
+  "_comment": [
+    "FULL PLAYBACK SUPPORT VIA MUSICKIT",
+    "To enable direct Apple Music playback, you would need:",
+    "1. Apple Developer Program membership ($99/year)",
+    "2. Create a MusicKit identifier in the Apple Developer portal",
+    "3. Generate a private key (.p8 file) for signing tokens",
+    "4. Create a Developer Token (JWT signed with the private key)",
+    "   - Header: { alg: 'ES256', kid: '<your-key-id>' }",
+    "   - Payload: { iss: '<team-id>', iat: <now>, exp: <+6months> }",
+    "5. Include MusicKit JS in the app: https://js-cdn.music.apple.com/musickit/v3/musickit.js",
+    "6. Initialize with: MusicKit.configure({ developerToken: '<jwt>', app: { name: 'Parachord' } })",
+    "7. User authorization: await music.authorize() - prompts user to sign in",
+    "8. Playback: await music.setQueue({ song: '<apple-music-id>' }); await music.play()",
+    "See: https://developer.apple.com/documentation/musickitjs"
+  ],
+
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
