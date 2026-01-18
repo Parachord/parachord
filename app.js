@@ -1277,7 +1277,7 @@ const Parachord = () => {
   const handlePlayPause = async () => {
     if (!currentTrack) return;
     
-    const isSpotifyTrack = currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri;
+    const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
     
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
@@ -1330,7 +1330,7 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
-    const isSpotifyTrack = currentTrack?.sources?.includes('spotify') || currentTrack?.spotifyUri;
+    const isSpotifyTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
     
     if (isSpotifyTrack && spotifyToken) {
       // Use Spotify's next track
@@ -1391,7 +1391,7 @@ const Parachord = () => {
 
     if (!currentTrack) return;
 
-    const isSpotifyTrack = currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri;
+    const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
     
     if (isSpotifyTrack && spotifyToken) {
       // Use Spotify's previous track
@@ -3080,7 +3080,7 @@ const getCurrentPlaybackState = async () => {
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
   
-  const currentIsSpotify = currentTrack?.sources?.includes('spotify') || currentTrack?.spotifyUri;
+  const currentIsSpotify = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
   if (!currentIsSpotify) return;
   
   // Poll every 5 seconds (reduced from 2 to minimize flickering)
@@ -4075,7 +4075,7 @@ useEffect(() => {
                   setProgress(newPosition);
 
                   // Seek in Spotify if playing Spotify track
-                  if ((currentTrack.sources?.includes('spotify') || currentTrack.spotifyUri) && spotifyPlayer) {
+                  if ((currentTrack.sources?.spotify || currentTrack.spotifyUri) && spotifyPlayer) {
                     try {
                       await spotifyPlayer.seek(newPosition * 1000); // Convert to milliseconds
                       console.log('Seeked to', newPosition);
