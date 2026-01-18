@@ -187,6 +187,100 @@
 | P-29 | Resolution failure handled | Play track no resolver can find | Shows error alert: "Could not find a playable source..." |
 | P-30 | Second play uses cached resolution | Play unresolved track, then play again later | Second play immediate (uses cached sources) |
 
+### 3.5 Auto-Play Functionality
+
+**AP-01: Spotify Track Auto-Advance**
+- **Priority:** P1 (Critical)
+- **Preconditions:** Spotify connected, queue with 2+ Spotify tracks
+- **Steps:**
+  1. Play first Spotify track
+  2. Wait for track to complete (or seek to end)
+- **Expected:** Next Spotify track automatically starts playing
+- **Actual:** ___________
+
+**AP-02: External Track Prompt Display**
+- **Priority:** P1 (Critical)
+- **Preconditions:** Queue with Spotify track followed by Bandcamp track
+- **Steps:**
+  1. Play Spotify track
+  2. Wait for track to complete
+- **Expected:** Prompt appears: "Next track requires browser" with Open/Skip buttons
+- **Actual:** ___________
+
+**AP-03: External Track Open in Browser**
+- **Priority:** P1 (Critical)
+- **Preconditions:** External track prompt showing
+- **Steps:**
+  1. Click "Open in Browser" button
+- **Expected:**
+  - Browser opens with track
+  - UI shows "🌐 Playing in browser"
+  - "Done - Play Next" button visible
+  - Progress bar grayed out
+- **Actual:** ___________
+
+**AP-04: External Track Skip**
+- **Priority:** P1 (Critical)
+- **Preconditions:** External track prompt showing
+- **Steps:**
+  1. Click "Skip Track" button
+- **Expected:** Next track in queue plays immediately
+- **Actual:** ___________
+
+**AP-05: External Track Auto-Skip Timeout**
+- **Priority:** P2 (Important)
+- **Preconditions:** External track prompt showing
+- **Steps:**
+  1. Wait 15 seconds without clicking
+- **Expected:** Track auto-skips, next track plays
+- **Actual:** ___________
+
+**AP-06: Done with External Track**
+- **Priority:** P1 (Critical)
+- **Preconditions:** External track playing in browser
+- **Steps:**
+  1. Click "Done - Play Next" button
+- **Expected:** Next track in queue plays
+- **Actual:** ___________
+
+**AP-07: Manual Next During External Playback**
+- **Priority:** P2 (Important)
+- **Preconditions:** External track playing in browser
+- **Steps:**
+  1. Click Next button
+- **Expected:** External playback state clears, next track plays
+- **Actual:** ___________
+
+**AP-08: Resolver Badge Display**
+- **Priority:** P2 (Important)
+- **Preconditions:** Tracks from multiple resolvers loaded
+- **Steps:**
+  1. Check Now Playing display
+  2. Check playlist track items
+  3. Check album track items
+- **Expected:** All tracks show "via [Resolver Name]" badge
+- **Actual:** ___________
+
+**AP-09: Multiple External Tracks in Row**
+- **Priority:** P2 (Important)
+- **Preconditions:** Queue with YouTube → Bandcamp → Spotify
+- **Steps:**
+  1. Play queue from beginning
+  2. Open YouTube track from prompt
+  3. Click "Done - Play Next"
+- **Expected:** Bandcamp prompt appears immediately
+- **Actual:** ___________
+
+**AP-10: Spotify Polling Error Recovery**
+- **Priority:** P3 (Nice to Have)
+- **Preconditions:** Spotify track playing, simulate network interruption
+- **Steps:**
+  1. Play Spotify track
+  2. Disable network briefly during playback
+  3. Re-enable network
+- **Expected:** Polling recovers or stops gracefully, no crash
+- **Actual:** ___________
+
 ---
 
 ## 4. Playlist Management
