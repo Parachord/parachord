@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-12
+> Last updated: 2026-01-18
 
 ---
 
@@ -124,9 +124,9 @@
 - [ ] **Recommendations** - Spotify's algorithm suggestions
 
 ### General Resolvers
-- [ ] **YouTube resolver** - Add YouTube search/playback
+- [x] **YouTube resolver** - Add YouTube search/playback ✅
 - [ ] **SoundCloud resolver** - Add SoundCloud support
-- [ ] **Apple Music resolver** - If API available
+- [x] **Apple Music resolver** - Search/lookup (no playback without MusicKit) ✅
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Another streaming option
 - [ ] **Local files resolver** - Scan user's music folder
@@ -266,7 +266,7 @@
 2. Last.fm scrobbling
 3. Listening history
 4. Smart playlists
-5. YouTube resolver
+5. Browser extension for external playback control
 
 ### 💡 Future Considerations
 1. Mobile apps
@@ -287,6 +287,8 @@
 - ✅ MusicBrainz artist pages
 - ✅ Bandcamp resolver
 - ✅ Qobuz resolver
+- ✅ YouTube resolver
+- ✅ Apple Music resolver (search/lookup only, no playback)
 - ✅ Album art on artist pages
 - ✅ Track resolution & playback
 - ✅ Resolver priority system
@@ -297,6 +299,11 @@
 - ✅ Progress bar
 - ✅ Volume control
 - ✅ Scrollable album/playlist pages
+- ✅ Always-visible playbar with empty state
+- ✅ Condensed playbar layout (controls + track info on same row)
+- ✅ Smart queue loading (only tracks after clicked position)
+- ✅ Skip non-playable resolvers during resolution
+- ✅ Resolver marketplace
 
 ---
 
@@ -347,7 +354,7 @@ Want to tackle any of these? Great!
 - [ ] Lyrics display
 
 ### Version 0.3.0 (Q2 2026)
-- [ ] YouTube resolver
+- [ ] Browser extension for external playback control
 - [ ] Last.fm scrobbling
 - [ ] Smart playlists
 - [ ] Collaborative features
