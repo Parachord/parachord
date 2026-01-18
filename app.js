@@ -1118,9 +1118,16 @@ const Parachord = () => {
     if (!value) {
       setSearchDrawerOpen(false);
       setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
+      setIsSearching(false);
       // Reset pagination
       setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
       return;
+    }
+
+    // Open drawer immediately and show loading state for responsive feel
+    if (value.length >= 2) {
+      setSearchDrawerOpen(true);
+      setIsSearching(true);
     }
 
     // Reset pagination on new search
@@ -1130,7 +1137,6 @@ const Parachord = () => {
     searchTimeoutRef.current = setTimeout(() => {
       if (value.length >= 2) {
         performSearch(value);
-        setSearchDrawerOpen(true);
       }
     }, 400);
   };
