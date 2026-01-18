@@ -591,6 +591,12 @@ const Parachord = () => {
   const [queueAnimating, setQueueAnimating] = useState(false);
   const resolverLoaderRef = useRef(null);
 
+  // Browser extension state
+  const [extensionConnected, setExtensionConnected] = useState(false);
+  const [browserPlaybackActive, setBrowserPlaybackActive] = useState(false);
+  const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
+  const pendingCloseTabIdRef = useRef(null);
+
   // URL drag & drop helpers
   const isValidUrl = (string) => {
     try {
@@ -986,6 +992,83 @@ const Parachord = () => {
   useEffect(() => {
     loadedResolversRef.current = loadedResolvers;
   }, [loadedResolvers]);
+
+  // Browser extension event handlers
+  useEffect(() => {
+    console.log('🔌 Setting up browser extension event handlers...');
+
+    // Connection state handlers
+    window.electron.extension.onConnected(() => {
+      console.log('✅ Browser extension connected');
+      setExtensionConnected(true);
+    });
+
+    window.electron.extension.onDisconnected(() => {
+      console.log('❌ Browser extension disconnected');
+      setExtensionConnected(false);
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    });
+
+    // Message handler for extension events
+    window.electron.extension.onMessage((message) => {
+      console.log('📨 Extension message:', message);
+
+      if (message.type === 'event') {
+        switch (message.event) {
+          case 'connected':
+            // Browser tab with media content connected
+            console.log(`🎬 Browser playback connected: ${message.site} - ${message.url}`);
+            setActiveExtensionTabId(message.tabId);
+            setBrowserPlaybackActive(true);
+
+            // Close previous tab if one was pending
+            if (pendingCloseTabIdRef.current) {
+              console.log('🗑️ Closing previous tab:', pendingCloseTabIdRef.current);
+              window.electron.extension.sendCommand({
+                type: 'command',
+                action: 'closeTab',
+                tabId: pendingCloseTabIdRef.current
+              });
+              pendingCloseTabIdRef.current = null;
+            }
+            break;
+
+          case 'playing':
+            console.log('▶️ Browser playback playing');
+            setIsPlaying(true);
+            break;
+
+          case 'paused':
+            console.log('⏸️ Browser playback paused');
+            setIsPlaying(false);
+            break;
+
+          case 'ended':
+            console.log('⏹️ Browser playback ended');
+            // Store tab ID to close when next track connects
+            pendingCloseTabIdRef.current = message.tabId;
+            setBrowserPlaybackActive(false);
+            // Auto-advance to next track
+            handleNext();
+            break;
+
+          case 'tabClosed':
+            console.log('🚪 Browser tab closed by user');
+            setBrowserPlaybackActive(false);
+            setActiveExtensionTabId(null);
+            // Treat as skip to next
+            handleNext();
+            break;
+        }
+      }
+    });
+
+    // Check initial connection status
+    window.electron.extension.getStatus().then(status => {
+      setExtensionConnected(status.connected);
+    });
+  }, []);
 
   // Listen for context menu actions (only set up once)
   useEffect(() => {
@@ -1637,23 +1720,34 @@ const Parachord = () => {
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
-    
+
+    // Check if browser extension is controlling playback
+    if (browserPlaybackActive && extensionConnected) {
+      console.log('🌐 Sending play/pause to browser extension');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: isPlaying ? 'pause' : 'play'
+      });
+      // State will be updated when extension sends back playing/paused event
+      return;
+    }
+
     const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
-    
+
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       try {
-        const endpoint = isPlaying ? 
+        const endpoint = isPlaying ?
           'https://api.spotify.com/v1/me/player/pause' :
           'https://api.spotify.com/v1/me/player/play';
-        
+
         const response = await fetch(endpoint, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${spotifyToken}`
           }
         });
-        
+
         if (response.ok || response.status === 204) {
           setIsPlaying(!isPlaying);
           console.log(isPlaying ? 'Paused' : 'Resumed', 'Spotify playback');
