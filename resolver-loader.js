@@ -248,9 +248,10 @@ class ResolverLoader {
   /**
    * Look up track metadata from a URL
    * @param {string} url - The URL to look up
+   * @param {object} configOverride - Optional config to override resolver's stored config
    * @returns {Promise<{track: object, resolverId: string}|null>}
    */
-  async lookupUrl(url) {
+  async lookupUrl(url, configOverride = null) {
     const resolverId = this.findResolverForUrl(url);
     if (!resolverId) {
       return null;
@@ -263,7 +264,9 @@ class ResolverLoader {
     }
 
     try {
-      const track = await resolver.lookupUrl(url, resolver.config || {});
+      // Use configOverride if provided, otherwise fall back to resolver.config
+      const config = configOverride || resolver.config || {};
+      const track = await resolver.lookupUrl(url, config);
       if (track) {
         return { track, resolverId };
       }

@@ -676,7 +676,9 @@ const Parachord = () => {
 
     // Look up track metadata
     try {
-      const result = await resolverLoaderRef.current.lookupUrl(url);
+      // Pass resolver config so Spotify has access to token
+      const config = getResolverConfig(resolverId);
+      const result = await resolverLoaderRef.current.lookupUrl(url, config);
 
       if (!result || !result.track) {
         throw new Error('Could not load track metadata');
