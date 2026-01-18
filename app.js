@@ -1239,6 +1239,8 @@ const Parachord = () => {
   const handleDoneWithExternalTrack = () => {
     console.log('✅ User done with external track, moving to next');
     setIsExternalPlayback(false);
+    setShowExternalPrompt(false);
+    setPendingExternalTrack(null);
 
     // Find next track BEFORE removing current from queue
     if (currentQueue.length === 0) {
