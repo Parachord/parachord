@@ -552,8 +552,9 @@ const Parachord = () => {
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz']);
+  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
   const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
+  const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [library, setLibrary] = useState([]);
   const [audioContext, setAudioContext] = useState(null);
@@ -573,11 +574,15 @@ const Parachord = () => {
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [spotifyToken, setSpotifyToken] = useState(null);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerUrl, setDrawerUrl] = useState(null);
-  const [drawerHeight, setDrawerHeight] = useState(400); // Default height in pixels
+  const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
+  const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
+  const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
+  const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
+  const [urlImportValue, setUrlImportValue] = useState('');
+  const [urlImportLoading, setUrlImportLoading] = useState(false);
+  const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
 
   // Resolver plugin system
   const resolverLoader = useRef(null);
@@ -847,8 +852,8 @@ const Parachord = () => {
 
   // Save resolver settings when they change
   useEffect(() => {
-    // Skip on initial mount
-    if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
+    // Skip until we've loaded settings from storage to avoid overwriting saved settings
+    if (!resolverSettingsLoaded.current) return;
 
     // Debounce the save to avoid saving too frequently
     const timeoutId = setTimeout(() => {
@@ -1155,9 +1160,34 @@ const Parachord = () => {
     // For future HTML5 audio resolvers, add event listener logic here
   };
 
+  // Stop Spotify playback (used when switching to external browser track)
+  const stopSpotifyPlayback = async () => {
+    if (!spotifyToken) return;
+
+    try {
+      const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${spotifyToken}`
+        }
+      });
+
+      if (response.ok || response.status === 204) {
+        console.log('⏸️ Stopped Spotify playback');
+        setIsPlaying(false);
+      }
+    } catch (error) {
+      console.error('Failed to stop Spotify playback:', error);
+    }
+  };
+
   // Show prompt for external browser track
-  const showExternalTrackPromptUI = (track) => {
+  const showExternalTrackPromptUI = async (track) => {
     console.log('🌐 Showing external track prompt for:', track.title);
+
+    // Stop any currently playing Spotify track before prompting
+    await stopSpotifyPlayback();
+
     setPendingExternalTrack(track);
     setShowExternalPrompt(true);
 
@@ -1372,48 +1402,26 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
-    const isSpotifyTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
-    
-    if (isSpotifyTrack && spotifyToken) {
-      // Use Spotify's next track
-      try {
-        const response = await fetch('https://api.spotify.com/v1/me/player/next', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${spotifyToken}`
-          }
-        });
-        
-        if (response.ok || response.status === 204) {
-          console.log('Skipped to next Spotify track');
-          // Poll after 1 second to get updated track info
-          // (longer delay to ensure Spotify has switched tracks)
-          setTimeout(() => getCurrentPlaybackState(), 1000);
-        }
-      } catch (error) {
-        console.error('Spotify next error:', error);
-      }
-    } else {
-      // Local track - find next in current queue
-      if (currentQueue.length === 0) {
-        console.log('No queue set, cannot go to next track');
-        return;
-      }
-      
-      const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-      console.log(`🔍 Queue navigation: currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+    // Always use our local queue for navigation
+    // (Spotify doesn't know about our queue - tracks may resolve to different services)
+    if (currentQueue.length === 0) {
+      console.log('No queue set, cannot go to next track');
+      return;
+    }
 
-      if (currentIndex === -1) {
-        // Current track not in queue, play first track
-        console.log('⚠️ Current track not found in queue, playing first track');
-        handlePlay(currentQueue[0]);
-      } else {
-        // Play next track, loop to beginning if at end
-        const nextIndex = (currentIndex + 1) % currentQueue.length;
-        console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
-        const nextTrack = currentQueue[nextIndex];
-        handlePlay(nextTrack);
-      }
+    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
+    console.log(`🔍 Queue navigation: currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+
+    if (currentIndex === -1) {
+      // Current track not in queue, play first track
+      console.log('⚠️ Current track not found in queue, playing first track');
+      handlePlay(currentQueue[0]);
+    } else {
+      // Play next track, loop to beginning if at end
+      const nextIndex = (currentIndex + 1) % currentQueue.length;
+      console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
+      const nextTrack = currentQueue[nextIndex];
+      handlePlay(nextTrack);
     }
   };
 
@@ -1433,44 +1441,49 @@ const Parachord = () => {
 
     if (!currentTrack) return;
 
-    const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
-    
-    if (isSpotifyTrack && spotifyToken) {
-      // Use Spotify's previous track
-      try {
-        const response = await fetch('https://api.spotify.com/v1/me/player/previous', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${spotifyToken}`
-          }
-        });
-        
-        if (response.ok || response.status === 204) {
-          console.log('Skipped to previous Spotify track');
-          // Poll after 1 second to get updated track info
-          // (longer delay to ensure Spotify has switched tracks)
-          setTimeout(() => getCurrentPlaybackState(), 1000);
-        }
-      } catch (error) {
-        console.error('Spotify previous error:', error);
-      }
-    } else {
-      // Local track - find previous in current queue
-      if (currentQueue.length === 0) {
-        console.log('No queue set, cannot go to previous track');
-        return;
-      }
-      
-      const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-      if (currentIndex === -1) {
-        // Current track not in queue, play last track
-        handlePlay(currentQueue[currentQueue.length - 1]);
-      } else {
-        // Play previous track, loop to end if at beginning
-        const prevTrack = currentQueue[(currentIndex - 1 + currentQueue.length) % currentQueue.length];
-        handlePlay(prevTrack);
-      }
+    // Always use our local queue for navigation
+    // (Spotify doesn't know about our queue - tracks may resolve to different services)
+    if (currentQueue.length === 0) {
+      console.log('No queue set, cannot go to previous track');
+      return;
     }
+
+    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
+    console.log(`🔍 Queue navigation (prev): currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+
+    if (currentIndex === -1) {
+      // Current track not in queue, play last track
+      console.log('⚠️ Current track not found in queue, playing last track');
+      handlePlay(currentQueue[currentQueue.length - 1]);
+    } else {
+      // Play previous track, loop to end if at beginning
+      const prevIndex = (currentIndex - 1 + currentQueue.length) % currentQueue.length;
+      console.log(`⬅️ Moving from index ${currentIndex} to ${prevIndex}`);
+      const prevTrack = currentQueue[prevIndex];
+      handlePlay(prevTrack);
+    }
+  };
+
+  // Queue management functions
+  const removeFromQueue = (trackId) => {
+    setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
+    console.log(`🗑️ Removed track ${trackId} from queue`);
+  };
+
+  const moveInQueue = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    setCurrentQueue(prev => {
+      const newQueue = [...prev];
+      const [removed] = newQueue.splice(fromIndex, 1);
+      newQueue.splice(toIndex, 0, removed);
+      console.log(`🔀 Moved track from index ${fromIndex} to ${toIndex}`);
+      return newQueue;
+    });
+  };
+
+  const clearQueue = () => {
+    setCurrentQueue([]);
+    console.log('🗑️ Cleared queue');
   };
 
   const handleSearchInput = (value) => {
@@ -1767,8 +1780,13 @@ const Parachord = () => {
         setResolverOrder(savedResolverOrder);
         console.log(`📦 Loaded resolver order from storage (${savedResolverOrder.length} resolvers)`);
       }
+
+      // Mark settings as loaded so save useEffect knows it's safe to save
+      resolverSettingsLoaded.current = true;
     } catch (error) {
       console.error('Failed to load cache from store:', error);
+      // Even on error, mark as loaded so app can function
+      resolverSettingsLoaded.current = true;
     }
   };
 
@@ -2710,59 +2728,63 @@ const Parachord = () => {
 
   const loadPlaylist = async (playlistId) => {
     console.log('🖱️ Playlist clicked, ID:', playlistId);
-    
+
     const playlist = playlists.find(p => p.id === playlistId);
     if (!playlist) {
       console.error('❌ Playlist not found:', playlistId);
       return;
     }
-    
+
     console.log('📋 Found playlist:', playlist.title);
-    
+
     setSelectedPlaylist(playlist);
     setActiveView('playlist-view');
     console.log(`📋 Loading playlist: ${playlist.title}`);
-    
+
     // Parse XSPF if we have the content
     if (playlist.xspf) {
       const parsed = parseXSPF(playlist.xspf);
       if (parsed) {
         console.log(`🎵 Parsed ${parsed.tracks.length} tracks from XSPF`);
-        
-        // Resolve each track
-        setPlaylistTracks([]); // Clear previous tracks
-        const resolvedTracks = [];
-        
-        for (const track of parsed.tracks) {
+
+        // Step 1: Immediately display all tracks with metadata (no sources yet)
+        const tracksWithIds = parsed.tracks.map(track => {
+          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          return { ...track, id: trackId, sources: {} };
+        });
+        setPlaylistTracks(tracksWithIds);
+
+        // Step 2: Resolve sources in the background for each track
+        for (const track of tracksWithIds) {
           console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
-          // Try to resolve the track using active resolvers
-          // Generate unique ID from artist + title + album for queue tracking
-          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-          const trackWithSources = { ...track, id: trackId, sources: {} };
-          
+          // Resolve all sources for this track
           for (const resolverId of activeResolvers) {
             const resolver = allResolvers.find(r => r.id === resolverId);
             if (!resolver || !resolver.capabilities.resolve) continue;
-            
+
             try {
               const config = getResolverConfig(resolverId);
               const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-              
+
               if (resolved) {
                 console.log(`  ✅ ${resolver.name}: Found match`);
-                trackWithSources.sources[resolverId] = resolved;
+                // Update the track's sources and trigger re-render
+                setPlaylistTracks(prevTracks =>
+                  prevTracks.map(t =>
+                    t.id === track.id
+                      ? { ...t, sources: { ...t.sources, [resolverId]: resolved } }
+                      : t
+                  )
+                );
               }
             } catch (error) {
               console.error(`  ❌ ${resolver.name} resolve error:`, error);
             }
           }
-          
-          resolvedTracks.push(trackWithSources);
-          setPlaylistTracks([...resolvedTracks]); // Update UI progressively
         }
-        
-        console.log(`✅ Resolved ${resolvedTracks.length} tracks`);
+
+        console.log(`✅ Finished resolving ${tracksWithIds.length} tracks`);
       }
     }
   };
@@ -2821,6 +2843,186 @@ const Parachord = () => {
       alert(`Error importing playlist: ${error.message}`);
     }
   };
+
+  // Import playlist from URL (hosted XSPF)
+  const handleImportPlaylistFromUrl = async (url) => {
+    try {
+      console.log('🌐 Importing playlist from URL:', url);
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+      }
+
+      const content = await response.text();
+
+      // Parse to get playlist info
+      const parsed = parseXSPF(content);
+      if (!parsed) {
+        alert('Failed to parse XSPF file from URL');
+        return;
+      }
+
+      // Generate ID from URL (hash it for uniqueness)
+      const id = 'hosted-' + btoa(url).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+
+      // Check if playlist already exists
+      const existingIndex = playlists.findIndex(p => p.sourceUrl === url);
+      if (existingIndex >= 0) {
+        // Update existing playlist
+        setPlaylists(prev => prev.map((p, i) =>
+          i === existingIndex
+            ? { ...p, xspf: content, title: parsed.title, creator: parsed.creator, lastUpdated: Date.now() }
+            : p
+        ));
+        console.log(`🔄 Updated hosted playlist: ${parsed.title}`);
+        return { updated: true, playlist: parsed };
+      }
+
+      // Add new hosted playlist
+      const newPlaylist = {
+        id: id,
+        filename: null,  // No local file for hosted playlists
+        title: parsed.title,
+        creator: parsed.creator,
+        xspf: content,
+        sourceUrl: url,  // Track the source URL for updates
+        lastUpdated: Date.now()
+      };
+
+      setPlaylists(prev => [...prev, newPlaylist]);
+
+      // Save URL to persistent storage for reload on app start
+      const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
+      hostedPlaylists.push({ url, id, addedAt: Date.now() });
+      await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
+
+      console.log(`✅ Imported hosted playlist: ${parsed.title}`);
+      return { updated: false, playlist: parsed };
+    } catch (error) {
+      console.error('URL import error:', error);
+      throw error;
+    }
+  };
+
+  // Refresh a hosted playlist
+  const refreshHostedPlaylist = async (playlistId) => {
+    const playlist = playlists.find(p => p.id === playlistId);
+    if (!playlist?.sourceUrl) {
+      console.log('Not a hosted playlist, cannot refresh');
+      return false;
+    }
+
+    try {
+      console.log(`🔄 Refreshing hosted playlist: ${playlist.title}`);
+      const result = await handleImportPlaylistFromUrl(playlist.sourceUrl);
+
+      // If currently viewing this playlist, reload the tracks
+      if (selectedPlaylist?.id === playlistId) {
+        const parsed = parseXSPF(result?.playlist ? playlists.find(p => p.id === playlistId)?.xspf : playlist.xspf);
+        if (parsed) {
+          const tracksWithIds = parsed.tracks.map(track => {
+            const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            return { ...track, id: trackId, sources: {} };
+          });
+          setPlaylistTracks(tracksWithIds);
+
+          // Re-resolve sources in background
+          for (const track of tracksWithIds) {
+            for (const resolverId of activeResolvers) {
+              const resolver = allResolvers.find(r => r.id === resolverId);
+              if (!resolver || !resolver.capabilities.resolve) continue;
+
+              try {
+                const config = getResolverConfig(resolverId);
+                const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
+
+                if (resolved) {
+                  setPlaylistTracks(prevTracks =>
+                    prevTracks.map(t =>
+                      t.id === track.id
+                        ? { ...t, sources: { ...t.sources, [resolverId]: resolved } }
+                        : t
+                    )
+                  );
+                }
+              } catch (error) {
+                console.error(`  ❌ ${resolver.name} resolve error:`, error);
+              }
+            }
+          }
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Refresh error:', error);
+      return false;
+    }
+  };
+
+  // Poll hosted playlists for updates
+  const hostedPlaylistPollInterval = useRef(null);
+
+  useEffect(() => {
+    // Start polling for hosted playlist updates (every 5 minutes)
+    const pollHostedPlaylists = async () => {
+      const hostedPlaylists = playlists.filter(p => p.sourceUrl);
+      if (hostedPlaylists.length === 0) return;
+
+      console.log(`🔄 Checking ${hostedPlaylists.length} hosted playlist(s) for updates...`);
+
+      for (const playlist of hostedPlaylists) {
+        try {
+          const response = await fetch(playlist.sourceUrl);
+          if (!response.ok) continue;
+
+          const content = await response.text();
+
+          // Check if content changed
+          if (content !== playlist.xspf) {
+            console.log(`📝 Hosted playlist changed: ${playlist.title}`);
+            await handleImportPlaylistFromUrl(playlist.sourceUrl);
+          }
+        } catch (error) {
+          console.error(`Failed to check playlist ${playlist.title}:`, error);
+        }
+      }
+    };
+
+    // Poll every 5 minutes
+    hostedPlaylistPollInterval.current = setInterval(pollHostedPlaylists, 5 * 60 * 1000);
+
+    // Also poll on mount (after a short delay to let playlists load)
+    const initialPoll = setTimeout(pollHostedPlaylists, 10000);
+
+    return () => {
+      clearInterval(hostedPlaylistPollInterval.current);
+      clearTimeout(initialPoll);
+    };
+  }, [playlists.filter(p => p.sourceUrl).length]); // Re-run when hosted playlist count changes
+
+  // Load hosted playlists on app start
+  useEffect(() => {
+    const loadHostedPlaylists = async () => {
+      const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
+      if (hostedPlaylistUrls.length === 0) return;
+
+      console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
+
+      for (const { url } of hostedPlaylistUrls) {
+        try {
+          await handleImportPlaylistFromUrl(url);
+        } catch (error) {
+          console.error(`Failed to load hosted playlist from ${url}:`, error);
+        }
+      }
+    };
+
+    // Delay to allow local playlists to load first
+    const timer = setTimeout(loadHostedPlaylists, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleExportPlaylist = async (playlist) => {
     try {
@@ -3958,14 +4160,14 @@ useEffect(() => {
           // Import button
           React.createElement('div', { className: 'flex justify-end' },
             React.createElement('button', {
-              onClick: handleImportPlaylist,
+              onClick: () => setShowUrlImportDialog(true),
               className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center gap-2'
             },
               React.createElement('span', null, '📥'),
               'Import Playlist'
             )
           ),
-          
+
           // Playlist grid or empty state
           playlists.length === 0 ?
             React.createElement('div', {
@@ -3973,22 +4175,49 @@ useEffect(() => {
             }, '🎵 No playlists yet. Import a playlist to get started!')
           :
             React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
-              playlists.map(playlist => 
-                React.createElement('button', {
+              playlists.map(playlist =>
+                React.createElement('div', {
                   key: playlist.id,
-                  onClick: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🖱️ BUTTON CLICKED! Playlist:', playlist.id, playlist.title);
-                    loadPlaylist(playlist.id);
-                  },
-                  className: 'group text-left bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-colors cursor-pointer border-none'
+                  className: 'group relative bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-colors cursor-pointer'
                 },
+                  // Hosted playlist indicator + refresh button
+                  playlist.sourceUrl && React.createElement('div', {
+                    className: 'absolute top-2 right-2 flex items-center gap-1'
+                  },
+                    React.createElement('span', {
+                      className: 'text-xs text-blue-400',
+                      title: 'Hosted playlist'
+                    }, '🌐'),
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        setRefreshingPlaylist(playlist.id);
+                        await refreshHostedPlaylist(playlist.id);
+                        setRefreshingPlaylist(null);
+                      },
+                      className: `p-1 rounded hover:bg-white/20 transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                      title: 'Refresh playlist'
+                    }, '🔄')
+                  ),
+                  // Clickable area
                   React.createElement('div', {
-                    className: 'w-full aspect-square bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg mb-3 flex items-center justify-center text-4xl'
-                  }, '📋'),
-                  React.createElement('div', { className: 'font-semibold truncate' }, playlist.title),
-                  React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, playlist.creator)
+                    onClick: (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🖱️ BUTTON CLICKED! Playlist:', playlist.id, playlist.title);
+                      loadPlaylist(playlist.id);
+                    }
+                  },
+                    React.createElement('div', {
+                      className: `w-full aspect-square rounded-lg mb-3 flex items-center justify-center text-4xl ${
+                        playlist.sourceUrl
+                          ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
+                          : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                      }`
+                    }, playlist.sourceUrl ? '🌐' : '📋'),
+                    React.createElement('div', { className: 'font-semibold truncate' }, playlist.title),
+                    React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, playlist.creator)
+                  )
                 )
               )
             )
@@ -4121,6 +4350,7 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
           ),
           React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
+            // Playback controls
             React.createElement('button', {
               onClick: handlePrevious,
               className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
@@ -4133,7 +4363,8 @@ useEffect(() => {
               onClick: handleNext,
               className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
             }, React.createElement(SkipForward)),
-            React.createElement('div', { className: 'flex items-center gap-2 ml-8' },
+            // Volume slider
+            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
               React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
               React.createElement('input', {
                 type: 'range',
@@ -4143,9 +4374,113 @@ useEffect(() => {
                 onChange: (e) => setVolume(Number(e.target.value)),
                 className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
               })
+            ),
+            // Queue button
+            React.createElement('button', {
+              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''}`,
+              title: `Queue (${currentQueue.length} tracks)`
+            },
+              React.createElement(List),
+              currentQueue.length > 0 && React.createElement('span', {
+                className: 'absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1'
+              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           )
         )
+    ),
+
+    // Import Playlist Dialog Modal
+    showUrlImportDialog && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      onClick: (e) => {
+        // Close when clicking backdrop
+        if (e.target === e.currentTarget) {
+          setShowUrlImportDialog(false);
+          setUrlImportValue('');
+        }
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4'
+      },
+        // Header
+        React.createElement('div', {
+          className: 'flex items-center justify-between mb-6'
+        },
+          React.createElement('h2', { className: 'text-xl font-bold' }, '📥 Import Playlist'),
+          React.createElement('button', {
+            onClick: () => {
+              setShowUrlImportDialog(false);
+              setUrlImportValue('');
+            },
+            className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
+          }, React.createElement(X))
+        ),
+
+        // Option 1: Import from file
+        React.createElement('div', { className: 'mb-6' },
+          React.createElement('h3', { className: 'text-sm font-semibold text-gray-300 mb-2' }, '📁 From File'),
+          React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import an XSPF playlist file from your computer.'),
+          React.createElement('button', {
+            onClick: async () => {
+              setShowUrlImportDialog(false);
+              await handleImportPlaylist();
+            },
+            className: 'w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center justify-center gap-2',
+            disabled: urlImportLoading
+          },
+            React.createElement('span', null, '📁'),
+            'Choose File...'
+          )
+        ),
+
+        // Divider
+        React.createElement('div', { className: 'flex items-center gap-4 mb-6' },
+          React.createElement('div', { className: 'flex-1 h-px bg-white/20' }),
+          React.createElement('span', { className: 'text-gray-500 text-sm' }, 'or'),
+          React.createElement('div', { className: 'flex-1 h-px bg-white/20' })
+        ),
+
+        // Option 2: Import from URL
+        React.createElement('div', null,
+          React.createElement('h3', { className: 'text-sm font-semibold text-gray-300 mb-2' }, '🌐 From URL'),
+          React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import a hosted XSPF playlist. It will auto-update when the source changes.'),
+          React.createElement('input', {
+            type: 'url',
+            value: urlImportValue,
+            onChange: (e) => setUrlImportValue(e.target.value),
+            placeholder: 'https://example.com/playlist.xspf',
+            className: 'w-full px-4 py-3 bg-slate-700 rounded-lg border border-white/10 focus:border-blue-500 focus:outline-none text-white mb-3',
+            disabled: urlImportLoading
+          }),
+          React.createElement('button', {
+            onClick: async () => {
+              if (!urlImportValue.trim()) return;
+              setUrlImportLoading(true);
+              try {
+                const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+                setShowUrlImportDialog(false);
+                setUrlImportValue('');
+                alert(result.updated
+                  ? `🔄 Updated playlist: ${result.playlist.title}`
+                  : `✅ Imported playlist: ${result.playlist.title}`
+                );
+              } catch (error) {
+                alert(`❌ Failed to import: ${error.message}`);
+              } finally {
+                setUrlImportLoading(false);
+              }
+            },
+            disabled: urlImportLoading || !urlImportValue.trim(),
+            className: `w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+              (urlImportLoading || !urlImportValue.trim()) ? 'opacity-50 cursor-not-allowed' : ''
+            }`
+          },
+            urlImportLoading ? '⏳ Importing...' : '🌐 Import from URL'
+          )
+        )
+      )
     ),
 
     // Settings Modal
@@ -4522,12 +4857,12 @@ useEffect(() => {
     )
     ),
 
-    // Embedded Player Drawer
+    // Queue Drawer
     React.createElement('div', {
       className: 'fixed left-0 right-0 bg-slate-900 border-t border-white/20 shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
-        bottom: drawerOpen ? 0 : -drawerHeight,
-        height: drawerHeight + 'px'
+        bottom: queueDrawerOpen ? 0 : -queueDrawerHeight,
+        height: queueDrawerHeight + 'px'
       }
     },
       // Drawer header with drag handle
@@ -4535,12 +4870,12 @@ useEffect(() => {
         className: 'flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-white/10 cursor-ns-resize',
         onMouseDown: (e) => {
           const startY = e.clientY;
-          const startHeight = drawerHeight;
+          const startHeight = queueDrawerHeight;
 
           const handleMouseMove = (moveEvent) => {
             const deltaY = startY - moveEvent.clientY;
-            const newHeight = Math.max(200, Math.min(800, startHeight + deltaY));
-            setDrawerHeight(newHeight);
+            const newHeight = Math.max(200, Math.min(600, startHeight + deltaY));
+            setQueueDrawerHeight(newHeight);
           };
 
           const handleMouseUp = () => {
@@ -4553,35 +4888,138 @@ useEffect(() => {
         }
       },
         React.createElement('div', {
-          className: 'flex items-center gap-2'
+          className: 'flex items-center gap-3'
         },
           React.createElement('div', {
             className: 'w-8 h-1 bg-white/30 rounded-full'
           }),
           React.createElement('span', {
-            className: 'text-sm text-gray-400'
-          }, 'Embedded Player')
+            className: 'text-sm font-medium text-white'
+          }, 'Queue'),
+          React.createElement('span', {
+            className: 'text-xs text-gray-400'
+          }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`)
         ),
-        React.createElement('button', {
-          onClick: () => setDrawerOpen(false),
-          className: 'p-1 hover:bg-white/10 rounded transition-colors'
-        }, React.createElement(X))
+        React.createElement('div', {
+          className: 'flex items-center gap-2'
+        },
+          currentQueue.length > 0 && React.createElement('button', {
+            onClick: clearQueue,
+            className: 'text-xs text-gray-400 hover:text-white px-2 py-1 hover:bg-white/10 rounded transition-colors'
+          }, 'Clear'),
+          React.createElement('button', {
+            onClick: () => setQueueDrawerOpen(false),
+            className: 'p-1 hover:bg-white/10 rounded transition-colors'
+          }, React.createElement(X))
+        )
       ),
 
-      // Drawer content - iframe container
+      // Queue content
       React.createElement('div', {
-        className: 'w-full h-full bg-black',
-        style: { height: (drawerHeight - 40) + 'px' }
+        className: 'overflow-y-auto',
+        style: { height: (queueDrawerHeight - 44) + 'px' }
       },
-        drawerUrl ? React.createElement('iframe', {
-          src: drawerUrl,
-          className: 'w-full h-full',
-          style: { border: 'none' },
-          allow: 'autoplay; encrypted-media; picture-in-picture',
-          allowFullScreen: true
-        }) : React.createElement('div', {
-          className: 'flex items-center justify-center h-full text-gray-500'
-        }, 'No content loaded')
+        currentQueue.length === 0 ?
+          React.createElement('div', {
+            className: 'flex flex-col items-center justify-center h-full text-gray-500'
+          },
+            React.createElement('span', { className: 'text-4xl mb-2' }, '🎵'),
+            React.createElement('span', null, 'Queue is empty'),
+            React.createElement('span', { className: 'text-sm text-gray-600 mt-1' }, 'Play a playlist to add tracks')
+          )
+        :
+          React.createElement('div', { className: 'divide-y divide-white/5' },
+            currentQueue.map((track, index) => {
+              const isCurrentTrack = currentTrack?.id === track.id;
+              const availableSources = Object.keys(track.sources || {});
+
+              return React.createElement('div', {
+                key: track.id,
+                draggable: true,
+                onDragStart: () => setDraggedQueueTrack(index),
+                onDragOver: (e) => e.preventDefault(),
+                onDrop: () => {
+                  if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
+                    moveInQueue(draggedQueueTrack, index);
+                  }
+                  setDraggedQueueTrack(null);
+                },
+                onDragEnd: () => setDraggedQueueTrack(null),
+                className: `flex items-center gap-3 px-4 py-2 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-colors ${
+                  isCurrentTrack ? 'bg-purple-600/20' : ''
+                } ${draggedQueueTrack === index ? 'opacity-50' : ''}`
+              },
+                // Drag handle / track number
+                React.createElement('div', {
+                  className: 'w-6 text-center text-gray-500 text-sm flex-shrink-0'
+                }, isCurrentTrack ? '▶' : index + 1),
+
+                // Track info
+                React.createElement('div', {
+                  className: 'flex-1 min-w-0 cursor-pointer',
+                  onClick: () => handlePlay(track)
+                },
+                  React.createElement('div', {
+                    className: `font-medium truncate ${isCurrentTrack ? 'text-purple-400' : 'text-white'}`
+                  }, track.title),
+                  React.createElement('div', {
+                    className: 'text-sm text-gray-400 truncate'
+                  }, track.artist)
+                ),
+
+                // All resolver source buttons
+                React.createElement('div', {
+                  className: 'flex items-center gap-1 flex-shrink-0'
+                },
+                  availableSources.length > 0 ?
+                    availableSources.map(resolverId => {
+                      const resolver = allResolvers.find(r => r.id === resolverId);
+                      if (!resolver) return null;
+                      return React.createElement('button', {
+                        key: resolverId,
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          handlePlay({ ...track, preferredResolver: resolverId });
+                        },
+                        style: {
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          backgroundColor: resolver.color,
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          color: 'white',
+                          opacity: 0.8,
+                          transition: 'opacity 0.1s, transform 0.1s'
+                        },
+                        onMouseEnter: (e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.1)'; },
+                        onMouseLeave: (e) => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.transform = 'scale(1)'; },
+                        title: `Play via ${resolver.name}`
+                      }, resolver.icon);
+                    })
+                  :
+                    React.createElement('span', {
+                      className: 'text-xs text-gray-500'
+                    }, '—')
+                ),
+
+                // Remove button
+                React.createElement('button', {
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    removeFromQueue(track.id);
+                  },
+                  className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                  title: 'Remove from queue'
+                }, React.createElement(X, { size: 16 }))
+              );
+            })
+          )
       )
     )
   );
