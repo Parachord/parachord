@@ -1126,18 +1126,13 @@ const Parachord = () => {
   const handleOpenExternalTrack = async (track) => {
     console.log('✅ User confirmed, opening external track:', track.title);
 
-    // Clear timeout
+    // Clear timeout FIRST
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
     }
 
-    setShowExternalPrompt(false);
-    setPendingExternalTrack(null);
-    setIsExternalPlayback(true);
-    setCurrentTrack(track);
-
-    // Determine resolver
+    // Determine resolver before state changes
     const resolverId = determineResolverIdFromTrack(track);
     if (!resolverId) {
       console.error('❌ Could not determine resolver for external track');
@@ -1158,17 +1153,24 @@ const Parachord = () => {
       return;
     }
 
-    // Open in external browser
+    // Open in external browser FIRST
     try {
       const config = getResolverConfig(resolverId);
       await resolver.play(track, config);
       console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
+
+      // Only update state AFTER successful browser open
+      setShowExternalPrompt(false);
+      setPendingExternalTrack(null);
+      setIsExternalPlayback(true);
+      setCurrentTrack(track);
     } catch (error) {
       console.error('❌ Failed to open external track:', error);
       alert(`Failed to open browser: ${error.message}`);
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
       setShowExternalPrompt(false);
+      handleNext();
     }
   };
 
