@@ -503,7 +503,6 @@ const Parachord = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchDrawerOpen, setSearchDrawerOpen] = useState(false);
   const searchTimeoutRef = useRef(null);
-  const [resultFilters, setResultFilters] = useState([]); // Which resolvers to show in results
   const [activeView, setActiveView] = useState('library');
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -2326,23 +2325,6 @@ const Parachord = () => {
       console.error('Export error:', error);
       alert(`Error exporting playlist: ${error.message}`);
     }
-  };
-
-  const toggleResultFilter = (resolverId) => {
-    setResultFilters(prev => {
-      if (prev.includes(resolverId)) {
-        // Remove from filters
-        const newFilters = prev.filter(id => id !== resolverId);
-        // If removing the last filter, reset to show all
-        if (newFilters.length === 0) {
-          return activeResolvers.slice();
-        }
-        return newFilters;
-      } else {
-        // Add to filters
-        return [...prev, resolverId];
-      }
-    });
   };
 
   // Add Spotify authentication functions
