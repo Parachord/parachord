@@ -4587,7 +4587,17 @@ useEffect(() => {
         // Normal player controls
         React.createElement(React.Fragment, null,
           React.createElement('div', { className: 'flex items-center justify-between mb-2' },
-            React.createElement('div', { className: 'flex items-center gap-4' },
+            React.createElement('div', {
+              className: 'flex items-center gap-4 relative',
+              onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
+              onDragOver: (e) => handleDragOver(e, 'now-playing'),
+              onDragLeave: handleDragLeave,
+              onDrop: (e) => handleDrop(e, 'now-playing')
+            },
+              React.createElement(DropZoneOverlay, {
+                zone: 'now-playing',
+                isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
+              }),
               currentTrack.albumArt ?
                 React.createElement('img', {
                   src: currentTrack.albumArt,
