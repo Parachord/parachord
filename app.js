@@ -3853,11 +3853,11 @@ useEffect(() => {
             React.createElement('div', { className: 'text-lg font-semibold text-white' }, currentTrack.title),
             React.createElement('div', { className: 'text-sm text-slate-400' }, currentTrack.artist),
             React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
-              'via ',
-              allResolvers.find(r =>
-                r.id === (currentTrack.bandcampUrl ? 'bandcamp' :
-                         currentTrack.youtubeUrl || currentTrack.youtubeId ? 'youtube' : 'unknown')
-              )?.name || 'External'
+              (() => {
+                const resolverId = determineResolverIdFromTrack(currentTrack);
+                const resolver = allResolvers.find(r => r.id === resolverId);
+                return resolver ? `🌐 via ${resolver.name}` : null;
+              })()
             )
           ),
 
@@ -3916,10 +3916,14 @@ useEffect(() => {
                     },
                     className: 'hover:text-purple-400 hover:underline transition-colors cursor-pointer no-drag',
                     style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
-                  }, currentTrack.artist),
-                  currentTrack.sources?.includes('spotify') && React.createElement('span', {
-                    className: 'text-xs px-2 py-0.5 bg-green-600/20 text-green-400 rounded-full'
-                  }, '♫ Spotify')
+                  }, currentTrack.artist)
+                ),
+                React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
+                  (() => {
+                    const resolverId = determineResolverIdFromTrack(currentTrack);
+                    const resolver = allResolvers.find(r => r.id === resolverId);
+                    return resolver ? `▶️ via ${resolver.name}` : null;
+                  })()
                 )
               )
             ),
