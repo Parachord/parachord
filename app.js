@@ -826,11 +826,50 @@ const Parachord = () => {
 
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
       // We have a track with multiple sources - select the best one
-      const availableResolvers = Object.keys(trackOrSource.sources);
+      let availableResolvers = Object.keys(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
-        console.error('❌ No resolver found for track');
-        return;
+        // No sources available - try resolving on-demand
+        console.log('🔄 No sources found, attempting on-demand resolution...');
+
+        const enabledResolvers = resolverOrder
+          .filter(id => activeResolvers.includes(id))
+          .map(id => allResolvers.find(r => r.id === id))
+          .filter(Boolean);
+
+        const resolverPromises = enabledResolvers.map(async (resolver) => {
+          if (!resolver.capabilities.resolve) return;
+
+          try {
+            const config = getResolverConfig(resolver.id);
+            const result = await resolver.resolve(
+              trackOrSource.artist,
+              trackOrSource.title,
+              trackOrSource.album || null,
+              config
+            );
+
+            if (result) {
+              trackOrSource.sources[resolver.id] = {
+                ...result,
+                confidence: calculateConfidence(trackOrSource, result)
+              };
+              console.log(`  ✅ ${resolver.name}: Found match`);
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name} resolve error:`, error);
+          }
+        });
+
+        await Promise.all(resolverPromises);
+
+        // Update availableResolvers after resolution
+        availableResolvers = Object.keys(trackOrSource.sources);
+        if (availableResolvers.length === 0) {
+          console.error('❌ No resolver found for track after on-demand resolution');
+          alert('Could not find a playable source for this track. Try enabling more resolvers in settings.');
+          return;
+        }
       }
 
       // Sort sources by: 1) resolver priority (lower index = higher priority), 2) confidence
