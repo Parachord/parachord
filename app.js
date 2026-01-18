@@ -1044,6 +1044,8 @@ const Parachord = () => {
     if (resolverId === 'spotify' && config.token) {
       console.log('🔄 Starting Spotify playback polling for auto-advance (5s interval)...');
 
+      let errorCount = 0; // Track consecutive polling errors
+
       const pollInterval = setInterval(async () => {
         try {
           const response = await fetch('https://api.spotify.com/v1/me/player', {
@@ -1064,6 +1066,7 @@ const Parachord = () => {
           }
 
           const data = await response.json();
+          errorCount = 0; // Reset on success
 
           // Check if we're still playing the same track
           if (data.item && data.item.uri === track.spotifyUri) {
@@ -1084,7 +1087,16 @@ const Parachord = () => {
           }
         } catch (error) {
           console.error('Spotify polling error:', error);
-          // Don't clear interval on first error, wait for next poll
+
+          // Track consecutive errors
+          errorCount = (errorCount || 0) + 1;
+
+          if (errorCount >= 3) {
+            // After 3 consecutive errors, stop polling
+            console.error('❌ Too many Spotify polling errors, stopping auto-advance');
+            clearInterval(pollInterval);
+            playbackPollerRef.current = null;
+          }
         }
       }, 5000); // Poll every 5 seconds (consistent with existing playback polling)
 
