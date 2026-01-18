@@ -14,6 +14,8 @@
 - [ ] **Queue management** - Add/remove/reorder tracks in queue
 - [ ] **Gapless playback** - No pause between tracks
 - [ ] **Crossfade** - Fade between tracks (configurable duration)
+- [ ] **Fix volume slider** - Ensure volume control actually works
+- [ ] **Context menus** - Right-click menus for tracks, albums, playlists (add to queue, add to playlist, etc.)
 
 ### Nice to Have
 - [ ] **Save queue as playlist** - Convert current queue to permanent playlist
@@ -52,12 +54,14 @@
 ## 🎨 UI/UX Improvements
 
 ### Visual Enhancements
+- [ ] **Implement Jordi's designs** - Update aesthetic to match new design specs
 - [ ] **Album art throughout app** - Fetch from Cover Art Archive
 - [ ] **Hi-Res quality badges** - Show "Hi-Res" indicator for Qobuz tracks
 - [ ] **Loading skeletons** - Better loading states
 - [ ] **Animations & transitions** - Smooth page transitions
 - [ ] **Themes** - Light/dark mode toggle
 - [ ] **Custom themes** - User-created color schemes
+- [ ] **Consistent resolver icons** - Use same resolver icons from album page on playlist page and player
 
 ### Navigation
 - [ ] **Breadcrumb navigation** - Show path in artist → album flow
@@ -65,6 +69,7 @@
 - [ ] **Search history** - Save recent searches
 - [ ] **Favorites/bookmarks** - Mark favorite artists/albums
 - [ ] **Mini-player mode** - Compact player view
+- [ ] **Remove resolver toggles from sidebar** - Clean up sidebar UI
 
 ### Accessibility
 - [ ] **Keyboard shortcuts** - Full keyboard navigation
@@ -86,12 +91,16 @@
 - [ ] **More metadata** - Record labels, genres, bio
 - [ ] **Artist bio** - Fetch from MusicBrainz/Last.fm
 - [ ] **Similar artists** - Show related artists
+- [ ] **Fix "Alls" typo on Discography** - Should be "All"
 
 ### Album Pages
 - [ ] **Liner notes** - Show album credits, producers
 - [ ] **Release variants** - Show different editions
 - [ ] **Track credits** - Individual track contributors
 - [ ] **Album reviews** - Aggregate review scores
+
+### Discover Page
+- [ ] **Add Uncoveries** - Integrate Uncoveries content into Discover page
 
 ---
 
@@ -201,6 +210,7 @@
 - [ ] **WebSocket support** - Real-time updates
 - [ ] **Plugin system expansion** - More plugin capabilities
 - [ ] **Auto-update** - Electron auto-updater
+- [ ] **Re-implement title bar dragging** - Allow dragging app window by title bar
 
 ### Developer Experience
 - [ ] **TypeScript migration** - Type safety
