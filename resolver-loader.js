@@ -217,8 +217,8 @@ class ResolverLoader {
    */
   matchUrlPattern(url, pattern) {
     try {
-      // Normalize URL - remove protocol and trailing slash
-      let normalizedUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      // Normalize URL - remove protocol, trailing slash, and query string
+      let normalizedUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\?.*$/, '');
       let normalizedPattern = pattern.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
       // Handle spotify: URI scheme
