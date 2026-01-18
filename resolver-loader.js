@@ -232,9 +232,10 @@ class ResolverLoader {
       // path/* -> path/[^/]+
       // path/*/more -> path/[^/]+/more
       const regexPattern = normalizedPattern
+        .replace(/^\*\./g, '__SUBDOMAIN_WILDCARD__') // Temporarily replace *. at start
         .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars (except *)
-        .replace(/\\\*\\\./g, '[^/]+\\.') // *. at start = subdomain wildcard
-        .replace(/\\\*/g, '[^/]+'); // * = any segment
+        .replace(/__SUBDOMAIN_WILDCARD__/g, '[^/]+\\.') // Restore subdomain wildcard
+        .replace(/\*/g, '[^/]+'); // * = any segment
 
       const regex = new RegExp(`^${regexPattern}$`, 'i');
       return regex.test(normalizedUrl);
