@@ -2712,8 +2712,8 @@ useEffect(() => {
             searchQuery ? `No results found for "${searchQuery}"` : 'Type to search...'
           )
         :
-        // 4-column grid layout
-        React.createElement('div', { className: 'grid grid-cols-4 gap-4 h-full' },
+        // 4-column grid layout with wider tracks column
+        React.createElement('div', { className: 'grid gap-4 h-full', style: { gridTemplateColumns: '1fr 1fr 2fr 1fr' } },
           // Artists column
           React.createElement('div', { className: 'flex flex-col overflow-hidden' },
             React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3 flex-shrink-0' },
