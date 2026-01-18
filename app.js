@@ -1141,6 +1141,7 @@ const Parachord = () => {
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
       setShowExternalPrompt(false);
+      handleNext();
       return;
     }
 
@@ -1150,6 +1151,7 @@ const Parachord = () => {
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
       setShowExternalPrompt(false);
+      handleNext();
       return;
     }
 
@@ -1163,6 +1165,7 @@ const Parachord = () => {
       alert(`Failed to open browser: ${error.message}`);
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
+      setShowExternalPrompt(false);
     }
   };
 
