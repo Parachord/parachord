@@ -1542,6 +1542,32 @@ const Parachord = () => {
     }
   };
 
+  // Handle album click from search - fetch release data by release-group ID
+  const handleAlbumClick = async (album) => {
+    try {
+      console.log('Fetching album from search:', album.title);
+
+      // Get artist name from album
+      const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
+
+      // Create artist object
+      const artist = {
+        name: artistName,
+        mbid: album['artist-credit']?.[0]?.artist?.id || null
+      };
+
+      // Fetch release data using the release-group ID
+      // This reuses existing fetchReleaseData which handles the release-group -> release conversion
+      await fetchReleaseData({ id: album.id, title: album.title }, artist);
+
+      // Switch to artist view to show the release
+      setActiveView('artist');
+    } catch (error) {
+      console.error('Error fetching album from search:', error);
+      alert('Failed to load album. Please try again.');
+    }
+  };
+
   // Validate cached sources in background and update if changed
   const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
     console.log(`🔍 Validating cached sources for: ${track.title}`);
