@@ -1459,23 +1459,43 @@ const Parachord = () => {
   const fetchReleaseData = async (release, artist) => {
     setLoadingRelease(true);
     setCurrentRelease(null);
-    
+
     try {
       console.log('Fetching release data for:', release.title);
-      
-      // Fetch full release details including recordings (tracks)
+
+      // First, check if we have a release-group ID - convert it to a release ID
       const releaseResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings+artist-credits&fmt=json`,
-        { 
+        `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!releaseResponse.ok) {
+        throw new Error(`Release-group not found (HTTP ${releaseResponse.status})`);
+      }
+
+      const releaseGroupData = await releaseResponse.json();
+
+      if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) {
+        throw new Error('No official releases found for this release-group');
+      }
+
+      // Use the first official release ID
+      const releaseId = releaseGroupData.releases[0].id;
+      console.log('Converted release-group to release ID:', releaseId);
+
+      // Fetch full release details including recordings (tracks)
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        {
           headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
         }
       );
-      
-      if (!releaseResponse.ok) {
+
+      if (!releaseDetailsResponse.ok) {
         throw new Error('Release not found');
       }
-      
-      const releaseData = await releaseResponse.json();
+
+      const releaseData = await releaseDetailsResponse.json();
       
       // Extract track listing from media
       const tracks = [];
@@ -1500,7 +1520,7 @@ const Parachord = () => {
       let albumArt = null;
       try {
         const artResponse = await fetch(
-          `https://coverartarchive.org/release/${release.id}`,
+          `https://coverartarchive.org/release/${releaseId}`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
         
