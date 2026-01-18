@@ -7,6 +7,7 @@
 class ResolverLoader {
   constructor() {
     this.resolvers = new Map();
+    this.urlPatterns = []; // Array of { pattern: string, resolverId: string }
   }
 
   /**
@@ -31,6 +32,14 @@ class ResolverLoader {
 
       // Store resolver
       this.resolvers.set(id, resolver);
+
+      // Register URL patterns
+      if (axe.urlPatterns && Array.isArray(axe.urlPatterns)) {
+        for (const pattern of axe.urlPatterns) {
+          this.urlPatterns.push({ pattern, resolverId: id });
+        }
+        console.log(`  📎 Registered ${axe.urlPatterns.length} URL pattern(s) for ${id}`);
+      }
 
       console.log(`✅ Loaded resolver: ${axe.manifest.name} v${axe.manifest.version}`);
 
@@ -99,6 +108,8 @@ class ResolverLoader {
 
       // Capabilities
       capabilities: capabilities || {},
+      // URL patterns for URL lookup
+      urlPatterns: axe.urlPatterns || [],
 
       // Settings
       requiresAuth: settings?.requiresAuth || false,
@@ -158,6 +169,8 @@ class ResolverLoader {
       }
     }
     this.resolvers.delete(id);
+    // Remove URL patterns for this resolver
+    this.urlPatterns = this.urlPatterns.filter(p => p.resolverId !== id);
     console.log(`🗑️ Unloaded resolver: ${id}`);
   }
 
@@ -182,6 +195,82 @@ class ResolverLoader {
     }
 
     console.log(`🚀 Initialized resolver: ${resolver.name}`);
+  }
+
+  /**
+   * Find which resolver can handle a given URL
+   * @param {string} url - The URL to match
+   * @returns {string|null} - Resolver ID or null if no match
+   */
+  findResolverForUrl(url) {
+    for (const { pattern, resolverId } of this.urlPatterns) {
+      if (this.matchUrlPattern(url, pattern)) {
+        return resolverId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Match a URL against a glob-like pattern
+   * Supports: * (any chars except /), *.domain.com (subdomain wildcard)
+   */
+  matchUrlPattern(url, pattern) {
+    try {
+      // Normalize URL - remove protocol and trailing slash
+      let normalizedUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      let normalizedPattern = pattern.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+      // Handle spotify: URI scheme
+      if (url.startsWith('spotify:') && pattern.startsWith('spotify:')) {
+        normalizedUrl = url;
+        normalizedPattern = pattern;
+      }
+
+      // Convert glob pattern to regex
+      // *.domain.com -> [^/]+\.domain\.com
+      // path/* -> path/[^/]+
+      // path/*/more -> path/[^/]+/more
+      const regexPattern = normalizedPattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars (except *)
+        .replace(/\\\*\\\./g, '[^/]+\\.') // *. at start = subdomain wildcard
+        .replace(/\\\*/g, '[^/]+'); // * = any segment
+
+      const regex = new RegExp(`^${regexPattern}$`, 'i');
+      return regex.test(normalizedUrl);
+    } catch (error) {
+      console.error('URL pattern match error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Look up track metadata from a URL
+   * @param {string} url - The URL to look up
+   * @returns {Promise<{track: object, resolverId: string}|null>}
+   */
+  async lookupUrl(url) {
+    const resolverId = this.findResolverForUrl(url);
+    if (!resolverId) {
+      return null;
+    }
+
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.lookupUrl) {
+      console.error(`Resolver ${resolverId} does not support URL lookup`);
+      return null;
+    }
+
+    try {
+      const track = await resolver.lookupUrl(url, resolver.config || {});
+      if (track) {
+        return { track, resolverId };
+      }
+    } catch (error) {
+      console.error(`URL lookup error for ${resolverId}:`, error);
+    }
+
+    return null;
   }
 }
 
