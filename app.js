@@ -1199,6 +1199,9 @@ const Parachord = () => {
 
     const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
     console.log(`🔍 Skip: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+    console.log(`🔍 currentTrack.id="${currentTrack?.id}", title="${currentTrack?.title}"`);
+    console.log(`🔍 Queue track IDs:`, currentQueue.map(t => `"${t.id}"`));
+    console.log(`🔍 Queue track titles:`, currentQueue.map(t => t.title));
 
     let nextTrack;
     if (currentIndex === -1) {
@@ -1236,6 +1239,9 @@ const Parachord = () => {
 
     const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
     console.log(`🔍 Done: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+    console.log(`🔍 currentTrack.id="${currentTrack?.id}", title="${currentTrack?.title}"`);
+    console.log(`🔍 Queue track IDs:`, currentQueue.map(t => `"${t.id}"`));
+    console.log(`🔍 Queue track titles:`, currentQueue.map(t => t.title));
 
     let nextTrack;
     if (currentIndex === -1) {
