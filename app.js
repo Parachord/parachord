@@ -443,10 +443,10 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                     }, '🔍');
                   }
                   
-                  // Show resolver icons for available sources
+                  // Show resolver icons for available sources (only if they support playback)
                   return availableResolvers.map(resolverId => {
                     const resolver = resolvers.find(r => r.id === resolverId);
-                    if (!resolver) return null;
+                    if (!resolver || !resolver.play) return null;
                     
                     const source = sources[resolverId];
                     const confidence = source.confidence || 0;
@@ -1857,7 +1857,8 @@ const Parachord = () => {
 
     // Parallel resolution with confidence scoring
     const resolverPromises = enabledResolvers.map(async (resolver) => {
-      if (!resolver.capabilities.resolve) return;
+      // Skip resolvers that can't resolve or can't play (no point resolving if we can't play)
+      if (!resolver.capabilities.resolve || !resolver.play) return;
 
       try {
         const config = getResolverConfig(resolver.id);
@@ -2469,7 +2470,8 @@ const Parachord = () => {
       .filter(Boolean);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
-      if (!resolver.capabilities.resolve) return;
+      // Skip resolvers that can't resolve or can't play (no point resolving if we can't play)
+      if (!resolver.capabilities.resolve || !resolver.play) return;
 
       try {
         const config = getResolverConfig(resolver.id);
@@ -2579,7 +2581,8 @@ const Parachord = () => {
       .filter(Boolean);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
-      if (!resolver.capabilities.resolve) return;
+      // Skip resolvers that can't resolve or can't play (no point resolving if we can't play)
+      if (!resolver.capabilities.resolve || !resolver.play) return;
 
       try {
         const config = getResolverConfig(resolver.id);
@@ -4427,7 +4430,7 @@ useEffect(() => {
                     hasResolved ?
                       Object.entries(track.sources).map(([resolverId, source]) => {
                         const resolver = allResolvers.find(r => r.id === resolverId);
-                        if (!resolver) return null;
+                        if (!resolver || !resolver.play) return null;
                         return React.createElement('button', {
                           key: resolverId,
                           className: 'no-drag',
@@ -4583,10 +4586,89 @@ useEffect(() => {
       )
     ),
 
-    // Player bar
-    currentTrack && React.createElement('div', {
-      className: 'bg-black/40 backdrop-blur-xl border-t border-white/10 p-4 no-drag'
+    // Player bar (always visible)
+    React.createElement('div', {
+      className: 'bg-black/40 backdrop-blur-xl border-t border-white/10 p-4 no-drag flex-shrink-0'
     },
+      !currentTrack ?
+        // Empty state - no track playing (same layout as normal player)
+        React.createElement(React.Fragment, null,
+          React.createElement('div', { className: 'flex items-center justify-between mb-2' },
+            React.createElement('div', {
+              className: 'flex items-center gap-4 relative',
+              onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
+              onDragOver: (e) => handleDragOver(e, 'now-playing'),
+              onDragLeave: handleDragLeave,
+              onDrop: (e) => handleDrop(e, 'now-playing')
+            },
+              React.createElement(DropZoneOverlay, {
+                zone: 'now-playing',
+                isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
+              }),
+              React.createElement('div', {
+                className: 'w-14 h-14 bg-slate-700/50 rounded-lg flex items-center justify-center text-2xl text-slate-500'
+              }, React.createElement(Music)),
+              React.createElement('div', null,
+                React.createElement('div', { className: 'font-semibold text-slate-500' }, 'No track playing'),
+                React.createElement('div', { className: 'text-sm text-slate-600' }, 'Drop a URL or select a track')
+              )
+            ),
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(Heart))
+          ),
+          React.createElement('div', { className: 'flex items-center gap-4' },
+            React.createElement('span', { className: 'text-sm text-slate-600 w-12 text-right' }, '0:00'),
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: 0,
+                disabled: true,
+                className: 'w-full h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
+              })
+            ),
+            React.createElement('span', { className: 'text-sm text-slate-600 w-12' }, '0:00')
+          ),
+          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(SkipBack)),
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-4 bg-slate-700 rounded-full text-xl text-slate-500 cursor-not-allowed'
+            }, React.createElement(Play)),
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(SkipForward)),
+            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
+              React.createElement('span', { className: 'text-xl text-slate-600' }, React.createElement(Volume2)),
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: volume,
+                disabled: true,
+                className: 'w-24 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
+              })
+            ),
+            React.createElement('button', {
+              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
+              title: `Queue (${currentQueue.length} tracks)`
+            },
+              React.createElement(List),
+              currentQueue.length > 0 && React.createElement('span', {
+                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
+              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+            )
+          )
+        )
+      :
       isExternalPlayback ?
         // External Playback State
         React.createElement('div', { className: 'flex flex-col items-center space-y-4 w-full' },
