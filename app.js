@@ -527,6 +527,11 @@ const Parachord = () => {
   const [currentSource, setCurrentSource] = useState(null);
   const [startTime, setStartTime] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [isExternalPlayback, setIsExternalPlayback] = useState(false);
+  const [showExternalPrompt, setShowExternalPrompt] = useState(false);
+  const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
+  const externalTrackTimeoutRef = useRef(null);
+  const playbackPollerRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
