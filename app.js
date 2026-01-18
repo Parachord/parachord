@@ -39,8 +39,7 @@ const loadBuiltinResolvers = async () => {
     const resolverFiles = [
       'resolvers/builtin/spotify.axe',
       'resolvers/builtin/bandcamp.axe',
-      'resolvers/builtin/qobuz.axe',
-      'resolvers/builtin/musicbrainz.axe'
+      'resolvers/builtin/qobuz.axe'
     ];
     
     const resolvers = [];
@@ -85,7 +84,6 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick }) =>
   const resolverMeta = {
     spotify: { label: '♫ Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
     youtube: { label: '🎥 YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
-    musicbrainz: { label: '♪ MusicBrainz', bgColor: 'bg-purple-600/20', textColor: 'text-purple-400' },
     bandcamp: { label: '▶ Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
     qobuz: { label: '◆ Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' }
   };
@@ -515,7 +513,7 @@ const Parachord = () => {
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'musicbrainz', 'youtube', 'soundcloud']);
+  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [library, setLibrary] = useState([]);
   const [audioContext, setAudioContext] = useState(null);
@@ -652,8 +650,7 @@ const Parachord = () => {
     const configs = {
       spotify: { token: spotifyToken },
       qobuz: { appId: '285473059', volume: volume / 100 },
-      bandcamp: {},
-      musicbrainz: {}
+      bandcamp: {}
     };
     const config = configs[resolverId] || {};
     
@@ -923,14 +920,11 @@ const Parachord = () => {
 
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
-      // For non-streaming resolvers (like Bandcamp, MusicBrainz)
+      // For non-streaming resolvers (like Bandcamp)
       if (resolverId === 'bandcamp' && sourceToPlay.bandcampUrl) {
         console.log('🎸 Opening Bandcamp in browser...');
         const config = getResolverConfig(resolverId);
         await resolver.play(sourceToPlay, config);
-        return;
-      } else if (resolverId === 'musicbrainz') {
-        alert('MusicBrainz provides metadata only. Try searching for this track on Spotify to play it.');
         return;
       }
     }
