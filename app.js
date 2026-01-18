@@ -5253,12 +5253,14 @@ useEffect(() => {
           React.createElement('div', { className: 'divide-y divide-white/5' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
+              const isLoading = track.status === 'loading';
+              const isError = track.status === 'error';
               const availableSources = Object.keys(track.sources || {});
 
               return React.createElement('div', {
                 key: track.id,
-                draggable: true,
-                onDragStart: () => setDraggedQueueTrack(index),
+                draggable: !isLoading && !isError,
+                onDragStart: () => !isLoading && !isError && setDraggedQueueTrack(index),
                 onDragOver: (e) => e.preventDefault(),
                 onDrop: () => {
                   if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
@@ -5267,78 +5269,139 @@ useEffect(() => {
                   setDraggedQueueTrack(null);
                 },
                 onDragEnd: () => setDraggedQueueTrack(null),
-                className: `flex items-center gap-3 px-4 py-2 hover:bg-white/5 cursor-grab active:cursor-grabbing transition-colors ${
+                className: `flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors ${
                   isCurrentTrack ? 'bg-purple-600/20' : ''
-                } ${draggedQueueTrack === index ? 'opacity-50' : ''}`
+                } ${draggedQueueTrack === index ? 'opacity-50' : ''} ${
+                  isError ? 'opacity-50' : ''
+                } ${isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
               },
-                // Drag handle / track number
+                // Track number / status indicator
                 React.createElement('div', {
                   className: 'w-6 text-center text-gray-500 text-sm flex-shrink-0'
-                }, isCurrentTrack ? '▶' : index + 1),
+                },
+                  isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
+                  isError ? '⚠' :
+                  isCurrentTrack ? '▶' : index + 1
+                ),
 
                 // Track info
                 React.createElement('div', {
-                  className: 'flex-1 min-w-0 cursor-pointer',
-                  onClick: () => handlePlay(track)
+                  className: `flex-1 min-w-0 ${isLoading || isError ? '' : 'cursor-pointer'}`,
+                  onClick: () => !isLoading && !isError && handlePlay(track)
                 },
-                  React.createElement('div', {
-                    className: `font-medium truncate ${isCurrentTrack ? 'text-purple-400' : 'text-white'}`
-                  }, track.title),
-                  React.createElement('div', {
-                    className: 'text-sm text-gray-400 truncate'
-                  }, track.artist)
-                ),
-
-                // All resolver source buttons
-                React.createElement('div', {
-                  className: 'flex items-center gap-1 flex-shrink-0'
-                },
-                  availableSources.length > 0 ?
-                    availableSources.map(resolverId => {
-                      const resolver = allResolvers.find(r => r.id === resolverId);
-                      if (!resolver) return null;
-                      return React.createElement('button', {
-                        key: resolverId,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          handlePlay({ ...track, preferredResolver: resolverId });
-                        },
-                        style: {
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '4px',
-                          backgroundColor: resolver.color,
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: 'bold',
-                          color: 'white',
-                          opacity: 0.8,
-                          transition: 'opacity 0.1s, transform 0.1s'
-                        },
-                        onMouseEnter: (e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.1)'; },
-                        onMouseLeave: (e) => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.transform = 'scale(1)'; },
-                        title: `Play via ${resolver.name}`
-                      }, resolver.icon);
-                    })
+                  isLoading ?
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'font-medium text-gray-400'
+                      }, 'Loading...'),
+                      React.createElement('div', {
+                        className: 'text-sm text-gray-500 truncate'
+                      }, `from ${track.sourceDomain || 'unknown'}`)
+                    )
+                  : isError ?
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'font-medium text-red-400'
+                      }, 'Could not load track'),
+                      React.createElement('div', {
+                        className: 'text-sm text-gray-500 truncate'
+                      }, track.errorMessage || 'Unknown error')
+                    )
                   :
-                    React.createElement('span', {
-                      className: 'text-xs text-gray-500'
-                    }, '—')
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: `font-medium truncate ${isCurrentTrack ? 'text-purple-400' : 'text-white'}`
+                      }, track.title),
+                      React.createElement('div', {
+                        className: 'text-sm text-gray-400 truncate'
+                      }, track.artist)
+                    )
                 ),
 
-                // Remove button
-                React.createElement('button', {
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    removeFromQueue(track.id);
+                // Action buttons (right side)
+                isError ?
+                  React.createElement('div', {
+                    className: 'flex items-center gap-1 flex-shrink-0'
                   },
-                  className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
-                  title: 'Remove from queue'
-                }, React.createElement(X, { size: 16 }))
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        if (track.sourceUrl) {
+                          removeFromQueue(track.id);
+                          handleUrlDrop(track.sourceUrl, 'queue');
+                        }
+                      },
+                      className: 'px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
+                      title: 'Retry'
+                    }, '↻ Retry'),
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        removeFromQueue(track.id);
+                      },
+                      className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                      title: 'Remove from queue'
+                    }, React.createElement(X, { size: 16 }))
+                  )
+                : isLoading ?
+                  React.createElement('button', {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      removeFromQueue(track.id);
+                    },
+                    className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                    title: 'Cancel'
+                  }, React.createElement(X, { size: 16 }))
+                :
+                  React.createElement(React.Fragment, null,
+                    React.createElement('div', {
+                      className: 'flex items-center gap-1 flex-shrink-0'
+                    },
+                      availableSources.length > 0 ?
+                        availableSources.map(resolverId => {
+                          const resolver = allResolvers.find(r => r.id === resolverId);
+                          if (!resolver) return null;
+                          return React.createElement('button', {
+                            key: resolverId,
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              handlePlay({ ...track, preferredResolver: resolverId });
+                            },
+                            style: {
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '4px',
+                              backgroundColor: resolver.color,
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              color: 'white',
+                              opacity: 0.8,
+                              transition: 'opacity 0.1s, transform 0.1s'
+                            },
+                            onMouseEnter: (e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.1)'; },
+                            onMouseLeave: (e) => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.transform = 'scale(1)'; },
+                            title: `Play via ${resolver.name}`
+                          }, resolver.icon);
+                        })
+                      :
+                        React.createElement('span', {
+                          className: 'text-xs text-gray-500'
+                        }, '—')
+                    ),
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        removeFromQueue(track.id);
+                      },
+                      className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                      title: 'Remove from queue'
+                    }, React.createElement(X, { size: 16 }))
+                  )
               );
             })
           )
