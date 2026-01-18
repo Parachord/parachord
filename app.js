@@ -960,6 +960,7 @@ const Parachord = () => {
         
         const resolvers = await resolverLoader.current.loadResolvers(resolversToLoad);
         setLoadedResolvers(resolvers);
+        resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
       } catch (error) {
         console.error('❌ Failed to load resolvers:', error);
@@ -968,6 +969,7 @@ const Parachord = () => {
         try {
           const resolvers = await resolverLoader.current.loadResolvers(FALLBACK_RESOLVERS);
           setLoadedResolvers(resolvers);
+          resolverLoaderRef.current = resolverLoader.current;
           console.log(`✅ Loaded ${resolvers.length} fallback resolvers`);
         } catch (fallbackError) {
           console.error('❌ Even fallback resolvers failed:', fallbackError);
