@@ -1,16 +1,27 @@
-# Browser Extension for Playback Control
+# Browser Extension for Parachord
 
 ## Overview
 
-A browser extension that gives Parachord remote control over YouTube/Bandcamp playback happening in the browser. Instead of "fire and forget" with `shell.openExternal()`, Parachord gains the ability to pause, resume, and detect when tracks end in the browser.
+A browser extension that extends Parachord's capabilities in three ways:
 
-## Problem
+1. **Playback Control** - Remote control of YouTube/Bandcamp playback from Parachord's transport controls
+2. **Page Scraping** - Extract track metadata from music sites (like Tomahklet) and send to Parachord
+3. **URL Resolution** - Send any URL to Parachord for resolver lookup
 
+## Problems Solved
+
+### Playback Control
 Currently when Parachord plays a YouTube or Bandcamp track:
 1. It opens the URL in the default browser via `shell.openExternal()`
 2. Parachord loses all control - can't pause, can't detect when track ends
 3. Transport controls in Parachord don't work for browser-based playback
 4. Queue can't auto-advance because Parachord doesn't know when track finishes
+
+### Page Scraping
+Users browsing music sites (Pitchfork, album reviews, etc.) can't easily add tracks to Parachord without manually searching.
+
+### URL Resolution
+Users can't send a URL they're viewing directly to Parachord for playback.
 
 ## Solution
 
@@ -19,6 +30,8 @@ A browser extension that:
 - Receives play/pause commands and executes them on the page
 - Reports playback state (playing, paused, ended) back to Parachord
 - Enables Parachord's transport controls to work with browser playback
+- Scrapes track metadata from supported sites and sends as XSPF
+- Sends URLs to Parachord for resolver lookup
 
 ## Architecture
 
@@ -67,6 +80,12 @@ A browser extension that:
 { "type": "event", "event": "ended", "site": "youtube", "tabId": 123 }
 { "type": "event", "event": "tabClosed", "tabId": 123 }
 { "type": "event", "event": "disconnected" }
+
+// Page scraping - extension scraped tracks from current page
+{ "type": "scrape", "tracks": [{ "artist": "...", "track": "...", "album": "..." }], "source": "pitchfork.com" }
+
+// URL resolution - user wants to play current page URL
+{ "type": "resolveUrl", "url": "https://..." }
 ```
 
 ## Resolver-Defined Browser Control
@@ -158,7 +177,15 @@ Parachord calls handleNext()
 parachord-extension/
 ├── manifest.json          # Chrome extension manifest v3
 ├── background.js          # Service worker - WebSocket connection
-├── content.js             # Generic content script - executes injected code
+├── content.js             # Content script - executes injected code, runs scrapers
+├── popup.html             # Extension popup UI
+├── popup.js               # Popup logic (scrape button, send URL button)
+├── scrapers/
+│   ├── index.js           # Scraper registry and URL matcher
+│   ├── pitchfork.js       # Pitchfork album reviews
+│   ├── bandcamp.js        # Bandcamp pages
+│   ├── soundcloud.js      # SoundCloud pages
+│   └── generic.js         # Fallback: LD+JSON, Open Graph, etc.
 └── icons/
     ├── icon16.png
     ├── icon48.png
@@ -180,6 +207,15 @@ parachord-extension/
 - Executes `browserPlay()`, `browserPause()`, etc.
 - Sets up media event listeners (`ended`, `play`, `pause`)
 - Reports state changes back to background script
+- Runs scrapers when requested by popup
+
+### popup.js
+
+- Shows extension popup when user clicks icon
+- "Scrape Page" button - runs matching scraper, sends tracks to Parachord
+- "Send URL" button - sends current page URL to Parachord for resolution
+- Shows connection status (connected/disconnected to Parachord)
+- Shows scrape results preview before sending
 
 ## Desktop App Changes
 
@@ -363,6 +399,167 @@ Parachord calls handleNext()
 Next track opens → new tab connects → old tab closed
 ```
 
+## Page Scraping (Tomahklet-style)
+
+The extension includes built-in scrapers for extracting track metadata from music sites. This logic lives in the extension itself, not in resolvers, because:
+
+- Scrapers run in browser context and need DOM access
+- Resolvers are designed for server-side operations (search, resolve URLs)
+- Extension can be updated independently of Parachord
+- Cleaner separation of concerns
+
+### Extension Structure with Scrapers
+
+```
+parachord-extension/
+├── manifest.json
+├── background.js
+├── content.js
+├── scrapers/
+│   ├── index.js           # Scraper registry and matcher
+│   ├── pitchfork.js       # Pitchfork album reviews
+│   ├── bandcamp.js        # Bandcamp pages
+│   ├── soundcloud.js      # SoundCloud pages
+│   └── generic.js         # Fallback: LD+JSON, Open Graph, etc.
+└── icons/
+```
+
+### Scraper Interface
+
+Each scraper exports:
+
+```javascript
+// scrapers/pitchfork.js
+export default {
+  // URL patterns this scraper handles
+  patterns: ['pitchfork.com/reviews/albums/*'],
+
+  // Extract tracks from the page
+  scrape: () => {
+    const artist = document.querySelector('.artist-name')?.textContent;
+    const album = document.querySelector('.album-title')?.textContent;
+    const tracks = Array.from(document.querySelectorAll('.track-list li'))
+      .map(li => ({
+        artist,
+        album,
+        track: li.textContent.trim()
+      }));
+    return tracks;
+  }
+};
+```
+
+### Generic Fallback Scraper
+
+For sites without specific scrapers, try common metadata formats:
+
+```javascript
+// scrapers/generic.js
+export default {
+  patterns: ['*'], // Fallback for any site
+
+  scrape: () => {
+    // Try LD+JSON (schema.org)
+    const ldJson = document.querySelector('script[type="application/ld+json"]');
+    if (ldJson) {
+      const data = JSON.parse(ldJson.textContent);
+      if (data['@type'] === 'MusicAlbum' || data['@type'] === 'MusicRecording') {
+        return extractFromLdJson(data);
+      }
+    }
+
+    // Try Open Graph tags
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
+    const ogType = document.querySelector('meta[property="og:type"]')?.content;
+    if (ogType === 'music.song' || ogType === 'music.album') {
+      return extractFromOpenGraph();
+    }
+
+    // Try common CSS patterns
+    return extractFromCommonPatterns();
+  }
+};
+```
+
+### User Flow
+
+```
+User browses to Pitchfork album review
+    ↓
+Extension detects pitchfork.com/reviews/albums/*
+    ↓
+Extension shows badge: "5 tracks found"
+    ↓
+User clicks extension icon or badge
+    ↓
+Extension runs pitchfork scraper
+    ↓
+Extension sends: { type: "scrape", tracks: [...], source: "pitchfork.com" }
+    ↓
+Parachord receives tracks, creates XSPF playlist
+    ↓
+Parachord shows: "Added 5 tracks from Pitchfork"
+```
+
+### Desktop Handling
+
+```javascript
+// In extension event handler
+case 'scrape':
+  const xspf = createXspfFromTracks(event.tracks, event.source);
+  importPlaylist(xspf);
+  break;
+```
+
+## URL Resolution
+
+User can send any URL to Parachord for resolver lookup.
+
+### User Flow
+
+```
+User is on youtube.com/watch?v=xyz or bandcamp.com/track/xyz
+    ↓
+User clicks "Send to Parachord" button in extension
+    ↓
+Extension sends: { type: "resolveUrl", url: "https://..." }
+    ↓
+Parachord receives URL
+    ↓
+Parachord finds resolver that matches URL pattern (YouTube, Bandcamp, etc.)
+    ↓
+Resolver extracts track info from URL
+    ↓
+Parachord plays or queues the track
+```
+
+### Resolver URL Matching
+
+Resolvers define URL patterns they can handle:
+
+```json
+{
+  "manifest": { "id": "youtube" },
+  "urlPatterns": ["youtube.com/watch*", "youtu.be/*"],
+  "capabilities": { "resolve": true, "resolveUrl": true }
+}
+```
+
+### Desktop Handling
+
+```javascript
+// In extension event handler
+case 'resolveUrl':
+  const resolver = findResolverForUrl(event.url);
+  if (resolver) {
+    const track = await resolver.resolveUrl(event.url);
+    playTrack(track);
+  } else {
+    showNotification("No resolver found for this URL");
+  }
+  break;
+```
+
 ## Future Considerations
 
 - **Seeking**: Add `browserSeek(position)` function to resolvers
@@ -370,3 +567,4 @@ Next track opens → new tab connects → old tab closed
 - **Progress tracking**: Periodically report `currentTime` for progress bar
 - **Multiple browser support**: Firefox extension (same WebSocket approach)
 - **SoundCloud, Vimeo**: Just add resolvers with `browserControl` capability
+- **More scrapers**: Add scrapers for more music sites (AllMusic, Discogs, RateYourMusic, etc.)
