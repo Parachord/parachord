@@ -2685,9 +2685,11 @@ const Parachord = () => {
         
         for (const track of parsed.tracks) {
           console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-          
+
           // Try to resolve the track using active resolvers
-          const trackWithSources = { ...track, sources: {} };
+          // Generate unique ID from artist + title + album for queue tracking
+          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const trackWithSources = { ...track, id: trackId, sources: {} };
           
           for (const resolverId of activeResolvers) {
             const resolver = allResolvers.find(r => r.id === resolverId);
