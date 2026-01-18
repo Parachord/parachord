@@ -1191,15 +1191,36 @@ const Parachord = () => {
     // (Simplified - full toast system out of scope)
     console.log('ℹ️ Skipped external track');
 
-    // Remove current track from queue before advancing
-    if (currentTrack) {
-      const newQueue = currentQueue.filter(t => t.id !== currentTrack.id);
-      setCurrentQueue(newQueue);
-      console.log(`📋 Removed track from queue. Queue length: ${newQueue.length}`);
+    // Find next track BEFORE removing current from queue
+    if (currentQueue.length === 0) {
+      console.log('Queue is empty, cannot skip');
+      return;
     }
 
-    // Move to next track
-    handleNext();
+    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
+    console.log(`🔍 Skip: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+
+    let nextTrack;
+    if (currentIndex === -1) {
+      // Track not found, play first
+      nextTrack = currentQueue[0];
+    } else if (currentIndex === currentQueue.length - 1) {
+      // Last track, loop to first
+      nextTrack = currentQueue[0];
+    } else {
+      // Play next track
+      nextTrack = currentQueue[currentIndex + 1];
+    }
+
+    // Remove current track from queue
+    const newQueue = currentQueue.filter(t => t.id !== currentTrack?.id);
+    setCurrentQueue(newQueue);
+    console.log(`📋 Removed track. New queue length: ${newQueue.length}`);
+
+    // Play the next track directly
+    if (nextTrack) {
+      handlePlay(nextTrack);
+    }
   };
 
   // User finished with external track, move to next
@@ -1207,15 +1228,36 @@ const Parachord = () => {
     console.log('✅ User done with external track, moving to next');
     setIsExternalPlayback(false);
 
-    // Remove current track from queue before advancing
-    if (currentTrack) {
-      const newQueue = currentQueue.filter(t => t.id !== currentTrack.id);
-      setCurrentQueue(newQueue);
-      console.log(`📋 Removed track from queue. Queue length: ${newQueue.length}`);
+    // Find next track BEFORE removing current from queue
+    if (currentQueue.length === 0) {
+      console.log('Queue is empty, nothing to play');
+      return;
     }
 
-    // Move to next track
-    handleNext();
+    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
+    console.log(`🔍 Done: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+
+    let nextTrack;
+    if (currentIndex === -1) {
+      // Track not found, play first
+      nextTrack = currentQueue[0];
+    } else if (currentIndex === currentQueue.length - 1) {
+      // Last track, loop to first
+      nextTrack = currentQueue[0];
+    } else {
+      // Play next track
+      nextTrack = currentQueue[currentIndex + 1];
+    }
+
+    // Remove current track from queue
+    const newQueue = currentQueue.filter(t => t.id !== currentTrack?.id);
+    setCurrentQueue(newQueue);
+    console.log(`📋 Removed track. New queue length: ${newQueue.length}`);
+
+    // Play the next track directly
+    if (nextTrack) {
+      handlePlay(nextTrack);
+    }
   };
 
   const handlePlayPause = async () => {
