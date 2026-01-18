@@ -584,6 +584,13 @@ const Parachord = () => {
   const [urlImportLoading, setUrlImportLoading] = useState(false);
   const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
 
+  // Drag & drop URL state
+  const [isDraggingUrl, setIsDraggingUrl] = useState(false);
+  const [dropZoneTarget, setDropZoneTarget] = useState(null); // 'now-playing' | 'queue' | null
+  const queueAnimationRef = useRef(null);
+  const [queueAnimating, setQueueAnimating] = useState(false);
+  const resolverLoaderRef = useRef(null);
+
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
