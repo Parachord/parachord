@@ -1126,13 +1126,13 @@ const Parachord = () => {
     // Reset pagination on new search
     setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
 
-    // Debounce search by 300ms
+    // Debounce search by 150ms for responsive feel
     searchTimeoutRef.current = setTimeout(() => {
       if (value.length >= 2) {
         performSearch(value);
         setSearchDrawerOpen(true);
       }
-    }, 300);
+    }, 150);
   };
 
   // Load more results for a specific category
