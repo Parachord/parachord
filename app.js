@@ -776,6 +776,60 @@ const Parachord = () => {
     }, 300);
   };
 
+  // Drag event handlers for URL drops
+  const handleDragEnter = (e, zone) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const url = extractUrlFromDrop(e.dataTransfer);
+    if (!url) return;
+
+    // Check if any resolver can handle this URL
+    const resolverId = resolverLoaderRef.current?.findResolverForUrl(url);
+    if (resolverId) {
+      setIsDraggingUrl(true);
+      setDropZoneTarget(zone);
+    }
+  };
+
+  const handleDragOver = (e, zone) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Update target if moving between zones
+    if (isDraggingUrl && dropZoneTarget !== zone) {
+      setDropZoneTarget(zone);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Only clear if leaving the app entirely
+    const relatedTarget = e.relatedTarget;
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setIsDraggingUrl(false);
+      setDropZoneTarget(null);
+    }
+  };
+
+  const handleDrop = (e, zone) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsDraggingUrl(false);
+    setDropZoneTarget(null);
+
+    const url = extractUrlFromDrop(e.dataTransfer);
+    if (!url) {
+      console.log('No valid URL in drop');
+      return;
+    }
+
+    handleUrlDrop(url, zone);
+  };
+
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
