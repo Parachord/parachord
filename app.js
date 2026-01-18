@@ -301,7 +301,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = tru
 };
 
 // ReleasePage component - Shows full album/EP/single with tracklist
-const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, resolvers = [] }) => {
+const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, resolvers = [], setCurrentQueue }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -399,6 +399,24 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                     album: release.title,
                     sources: sources
                   };
+
+                  // Build queue from tracks after clicked position (not the current track)
+                  if (setCurrentQueue) {
+                    const remainingTracks = release.tracks.slice(index + 1).map((t, i) => {
+                      const tKey = `${t.position}-${t.title}`;
+                      const tSources = trackSources[tKey] || {};
+                      const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                      return {
+                        ...t,
+                        id: tId,
+                        artist: release.artist.name,
+                        album: release.title,
+                        sources: tSources
+                      };
+                    });
+                    setCurrentQueue(remainingTracks);
+                  }
+
                   handlePlay(trackWithSources);
                 } else {
                   // No resolved sources yet, fall back to search
@@ -4231,7 +4249,8 @@ useEffect(() => {
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             trackSources: trackSources,
-            resolvers: resolvers
+            resolvers: resolvers,
+            setCurrentQueue: setCurrentQueue
           })
         ),
         
@@ -4390,8 +4409,8 @@ useEffect(() => {
                   isResolving ? 'opacity-60' : ''
                 }`,
                 onClick: () => {
-                  // Add all tracks to queue starting from clicked track
-                  setCurrentQueue(playlistTracks);
+                  // Add tracks after clicked position to queue (not the current track)
+                  setCurrentQueue(playlistTracks.slice(index + 1));
                   handlePlay(track);  // Pass full track object - will resolve if needed
                 }
               },
@@ -4436,8 +4455,8 @@ useEffect(() => {
                           className: 'no-drag',
                           onClick: (e) => {
                             e.stopPropagation();
-                            // Add all tracks to queue
-                            setCurrentQueue(playlistTracks);
+                            // Add tracks after clicked position to queue (not the current track)
+                            setCurrentQueue(playlistTracks.slice(index + 1));
                             // Pass track with preferredResolver hint so queue ID is preserved
                             handlePlay({ ...track, preferredResolver: resolverId });
                           },
@@ -4493,13 +4512,14 @@ useEffect(() => {
               'Your library is empty. Search for music to add tracks!'
             )
           :
-          library.map(track =>
+          library.map((track, index) =>
             React.createElement(TrackRow, {
               key: track.id,
               track: track,
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
-                setCurrentQueue(library);
+                // Add tracks after clicked position to queue (not the current track)
+                setCurrentQueue(library.slice(index + 1));
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData,
@@ -4606,17 +4626,49 @@ useEffect(() => {
                 isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
               }),
               React.createElement('div', {
-                className: 'w-14 h-14 bg-slate-700/50 rounded-lg flex items-center justify-center text-2xl text-slate-500'
+                className: 'w-12 h-12 bg-slate-700/50 rounded-lg flex items-center justify-center text-xl text-slate-500'
               }, React.createElement(Music)),
               React.createElement('div', null,
                 React.createElement('div', { className: 'font-semibold text-slate-500' }, 'No track playing'),
                 React.createElement('div', { className: 'text-sm text-slate-600' }, 'Drop a URL or select a track')
               )
             ),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(Heart))
+            // Controls in same row
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('button', {
+                disabled: true,
+                className: 'p-1 rounded-full transition-colors text-lg text-slate-600 cursor-not-allowed'
+              }, React.createElement(SkipBack)),
+              React.createElement('button', {
+                disabled: true,
+                className: 'p-2 bg-slate-700 rounded-full text-lg text-slate-500 cursor-not-allowed'
+              }, React.createElement(Play)),
+              React.createElement('button', {
+                disabled: true,
+                className: 'p-1 rounded-full transition-colors text-lg text-slate-600 cursor-not-allowed'
+              }, React.createElement(SkipForward)),
+              React.createElement('div', { className: 'flex items-center gap-1 ml-2' },
+                React.createElement('span', { className: 'text-lg text-slate-600' }, React.createElement(Volume2)),
+                React.createElement('input', {
+                  type: 'range',
+                  min: '0',
+                  max: '100',
+                  value: volume,
+                  disabled: true,
+                  className: 'w-20 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
+                })
+              ),
+              React.createElement('button', {
+                onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+                className: `relative p-1 ml-1 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
+                title: `Queue (${currentQueue.length} tracks)`
+              },
+                React.createElement(List),
+                currentQueue.length > 0 && React.createElement('span', {
+                  className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
+                }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+              )
+            )
           ),
           React.createElement('div', { className: 'flex items-center gap-4' },
             React.createElement('span', { className: 'text-sm text-slate-600 w-12 text-right' }, '0:00'),
@@ -4631,41 +4683,6 @@ useEffect(() => {
               })
             ),
             React.createElement('span', { className: 'text-sm text-slate-600 w-12' }, '0:00')
-          ),
-          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(SkipBack)),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-4 bg-slate-700 rounded-full text-xl text-slate-500 cursor-not-allowed'
-            }, React.createElement(Play)),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(SkipForward)),
-            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
-              React.createElement('span', { className: 'text-xl text-slate-600' }, React.createElement(Volume2)),
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: volume,
-                disabled: true,
-                className: 'w-24 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
-              })
-            ),
-            React.createElement('button', {
-              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-              title: `Queue (${currentQueue.length} tracks)`
-            },
-              React.createElement(List),
-              currentQueue.length > 0 && React.createElement('span', {
-                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-            )
           )
         )
       :
@@ -4734,15 +4751,15 @@ useEffect(() => {
                 React.createElement('img', {
                   src: currentTrack.albumArt,
                   alt: currentTrack.album,
-                  className: 'w-14 h-14 rounded-lg object-cover'
+                  className: 'w-12 h-12 rounded-lg object-cover'
                 })
               :
                 React.createElement('div', {
-                  className: 'w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
+                  className: 'w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-xl'
                 }, React.createElement(Music)),
               React.createElement('div', null,
-                React.createElement('div', { className: 'font-semibold' }, currentTrack.title),
-                React.createElement('div', { className: 'text-sm text-gray-400 flex items-center gap-2' },
+                React.createElement('div', { className: 'font-semibold text-sm' }, currentTrack.title),
+                React.createElement('div', { className: 'text-xs text-gray-400 flex items-center gap-2' },
                   React.createElement('button', {
                     onClick: () => {
                       console.log('Navigating to artist:', currentTrack.artist);
@@ -4752,7 +4769,7 @@ useEffect(() => {
                     style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
                   }, currentTrack.artist)
                 ),
-                React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
+                React.createElement('div', { className: 'text-xs text-purple-400' },
                   (() => {
                     const resolverId = determineResolverIdFromTrack(currentTrack);
                     const resolver = allResolvers.find(r => r.id === resolverId);
@@ -4761,9 +4778,42 @@ useEffect(() => {
                 )
               )
             ),
-            React.createElement('button', {
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(Heart))
+            // Controls in same row
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('button', {
+                onClick: handlePrevious,
+                className: 'p-1 hover:bg-white/10 rounded-full transition-colors text-lg'
+              }, React.createElement(SkipBack)),
+              React.createElement('button', {
+                onClick: handlePlayPause,
+                className: 'p-2 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-lg'
+              }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
+              React.createElement('button', {
+                onClick: handleNext,
+                className: 'p-1 hover:bg-white/10 rounded-full transition-colors text-lg'
+              }, React.createElement(SkipForward)),
+              React.createElement('div', { className: 'flex items-center gap-1 ml-2' },
+                React.createElement('span', { className: 'text-lg' }, React.createElement(Volume2)),
+                React.createElement('input', {
+                  type: 'range',
+                  min: '0',
+                  max: '100',
+                  value: volume,
+                  onChange: (e) => setVolume(Number(e.target.value)),
+                  className: 'w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+                })
+              ),
+              React.createElement('button', {
+                onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+                className: `relative p-1 ml-1 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
+                title: `Queue (${currentQueue.length} tracks)`
+              },
+                React.createElement(List),
+                currentQueue.length > 0 && React.createElement('span', {
+                  className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
+                }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+              )
+            )
           ),
           React.createElement('div', { className: 'flex items-center gap-4' },
             React.createElement('span', { className: 'text-sm text-gray-400 w-12 text-right' }, formatTime(progress)),
@@ -4791,44 +4841,6 @@ useEffect(() => {
               })
             ),
             React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
-          ),
-          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
-            // Playback controls
-            React.createElement('button', {
-              onClick: handlePrevious,
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(SkipBack)),
-            React.createElement('button', {
-              onClick: handlePlayPause,
-              className: 'p-4 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-xl'
-            }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
-            React.createElement('button', {
-              onClick: handleNext,
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(SkipForward)),
-            // Volume slider
-            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
-              React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: volume,
-                onChange: (e) => setVolume(Number(e.target.value)),
-                className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
-              })
-            ),
-            // Queue button
-            React.createElement('button', {
-              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-              title: `Queue (${currentQueue.length} tracks)`
-            },
-              React.createElement(List),
-              currentQueue.length > 0 && React.createElement('span', {
-                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-            )
           )
         )
     ),
