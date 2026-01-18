@@ -19,6 +19,14 @@
     "urlLookup": true
   },
 
+  "urlPatterns": [
+    "youtube.com/watch?v=*",
+    "www.youtube.com/watch?v=*",
+    "youtu.be/*",
+    "music.youtube.com/watch?v=*",
+    "m.youtube.com/watch?v=*"
+  ],
+
   "settings": {
     "requiresAuth": false,
     "authType": "none",
@@ -34,6 +42,8 @@
 
     "init": "async function(config) { console.log('YouTube resolver initialized'); }",
 
-    "cleanup": "async function() { console.log('YouTube resolver cleanup'); }"
+    "cleanup": "async function() { console.log('YouTube resolver cleanup'); }",
+
+    "lookupUrl": "async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }"
   }
 }
