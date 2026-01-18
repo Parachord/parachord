@@ -830,6 +830,45 @@ const Parachord = () => {
     handleUrlDrop(url, zone);
   };
 
+  // Drop zone overlay component
+  const DropZoneOverlay = ({ zone, isActive }) => {
+    if (!isActive) return null;
+
+    const isNowPlaying = zone === 'now-playing';
+    const icon = isNowPlaying ? '▶' : '📋';
+    const text = isNowPlaying ? 'Drop to Play Now' : 'Drop to Play Next';
+
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+        borderRadius: '8px',
+        border: '2px dashed rgba(147, 51, 234, 0.5)',
+        pointerEvents: 'none'
+      }
+    },
+      React.createElement('div', {
+        style: {
+          fontSize: '48px',
+          marginBottom: '16px'
+        }
+      }, icon),
+      React.createElement('div', {
+        style: {
+          fontSize: '18px',
+          fontWeight: '600',
+          color: '#a855f7'
+        }
+      }, text)
+    );
+  };
+
   // Resolver plugin system
   const resolverLoader = useRef(null);
   const [loadedResolvers, setLoadedResolvers] = useState([]);
