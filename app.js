@@ -978,6 +978,8 @@ const Parachord = () => {
     if (!resolver.capabilities.stream) {
       // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
+      // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
+      setCurrentTrack(sourceToPlay);
       showExternalTrackPromptUI(sourceToPlay);
       return; // Don't play yet, wait for user confirmation
     }
@@ -1283,12 +1285,17 @@ const Parachord = () => {
       }
       
       const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
+      console.log(`🔍 Queue navigation: currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+
       if (currentIndex === -1) {
         // Current track not in queue, play first track
+        console.log('⚠️ Current track not found in queue, playing first track');
         handlePlay(currentQueue[0]);
       } else {
         // Play next track, loop to beginning if at end
-        const nextTrack = currentQueue[(currentIndex + 1) % currentQueue.length];
+        const nextIndex = (currentIndex + 1) % currentQueue.length;
+        console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
+        const nextTrack = currentQueue[nextIndex];
         handlePlay(nextTrack);
       }
     }
