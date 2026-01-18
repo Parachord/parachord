@@ -1185,7 +1185,7 @@ const Parachord = () => {
     try {
       // Search MusicBrainz for artists
       const artistResponse = await fetch(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=5`,
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (artistResponse.ok) {
@@ -1195,7 +1195,7 @@ const Parachord = () => {
 
       // Search MusicBrainz for albums (release-groups)
       const albumResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
+        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=15`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (albumResponse.ok) {
@@ -1203,9 +1203,9 @@ const Parachord = () => {
         results.albums = data['release-groups'] || [];
       }
 
-      // Search MusicBrainz for tracks (recordings) - limit to 5 for performance
+      // Search MusicBrainz for tracks (recordings)
       const trackResponse = await fetch(
-        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=5`,
+        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=20`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
       if (trackResponse.ok) {
