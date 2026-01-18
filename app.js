@@ -1131,6 +1131,7 @@ const Parachord = () => {
     }
 
     setShowExternalPrompt(false);
+    setPendingExternalTrack(null);
     setIsExternalPlayback(true);
     setCurrentTrack(track);
 
