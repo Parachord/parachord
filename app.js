@@ -979,8 +979,10 @@ const Parachord = () => {
       // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
       // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
-      setCurrentTrack(sourceToPlay);
-      showExternalTrackPromptUI(sourceToPlay);
+      // Merge source with original track to preserve queue ID
+      const trackToSet = trackOrSource.sources ? { ...trackOrSource, ...sourceToPlay } : sourceToPlay;
+      setCurrentTrack(trackToSet);
+      showExternalTrackPromptUI(trackToSet);
       return; // Don't play yet, wait for user confirmation
     }
 
@@ -993,7 +995,9 @@ const Parachord = () => {
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
-        setCurrentTrack(sourceToPlay);
+        // Merge source with original track to preserve queue ID
+        const trackToSet = trackOrSource.sources ? { ...trackOrSource, ...sourceToPlay } : sourceToPlay;
+        setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
         if (audioContext) {
