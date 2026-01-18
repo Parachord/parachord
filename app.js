@@ -1191,6 +1191,13 @@ const Parachord = () => {
     // (Simplified - full toast system out of scope)
     console.log('ℹ️ Skipped external track');
 
+    // Remove current track from queue before advancing
+    if (currentTrack) {
+      const newQueue = currentQueue.filter(t => t.id !== currentTrack.id);
+      setCurrentQueue(newQueue);
+      console.log(`📋 Removed track from queue. Queue length: ${newQueue.length}`);
+    }
+
     // Move to next track
     handleNext();
   };
@@ -1199,6 +1206,15 @@ const Parachord = () => {
   const handleDoneWithExternalTrack = () => {
     console.log('✅ User done with external track, moving to next');
     setIsExternalPlayback(false);
+
+    // Remove current track from queue before advancing
+    if (currentTrack) {
+      const newQueue = currentQueue.filter(t => t.id !== currentTrack.id);
+      setCurrentQueue(newQueue);
+      console.log(`📋 Removed track from queue. Queue length: ${newQueue.length}`);
+    }
+
+    // Move to next track
     handleNext();
   };
 
