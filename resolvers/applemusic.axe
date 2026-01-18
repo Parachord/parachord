@@ -1,0 +1,45 @@
+{
+  "manifest": {
+    "id": "applemusic",
+    "name": "Apple Music",
+    "version": "1.0.0",
+    "author": "Harmonix Team",
+    "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
+    "icon": "🍎",
+    "color": "#FA243C",
+    "homepage": "https://music.apple.com",
+    "email": "support@harmonix.app"
+  },
+
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": false,
+    "browse": false,
+    "urlLookup": true
+  },
+
+  "urlPatterns": [
+    "music.apple.com/*/album/*",
+    "music.apple.com/*/song/*",
+    "itunes.apple.com/*/album/*"
+  ],
+
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  },
+
+  "implementation": {
+    "search": "async function(query, config) { try { console.log('Searching Apple Music for:', query); const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=20`); if (!response.ok) { console.error('Apple Music search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No Apple Music results found'); return []; } const results = data.results.map(track => ({ id: `applemusic-${track.trackId}`, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor(track.trackTimeMillis / 1000), sources: ['applemusic'], appleMusicId: track.trackId, appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '300x300') : null, previewUrl: track.previewUrl, isStreamable: track.isStreamable })); console.log(`Found ${results.length} Apple Music results`); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }",
+
+    "resolve": "async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }",
+
+    "init": "async function(config) { console.log('Apple Music resolver initialized'); }",
+
+    "cleanup": "async function() { console.log('Apple Music resolver cleanup'); }",
+
+    "lookupUrl": "async function(url, config) { try { let trackId = null; const trackParamMatch = url.match(/[?&]i=([0-9]+)/); if (trackParamMatch) { trackId = trackParamMatch[1]; } else { const songMatch = url.match(/\\/song\\/[^/]+\\/([0-9]+)/); if (songMatch) { trackId = songMatch[1]; } } if (!trackId) { console.log('Apple Music URL lookup: Could not extract track ID from', url); return null; } const response = await fetch(`https://itunes.apple.com/lookup?id=${trackId}&entity=song`); if (!response.ok) return null; const data = await response.json(); if (!data.results || data.results.length === 0) return null; const track = data.results.find(r => r.wrapperType === 'track') || data.results[0]; if (!track || track.wrapperType !== 'track') return null; return { title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor(track.trackTimeMillis / 1000), albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '300x300') : null, sourceUrl: url, appleMusicId: track.trackId, appleMusicUrl: track.trackViewUrl, previewUrl: track.previewUrl }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }"
+  }
+}
