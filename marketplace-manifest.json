@@ -106,6 +106,27 @@
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/youtube.axe",
       "category": "streaming",
       "tags": ["streaming", "free", "video", "youtube"]
+    },
+    {
+      "id": "applemusic",
+      "name": "Apple Music",
+      "version": "1.0.0",
+      "author": "Harmonix Team",
+      "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
+      "icon": "🍎",
+      "color": "#FA243C",
+      "homepage": "https://music.apple.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": false,
+        "browse": false,
+        "urlLookup": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/applemusic.axe",
+      "category": "metadata",
+      "tags": ["metadata", "free", "itunes", "apple", "url-lookup"]
     }
   ],
   "categories": ["streaming", "purchase", "metadata"]
