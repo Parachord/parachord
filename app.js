@@ -1129,6 +1129,64 @@ const Parachord = () => {
     return track;
   };
 
+  const performSearch = async (query) => {
+    setIsSearching(true);
+    const results = {
+      artists: [],
+      albums: [],
+      tracks: [],
+      playlists: []
+    };
+
+    try {
+      // Search MusicBrainz for artists
+      const artistResponse = await fetch(
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=5`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+      if (artistResponse.ok) {
+        const data = await artistResponse.json();
+        results.artists = data.artists || [];
+      }
+
+      // Search MusicBrainz for albums (release-groups)
+      const albumResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=10`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+      if (albumResponse.ok) {
+        const data = await albumResponse.json();
+        results.albums = data['release-groups'] || [];
+      }
+
+      // Search MusicBrainz for tracks (recordings) - limit to 5 for performance
+      const trackResponse = await fetch(
+        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=5`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+      if (trackResponse.ok) {
+        const data = await trackResponse.json();
+        const recordings = data.recordings || [];
+
+        // Resolve each recording (happens in parallel)
+        const trackPromises = recordings.map(recording => resolveRecording(recording));
+        results.tracks = await Promise.all(trackPromises);
+      }
+
+      // Search local playlists
+      results.playlists = playlists.filter(p =>
+        p.title.toLowerCase().includes(query.toLowerCase())
+      );
+
+      setSearchResults(results);
+      console.log('🔍 Search results:', results);
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   // Cache utility functions
   const loadCacheFromStore = async () => {
     if (!window.electron?.store) return;
