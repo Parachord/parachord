@@ -1600,9 +1600,8 @@ const Parachord = () => {
 
   // Handle playlist click from search
   const handlePlaylistClick = (playlist) => {
-    setSelectedPlaylist(playlist);
-    setActiveView('playlists');
-    console.log('Switched to playlist:', playlist.title);
+    setSearchDrawerOpen(false);
+    loadPlaylist(playlist.id);
   };
 
   // Validate cached sources in background and update if changed
