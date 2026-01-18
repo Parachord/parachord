@@ -2669,6 +2669,136 @@ useEffect(() => {
       }, React.createElement(Settings))
     ),
 
+    // Search Drawer - slides down from header
+    React.createElement('div', {
+      className: `fixed left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-white/20 shadow-2xl transition-all duration-300 ease-in-out z-30 overflow-hidden`,
+      style: {
+        top: '64px', // Below header
+        height: '45vh',
+        transform: searchDrawerOpen ? 'translateY(0)' : 'translateY(-100%)'
+      }
+    },
+      // Scrollable results container
+      React.createElement('div', {
+        className: 'h-full overflow-y-auto p-6 scrollable-content'
+      },
+        isSearching ?
+          React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+            '🔍 Searching...'
+          )
+        :
+        !searchQuery || (
+          searchResults.artists.length === 0 &&
+          searchResults.albums.length === 0 &&
+          searchResults.tracks.length === 0 &&
+          searchResults.playlists.length === 0
+        ) ?
+          React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+            searchQuery ? `No results found for "${searchQuery}"` : 'Type to search...'
+          )
+        :
+        React.createElement('div', { className: 'space-y-6' },
+          // Artists section
+          searchResults.artists?.length > 0 && React.createElement('div', {},
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+              `🎤 Artists (${searchResults.artists.length})`
+            ),
+            React.createElement('div', { className: 'space-y-2' },
+              searchResults.artists.map(artist =>
+                React.createElement('button', {
+                  key: artist.id,
+                  onClick: () => {
+                    setSearchDrawerOpen(false);
+                    fetchArtistData(artist.name);
+                  },
+                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                },
+                  React.createElement('div', { className: 'font-medium' }, artist.name),
+                  artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500' }, artist.disambiguation)
+                )
+              )
+            )
+          ),
+
+          // Albums section
+          searchResults.albums?.length > 0 && React.createElement('div', {},
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+              `💿 Albums (${searchResults.albums.length})`
+            ),
+            React.createElement('div', { className: 'space-y-2' },
+              searchResults.albums.map(album =>
+                React.createElement('button', {
+                  key: album.id,
+                  onClick: () => {
+                    setSearchDrawerOpen(false);
+                    handleAlbumClick(album);
+                  },
+                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                },
+                  React.createElement('div', { className: 'font-medium' }, album.title),
+                  React.createElement('div', { className: 'text-xs text-gray-500' },
+                    `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || 'Unknown year'}`
+                  )
+                )
+              )
+            )
+          ),
+
+          // Tracks section
+          searchResults.tracks?.length > 0 && React.createElement('div', {},
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+              `🎵 Tracks (${searchResults.tracks.length})`
+            ),
+            React.createElement('div', { className: 'space-y-2' },
+              searchResults.tracks.map(track =>
+                React.createElement(TrackRow, {
+                  key: track.id,
+                  track: track,
+                  isPlaying: isPlaying && currentTrack?.id === track.id,
+                  handlePlay: handlePlay,
+                  onArtistClick: (artistName) => {
+                    setSearchDrawerOpen(false);
+                    fetchArtistData(artistName);
+                  }
+                })
+              )
+            )
+          ),
+
+          // Playlists section
+          searchResults.playlists?.length > 0 && React.createElement('div', {},
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-400 mb-3' },
+              `📋 Playlists (${searchResults.playlists.length})`
+            ),
+            React.createElement('div', { className: 'space-y-2' },
+              searchResults.playlists.map(playlist =>
+                React.createElement('button', {
+                  key: playlist.title,
+                  onClick: () => {
+                    setSearchDrawerOpen(false);
+                    handlePlaylistClick(playlist);
+                  },
+                  className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                },
+                  React.createElement('div', { className: 'font-medium' }, playlist.title),
+                  React.createElement('div', { className: 'text-xs text-gray-500' },
+                    `${playlist.tracks?.length || 0} tracks`
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    // Backdrop - click to close drawer
+    searchDrawerOpen && React.createElement('div', {
+      onClick: () => setSearchDrawerOpen(false),
+      className: 'fixed inset-0 bg-black/40 backdrop-blur-sm z-20',
+      style: { top: '64px' }
+    }),
+
     // Main content with sidebar
     React.createElement('div', { 
       className: 'flex-1 flex overflow-hidden'
