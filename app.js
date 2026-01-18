@@ -1659,12 +1659,28 @@ const Parachord = () => {
     console.log(`🔍 Queue navigation: currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
 
     if (currentIndex === -1) {
-      // Current track not in queue, play first track
+      // Current track not in queue, play first non-error track
       console.log('⚠️ Current track not found in queue, playing first track');
-      handlePlay(currentQueue[0]);
+      const firstPlayable = currentQueue.find(t => t.status !== 'error');
+      if (firstPlayable) {
+        handlePlay(firstPlayable);
+      }
     } else {
-      // Play next track, loop to beginning if at end
-      const nextIndex = (currentIndex + 1) % currentQueue.length;
+      // Play next non-error track, loop to beginning if at end
+      let nextIndex = (currentIndex + 1) % currentQueue.length;
+      let attempts = 0;
+
+      // Skip error tracks
+      while (currentQueue[nextIndex]?.status === 'error' && attempts < currentQueue.length) {
+        nextIndex = (nextIndex + 1) % currentQueue.length;
+        attempts++;
+      }
+
+      if (attempts >= currentQueue.length) {
+        console.log('⚠️ All tracks in queue have errors');
+        return;
+      }
+
       console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
       const nextTrack = currentQueue[nextIndex];
       handlePlay(nextTrack);
