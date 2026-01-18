@@ -551,15 +551,28 @@ const Parachord = () => {
   const [loadedResolvers, setLoadedResolvers] = useState([]);
   const loadedResolversRef = useRef([]);
 
-  // Cleanup polling interval on unmount
+  // Cleanup polling interval and external track timeout on unmount
   useEffect(() => {
     return () => {
       if (playbackPollerRef.current) {
         clearInterval(playbackPollerRef.current);
         playbackPollerRef.current = null;
       }
+      if (externalTrackTimeoutRef.current) {
+        clearTimeout(externalTrackTimeoutRef.current);
+        externalTrackTimeoutRef.current = null;
+      }
     };
   }, []);
+
+  // Helper to determine resolver ID from track properties
+  const determineResolverIdFromTrack = (track) => {
+    if (track.spotifyUri || track.spotifyId) return 'spotify';
+    if (track.bandcampUrl) return 'bandcamp';
+    if (track.youtubeUrl || track.youtubeId) return 'youtube';
+    if (track.qobuzId) return 'qobuz';
+    return null;
+  };
 
   // Cache for album art URLs (releaseId -> imageUrl)
   const albumArtCache = useRef({});
@@ -1053,6 +1066,95 @@ const Parachord = () => {
       playbackPollerRef.current = pollInterval;
     }
     // For future HTML5 audio resolvers, add event listener logic here
+  };
+
+  // Show prompt for external browser track
+  const showExternalTrackPromptUI = (track) => {
+    console.log('🌐 Showing external track prompt for:', track.title);
+    setPendingExternalTrack(track);
+    setShowExternalPrompt(true);
+
+    // Set 15-second auto-skip timeout
+    const timeout = setTimeout(() => {
+      console.log('⏱️ External track prompt timeout, auto-skipping...');
+      handleSkipExternalTrack();
+    }, 15000);
+
+    externalTrackTimeoutRef.current = timeout;
+  };
+
+  // User confirmed opening external browser
+  const handleOpenExternalTrack = async (track) => {
+    console.log('✅ User confirmed, opening external track:', track.title);
+
+    // Clear timeout
+    if (externalTrackTimeoutRef.current) {
+      clearTimeout(externalTrackTimeoutRef.current);
+      externalTrackTimeoutRef.current = null;
+    }
+
+    setShowExternalPrompt(false);
+    setIsExternalPlayback(true);
+    setCurrentTrack(track);
+
+    // Determine resolver
+    const resolverId = determineResolverIdFromTrack(track);
+    if (!resolverId) {
+      console.error('❌ Could not determine resolver for external track');
+      setIsExternalPlayback(false);
+      setPendingExternalTrack(null);
+      setShowExternalPrompt(false);
+      return;
+    }
+
+    const resolver = allResolvers.find(r => r.id === resolverId);
+    if (!resolver) {
+      console.error(`❌ Resolver ${resolverId} not found`);
+      setIsExternalPlayback(false);
+      setPendingExternalTrack(null);
+      setShowExternalPrompt(false);
+      return;
+    }
+
+    // Open in external browser
+    try {
+      const config = getResolverConfig(resolverId);
+      await resolver.play(track, config);
+      console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
+    } catch (error) {
+      console.error('❌ Failed to open external track:', error);
+      alert(`Failed to open browser: ${error.message}`);
+      setIsExternalPlayback(false);
+      setPendingExternalTrack(null);
+    }
+  };
+
+  // Skip external track (manual or auto-timeout)
+  const handleSkipExternalTrack = () => {
+    console.log('⏭️ Skipping external track');
+
+    // Clear timeout if exists
+    if (externalTrackTimeoutRef.current) {
+      clearTimeout(externalTrackTimeoutRef.current);
+      externalTrackTimeoutRef.current = null;
+    }
+
+    setShowExternalPrompt(false);
+    setPendingExternalTrack(null);
+
+    // Show toast notification
+    // (Simplified - full toast system out of scope)
+    console.log('ℹ️ Skipped external track');
+
+    // Move to next track
+    handleNext();
+  };
+
+  // User finished with external track, move to next
+  const handleDoneWithExternalTrack = () => {
+    console.log('✅ User done with external track, moving to next');
+    setIsExternalPlayback(false);
+    handleNext();
   };
 
   const handlePlayPause = async () => {
