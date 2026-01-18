@@ -15,8 +15,13 @@
     "search": true,
     "stream": true,
     "browse": false,
-    "urlLookup": false
+    "urlLookup": true
   },
+  "urlPatterns": [
+    "play.qobuz.com/track/*",
+    "open.qobuz.com/track/*",
+    "www.qobuz.com/*/album/*/track/*"
+  ],
   "settings": {
     "requiresAuth": false,
     "authType": "apikey",
@@ -35,6 +40,7 @@
     "resolve": "async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }",
     "play": "async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }",
     "init": "async function(config) { console.log('Qobuz resolver initialized'); }",
-    "cleanup": "async function() { console.log('Qobuz resolver cleanup'); }"
+    "cleanup": "async function() { console.log('Qobuz resolver cleanup'); }",
+    "lookupUrl": "async function(url, config) { try { const match = url.match(/track\\/([0-9]+)/); if (!match) return null; const trackId = match[1]; const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/get?track_id=${trackId}&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) return null; const track = await response.json(); return { title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, sourceUrl: url, qobuzId: track.id, previewUrl: track.preview_url }; } catch (error) { console.error('Qobuz URL lookup error:', error); return null; } }"
   }
 }
