@@ -390,8 +390,11 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
 
                 // Create a track object with sources for handlePlay to select the best one
                 if (availableResolvers.length > 0) {
+                  // Generate unique ID for queue tracking
+                  const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
                   const trackWithSources = {
                     ...track,
+                    id: trackId,
                     artist: release.artist.name,
                     album: release.title,
                     sources: sources
@@ -454,10 +457,19 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                       onClick: (e) => {
                         e.stopPropagation(); // Don't trigger row click
                         console.log(`Playing from ${resolver.name}:`, source);
-                        
-                        // Call handlePlay with the resolved source
-                        // The source already has the right structure from the resolver
-                        handlePlay(source);
+
+                        // Generate unique ID for queue tracking
+                        const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        // Create full track object with sources and preferred resolver
+                        const trackWithSources = {
+                          ...track,
+                          id: trackId,
+                          artist: release.artist.name,
+                          album: release.title,
+                          sources: sources,
+                          preferredResolver: resolverId
+                        };
+                        handlePlay(trackWithSources);
                       },
                       style: {
                         width: '24px',
@@ -761,7 +773,12 @@ const Parachord = () => {
   }, []);
 
   useEffect(() => {
-    if (isPlaying && audioContext && currentTrack) {
+    // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
+    // Also skip if duration is 0 or missing to prevent infinite handleNext loop
+    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
+    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
+
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -925,7 +942,8 @@ const Parachord = () => {
         }
       }
 
-      // Sort sources by: 1) resolver priority (lower index = higher priority), 2) confidence
+      // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
+      const preferredResolver = trackOrSource.preferredResolver;
       const sortedSources = availableResolvers.map(resId => ({
         resolverId: resId,
         source: trackOrSource.sources[resId],
@@ -934,7 +952,12 @@ const Parachord = () => {
       }))
       .filter(s => activeResolvers.includes(s.resolverId)) // Only enabled resolvers
       .sort((a, b) => {
-        // First sort by priority (lower index = higher priority)
+        // If a preferred resolver is specified, prioritize it
+        if (preferredResolver) {
+          if (a.resolverId === preferredResolver) return -1;
+          if (b.resolverId === preferredResolver) return 1;
+        }
+        // Then sort by priority (lower index = higher priority)
         if (a.priority !== b.priority) {
           return a.priority - b.priority;
         }
@@ -3811,21 +3834,9 @@ useEffect(() => {
                   hasResolved ? 'hover:bg-white/5 cursor-pointer' : 'opacity-40 cursor-not-allowed'
                 }`,
                 onClick: hasResolved ? () => {
-                  const availableResolvers = Object.keys(track.sources);
-                  const sortedSources = availableResolvers
-                    .map(resolverId => ({
-                      resolverId,
-                      source: track.sources[resolverId],
-                      priority: resolverOrder.indexOf(resolverId)
-                    }))
-                    .filter(s => activeResolvers.includes(s.resolverId))
-                    .sort((a, b) => a.priority - b.priority);
-                  
-                  if (sortedSources.length > 0) {
-                    const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
-                    setCurrentQueue(playableQueue);
-                    handlePlay(sortedSources[0].source);
-                  }
+                  const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
+                  setCurrentQueue(playableQueue);
+                  handlePlay(track);  // Pass full track object, not just source
                 } : undefined
               },
                 React.createElement('div', { 
@@ -3871,7 +3882,8 @@ useEffect(() => {
                             e.stopPropagation();
                             const playableQueue = playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0);
                             setCurrentQueue(playableQueue);
-                            handlePlay(source);
+                            // Pass track with preferredResolver hint so queue ID is preserved
+                            handlePlay({ ...track, preferredResolver: resolverId });
                           },
                           style: {
                             width: '24px',
