@@ -3004,6 +3004,46 @@ useEffect(() => {
       }, React.createElement(Settings))
     ),
 
+    // External Track Prompt Modal
+    showExternalPrompt && pendingExternalTrack && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
+    },
+      React.createElement('div', {
+        className: 'bg-slate-800 rounded-lg p-8 max-w-md w-full mx-4 border border-slate-700'
+      },
+        React.createElement('div', { className: 'text-center mb-6' },
+          React.createElement('div', { className: 'text-6xl mb-4' }, '🌐'),
+          React.createElement('h3', { className: 'text-xl font-semibold text-white mb-2' },
+            'Next track requires browser'
+          ),
+          React.createElement('div', { className: 'text-slate-300 mb-4' },
+            React.createElement('div', { className: 'font-medium' }, pendingExternalTrack.title),
+            React.createElement('div', { className: 'text-sm text-slate-400' }, pendingExternalTrack.artist),
+            React.createElement('div', { className: 'text-xs text-purple-400 mt-2' },
+              'via ',
+              (allResolvers.find(r =>
+                r.id === (pendingExternalTrack.bandcampUrl ? 'bandcamp' :
+                         pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : 'unknown')
+              )?.name || 'External')
+            )
+          ),
+          React.createElement('div', { className: 'text-xs text-slate-500 mb-6' },
+            'Auto-skipping in 15 seconds...'
+          )
+        ),
+        React.createElement('div', { className: 'flex gap-3' },
+          React.createElement('button', {
+            onClick: () => handleOpenExternalTrack(pendingExternalTrack),
+            className: 'flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg font-medium transition-colors'
+          }, 'Open in Browser'),
+          React.createElement('button', {
+            onClick: handleSkipExternalTrack,
+            className: 'flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 px-4 rounded-lg font-medium transition-colors'
+          }, 'Skip Track')
+        )
+      )
+    ),
+
     // Search Drawer - slides down from header (fixed positioning to avoid covering header)
     searchDrawerOpen && React.createElement('div', {
       className: `fixed left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-white/20 shadow-2xl transition-all duration-300 ease-in-out overflow-hidden`,
