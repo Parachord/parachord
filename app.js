@@ -5217,9 +5217,18 @@ useEffect(() => {
 
       // Queue content
       React.createElement('div', {
-        className: 'overflow-y-auto',
-        style: { height: (queueDrawerHeight - 44) + 'px' }
+        className: 'overflow-y-auto relative',
+        style: { height: (queueDrawerHeight - 44) + 'px' },
+        onDragEnter: (e) => handleDragEnter(e, 'queue'),
+        onDragOver: (e) => handleDragOver(e, 'queue'),
+        onDragLeave: handleDragLeave,
+        onDrop: (e) => handleDrop(e, 'queue')
       },
+        // Drop zone overlay
+        React.createElement(DropZoneOverlay, {
+          zone: 'queue',
+          isActive: isDraggingUrl && dropZoneTarget === 'queue'
+        }),
         currentQueue.length === 0 ?
           React.createElement('div', {
             className: 'flex flex-col items-center justify-center h-full text-gray-500'
