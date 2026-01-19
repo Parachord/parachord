@@ -2465,12 +2465,7 @@ const Parachord = () => {
       setArtistHistory(prev => [...prev, currentArtist.name]);
     }
 
-    setLoadingArtist(true);
-    setArtistImage(null); // Clear previous artist's image immediately
-    setArtistImagePosition('center 25%'); // Reset to default position
-    navigateTo('artist'); // Show artist page immediately with loading animation
-
-    // Check cache first
+    // Check cache first BEFORE clearing state
     const cacheKey = artistName.toLowerCase();
     const cachedData = artistDataCache.current[cacheKey];
     const now = Date.now();
@@ -2484,17 +2479,32 @@ const Parachord = () => {
                       (now - cachedData.timestamp) < CACHE_TTL.artistData &&
                       cachedData.resolverHash === currentResolverHash;
 
+    // Also check if artist image is in cache
+    const normalizedName = artistName.trim().toLowerCase();
+    const cachedImage = artistImageCache.current[normalizedName];
+    const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
     if (cacheValid) {
       console.log('📦 Using cached artist data for:', artistName);
-      setCurrentArtist(cachedData.artist);
 
-      // Fetch artist image from Spotify (async, non-blocking)
-      getArtistImage(artistName).then(result => {
-        if (result) {
-          setArtistImage(result.url);
-          setArtistImagePosition(result.facePosition || 'center 25%');
-        }
-      });
+      // Set artist image immediately from cache if available
+      if (imageCacheValid) {
+        console.log('📦 Using cached artist image for:', artistName);
+        setArtistImage(cachedImage.url);
+        setArtistImagePosition(cachedImage.facePosition || 'center 25%');
+      } else {
+        // Clear image and fetch fresh
+        setArtistImage(null);
+        setArtistImagePosition('center 25%');
+        getArtistImage(artistName).then(result => {
+          if (result) {
+            setArtistImage(result.url);
+            setArtistImagePosition(result.facePosition || 'center 25%');
+          }
+        });
+      }
+
+      setCurrentArtist(cachedData.artist);
 
       // Pre-populate releases with cached album art
       const releasesWithCache = cachedData.releases.map(release => ({
@@ -2504,11 +2514,18 @@ const Parachord = () => {
 
       setArtistReleases(releasesWithCache);
       setLoadingArtist(false);
+      navigateTo('artist');
 
       // Still fetch album art in background for any missing covers
       fetchAlbumArtLazy(cachedData.releases);
       return;
     }
+
+    // No valid cache - clear state and show loading
+    setLoadingArtist(true);
+    setArtistImage(null);
+    setArtistImagePosition('center 25%');
+    navigateTo('artist');
 
     if (cachedData && cachedData.resolverHash !== currentResolverHash) {
       console.log('🔄 Resolver settings changed, invalidating cache for:', artistName);
@@ -3761,11 +3778,6 @@ const Parachord = () => {
       const previousArtist = newArtistHistory.pop();
       setArtistHistory(newArtistHistory);
 
-      // Load the previous artist (without adding current to history again)
-      setLoadingArtist(true);
-      setArtistImage(null);
-      setArtistImagePosition('center 25%');
-
       // Fetch the previous artist's data
       const loadPreviousArtist = async () => {
         const cacheKey = previousArtist.toLowerCase();
@@ -3773,18 +3785,32 @@ const Parachord = () => {
         const now = Date.now();
         const currentResolverHash = getResolverSettingsHash();
 
+        // Check if artist image is in cache
+        const normalizedName = previousArtist.trim().toLowerCase();
+        const cachedImage = artistImageCache.current[normalizedName];
+        const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
         const cacheValid = cachedData &&
                           (now - cachedData.timestamp) < CACHE_TTL.artistData &&
                           cachedData.resolverHash === currentResolverHash;
 
         if (cacheValid) {
+          // Set artist image immediately from cache if available
+          if (imageCacheValid) {
+            setArtistImage(cachedImage.url);
+            setArtistImagePosition(cachedImage.facePosition || 'center 25%');
+          } else {
+            setArtistImage(null);
+            setArtistImagePosition('center 25%');
+            getArtistImage(previousArtist).then(result => {
+              if (result) {
+                setArtistImage(result.url);
+                setArtistImagePosition(result.facePosition || 'center 25%');
+              }
+            });
+          }
+
           setCurrentArtist(cachedData.artist);
-          getArtistImage(previousArtist).then(result => {
-            if (result) {
-              setArtistImage(result.url);
-              setArtistImagePosition(result.facePosition || 'center 25%');
-            }
-          });
           const releasesWithCache = cachedData.releases.map(release => ({
             ...release,
             albumArt: albumArtCache.current[release.id] || null
@@ -3793,8 +3819,12 @@ const Parachord = () => {
           setLoadingArtist(false);
           fetchAlbumArtLazy(cachedData.releases);
         } else {
+          // No valid cache - show loading state
+          setLoadingArtist(true);
+          setArtistImage(null);
+          setArtistImagePosition('center 25%');
+
           // Refetch if not in cache (rare case)
-          // Use a simplified approach - just call fetchArtistData but prevent history push
           const searchResponse = await fetch(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(previousArtist)}&fmt=json&limit=1`,
             { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
