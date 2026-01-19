@@ -3486,6 +3486,9 @@ const Parachord = () => {
   };
 
   // Fetch artist image from Spotify API with caching and face detection
+  // Track in-flight requests to prevent duplicate concurrent fetches
+  const artistImageFetchPromises = useRef({});
+
   const getArtistImage = async (artistName) => {
     if (!artistName) return null;
 
@@ -3498,48 +3501,68 @@ const Parachord = () => {
       return { url: cached.url, facePosition: cached.facePosition };
     }
 
+    // Check if there's already a fetch in progress for this artist
+    if (artistImageFetchPromises.current[normalizedName]) {
+      return artistImageFetchPromises.current[normalizedName];
+    }
+
     // Spotify requires authentication
     if (!spotifyToken) {
       console.log('Spotify not connected, cannot fetch artist image');
       return null;
     }
 
-    try {
-      // Search for the artist on Spotify
-      const searchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(artistName)}&type=artist&limit=1`;
-      const response = await fetch(searchUrl, {
-        headers: { 'Authorization': `Bearer ${spotifyToken}` }
-      });
+    // Create the fetch promise and store it
+    const fetchPromise = (async () => {
+      try {
+        // Search for the artist on Spotify with exact artist name matching
+        const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
+        const response = await fetch(searchUrl, {
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        });
 
-      if (!response.ok) {
-        console.error('Spotify artist search failed:', response.status);
-        return null;
+        if (!response.ok) {
+          console.error('Spotify artist search failed:', response.status);
+          return null;
+        }
+
+        const data = await response.json();
+
+        // Find the best matching artist (prefer exact name match)
+        const artists = data.artists?.items || [];
+        let artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase());
+        if (!artist && artists.length > 0) {
+          artist = artists[0]; // Fall back to first result
+        }
+
+        if (artist?.images?.length > 0) {
+          // Spotify returns images sorted by size (largest first)
+          const imageUrl = artist.images[0].url;
+
+          // Detect face position for smart cropping
+          const facePosition = await detectFacePosition(imageUrl);
+
+          artistImageCache.current[normalizedName] = {
+            url: imageUrl,
+            facePosition: facePosition, // may be null
+            timestamp: now
+          };
+
+          return { url: imageUrl, facePosition };
+        }
+
+        return null; // No image available, don't cache failure
+      } catch (error) {
+        console.error('Failed to fetch artist image from Spotify:', error);
+        return null; // Don't cache failures
+      } finally {
+        // Clean up the in-flight promise
+        delete artistImageFetchPromises.current[normalizedName];
       }
+    })();
 
-      const data = await response.json();
-      const artist = data.artists?.items?.[0];
-
-      if (artist?.images?.length > 0) {
-        // Spotify returns images sorted by size (largest first)
-        const imageUrl = artist.images[0].url;
-
-        // Detect face position for smart cropping
-        const facePosition = await detectFacePosition(imageUrl);
-
-        artistImageCache.current[normalizedName] = {
-          url: imageUrl,
-          facePosition: facePosition, // may be null
-          timestamp: now
-        };
-
-        return { url: imageUrl, facePosition };
-      }
-
-      return null; // No image available, don't cache failure
-    } catch (error) {
-      console.error('Failed to fetch artist image from Spotify:', error);
-      return null; // Don't cache failures
-    }
+    artistImageFetchPromises.current[normalizedName] = fetchPromise;
+    return fetchPromise;
   };
 
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
