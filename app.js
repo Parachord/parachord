@@ -4676,10 +4676,10 @@ useEffect(() => {
                   style: { pointerEvents: 'none' }
                 },
                   isResolving ?
-                    React.createElement('span', { 
-                      className: 'text-xs text-gray-500',
+                    React.createElement('div', {
+                      className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin',
                       title: 'Searching for sources...'
-                    }, '🔍')
+                    })
                   :
                     hasResolved ?
                       Object.entries(track.sources).map(([resolverId, source]) => {
