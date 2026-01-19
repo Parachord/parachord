@@ -2368,6 +2368,7 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
     setLoadingArtist(true);
+    setArtistImage(null); // Clear previous artist's image immediately
     navigateTo('artist'); // Show artist page immediately with loading animation
 
     // Check cache first
