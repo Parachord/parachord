@@ -120,8 +120,42 @@
     }
   });
 
+  // Auto-play for Bandcamp tracks
+  function autoPlayBandcamp() {
+    // Try to click the play button
+    const playButton = document.querySelector('.playbutton') ||
+                       document.querySelector('.play-btn') ||
+                       document.querySelector('.play_button');
+    if (playButton) {
+      console.log('[Parachord] Auto-clicking Bandcamp play button');
+      playButton.click();
+      return true;
+    }
+
+    // Fallback: try to play the audio element directly
+    const audio = document.querySelector('audio');
+    if (audio) {
+      console.log('[Parachord] Auto-playing Bandcamp audio element');
+      audio.play().catch(err => {
+        console.log('[Parachord] Auto-play blocked, user interaction required:', err.message);
+      });
+      return true;
+    }
+
+    return false;
+  }
+
   // Initialize
-  waitForMedia(setupMediaListeners);
+  waitForMedia((media) => {
+    setupMediaListeners(media);
+
+    // Auto-play Bandcamp after a short delay to ensure page is ready
+    if (site === 'bandcamp') {
+      setTimeout(() => {
+        autoPlayBandcamp();
+      }, 500);
+    }
+  });
 
   // Also handle dynamic page navigation (SPA)
   let lastUrl = window.location.href;
