@@ -4673,11 +4673,11 @@ useEffect(() => {
                   })()
                 ),
                 React.createElement('div', {
-                  className: 'hidden md:block text-xs text-gray-500 truncate w-48',
+                  className: 'hidden md:block text-xs text-gray-500 truncate w-48 flex-shrink-0',
                   style: { pointerEvents: 'none' }
                 }, track.album || '-'),
-                React.createElement('div', { 
-                  className: 'flex items-center gap-2',
+                React.createElement('div', {
+                  className: 'flex items-center justify-end gap-1.5 w-24 flex-shrink-0',
                   style: { pointerEvents: 'none' }
                 },
                   isResolving ?
@@ -4733,8 +4733,8 @@ useEffect(() => {
                         title: 'Not available on any service'
                       }, '❌')
                 ),
-                React.createElement('div', { 
-                  className: 'text-sm text-gray-400 w-12 text-right',
+                React.createElement('div', {
+                  className: 'text-xs text-gray-500 w-12 text-right flex-shrink-0',
                   style: { pointerEvents: 'none' }
                 }, formatTime(track.duration))
               );
