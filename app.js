@@ -171,6 +171,69 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
   );
 });
 
+// ResolverCard component - Tomahawk-style colored card with centered icon
+const ResolverCard = React.memo(({
+  resolver,
+  isActive,
+  isInstalled,
+  hasUpdate,
+  isInstalling,
+  onToggle,
+  onInstall,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onContextMenu,
+  showToggle = false,
+  showInstall = false,
+  draggable = false
+}) => {
+  return React.createElement('div', {
+    className: 'flex flex-col items-center',
+    draggable: draggable,
+    onDragStart: draggable ? onDragStart : undefined,
+    onDragOver: draggable ? onDragOver : undefined,
+    onDrop: draggable ? onDrop : undefined,
+    onDragEnd: draggable ? onDragEnd : undefined,
+    onContextMenu: onContextMenu
+  },
+    // Card with colored background
+    React.createElement('div', {
+      className: `relative w-32 h-32 rounded-lg flex items-center justify-center cursor-pointer transition-all hover:scale-105 hover:shadow-lg ${
+        !isActive && showToggle ? 'opacity-50 grayscale' : ''
+      }`,
+      style: { backgroundColor: resolver.color || '#6B7280' },
+      onClick: showToggle ? onToggle : (showInstall ? onInstall : undefined)
+    },
+      // Centered icon
+      React.createElement('span', {
+        className: 'text-5xl text-white drop-shadow-md'
+      }, resolver.icon),
+      // Status overlay for installed/update
+      isInstalled && !showToggle && React.createElement('div', {
+        className: `absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+          hasUpdate ? 'bg-orange-500 text-white' : 'bg-white text-green-600'
+        }`
+      }, hasUpdate ? '↑' : '✓'),
+      // Installing spinner
+      isInstalling && React.createElement('div', {
+        className: 'absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center'
+      },
+        React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
+      )
+    ),
+    // Name below card
+    React.createElement('span', {
+      className: 'mt-2 text-sm text-gray-900 font-medium text-center truncate w-32'
+    }, resolver.name),
+    // Subtitle (author or status)
+    showInstall && React.createElement('span', {
+      className: 'text-xs text-gray-500 truncate w-32 text-center'
+    }, resolver.author)
+  );
+});
+
 // RelatedArtistCard component - Shows artist image with name below
 const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
   const [imageUrl, setImageUrl] = useState(null);
