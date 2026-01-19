@@ -689,7 +689,7 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
               // Resolver icons (sources available for this track)
               React.createElement('div', {
                 className: 'flex items-center gap-1 flex-shrink-0',
-                style: { pointerEvents: 'none' }
+                style: { pointerEvents: 'none', minHeight: '24px' }
               },
                 (() => {
                   const trackKey = `${track.position}-${track.title}`;
@@ -697,9 +697,9 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
                   const availableResolverIds = Object.keys(sources);
 
                   if (availableResolverIds.length === 0) {
-                    // Show spinner while resolving
+                    // Show spinner while resolving (24px to match resolver icon size)
                     return React.createElement('div', {
-                      className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
                       title: 'Resolving track...'
                     });
                   }
@@ -6673,12 +6673,12 @@ useEffect(() => {
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
                         className: 'flex items-center gap-1 justify-end',
-                        style: { width: '100px', flexShrink: 0 }
+                        style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                       },
                         isResolving ?
                           React.createElement('div', {
-                            className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin',
-                            title: 'Searching for sources...'
+                            className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                            title: 'Resolving track...'
                           })
                         : hasResolved ?
                           Object.entries(track.sources)
@@ -6725,9 +6725,9 @@ useEffect(() => {
                               })());
                             })
                         :
-                          // Show spinner while resolving
+                          // Show spinner while resolving (24px to match resolver icon size)
                           React.createElement('div', {
-                            className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                            className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
                             title: 'Resolving track...'
                           })
                       )
@@ -8191,7 +8191,7 @@ useEffect(() => {
                 // Resolver icons - fixed width column (last before remove button)
                 React.createElement('div', {
                   className: 'flex items-center gap-1 justify-end',
-                  style: { width: '100px', flexShrink: 0 }
+                  style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                 },
                   isError ?
                     React.createElement('button', {
@@ -8207,7 +8207,7 @@ useEffect(() => {
                     }, '↻')
                   : isLoading ?
                     React.createElement('div', {
-                      className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
+                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin'
                     })
                   : availableSources.length > 0 ?
                     availableSources.map(resolverId => {
@@ -8243,9 +8243,9 @@ useEffect(() => {
                       }, abbrev);
                     })
                   :
-                    // Show spinner when track is resolving (no sources yet)
+                    // Show spinner when track is resolving (24px to match resolver icon size)
                     React.createElement('div', {
-                      className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
                       title: 'Resolving track...'
                     })
                 ),
