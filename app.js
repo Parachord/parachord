@@ -5827,10 +5827,17 @@ useEffect(() => {
 
                   const isActive = activeResolvers.includes(resolver.id);
 
+                  // Check if marketplace has a newer version
+                  const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === resolver.id);
+                  const hasUpdate = marketplaceResolver &&
+                    marketplaceResolver.version !== resolver.version &&
+                    marketplaceResolver.version > resolver.version;
+
                   return React.createElement(ResolverCard, {
                     key: resolver.id,
                     resolver: resolver,
                     isActive: isActive,
+                    hasUpdate: hasUpdate,
                     draggable: true,
                     onClick: () => setSelectedResolver(resolver),
                     onDragStart: (e) => handleResolverDragStart(e, resolver.id),
@@ -5909,18 +5916,18 @@ useEffect(() => {
                       return true;
                     })
                     .map(resolver => {
-                      const isInstalled = allResolvers.some(r => r.id === resolver.id);
+                      const installedResolver = allResolvers.find(r => r.id === resolver.id);
+                      const isInstalled = !!installedResolver;
                       const isInstalling = installingResolvers.has(resolver.id);
-                      const installedVersion = allResolvers.find(r => r.id === resolver.id)?.version;
-                      const hasUpdate = isInstalled && installedVersion !== resolver.version;
 
                       return React.createElement(ResolverCard, {
                         key: resolver.id,
                         resolver: resolver,
                         isInstalled: isInstalled,
-                        hasUpdate: hasUpdate,
                         isInstalling: isInstalling,
-                        onClick: isInstalled ? () => setSelectedResolver(resolver) : () => handleInstallFromMarketplace(resolver)
+                        onClick: isInstalled
+                          ? () => setSelectedResolver(installedResolver)
+                          : () => handleInstallFromMarketplace(resolver)
                       });
                     })
                 )
@@ -6420,7 +6427,9 @@ useEffect(() => {
             // Update button - show if marketplace has newer version
             (() => {
               const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === selectedResolver.id);
-              const hasUpdate = marketplaceResolver && marketplaceResolver.version !== selectedResolver.version;
+              const hasUpdate = marketplaceResolver &&
+                marketplaceResolver.version !== selectedResolver.version &&
+                marketplaceResolver.version > selectedResolver.version;
               if (hasUpdate) {
                 return React.createElement('button', {
                   onClick: async () => {
