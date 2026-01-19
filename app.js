@@ -697,11 +697,11 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
                   const availableResolverIds = Object.keys(sources);
 
                   if (availableResolverIds.length === 0) {
-                    // Show loading indicator while resolving
-                    return React.createElement('span', {
-                      className: 'text-xs text-gray-500',
-                      title: 'Searching for sources...'
-                    }, '🔍');
+                    // Show spinner while resolving
+                    return React.createElement('div', {
+                      className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                      title: 'Resolving track...'
+                    });
                   }
 
                   // Sort resolvers by priority order (left to right = highest to lowest priority)
@@ -6664,9 +6664,15 @@ useEffect(() => {
                         }
                       }, track.artist),
 
-                      // Resolver icons - fixed width column
+                      // Duration - fixed width column (before resolver icons)
+                      React.createElement('span', {
+                        className: 'text-sm text-gray-400 text-right tabular-nums',
+                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                      }, formatTime(track.duration)),
+
+                      // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-start',
+                        className: 'flex items-center gap-1 justify-end',
                         style: { width: '100px', flexShrink: 0 }
                       },
                         isResolving ?
@@ -6719,16 +6725,12 @@ useEffect(() => {
                               })());
                             })
                         :
-                          React.createElement('span', {
-                            className: 'text-xs text-gray-400'
-                          }, '🔍')
-                      ),
-
-                      // Duration - fixed width column
-                      React.createElement('span', {
-                        className: 'text-sm text-gray-400 text-right tabular-nums',
-                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
-                      }, formatTime(track.duration))
+                          // Show spinner while resolving
+                          React.createElement('div', {
+                            className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                            title: 'Resolving track...'
+                          })
+                      )
                     );
                   })
                 )
@@ -8180,9 +8182,15 @@ useEffect(() => {
                   track.artist
                 ),
 
-                // Resolver icons - fixed width column
+                // Duration - fixed width column (before resolver icons)
+                React.createElement('span', {
+                  className: 'text-sm text-gray-400 text-right tabular-nums',
+                  style: { width: '50px', flexShrink: 0 }
+                }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
+
+                // Resolver icons - fixed width column (last before remove button)
                 React.createElement('div', {
-                  className: 'flex items-center gap-1 justify-start',
+                  className: 'flex items-center gap-1 justify-end',
                   style: { width: '100px', flexShrink: 0 }
                 },
                   isError ?
@@ -8241,12 +8249,6 @@ useEffect(() => {
                       title: 'Resolving track...'
                     })
                 ),
-
-                // Duration - fixed width column
-                React.createElement('span', {
-                  className: 'text-sm text-gray-400 text-right tabular-nums',
-                  style: { width: '50px', flexShrink: 0 }
-                }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
 
                 // Remove button
                 React.createElement('button', {
