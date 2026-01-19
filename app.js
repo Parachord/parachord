@@ -491,7 +491,11 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                       onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                       title: `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
-                    }, resolver.name.slice(0, 2).toUpperCase());
+                    }, (() => {
+                      // Custom abbreviations for resolvers
+                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                      return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                    })());
                   });
                 })()
               ),
@@ -4644,14 +4648,29 @@ useEffect(() => {
                             height: '24px',
                             borderRadius: '4px',
                             backgroundColor: resolver.color,
-                            opacity: 0.8,
-                            pointerEvents: 'auto'
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            color: 'white',
+                            pointerEvents: 'auto',
+                            opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                            transition: 'transform 0.1s'
                           },
-                          title: `Play from ${resolver.name}`
-                        }, resolver.icon);
+                          onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                          onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                          title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                        }, (() => {
+                          // Custom abbreviations for resolvers
+                          const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                          return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                        })());
                       })
                     :
-                      React.createElement('span', { 
+                      React.createElement('span', {
                         className: 'text-xs text-gray-500',
                         title: 'Not available on any service'
                       }, '❌')
