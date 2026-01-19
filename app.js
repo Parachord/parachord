@@ -839,6 +839,7 @@ const Parachord = () => {
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
+  const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -1303,6 +1304,9 @@ const Parachord = () => {
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
 
+  // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
+  const playlistCoverCache = useRef({});
+
   // API keys loaded from environment via IPC
   const lastfmApiKey = useRef(null);
 
@@ -1311,7 +1315,8 @@ const Parachord = () => {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
-    artistImage: 90 * 24 * 60 * 60 * 1000  // 90 days
+    artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
+    playlistCover: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
 
   // Generate a hash of current resolver settings for cache invalidation
@@ -1714,6 +1719,43 @@ const Parachord = () => {
 
     return () => clearTimeout(timeoutId);
   }, [activeResolvers, resolverOrder]);
+
+  // Fetch playlist covers when viewing playlists page
+  useEffect(() => {
+    if (activeView !== 'playlists' || playlists.length === 0) return;
+
+    // Fetch covers for playlists that don't have cached covers yet
+    const fetchMissingCovers = async () => {
+      for (const playlist of playlists) {
+        // Skip if we already have covers for this playlist
+        if (allPlaylistCovers[playlist.id]) continue;
+
+        // Get tracks from playlist
+        let tracks = playlist.tracks || [];
+
+        // If no tracks array but has XSPF, parse it
+        if (tracks.length === 0 && playlist.xspf) {
+          const parsed = parseXSPF(playlist.xspf);
+          if (parsed) {
+            tracks = parsed.tracks;
+          }
+        }
+
+        if (tracks.length === 0) continue;
+
+        // Fetch covers using the existing function (which handles caching)
+        const covers = await getPlaylistCovers(playlist.id, tracks);
+        if (covers.length > 0) {
+          setAllPlaylistCovers(prev => ({
+            ...prev,
+            [playlist.id]: covers
+          }));
+        }
+      }
+    };
+
+    fetchMissingCovers();
+  }, [activeView, playlists]);
 
   // Keyboard shortcuts - Escape closes search drawer
   useEffect(() => {
@@ -2754,6 +2796,18 @@ const Parachord = () => {
         console.log(`📦 Loaded ${Object.keys(albumReleaseIdData).length} album-to-release-ID mappings from cache`);
       }
 
+      // Load playlist cover cache
+      const playlistCoverData = await window.electron.store.get('cache_playlist_covers');
+      if (playlistCoverData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(playlistCoverData).filter(
+          ([_, entry]) => now - entry.timestamp < CACHE_TTL.playlistCover
+        );
+        playlistCoverCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} playlist cover entries from cache`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -2798,6 +2852,9 @@ const Parachord = () => {
 
       // Save album-to-release-ID mapping cache
       await window.electron.store.set('cache_album_release_ids', albumToReleaseIdCache.current);
+
+      // Save playlist cover cache
+      await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
 
       // Save resolver settings
       await window.electron.store.set('active_resolvers', activeResolvers);
@@ -4471,6 +4528,56 @@ const Parachord = () => {
     }
   };
 
+  // Get 4 unique album covers for a playlist's 2x2 grid display
+  // Returns array of up to 4 album art URLs, using cache when available
+  const getPlaylistCovers = async (playlistId, tracks) => {
+    // Check cache first
+    const cached = playlistCoverCache.current[playlistId];
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL.playlistCover) {
+      return cached.covers;
+    }
+
+    // Collect unique album art URLs from tracks
+    const seenAlbums = new Set();
+    const covers = [];
+
+    for (const track of tracks) {
+      if (covers.length >= 4) break;
+
+      // Create a unique key for the album to avoid duplicates
+      const albumKey = `${track.artist}-${track.album}`.toLowerCase();
+      if (seenAlbums.has(albumKey)) continue;
+      seenAlbums.add(albumKey);
+
+      // If track already has albumArt, use it
+      if (track.albumArt) {
+        covers.push(track.albumArt);
+        continue;
+      }
+
+      // Otherwise try to fetch it
+      if (track.artist && track.album) {
+        const artUrl = await getAlbumArt(track.artist, track.album);
+        if (artUrl) {
+          covers.push(artUrl);
+        }
+      }
+    }
+
+    // Cache the result
+    if (covers.length > 0) {
+      playlistCoverCache.current[playlistId] = {
+        covers,
+        timestamp: Date.now()
+      };
+    }
+
+    return covers;
+  };
+
+  // State for current playlist's cover art grid
+  const [playlistCoverArt, setPlaylistCoverArt] = useState([]);
+
   const loadPlaylist = async (playlistOrId) => {
     // Accept either a playlist object or an ID for backwards compatibility
     let playlist;
@@ -4489,6 +4596,7 @@ const Parachord = () => {
     console.log('📋 Found playlist:', playlist.title);
 
     setSelectedPlaylist(playlist);
+    setPlaylistCoverArt([]); // Reset cover art
     navigateTo('playlist-view');
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
@@ -4505,7 +4613,12 @@ const Parachord = () => {
         });
         setPlaylistTracks(tracksWithIds);
 
-        // Step 1.5: Fetch album art for tracks that don't have it (background, non-blocking)
+        // Step 1.5: Fetch playlist cover art (4 unique album covers for 2x2 grid)
+        getPlaylistCovers(playlist.id, tracksWithIds).then(covers => {
+          setPlaylistCoverArt(covers);
+        });
+
+        // Step 1.6: Fetch album art for tracks that don't have it (background, non-blocking)
         tracksWithIds.forEach(async (track) => {
           if (!track.albumArt && track.album) {
             const artUrl = await getAlbumArt(track.artist, track.album);
@@ -4536,11 +4649,16 @@ const Parachord = () => {
 
               if (resolved) {
                 console.log(`  ✅ ${resolver.name}: Found match`);
-                // Update the track's sources and trigger re-render
+                // Update the track's sources and duration (if available) and trigger re-render
                 setPlaylistTracks(prevTracks =>
                   prevTracks.map(t =>
                     t.id === track.id
-                      ? { ...t, sources: { ...t.sources, [resolverId]: resolved } }
+                      ? {
+                          ...t,
+                          sources: { ...t.sources, [resolverId]: resolved },
+                          // Update duration if resolved source has it and track doesn't
+                          duration: t.duration || resolved.duration || 0
+                        }
                       : t
                   )
                 );
@@ -4569,13 +4687,22 @@ const Parachord = () => {
     const isQueueFromPlaylist = currentQueue.every(t => playlistIds.has(t.id));
     if (!isQueueFromPlaylist) return;
 
-    // Update queue items with resolved sources from playlistTracks
+    // Update queue items with resolved sources and duration from playlistTracks
     setCurrentQueue(prevQueue =>
       prevQueue.map(queueTrack => {
         const playlistTrack = playlistTracks.find(t => t.id === queueTrack.id);
-        if (playlistTrack && Object.keys(playlistTrack.sources || {}).length > Object.keys(queueTrack.sources || {}).length) {
-          // Playlist track has more sources, update the queue track
-          return { ...queueTrack, sources: { ...queueTrack.sources, ...playlistTrack.sources } };
+        if (playlistTrack) {
+          const hasMoreSources = Object.keys(playlistTrack.sources || {}).length > Object.keys(queueTrack.sources || {}).length;
+          const hasDuration = playlistTrack.duration && !queueTrack.duration;
+
+          if (hasMoreSources || hasDuration) {
+            // Update queue track with new sources and/or duration
+            return {
+              ...queueTrack,
+              sources: { ...queueTrack.sources, ...playlistTrack.sources },
+              duration: queueTrack.duration || playlistTrack.duration || 0
+            };
+          }
         }
         return queueTrack;
       })
@@ -6303,192 +6430,313 @@ useEffect(() => {
         )
       )
       
-      // Main content area - Playlist Page (separate flex layout like Artist page)
+      // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement('div', {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
       },
-        // Playlist header (non-scrollable)
+        // Playlist hero header (similar to Playlists main page)
         React.createElement('div', {
-          className: 'border-b border-white/10 p-6 flex-shrink-0',
-          style: { pointerEvents: 'auto' }
+          className: 'relative',
+          style: {
+            height: '140px',
+            flexShrink: 0,
+            overflow: 'hidden'
+          }
         },
-          React.createElement('div', { className: 'flex items-start gap-6' },
+          // Background with first album art or gradient
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              backgroundImage: playlistCoverArt[0]
+                ? `url(${playlistCoverArt[0]})`
+                : 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: 'blur(20px) brightness(0.7)',
+              transform: 'scale(1.2)'
+            }
+          }),
+          // Gradient overlay
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(17,17,17,0.95) 100%)'
+            }
+          }),
+          // Header content
+          React.createElement('div', {
+            className: 'absolute inset-0 flex items-center px-8 z-10'
+          },
+            // Playlist icon
             React.createElement('div', {
-              className: 'w-48 h-48 flex-shrink-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center text-6xl shadow-2xl'
-            }, '📋'),
-            React.createElement('div', { className: 'flex-1 pt-4' },
-              React.createElement('div', { className: 'text-sm text-gray-400 mb-2' }, 'PLAYLIST'),
-              React.createElement('h1', { className: 'text-5xl font-bold mb-4' }, selectedPlaylist.title),
-              React.createElement('div', { className: 'text-gray-300 mb-4' }, 
-                `Created by ${selectedPlaylist.creator}`
-              ),
-              React.createElement('div', { className: 'flex items-center gap-4' },
-                React.createElement('button', {
-                  onClick: () => {
-                    // Add all tracks to queue (resolved or not) - they'll resolve when played
-                    if (playlistTracks.length > 0) {
-                      setCurrentQueue(playlistTracks);
-                      handlePlay(playlistTracks[0]);
-                    }
-                  },
-                  disabled: playlistTracks.length === 0,
-                  className: 'px-8 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-full font-semibold transition-colors flex items-center gap-2 no-drag'
-                },
-                  React.createElement(Play),
-                  'Play'
-                ),
-                React.createElement('button', {
-                  onClick: () => handleExportPlaylist(selectedPlaylist),
-                  className: 'px-6 py-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors flex items-center gap-2 no-drag'
-                },
-                  React.createElement('span', null, '📤'),
-                  'Export'
-                ),
-                React.createElement('button', {
-                  onClick: () => {
-                    navigateBack();
-                  },
-                  className: 'px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors no-drag'
-                }, 'Back to Playlists')
+              className: 'w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mr-3'
+            },
+              React.createElement('svg', { className: 'w-3 h-3 text-white', fill: 'currentColor', viewBox: '0 0 24 24' },
+                React.createElement('circle', { cx: '12', cy: '12', r: '10' })
               )
-            )
+            ),
+            // Playlist name
+            React.createElement('h1', {
+              className: 'text-2xl font-bold text-white mr-8',
+              style: {
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase'
+              }
+            }, selectedPlaylist.title),
+            // Stats
+            React.createElement('div', {
+              className: 'flex items-center gap-6 text-white/80 text-sm'
+            },
+              // Count unique artists
+              React.createElement('span', null, `${new Set(playlistTracks.map(t => t.artist)).size} Artists`),
+              // Count unique albums
+              React.createElement('span', null, `${new Set(playlistTracks.filter(t => t.album).map(t => t.album)).size} Albums`),
+              React.createElement('span', null, `${playlistTracks.length} Songs`)
+            ),
+            // Start Playlist Station button
+            React.createElement('button', {
+              onClick: () => console.log('Start Playlist Station - placeholder'),
+              className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+              style: {
+                backgroundColor: '#E91E63',
+                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+              }
+            }, 'Start Playlist Station')
           )
         ),
-        
-        // Scrollable track list
+
+        // Playlist content (scrollable) - white background with new layout
         React.createElement('div', {
-          className: 'scrollable-content',
+          className: 'scrollable-content bg-white',
           style: {
             flex: 1,
-            height: '0',
             overflowY: 'scroll',
-            padding: '24px',
             pointerEvents: 'auto'
           }
         },
-          React.createElement('div', { className: 'space-y-2' },
-            React.createElement('div', { className: 'text-sm text-gray-400 mb-4' },
-              playlistTracks.length === 0 ? 'Loading tracks...' : 
-              `${playlistTracks.filter(t => Object.keys(t.sources || {}).length > 0).length}/${playlistTracks.length} tracks available`
-            ),
-            playlistTracks.map((track, index) => {
-              const hasResolved = Object.keys(track.sources || {}).length > 0;
-              const isResolving = Object.keys(track.sources || {}).length === 0;
-              
-              return React.createElement('div', {
-                key: index,
-                className: `group flex items-center gap-4 p-3 rounded-lg transition-colors hover:bg-gray-100 cursor-pointer ${
-                  isResolving ? 'opacity-60' : ''
-                }`,
-                onClick: () => {
-                  // Queue tracks AFTER the clicked track (not including it)
-                  const tracksAfter = playlistTracks.slice(index + 1);
-                  setCurrentQueue(tracksAfter);
-                  handlePlay(track);  // Pass full track object - will resolve if needed
-                },
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
-                      type: 'track',
-                      track: track
-                    });
-                  }
+          // PLAYLIST DETAILS section header with Close button
+          React.createElement('div', {
+            className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+          },
+            React.createElement('span', {
+              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
+            }, 'Playlist Details'),
+            React.createElement('button', {
+              onClick: () => {
+                setSelectedPlaylist(null);
+                setPlaylistTracks([]);
+                setPlaylistCoverArt([]);
+                navigateTo('playlists');
+              },
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            },
+              'CLOSE',
+              React.createElement('span', { className: 'text-gray-400' }, '×')
+            )
+          ),
+
+          // Two-column layout: playlist cover + metadata on left, tracklist on right
+          React.createElement('div', { className: 'flex gap-0 p-6' },
+            // LEFT COLUMN: 2x2 album art grid and metadata
+            React.createElement('div', {
+              className: 'flex-shrink-0 pr-8',
+              style: { width: '240px' }
+            },
+              // 2x2 Album art grid
+              React.createElement('div', {
+                className: 'w-48 h-48 rounded shadow-lg overflow-hidden',
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gridTemplateRows: '1fr 1fr',
+                  gap: '2px',
+                  backgroundColor: '#e5e7eb'
                 }
               },
-                React.createElement('div', {
-                  className: 'text-xs text-gray-400 w-8 text-center',
-                  style: { pointerEvents: 'none' }
-                }, index + 1),
-                React.createElement('div', {
-                  className: 'flex-1 min-w-0',
-                  style: { pointerEvents: 'none' }
-                },
-                  React.createElement('div', {
-                    className: `text-xs font-medium truncate ${hasResolved ? 'text-gray-900' : 'text-gray-500'}`
-                  }, track.title),
-                  React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
-                  (() => {
-                    const resolverId = determineResolverIdFromTrack(track);
-                    const resolver = allResolvers.find(r => r.id === resolverId);
-                    return resolver ? React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${resolver.name}`) : null;
-                  })()
-                ),
-                React.createElement('div', {
-                  className: 'hidden md:block text-xs text-gray-500 truncate w-48 flex-shrink-0',
-                  style: { pointerEvents: 'none' }
-                }, track.album || '-'),
-                React.createElement('div', {
-                  className: 'flex items-center justify-end gap-1.5 w-24 flex-shrink-0',
-                  style: { pointerEvents: 'none' }
-                },
-                  isResolving ?
+                playlistCoverArt.length >= 4 ?
+                  // Show 4 album covers in 2x2 grid
+                  playlistCoverArt.slice(0, 4).map((url, i) =>
                     React.createElement('div', {
-                      className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin',
-                      title: 'Searching for sources...'
+                      key: i,
+                      style: {
+                        backgroundImage: `url(${url})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }
                     })
-                  :
-                    hasResolved ?
-                      // Sort resolver icons by priority order (left to right = highest to lowest priority)
-                      Object.entries(track.sources)
-                        .sort(([aId], [bId]) => {
-                          const aIndex = resolverOrder.indexOf(aId);
-                          const bIndex = resolverOrder.indexOf(bId);
-                          return aIndex - bIndex;
-                        })
-                        .map(([resolverId, source]) => {
-                          const resolver = allResolvers.find(r => r.id === resolverId);
-                          if (!resolver || !resolver.play) return null;
-                          return React.createElement('button', {
-                            key: resolverId,
-                            className: 'no-drag',
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              // Queue tracks AFTER the clicked track (not including it)
-                              const tracksAfter = playlistTracks.slice(index + 1);
-                              setCurrentQueue(tracksAfter);
-                              // Pass track with preferredResolver hint so queue ID is preserved
-                              handlePlay({ ...track, preferredResolver: resolverId });
-                            },
-                            style: {
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '4px',
-                              backgroundColor: resolver.color,
-                              border: 'none',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              color: 'white',
-                              pointerEvents: 'auto',
-                              opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                              transition: 'transform 0.1s'
-                            },
-                            onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                            onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                            title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                          }, (() => {
-                            // Custom abbreviations for resolvers
-                            const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
-                            return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                          })());
-                        })
-                    :
+                  )
+                : playlistCoverArt.length > 0 ?
+                  // Show available covers, fill rest with gradient
+                  [...Array(4)].map((_, i) =>
+                    React.createElement('div', {
+                      key: i,
+                      style: {
+                        backgroundImage: playlistCoverArt[i]
+                          ? `url(${playlistCoverArt[i]})`
+                          : 'linear-gradient(135deg, #c026d3, #ec4899)',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }
+                    })
+                  )
+                :
+                  // Default gradient placeholder
+                  [...Array(4)].map((_, i) =>
+                    React.createElement('div', {
+                      key: i,
+                      className: 'flex items-center justify-center',
+                      style: {
+                        background: `linear-gradient(135deg, ${
+                          ['#c026d3', '#ec4899', '#f43f5e', '#fb7185'][i]
+                        }, ${
+                          ['#ec4899', '#f43f5e', '#fb7185', '#c026d3'][i]
+                        })`
+                      }
+                    },
+                      i === 0 && React.createElement('span', { className: 'text-3xl text-white/50' }, '🎵')
+                    )
+                  )
+              ),
+
+              // Playlist title and metadata
+              React.createElement('div', { className: 'mt-4 space-y-1' },
+                React.createElement('h2', {
+                  className: 'font-bold text-gray-900 text-lg leading-tight'
+                }, selectedPlaylist.title),
+                React.createElement('p', {
+                  className: 'text-sm text-gray-500'
+                }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
+                React.createElement('p', {
+                  className: 'text-sm text-gray-500'
+                }, `${playlistTracks.length.toString().padStart(2, '0')} Songs`)
+              )
+            ),
+
+            // RIGHT COLUMN: Tracklist
+            React.createElement('div', { className: 'flex-1 min-w-0' },
+              playlistTracks.length > 0 ?
+                React.createElement('div', { className: 'space-y-0' },
+                  playlistTracks.map((track, index) => {
+                    const hasResolved = Object.keys(track.sources || {}).length > 0;
+                    const isResolving = Object.keys(track.sources || {}).length === 0;
+
+                    return React.createElement('div', {
+                      key: index,
+                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
+                        isResolving ? 'opacity-60' : ''
+                      }`,
+                      onClick: () => {
+                        const tracksAfter = playlistTracks.slice(index + 1);
+                        setCurrentQueue(tracksAfter);
+                        handlePlay(track);
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'track',
+                            track: track
+                          });
+                        }
+                      }
+                    },
+                      // Track number
                       React.createElement('span', {
-                        className: 'text-xs text-gray-500',
-                        title: 'Not available on any service'
-                      }, '❌')
-                ),
-                React.createElement('div', {
-                  className: 'text-xs text-gray-500 w-12 text-right flex-shrink-0',
-                  style: { pointerEvents: 'none' }
-                }, formatTime(track.duration))
-              );
-            })
+                        className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                        style: { pointerEvents: 'none', width: '32px' }
+                      }, String(index + 1).padStart(2, '0')),
+
+                      // Track title - fixed width column
+                      React.createElement('span', {
+                        className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
+                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                      }, track.title),
+
+                      // Artist name - fixed width column, clickable
+                      React.createElement('span', {
+                        className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                        style: { width: '180px', flexShrink: 0 },
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          fetchArtistData(track.artist);
+                        }
+                      }, track.artist),
+
+                      // Resolver icons - fixed width column
+                      React.createElement('div', {
+                        className: 'flex items-center gap-1 justify-start',
+                        style: { width: '100px', flexShrink: 0 }
+                      },
+                        isResolving ?
+                          React.createElement('div', {
+                            className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin',
+                            title: 'Searching for sources...'
+                          })
+                        : hasResolved ?
+                          Object.entries(track.sources)
+                            .sort(([aId], [bId]) => {
+                              const aIndex = resolverOrder.indexOf(aId);
+                              const bIndex = resolverOrder.indexOf(bId);
+                              return aIndex - bIndex;
+                            })
+                            .map(([resolverId, source]) => {
+                              const resolver = allResolvers.find(r => r.id === resolverId);
+                              if (!resolver || !resolver.play) return null;
+                              return React.createElement('button', {
+                                key: resolverId,
+                                className: 'no-drag',
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  const tracksAfter = playlistTracks.slice(index + 1);
+                                  setCurrentQueue(tracksAfter);
+                                  handlePlay({ ...track, preferredResolver: resolverId });
+                                },
+                                style: {
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '4px',
+                                  backgroundColor: resolver.color,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '10px',
+                                  fontWeight: 'bold',
+                                  color: 'white',
+                                  pointerEvents: 'auto',
+                                  opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                                  transition: 'transform 0.1s'
+                                },
+                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              }, (() => {
+                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                              })());
+                            })
+                        :
+                          React.createElement('span', {
+                            className: 'text-xs text-gray-400'
+                          }, '🔍')
+                      ),
+
+                      // Duration - fixed width column
+                      React.createElement('span', {
+                        className: 'text-sm text-gray-400 text-right tabular-nums',
+                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                      }, formatTime(track.duration))
+                    );
+                  })
+                )
+              :
+                React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  'Loading tracks...'
+                )
+            )
           )
         )
       )
@@ -6659,10 +6907,9 @@ useEffect(() => {
             :
               React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
                 playlists.map(playlist => {
-                  // Get first 4 tracks for mosaic
-                  const tracks = playlist.tracks || [];
-                  const mosaicTracks = tracks.slice(0, 4);
-                  const hasMosaic = mosaicTracks.length >= 4 && mosaicTracks.some(t => t.albumArt);
+                  // Get cached covers for 2x2 mosaic grid
+                  const covers = allPlaylistCovers[playlist.id] || [];
+                  const hasCachedCovers = covers.length > 0;
 
                   return React.createElement('div', {
                     key: playlist.id,
@@ -6696,26 +6943,33 @@ useEffect(() => {
                     React.createElement('div', {
                       className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow'
                     },
-                      hasMosaic ?
-                        // 2x2 mosaic grid
+                      hasCachedCovers ?
+                        // 2x2 mosaic grid using cached covers
                         React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
-                          mosaicTracks.slice(0, 4).map((track, idx) =>
-                            track.albumArt ?
+                          [0, 1, 2, 3].map(idx => {
+                            // Gradient colors for each quadrant (visually pleasing combinations)
+                            const gradients = [
+                              'bg-gradient-to-br from-violet-400 to-purple-500',
+                              'bg-gradient-to-br from-rose-400 to-pink-500',
+                              'bg-gradient-to-br from-amber-400 to-orange-500',
+                              'bg-gradient-to-br from-emerald-400 to-teal-500'
+                            ];
+                            return covers[idx] ?
                               React.createElement('img', {
                                 key: idx,
-                                src: track.albumArt,
+                                src: covers[idx],
                                 alt: '',
                                 className: 'w-full h-full object-cover'
                               })
                             :
                               React.createElement('div', {
                                 key: idx,
-                                className: 'w-full h-full bg-gray-200 flex items-center justify-center'
-                              }, React.createElement(Music, { size: 20, className: 'text-gray-400' }))
-                          )
+                                className: `w-full h-full ${gradients[idx]} flex items-center justify-center`
+                              }, React.createElement(Music, { size: 20, className: 'text-white/70' }));
+                          })
                         )
                       :
-                        // Placeholder
+                        // Placeholder while loading or no tracks
                         React.createElement('div', {
                           className: `w-full h-full flex items-center justify-center ${
                             playlist.sourceUrl
@@ -7842,7 +8096,7 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-400 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          React.createElement('div', { className: 'space-y-1 p-2' },
+          React.createElement('div', { className: 'space-y-0' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -7875,65 +8129,63 @@ useEffect(() => {
                     });
                   }
                 },
-                className: `group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors ${
+                className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                   isCurrentTrack ? 'bg-purple-50' : ''
                 } ${draggedQueueTrack === index ? 'opacity-50' : ''} ${
                   isError ? 'opacity-50' : ''
                 } ${isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
               },
-                // Track number / status indicator
-                React.createElement('div', {
-                  className: 'text-xs text-gray-400 w-8 text-center flex-shrink-0'
+                // Track number / status indicator - fixed width
+                React.createElement('span', {
+                  className: 'text-sm text-gray-400 text-right',
+                  style: { width: '28px', flexShrink: 0 }
                 },
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
                   isError ? '⚠' :
-                  isCurrentTrack ? '▶' : index + 1
+                  isCurrentTrack ? '▶' : String(index + 1).padStart(2, '0')
                 ),
 
-                // Track info
-                React.createElement('div', {
-                  className: `flex-1 min-w-0 ${isLoading || isError ? '' : 'cursor-pointer'}`,
+                // Track title - flexible column that grows
+                React.createElement('span', {
+                  className: `text-sm truncate cursor-pointer ${
+                    isLoading ? 'text-gray-500' :
+                    isError ? 'text-red-500' :
+                    isCurrentTrack ? 'text-purple-600' : 'text-gray-700 group-hover:text-gray-900'
+                  }`,
+                  style: { flex: '1 1 0', minWidth: 0 },
                   onClick: () => {
                     if (isLoading || isError) return;
-                    // Remove clicked track and all tracks above it from queue
                     setCurrentQueue(prev => prev.slice(index + 1));
                     handlePlay(track);
                   }
                 },
-                  isLoading ?
-                    React.createElement('div', null,
-                      React.createElement('div', {
-                        className: 'text-xs font-medium text-gray-500'
-                      }, 'Loading...'),
-                      React.createElement('div', {
-                        className: 'text-xs text-gray-400 truncate'
-                      }, `from ${track.sourceDomain || 'unknown'}`)
-                    )
-                  : isError ?
-                    React.createElement('div', null,
-                      React.createElement('div', {
-                        className: 'text-xs font-medium text-red-500'
-                      }, 'Could not load track'),
-                      React.createElement('div', {
-                        className: 'text-xs text-gray-400 truncate'
-                      }, track.errorMessage || 'Unknown error')
-                    )
-                  :
-                    React.createElement('div', null,
-                      React.createElement('div', {
-                        className: `text-xs font-medium truncate ${isCurrentTrack ? 'text-purple-600' : 'text-gray-900'}`
-                      }, track.title),
-                      React.createElement('div', {
-                        className: 'text-xs text-gray-500 truncate'
-                      }, track.artist)
-                    )
+                  isLoading ? 'Loading...' :
+                  isError ? 'Could not load track' :
+                  track.title
                 ),
 
-                // Action buttons (right side)
-                isError ?
-                  React.createElement('div', {
-                    className: 'flex items-center gap-1 flex-shrink-0'
-                  },
+                // Artist name - flexible column, clickable
+                React.createElement('span', {
+                  className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                  style: { flex: '0.7 1 0', minWidth: 0 },
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    if (!isLoading && !isError && track.artist) {
+                      fetchArtistData(track.artist);
+                    }
+                  }
+                },
+                  isLoading ? `from ${track.sourceDomain || 'unknown'}` :
+                  isError ? (track.errorMessage || 'Unknown error') :
+                  track.artist
+                ),
+
+                // Resolver icons - fixed width column
+                React.createElement('div', {
+                  className: 'flex items-center gap-1 justify-start',
+                  style: { width: '100px', flexShrink: 0 }
+                },
+                  isError ?
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
@@ -7942,63 +8194,69 @@ useEffect(() => {
                           handleUrlDrop(track.sourceUrl, 'queue');
                         }
                       },
-                      className: 'px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors',
+                      className: 'px-2 py-0.5 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors',
                       title: 'Retry'
-                    }, '↻ Retry'),
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        removeFromQueue(track.id);
-                      },
-                      className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
-                      title: 'Remove from queue'
-                    }, React.createElement(X, { size: 16 }))
-                  )
-                : isLoading ?
-                  React.createElement('button', {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      removeFromQueue(track.id);
-                    },
-                    className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
-                    title: 'Cancel'
-                  }, React.createElement(X, { size: 16 }))
-                :
-                  React.createElement(React.Fragment, null,
+                    }, '↻')
+                  : isLoading ?
                     React.createElement('div', {
-                      className: 'flex items-center gap-1.5 flex-shrink-0'
-                    },
-                      availableSources.length > 0 ?
-                        availableSources.map(resolverId => {
-                          const resolver = allResolvers.find(r => r.id === resolverId);
-                          if (!resolver) return null;
-                          const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
-                          const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                          return React.createElement('button', {
-                            key: resolverId,
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              handlePlay({ ...track, preferredResolver: resolverId });
-                            },
-                            className: 'w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold text-white hover:scale-110 transition-transform cursor-pointer',
-                            style: { backgroundColor: resolver.color },
-                            title: `Play via ${resolver.name}`
-                          }, abbrev);
-                        })
-                      :
-                        React.createElement('span', {
-                          className: 'text-xs text-gray-500'
-                        }, '—')
-                    ),
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        removeFromQueue(track.id);
-                      },
-                      className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
-                      title: 'Remove from queue'
-                    }, React.createElement(X, { size: 16 }))
-                  )
+                      className: 'w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
+                    })
+                  : availableSources.length > 0 ?
+                    availableSources.map(resolverId => {
+                      const resolver = allResolvers.find(r => r.id === resolverId);
+                      if (!resolver) return null;
+                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                      const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                      return React.createElement('button', {
+                        key: resolverId,
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          handlePlay({ ...track, preferredResolver: resolverId });
+                        },
+                        className: 'no-drag',
+                        style: {
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          backgroundColor: resolver.color,
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          color: 'white',
+                          transition: 'transform 0.1s'
+                        },
+                        onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                        onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                        title: `Play via ${resolver.name}`
+                      }, abbrev);
+                    })
+                  :
+                    // Show spinner when track is resolving (no sources yet)
+                    React.createElement('div', {
+                      className: 'w-5 h-5 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
+                      title: 'Resolving track...'
+                    })
+                ),
+
+                // Duration - fixed width column
+                React.createElement('span', {
+                  className: 'text-sm text-gray-400 text-right tabular-nums',
+                  style: { width: '50px', flexShrink: 0 }
+                }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
+
+                // Remove button
+                React.createElement('button', {
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    removeFromQueue(track.id);
+                  },
+                  className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors opacity-0 group-hover:opacity-100',
+                  title: isLoading ? 'Cancel' : 'Remove from queue'
+                }, React.createElement(X, { size: 14 }))
               );
             })
           )
