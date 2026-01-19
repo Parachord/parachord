@@ -121,40 +121,73 @@
   });
 
   // Auto-play for Bandcamp tracks
-  function autoPlayBandcamp() {
-    // Try to click the play button
-    const playButton = document.querySelector('.playbutton') ||
+  function autoPlayBandcamp(retryCount = 0) {
+    console.log('[Parachord] Attempting Bandcamp auto-play, attempt:', retryCount + 1);
+
+    // Bandcamp has several play button variants:
+    // 1. Big play button on track/album pages: .playbutton or .play-btn inside inline_player
+    // 2. The play button is often a div inside an anchor with role="button"
+    const playButton = document.querySelector('.inline_player .playbutton') ||
+                       document.querySelector('.inline_player .play-btn') ||
+                       document.querySelector('.playbutton') ||
+                       document.querySelector('.play_button.playing') || // Already has playing class but paused
+                       document.querySelector('.play_button') ||
+                       document.querySelector('[role="button"][aria-label*="Play"]') ||
                        document.querySelector('.play-btn') ||
-                       document.querySelector('.play_button');
+                       document.querySelector('a.play-button') ||
+                       document.querySelector('button.play');
+
     if (playButton) {
-      console.log('[Parachord] Auto-clicking Bandcamp play button');
+      console.log('[Parachord] Found Bandcamp play button:', playButton.className);
       playButton.click();
+
+      // Also try clicking any child div (Bandcamp sometimes has the listener on child)
+      const childDiv = playButton.querySelector('div');
+      if (childDiv) {
+        childDiv.click();
+      }
+      return true;
+    }
+
+    // Try the big album art play overlay
+    const bigPlayButton = document.querySelector('.play-button') ||
+                          document.querySelector('.tralbum-play-button') ||
+                          document.querySelector('#big_play_button');
+    if (bigPlayButton) {
+      console.log('[Parachord] Found Bandcamp big play button');
+      bigPlayButton.click();
       return true;
     }
 
     // Fallback: try to play the audio element directly
     const audio = document.querySelector('audio');
-    if (audio) {
-      console.log('[Parachord] Auto-playing Bandcamp audio element');
+    if (audio && audio.src) {
+      console.log('[Parachord] Auto-playing Bandcamp audio element directly');
       audio.play().catch(err => {
-        console.log('[Parachord] Auto-play blocked, user interaction required:', err.message);
+        console.log('[Parachord] Auto-play blocked:', err.message);
       });
       return true;
+    }
+
+    // Retry a few times since Bandcamp loads dynamically
+    if (retryCount < 5) {
+      setTimeout(() => autoPlayBandcamp(retryCount + 1), 500);
+    } else {
+      console.log('[Parachord] Could not find Bandcamp play button after retries');
     }
 
     return false;
   }
 
   // Initialize
+  if (site === 'bandcamp') {
+    // For Bandcamp, start auto-play attempt immediately and also after media loads
+    // The audio element may not exist until play is clicked
+    setTimeout(() => autoPlayBandcamp(), 1000);
+  }
+
   waitForMedia((media) => {
     setupMediaListeners(media);
-
-    // Auto-play Bandcamp after a short delay to ensure page is ready
-    if (site === 'bandcamp') {
-      setTimeout(() => {
-        autoPlayBandcamp();
-      }, 500);
-    }
   });
 
   // Also handle dynamic page navigation (SPA)
