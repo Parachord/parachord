@@ -4643,8 +4643,9 @@ useEffect(() => {
                   isResolving ? 'opacity-60' : ''
                 }`,
                 onClick: () => {
-                  // Add all tracks to queue starting from clicked track
-                  setCurrentQueue(playlistTracks);
+                  // Queue tracks starting from clicked track to end of playlist
+                  const tracksFromHere = playlistTracks.slice(index);
+                  setCurrentQueue(tracksFromHere);
                   handlePlay(track);  // Pass full track object - will resolve if needed
                 }
               },
@@ -4689,8 +4690,9 @@ useEffect(() => {
                           className: 'no-drag',
                           onClick: (e) => {
                             e.stopPropagation();
-                            // Add all tracks to queue
-                            setCurrentQueue(playlistTracks);
+                            // Queue tracks starting from clicked track to end of playlist
+                            const tracksFromHere = playlistTracks.slice(index);
+                            setCurrentQueue(tracksFromHere);
                             // Pass track with preferredResolver hint so queue ID is preserved
                             handlePlay({ ...track, preferredResolver: resolverId });
                           },
@@ -4761,13 +4763,15 @@ useEffect(() => {
               'Your library is empty. Search for music to add tracks!'
             )
           :
-          library.map(track =>
+          library.map((track, index) =>
             React.createElement(TrackRow, {
               key: track.id,
               track: track,
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
-                setCurrentQueue(library);
+                // Queue tracks starting from clicked track to end of library
+                const tracksFromHere = library.slice(index);
+                setCurrentQueue(tracksFromHere);
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData,
