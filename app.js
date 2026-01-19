@@ -109,7 +109,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
   const primaryResolver = getPrimaryResolver();
 
   return React.createElement('div', {
-    className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-white/10 transition-colors no-drag'
+    className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors no-drag'
   },
     // Album art or play button
     React.createElement('div', { className: 'relative w-12 h-12 flex-shrink-0' },
@@ -384,7 +384,7 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
             
             return React.createElement('div', {
               key: index,
-              className: 'flex items-center gap-4 p-3 rounded-lg hover:bg-white/5 cursor-pointer transition-colors no-drag group',
+              className: 'flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors no-drag group',
               onClick: () => {
                 console.log('Track row clicked:', track.title);
 
@@ -4644,7 +4644,7 @@ useEffect(() => {
               
               return React.createElement('div', {
                 key: index,
-                className: `group flex items-center gap-4 p-3 rounded-lg transition-colors hover:bg-white/5 cursor-pointer ${
+                className: `group flex items-center gap-4 p-3 rounded-lg transition-colors hover:bg-gray-100 cursor-pointer ${
                   isResolving ? 'opacity-60' : ''
                 }`,
                 onClick: () => {
