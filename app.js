@@ -5826,9 +5826,83 @@ useEffect(() => {
               )
             ),
 
-            // Marketplace Tab (placeholder for next task)
-            settingsTab === 'marketplace' && React.createElement('div', { className: 'text-gray-500 text-center py-12' },
-              'Marketplace content - next task'
+            // Marketplace Tab
+            settingsTab === 'marketplace' && React.createElement('div', null,
+              // Header with search
+              React.createElement('div', { className: 'flex items-center justify-between mb-8' },
+                React.createElement('div', null,
+                  React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Marketplace'),
+                  React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
+                    'Discover and install new resolver plugins.'
+                  )
+                )
+              ),
+              // Search and filter bar
+              React.createElement('div', { className: 'flex gap-4 mb-8' },
+                React.createElement('input', {
+                  type: 'text',
+                  placeholder: 'Search resolvers...',
+                  value: marketplaceSearchQuery,
+                  onChange: (e) => setMarketplaceSearchQuery(e.target.value),
+                  className: 'flex-1 max-w-md px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                }),
+                React.createElement('select', {
+                  value: marketplaceCategory,
+                  onChange: (e) => setMarketplaceCategory(e.target.value),
+                  className: 'px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                },
+                  React.createElement('option', { value: 'all' }, 'All Categories'),
+                  React.createElement('option', { value: 'streaming' }, 'Streaming'),
+                  React.createElement('option', { value: 'purchase' }, 'Purchase'),
+                  React.createElement('option', { value: 'metadata' }, 'Metadata'),
+                  React.createElement('option', { value: 'radio' }, 'Radio')
+                )
+              ),
+              // Loading state
+              marketplaceLoading && React.createElement('div', {
+                className: 'text-center py-12 text-gray-500'
+              }, 'Loading marketplace...'),
+              // Empty state
+              !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length === 0 &&
+                React.createElement('div', {
+                  className: 'text-center py-12 text-gray-400'
+                }, 'No resolvers available in marketplace yet.'),
+              // Resolver grid
+              !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length > 0 &&
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  marketplaceManifest.resolvers
+                    .filter(resolver => {
+                      if (marketplaceSearchQuery) {
+                        const query = marketplaceSearchQuery.toLowerCase();
+                        const matchesName = resolver.name.toLowerCase().includes(query);
+                        const matchesDesc = resolver.description.toLowerCase().includes(query);
+                        const matchesAuthor = resolver.author.toLowerCase().includes(query);
+                        if (!matchesName && !matchesDesc && !matchesAuthor) return false;
+                      }
+                      if (marketplaceCategory !== 'all' && resolver.category !== marketplaceCategory) {
+                        return false;
+                      }
+                      return true;
+                    })
+                    .map(resolver => {
+                      const isInstalled = allResolvers.some(r => r.id === resolver.id);
+                      const isInstalling = installingResolvers.has(resolver.id);
+                      const installedVersion = allResolvers.find(r => r.id === resolver.id)?.version;
+                      const hasUpdate = isInstalled && installedVersion !== resolver.version;
+
+                      return React.createElement(ResolverCard, {
+                        key: resolver.id,
+                        resolver: resolver,
+                        isInstalled: isInstalled,
+                        hasUpdate: hasUpdate,
+                        isInstalling: isInstalling,
+                        showInstall: true,
+                        onInstall: () => handleInstallFromMarketplace(resolver)
+                      });
+                    })
+                )
             ),
 
             // General Tab (placeholder)
