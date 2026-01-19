@@ -192,15 +192,46 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     return () => { cancelled = true; };
   }, [artist.name, getArtistImage]);
 
+  const cardStyle = {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: '12px',
+    padding: '16px',
+    cursor: 'pointer',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    transition: 'transform 0.2s, background-color 0.2s'
+  };
+
   return React.createElement('button', {
     onClick: onNavigate,
-    className: 'group text-center no-drag transition-transform hover:scale-105'
+    className: 'no-drag',
+    style: {
+      ...cardStyle,
+      width: '100%',
+      textAlign: 'left'
+    },
+    onMouseEnter: (e) => {
+      e.currentTarget.style.transform = 'scale(1.05)';
+      e.currentTarget.style.backgroundColor = 'rgba(124, 58, 237, 0.2)';
+    },
+    onMouseLeave: (e) => {
+      e.currentTarget.style.transform = 'scale(1)';
+      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    }
   },
     // Artist image container
     React.createElement('div', {
-      className: 'w-full aspect-square rounded-lg overflow-hidden mb-2',
       style: {
-        background: imageUrl ? 'none' : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'
+        width: '100%',
+        aspectRatio: '1',
+        borderRadius: '8px',
+        background: imageUrl ? 'none' : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: '12px',
+        pointerEvents: 'none',
+        overflow: 'hidden',
+        position: 'relative'
       }
     },
       imageLoading && React.createElement('div', {
@@ -213,13 +244,23 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'w-full h-full object-cover'
+        style: {
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          pointerEvents: 'none'
+        }
       }),
       !imageLoading && !imageUrl && React.createElement('div', {
         className: 'w-full h-full flex items-center justify-center'
       },
         React.createElement('svg', {
-          className: 'w-12 h-12 text-white/50',
+          style: {
+            width: '48px',
+            height: '48px',
+            color: 'rgba(255, 255, 255, 0.5)',
+            pointerEvents: 'none'
+          },
           fill: 'none',
           viewBox: '0 0 24 24',
           stroke: 'currentColor',
@@ -234,8 +275,18 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       )
     ),
     // Artist name
-    React.createElement('p', {
-      className: 'text-sm font-medium text-black group-hover:text-purple-600 transition-colors truncate'
+    React.createElement('h3', {
+      style: {
+        fontWeight: '600',
+        fontSize: '14px',
+        marginBottom: '4px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        color: 'black',
+        pointerEvents: 'none'
+      },
+      title: artist.name
     }, artist.name)
   );
 };
