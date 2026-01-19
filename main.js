@@ -406,6 +406,61 @@ ipcMain.handle('shell-open-external', async (event, url) => {
   }
 });
 
+// Playback window for external content (Bandcamp, etc.) with autoplay enabled
+let playbackWindow = null;
+
+ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
+  console.log('=== Open Playback Window ===');
+  console.log('URL:', url);
+
+  // Close existing playback window if any
+  if (playbackWindow && !playbackWindow.isDestroyed()) {
+    playbackWindow.close();
+  }
+
+  playbackWindow = new BrowserWindow({
+    width: options.width || 400,
+    height: options.height || 150,
+    minWidth: 300,
+    minHeight: 100,
+    frame: true,
+    titleBarStyle: 'default',
+    title: options.title || 'Parachord Player',
+    backgroundColor: '#1a1a2e',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      autoplayPolicy: 'no-user-gesture-required' // Enable autoplay!
+    },
+    parent: mainWindow,
+    show: false
+  });
+
+  playbackWindow.loadURL(url);
+
+  playbackWindow.once('ready-to-show', () => {
+    playbackWindow.show();
+  });
+
+  playbackWindow.on('closed', () => {
+    playbackWindow = null;
+    // Notify renderer that playback window was closed
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('playback-window-closed');
+    }
+  });
+
+  return { success: true };
+});
+
+ipcMain.handle('close-playback-window', async () => {
+  if (playbackWindow && !playbackWindow.isDestroyed()) {
+    playbackWindow.close();
+    playbackWindow = null;
+  }
+  return { success: true };
+});
+
 // Resolver loading handler
 ipcMain.handle('resolvers-load-builtin', async () => {
   console.log('=== Load All Resolvers ===');

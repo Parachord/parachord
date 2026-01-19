@@ -89,5 +89,16 @@ contextBridge.exposeInMainWorld('electron', {
         callback();
       });
     }
+  },
+
+  // Playback window operations (for Bandcamp, etc. with autoplay)
+  playbackWindow: {
+    open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
+    close: () => ipcRenderer.invoke('close-playback-window'),
+    onClosed: (callback) => {
+      ipcRenderer.on('playback-window-closed', () => {
+        callback();
+      });
+    }
   }
 });
