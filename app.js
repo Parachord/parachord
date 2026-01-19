@@ -4823,26 +4823,6 @@ useEffect(() => {
                 : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
             }
           }),
-          // Back button (absolute positioned top-left)
-          React.createElement('button', {
-            onClick: () => navigateBack(),
-            className: 'absolute top-4 left-4 p-2 bg-black/30 hover:bg-black/50 rounded-full transition-colors no-drag z-10',
-            title: 'Go back'
-          },
-            React.createElement('svg', {
-              className: 'w-6 h-6',
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor'
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                strokeWidth: 2,
-                d: 'M15 19l-7-7 7-7'
-              })
-            )
-          ),
           // EXPANDED STATE - Artist info overlay (centered)
           !loadingArtist && !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
             className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
