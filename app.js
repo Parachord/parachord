@@ -3364,7 +3364,7 @@ const Parachord = () => {
     }
   };
 
-  // Fetch artist image from Last.fm with caching
+  // Fetch artist image from Spotify API with caching
   const getArtistImage = async (artistName) => {
     if (!artistName) return null;
 
@@ -3377,32 +3377,42 @@ const Parachord = () => {
       return cached.url;
     }
 
+    // Spotify requires authentication
+    if (!spotifyToken) {
+      console.log('Spotify not connected, cannot fetch artist image');
+      return null;
+    }
+
     try {
-      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
+      // Search for the artist on Spotify
+      const searchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(artistName)}&type=artist&limit=1`;
+      const response = await fetch(searchUrl, {
+        headers: { 'Authorization': `Bearer ${spotifyToken}` }
+      });
 
-      const response = await fetch(url);
+      if (!response.ok) {
+        console.error('Spotify artist search failed:', response.status);
+        return null;
+      }
+
       const data = await response.json();
+      const artist = data.artists?.items?.[0];
 
-      if (data.artist?.image) {
-        // Get largest available image (prefer mega > extralarge > large)
-        const images = data.artist.image;
-        const imageUrl = images.find(img => img.size === 'mega')?.['#text'] ||
-                         images.find(img => img.size === 'extralarge')?.['#text'] ||
-                         images.find(img => img.size === 'large')?.['#text'];
+      if (artist?.images?.length > 0) {
+        // Spotify returns images sorted by size (largest first)
+        // Use the largest image for best quality in hero header
+        const imageUrl = artist.images[0].url;
 
-        if (imageUrl && imageUrl.length > 0) {
-          artistImageCache.current[normalizedName] = {
-            url: imageUrl,
-            timestamp: now
-          };
-          return imageUrl;
-        }
+        artistImageCache.current[normalizedName] = {
+          url: imageUrl,
+          timestamp: now
+        };
+        return imageUrl;
       }
 
       return null; // No image available, don't cache failure
     } catch (error) {
-      console.error('Failed to fetch artist image from Last.fm:', error);
+      console.error('Failed to fetch artist image from Spotify:', error);
       return null; // Don't cache failures
     }
   };
