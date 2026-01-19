@@ -5989,7 +5989,7 @@ useEffect(() => {
                   onClick: (e) => {
                     e.preventDefault();
                     if (window.electron?.shell?.openExternal) {
-                      window.electron.shell.openExternal('https://github.com/parachord/parachord-desktop');
+                      window.electron.shell.openExternal('https://github.com/jherskowitz/parachord');
                     }
                   },
                   className: 'text-xs text-purple-600 hover:text-purple-700 mt-2 inline-block'
