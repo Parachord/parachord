@@ -139,13 +139,31 @@
 
     if (playButton) {
       console.log('[Parachord] Found Bandcamp play button:', playButton.className);
+
+      // Try multiple click approaches
       playButton.click();
+
+      // Try dispatching mouse events (sometimes more effective)
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      playButton.dispatchEvent(clickEvent);
 
       // Also try clicking any child div (Bandcamp sometimes has the listener on child)
       const childDiv = playButton.querySelector('div');
       if (childDiv) {
         childDiv.click();
+        childDiv.dispatchEvent(clickEvent);
       }
+
+      // If play button has "busy" class, it means it's trying to load - that's good
+      if (playButton.classList.contains('busy')) {
+        console.log('[Parachord] Play button is loading (busy state)');
+        return true;
+      }
+
       return true;
     }
 
