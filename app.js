@@ -2605,7 +2605,7 @@ const Parachord = () => {
   // Handle playlist click from search
   const handlePlaylistClick = (playlist) => {
     setSearchDrawerOpen(false);
-    loadPlaylist(playlist.id);
+    loadPlaylist(playlist);
   };
 
   // Validate cached sources in background and update if changed
@@ -3185,13 +3185,19 @@ const Parachord = () => {
     }
   };
 
-  const loadPlaylist = async (playlistId) => {
-    console.log('🖱️ Playlist clicked, ID:', playlistId);
-
-    const playlist = playlists.find(p => p.id === playlistId);
-    if (!playlist) {
-      console.error('❌ Playlist not found:', playlistId);
-      return;
+  const loadPlaylist = async (playlistOrId) => {
+    // Accept either a playlist object or an ID for backwards compatibility
+    let playlist;
+    if (typeof playlistOrId === 'string') {
+      console.log('🖱️ Playlist clicked, ID:', playlistOrId);
+      playlist = playlists.find(p => p.id === playlistOrId);
+      if (!playlist) {
+        console.error('❌ Playlist not found:', playlistOrId);
+        return;
+      }
+    } else {
+      playlist = playlistOrId;
+      console.log('🖱️ Playlist clicked, ID:', playlist.id);
     }
 
     console.log('📋 Found playlist:', playlist.title);
@@ -3349,8 +3355,18 @@ const Parachord = () => {
         return;
       }
 
-      // Generate ID from URL (hash it for uniqueness)
-      const id = 'hosted-' + btoa(url).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+      // Generate ID from URL using a simple hash for uniqueness
+      // Using full URL hash instead of truncated base64 to avoid collisions
+      const hashCode = (str) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          const char = str.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash).toString(36);
+      };
+      const id = 'hosted-' + hashCode(url);
 
       // Check if playlist already exists
       const existingIndex = playlists.findIndex(p => p.sourceUrl === url);
@@ -4719,7 +4735,7 @@ useEffect(() => {
                       e.preventDefault();
                       e.stopPropagation();
                       console.log('🖱️ BUTTON CLICKED! Playlist:', playlist.id, playlist.title);
-                      loadPlaylist(playlist.id);
+                      loadPlaylist(playlist);
                     }
                   },
                     React.createElement('div', {
