@@ -5155,7 +5155,7 @@ useEffect(() => {
                       ? 'bg-purple-600 text-white'
                       : 'bg-white/10 text-gray-400 hover:bg-white/20'
                   }`,
-                }, `${type.charAt(0).toUpperCase() + type.slice(1)}s (${count})`);
+                }, `${type.charAt(0).toUpperCase() + type.slice(1)}${type !== 'all' ? 's' : ''} (${count})`);
               })
             ),
 
