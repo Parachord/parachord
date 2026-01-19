@@ -579,6 +579,7 @@ const Parachord = () => {
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [spotifyToken, setSpotifyToken] = useState(null);
+  const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
@@ -612,6 +613,7 @@ const Parachord = () => {
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+  useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
 
   // URL drag & drop helpers
   const isValidUrl = (string) => {
@@ -898,9 +900,26 @@ const Parachord = () => {
   const [loadedResolvers, setLoadedResolvers] = useState([]);
   const loadedResolversRef = useRef([]);
 
-  // Cleanup polling interval and external track timeout on unmount
+  // Cleanup polling interval, external track timeout, and stop playback on unmount
   useEffect(() => {
+    // Also handle beforeunload for when window closes
+    const handleBeforeUnload = () => {
+      if (spotifyTokenRef.current) {
+        // Use sendBeacon for reliable delivery during page unload
+        const url = 'https://api.spotify.com/v1/me/player/pause';
+        // sendBeacon doesn't support PUT, so fall back to fetch with keepalive
+        fetch(url, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyTokenRef.current}` },
+          keepalive: true
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       if (playbackPollerRef.current) {
         clearInterval(playbackPollerRef.current);
         playbackPollerRef.current = null;
@@ -908,6 +927,14 @@ const Parachord = () => {
       if (externalTrackTimeoutRef.current) {
         clearTimeout(externalTrackTimeoutRef.current);
         externalTrackTimeoutRef.current = null;
+      }
+      // Stop Spotify playback on app shutdown
+      if (spotifyTokenRef.current) {
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyTokenRef.current}` },
+          keepalive: true
+        }).catch(() => {}); // Ignore errors on shutdown
       }
     };
   }, []);
