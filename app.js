@@ -546,6 +546,7 @@ const Parachord = () => {
     playlists: 5
   });
   const [activeView, setActiveView] = useState('library');
+  const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
@@ -3211,6 +3212,58 @@ const Parachord = () => {
     }
   };
 
+  // Fetch album art from Cover Art Archive
+  const fetchCoverArtArchive = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    try {
+      // Search MusicBrainz for the release
+      const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0 (contact@parachord.app)' } }
+      );
+
+      if (!mbResponse.ok) return null;
+
+      const mbData = await mbResponse.json();
+      if (!mbData.releases || mbData.releases.length === 0) return null;
+
+      const releaseId = mbData.releases[0].id;
+
+      // Fetch cover art from Cover Art Archive
+      const caaResponse = await fetch(
+        `https://coverartarchive.org/release/${releaseId}/front-250`,
+        { redirect: 'follow' }
+      );
+
+      if (caaResponse.ok) {
+        return caaResponse.url;
+      }
+
+      return null;
+    } catch (error) {
+      console.log(`Cover art not found for: ${artist} - ${album}`);
+      return null;
+    }
+  };
+
+  // Cache for Cover Art Archive lookups to avoid duplicate requests
+  const coverArtCache = useRef({});
+
+  // Fetch album art for a track, using cache
+  const getAlbumArt = async (artist, album) => {
+    const cacheKey = `${artist}-${album}`.toLowerCase();
+
+    if (coverArtCache.current[cacheKey] !== undefined) {
+      return coverArtCache.current[cacheKey];
+    }
+
+    const artUrl = await fetchCoverArtArchive(artist, album);
+    coverArtCache.current[cacheKey] = artUrl;
+    return artUrl;
+  };
+
   const loadPlaylist = async (playlistOrId) => {
     // Accept either a playlist object or an ID for backwards compatibility
     let playlist;
@@ -3244,6 +3297,22 @@ const Parachord = () => {
           return { ...track, id: trackId, sources: {} };
         });
         setPlaylistTracks(tracksWithIds);
+
+        // Step 1.5: Fetch album art for tracks that don't have it (background, non-blocking)
+        tracksWithIds.forEach(async (track) => {
+          if (!track.albumArt && track.album) {
+            const artUrl = await getAlbumArt(track.artist, track.album);
+            if (artUrl) {
+              setPlaylistTracks(prevTracks =>
+                prevTracks.map(t =>
+                  t.id === track.id && !t.albumArt
+                    ? { ...t, albumArt: artUrl }
+                    : t
+                )
+              );
+            }
+          }
+        });
 
         // Step 2: Resolve sources in the background for each track
         for (const track of tracksWithIds) {
@@ -3305,6 +3374,32 @@ const Parachord = () => {
       })
     );
   }, [playlistTracks]);
+
+  // Navigation helpers
+  const navigateTo = (view) => {
+    if (view !== activeView) {
+      setViewHistory(prev => [...prev, view]);
+      setActiveView(view);
+    }
+  };
+
+  const navigateBack = () => {
+    if (viewHistory.length > 1) {
+      const newHistory = [...viewHistory];
+      newHistory.pop(); // Remove current view
+      const previousView = newHistory[newHistory.length - 1];
+      setViewHistory(newHistory);
+      setActiveView(previousView);
+      // Clear associated state when going back
+      if (previousView !== 'artist') {
+        setCurrentArtist(null);
+        setArtistReleases([]);
+      }
+      if (previousView !== 'release') {
+        setCurrentRelease(null);
+      }
+    }
+  };
 
   // Playlist import/export functions
   const handleImportPlaylist = async () => {
@@ -3898,48 +3993,161 @@ useEffect(() => {
   };
 
   return React.createElement('div', {
-    className: 'h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white flex flex-col'
+    className: 'h-screen bg-gray-100 text-gray-900 flex flex-col'
   },
-    // Header (no drag - causes rendering issues)
+
+    // Main content with sidebar (no separate header - search is in sidebar)
     React.createElement('div', {
-      className: 'flex items-center justify-between p-4 border-b border-white/10'
+      className: 'flex-1 flex overflow-hidden'
     },
-      React.createElement('div', { className: 'flex items-center gap-3' },
+      // Sidebar
+      React.createElement('div', {
+        className: 'w-64 bg-gray-50 border-r border-gray-200 flex flex-col no-drag'
+      },
+        // Navigation arrows and window drag area
         React.createElement('div', {
-          className: 'w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
-        }, React.createElement(Music))
+          className: 'flex items-center gap-2 p-4 pb-2 drag'
+        },
+          React.createElement('button', {
+            onClick: navigateBack,
+            disabled: viewHistory.length <= 1,
+            className: `p-1.5 rounded hover:bg-gray-200 transition-colors no-drag ${viewHistory.length <= 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600'}`
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 19l-7-7 7-7' })
+            )
+          ),
+          React.createElement('button', {
+            disabled: true, // Forward not implemented yet
+            className: 'p-1.5 rounded text-gray-300 cursor-not-allowed no-drag'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 5l7 7-7 7' })
+            )
+          )
+        ),
+
+        // Search
+        React.createElement('div', { className: 'px-4 py-2' },
+          React.createElement('div', {
+            className: 'flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer',
+            onClick: () => document.getElementById('sidebar-search')?.focus()
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+            ),
+            React.createElement('input', {
+              id: 'sidebar-search',
+              type: 'text',
+              placeholder: 'Search',
+              value: searchQuery,
+              onChange: (e) => handleSearchInput(e.target.value),
+              className: 'flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder-gray-400'
+            })
+          )
+        ),
+
+        // Scrollable navigation area
+        React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content px-2 py-2' },
+          // DISCOVER section
+          React.createElement('div', { className: 'mb-4' },
+            React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Discover'),
+            React.createElement('button', {
+              onClick: () => navigateTo('discover'),
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'discover' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            }, 'Charts'),
+            React.createElement('button', {
+              onClick: () => navigateTo('new-releases'),
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'new-releases' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            }, 'New Releases')
+          ),
+
+          // YOUR MUSIC section
+          React.createElement('div', { className: 'mb-4' },
+            React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Your Music'),
+            React.createElement('button', {
+              onClick: () => navigateTo('library'),
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'library' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' })
+              ),
+              'Collection'
+            ),
+            React.createElement('button', {
+              onClick: () => navigateTo('playlists'),
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'playlists' || activeView === 'playlist-view' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+              ),
+              'Playlists'
+            ),
+            React.createElement('button', {
+              onClick: () => {}, // Placeholder
+              className: 'w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-gray-400 cursor-not-allowed'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
+              ),
+              'Stations'
+            ),
+            React.createElement('button', {
+              onClick: () => {}, // Placeholder
+              className: 'w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-gray-400 cursor-not-allowed'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
+              ),
+              'History'
+            )
+          )
+        ),
+
+        // Settings button at bottom of sidebar
+        React.createElement('div', { className: 'p-4 border-t border-gray-200' },
+          React.createElement('button', {
+            onClick: () => setShowSettings(!showSettings),
+            className: 'w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-gray-600 hover:bg-gray-100 transition-colors'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }),
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' })
+            ),
+            'Settings'
+          )
+        )
       ),
-      React.createElement('div', { className: 'flex-1 max-w-2xl mx-8' },
-        React.createElement('input', {
-          type: 'text',
-          placeholder: 'Search music...',
-          value: searchQuery,
-          onChange: (e) => handleSearchInput(e.target.value),
-          className: 'w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500'
-        })
-      ),
-      React.createElement('button', {
-        onClick: () => setShowSettings(!showSettings),
-        className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
-      }, React.createElement(Settings))
-    ),
+
+      // Main content area
+      React.createElement('div', {
+        className: 'flex-1 flex flex-col overflow-hidden bg-white'
+      },
 
     // External Track Prompt Modal
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
       className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
     },
       React.createElement('div', {
-        className: 'bg-slate-800 rounded-lg p-8 max-w-md w-full mx-4 border border-slate-700'
+        className: 'bg-white rounded-lg p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl'
       },
         React.createElement('div', { className: 'text-center mb-6' },
           React.createElement('div', { className: 'text-6xl mb-4' }, '🌐'),
-          React.createElement('h3', { className: 'text-xl font-semibold text-white mb-2' },
+          React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-2' },
             'Next track requires browser'
           ),
-          React.createElement('div', { className: 'text-slate-300 mb-4' },
-            React.createElement('div', { className: 'font-medium' }, pendingExternalTrack.title),
-            React.createElement('div', { className: 'text-sm text-slate-400' }, pendingExternalTrack.artist),
-            React.createElement('div', { className: 'text-xs text-purple-400 mt-2' },
+          React.createElement('div', { className: 'text-gray-600 mb-4' },
+            React.createElement('div', { className: 'font-medium text-gray-900' }, pendingExternalTrack.title),
+            React.createElement('div', { className: 'text-sm text-gray-500' }, pendingExternalTrack.artist),
+            React.createElement('div', { className: 'text-xs text-purple-600 mt-2' },
               'via ',
               (allResolvers.find(r =>
                 r.id === (pendingExternalTrack.bandcampUrl ? 'bandcamp' :
@@ -3947,29 +4155,29 @@ useEffect(() => {
               )?.name || 'External')
             )
           ),
-          React.createElement('div', { className: 'text-xs text-slate-500 mb-6' },
+          React.createElement('div', { className: 'text-xs text-gray-400 mb-6' },
             'Auto-skipping in 15 seconds...'
           )
         ),
         React.createElement('div', { className: 'flex gap-3' },
           React.createElement('button', {
             onClick: () => handleOpenExternalTrack(pendingExternalTrack),
-            className: 'flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg font-medium transition-colors'
+            className: 'flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-medium transition-colors'
           }, 'Open in Browser'),
           React.createElement('button', {
             onClick: handleSkipExternalTrack,
-            className: 'flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 px-4 rounded-lg font-medium transition-colors'
+            className: 'flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 px-4 rounded-lg font-medium transition-colors'
           }, 'Skip Track')
         )
       )
     ),
 
-    // Search Drawer - slides down from header (fixed positioning to avoid covering header)
+    // Search Drawer - slides down from top
     searchDrawerOpen && React.createElement('div', {
-      className: `fixed left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-white/20 shadow-2xl transition-all duration-300 ease-in-out overflow-hidden`,
+      className: `fixed left-64 right-0 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-2xl transition-all duration-300 ease-in-out overflow-hidden`,
       style: {
-        top: '64px', // Below header
-        height: '45vh',
+        top: '0',
+        height: '50vh',
         zIndex: 30
       }
     },
@@ -4008,7 +4216,7 @@ useEffect(() => {
                       setSearchDrawerOpen(false);
                       fetchArtistData(artist.name);
                     },
-                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                    className: 'w-full text-left p-3 rounded-lg hover:bg-gray-100 transition-colors'
                   },
                     React.createElement('div', { className: 'font-medium truncate' }, artist.name),
                     artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, artist.disambiguation)
@@ -4040,7 +4248,7 @@ useEffect(() => {
                       setSearchDrawerOpen(false);
                       handleAlbumClick(album);
                     },
-                    className: 'w-full text-left p-2 rounded-lg hover:bg-white/10 transition-colors flex items-center gap-3'
+                    className: 'w-full text-left p-2 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-3'
                   },
                     // Album art thumbnail
                     React.createElement('div', {
@@ -4126,7 +4334,7 @@ useEffect(() => {
                       setSearchDrawerOpen(false);
                       handlePlaylistClick(playlist);
                     },
-                    className: 'w-full text-left p-3 rounded-lg hover:bg-white/10 transition-colors'
+                    className: 'w-full text-left p-3 rounded-lg hover:bg-gray-100 transition-colors'
                   },
                     React.createElement('div', { className: 'font-medium truncate' }, playlist.title),
                     React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
@@ -4156,176 +4364,6 @@ useEffect(() => {
       style: { top: '64px' }
     }),
 
-    // Main content with sidebar
-    React.createElement('div', { 
-      className: 'flex-1 flex overflow-hidden'
-    },
-      // Sidebar
-      React.createElement('div', { 
-        className: 'w-64 bg-black/20 border-r border-white/10 p-4 flex flex-col gap-2 no-drag overflow-y-auto scrollable-content'
-      },
-        // Menu buttons
-        React.createElement('button', {
-          onClick: () => setActiveView('library'),
-          className: `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-            activeView === 'library' ? 'bg-purple-600' : 'hover:bg-white/10'
-          }`
-        },
-          React.createElement('span', { className: 'text-xl' }, React.createElement(Music)),
-          React.createElement('span', null, 'My Library')
-        ),
-        React.createElement('button', {
-          onClick: () => setActiveView('playlists'),
-          className: `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-            activeView === 'playlists' ? 'bg-purple-600' : 'hover:bg-white/10'
-          }`
-        },
-          React.createElement('span', { className: 'text-xl' }, React.createElement(List)),
-          React.createElement('span', null, 'Playlists')
-        ),
-        React.createElement('button', {
-          onClick: () => setActiveView('friends'),
-          className: `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-            activeView === 'friends' ? 'bg-purple-600' : 'hover:bg-white/10'
-          }`
-        },
-          React.createElement('span', { className: 'text-xl' }, React.createElement(Users)),
-          React.createElement('span', null, 'Friends')
-        ),
-        React.createElement('button', {
-          onClick: () => setActiveView('discover'),
-          className: `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-            activeView === 'discover' ? 'bg-purple-600' : 'hover:bg-white/10'
-          }`
-        },
-          React.createElement('span', { className: 'text-xl' }, React.createElement(Radio)),
-          React.createElement('span', null, 'Discover')
-        ),
-
-// Resolvers section
-          React.createElement('div', { className: 'space-y-3' },
-              // Debug info (temporary)
-              React.createElement('div', { className: 'text-xs p-2 bg-black/20 rounded space-y-1' },
-                React.createElement('div', { className: 'font-semibold mb-2 text-gray-300' }, '🔍 Spotify Status'),
-                React.createElement('div', { className: spotifyConnected ? 'text-green-400' : 'text-red-400' }, 
-                  `Connected: ${spotifyConnected ? '✓' : '✗'}`
-                ),
-                React.createElement('div', { className: spotifyToken ? 'text-green-400' : 'text-red-400' }, 
-                  `Token: ${spotifyToken ? '✓ Present' : '✗ None'}`
-                ),
-                React.createElement('div', { className: activeResolvers.includes('spotify') ? 'text-green-400' : 'text-gray-400' }, 
-                  `Enabled: ${activeResolvers.includes('spotify') ? '✓' : '✗'}`
-                ),
-                React.createElement('div', { className: 'text-blue-400 text-xs mt-1' }, 
-                  '💡 Using Spotify Connect API'
-                ),
-                React.createElement('div', { className: 'text-gray-400 text-xs' }, 
-                  'Open Spotify app/web to play'
-                ),
-                React.createElement('button', {
-                  onClick: async () => {
-                    console.log('=== SPOTIFY STATUS ===');
-                    console.log('Connected:', spotifyConnected);
-                    console.log('Token:', spotifyToken ? 'Present' : 'None');
-                    console.log('Enabled:', activeResolvers.includes('spotify'));
-                    
-                    if (spotifyToken) {
-                      const devices = await getSpotifyDevices();
-                      console.log('Available devices:', devices);
-                      alert(`Found ${devices.length} Spotify device(s). Check console for details.`);
-                    } else {
-                      alert('Not connected to Spotify');
-                    }
-                  },
-                  className: 'mt-2 w-full px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-xs'
-                },
-                  '🔍 Check Devices'
-                )
-              ),
-              ...resolvers.map(resolver => {
-                const isSpotify = resolver.id === 'spotify';
-                const needsAuth = isSpotify && !spotifyConnected;
-                
-                return React.createElement('div', {
-                  key: resolver.id,
-                  className: 'p-4 bg-white/5 rounded-lg border border-white/10'
-                },
-                  React.createElement('div', { className: 'flex items-center justify-between' },
-                    React.createElement('div', { className: 'flex items-center gap-3 flex-1' },
-                      React.createElement('div', {
-                        className: 'w-4 h-4 rounded-full',
-                        style: { backgroundColor: resolver.color }
-                      }),
-                      React.createElement('div', { className: 'flex-1' },
-                        React.createElement('div', { className: 'font-medium' }, resolver.name),
-                        React.createElement('div', { className: 'text-xs text-gray-400' },
-                          isSpotify && spotifyConnected ? '✓ Connected' :
-                          isSpotify && !spotifyConnected ? 'Authentication required' :
-                          activeResolvers.includes(resolver.id) ? 'Active' : 'Disabled'
-                        )
-                      )
-                    ),
-                    React.createElement('label', { className: 'relative inline-block w-12 h-6' },
-                      React.createElement('input', {
-                        type: 'checkbox',
-                        checked: activeResolvers.includes(resolver.id),
-                        onChange: () => toggleResolver(resolver.id),
-                        disabled: needsAuth,
-                        className: 'sr-only peer'
-                      }),
-                      React.createElement('div', {
-                        className: `w-full h-full rounded-full transition-colors ${
-                          needsAuth ? 'bg-gray-700' : 'bg-gray-600 peer-checked:bg-purple-600'
-                        }`
-                      }),
-                      React.createElement('div', {
-                        className: `absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6 ${
-                          needsAuth ? 'opacity-50' : ''
-                        }`
-                      })
-                    )
-                  ),
-                  
-                  // Spotify Auth Buttons
-                  isSpotify && React.createElement('div', { className: 'mt-3 pt-3 border-t border-white/10' },
-                    !spotifyConnected ? 
-                      React.createElement('div', { className: 'space-y-2' },
-                        React.createElement('button', {
-                          onClick: connectSpotify,
-                          className: 'w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2'
-                        },
-                          '🔓 Connect Spotify Account'
-                        ),
-                        React.createElement('button', {
-                          onClick: () => {
-                            console.log('Manual token check triggered');
-                            checkSpotifyToken();
-                          },
-                          className: 'w-full py-1 px-4 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs transition-colors'
-                        },
-                          '🔄 Refresh Status'
-                        )
-                      )
-                    :
-                      React.createElement('div', { className: 'space-y-2' },
-                        React.createElement('div', { 
-                          className: 'text-sm text-green-400 flex items-center gap-2'
-                        },
-                          '✓ Authenticated and ready to stream'
-                        ),
-                        React.createElement('button', {
-                          onClick: disconnectSpotify,
-                          className: 'w-full py-1.5 px-4 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-sm transition-colors'
-                        },
-                          'Disconnect'
-                        )
-                      )
-                  )
-                );
-              })
-            )
-          ),
-      
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement('div', { 
         className: 'flex-1 flex flex-col',
@@ -4726,72 +4764,156 @@ useEffect(() => {
             })
           )
         ),
-        // Playlists View
-        activeView === 'playlists' && React.createElement('div', { className: 'space-y-4' },
-          // Import button
-          React.createElement('div', { className: 'flex justify-end' },
-            React.createElement('button', {
-              onClick: () => setShowUrlImportDialog(true),
-              className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center gap-2'
-            },
-              React.createElement('span', null, '📥'),
-              'Import Playlist'
+        // Playlists View - Tomahawk/Rdio style with hero header
+        activeView === 'playlists' && React.createElement('div', { className: 'flex flex-col h-full' },
+          // Hero Header
+          React.createElement('div', {
+            className: 'relative h-64 flex-shrink-0 bg-gradient-to-b from-gray-300 to-gray-200 flex items-center justify-center overflow-hidden'
+          },
+            // Placeholder background image (to be replaced with actual hero image)
+            React.createElement('div', {
+              className: 'absolute inset-0 bg-cover bg-center opacity-60',
+              style: { backgroundImage: 'url(https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1200&q=80)' }
+            }),
+            // Overlay gradient
+            React.createElement('div', { className: 'absolute inset-0 bg-gradient-to-b from-transparent via-white/30 to-white/80' }),
+            // Hero content
+            React.createElement('div', { className: 'relative z-10 text-center' },
+              React.createElement('div', { className: 'flex items-center justify-center gap-3 mb-2' },
+                React.createElement('div', { className: 'w-3 h-3 bg-green-500 rounded-full' })
+              ),
+              React.createElement('h1', { className: 'text-4xl font-light text-gray-800 tracking-wide mb-2' }, 'PLAYLISTS'),
+              React.createElement('p', { className: 'text-gray-600 mb-4' }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`),
+              React.createElement('button', {
+                onClick: () => setShowUrlImportDialog(true),
+                className: 'inline-flex items-center gap-2 px-6 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-full transition-colors text-sm font-medium'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+                ),
+                'Import Playlist'
+              )
             )
           ),
 
-          // Playlist grid or empty state
-          playlists.length === 0 ?
-            React.createElement('div', {
-              className: 'text-center py-12 text-gray-400'
-            }, '🎵 No playlists yet. Import a playlist to get started!')
-          :
-            React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
-              playlists.map(playlist =>
-                React.createElement('div', {
-                  key: playlist.id,
-                  className: 'group relative bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-colors cursor-pointer'
-                },
-                  // Hosted playlist indicator + refresh button
-                  playlist.sourceUrl && React.createElement('div', {
-                    className: 'absolute top-2 right-2 flex items-center gap-1'
-                  },
-                    React.createElement('span', {
-                      className: 'text-xs text-blue-400',
-                      title: 'Hosted playlist'
-                    }, '🌐'),
-                    React.createElement('button', {
-                      onClick: async (e) => {
-                        e.stopPropagation();
-                        setRefreshingPlaylist(playlist.id);
-                        await refreshHostedPlaylist(playlist.id);
-                        setRefreshingPlaylist(null);
-                      },
-                      className: `p-1 rounded hover:bg-white/20 transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                      title: 'Refresh playlist'
-                    }, '🔄')
-                  ),
-                  // Clickable area
-                  React.createElement('div', {
+          // Playlist tabs
+          React.createElement('div', { className: 'flex items-center gap-6 px-6 py-3 border-b border-gray-200 bg-white' },
+            React.createElement('button', { className: 'text-sm font-medium text-gray-900 border-b-2 border-gray-900 pb-2' }, 'PLAYLISTS'),
+            React.createElement('button', { className: 'text-sm font-medium text-gray-400 pb-2 hover:text-gray-600' }, 'LAST PLAYED'),
+            React.createElement('div', { className: 'flex-1' }),
+            React.createElement('button', { className: 'text-gray-400 hover:text-gray-600' },
+              React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+              )
+            ),
+            React.createElement('button', {
+              onClick: () => setShowUrlImportDialog(true),
+              className: 'flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+              ),
+              'NEW'
+            )
+          ),
+
+          // Playlist grid
+          React.createElement('div', { className: 'flex-1 overflow-y-auto p-6 bg-white scrollable-content' },
+            playlists.length === 0 ?
+              React.createElement('div', {
+                className: 'text-center py-12 text-gray-400'
+              }, 'No playlists yet. Import a playlist to get started!')
+            :
+              React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
+                playlists.map(playlist => {
+                  // Get first 4 tracks for mosaic
+                  const tracks = playlist.tracks || [];
+                  const mosaicTracks = tracks.slice(0, 4);
+                  const hasMosaic = mosaicTracks.length >= 4 && mosaicTracks.some(t => t.albumArt);
+
+                  return React.createElement('div', {
+                    key: playlist.id,
                     onClick: (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log('🖱️ BUTTON CLICKED! Playlist:', playlist.id, playlist.title);
                       loadPlaylist(playlist);
-                    }
+                    },
+                    className: 'group cursor-pointer'
                   },
+                    // Album art mosaic or placeholder
                     React.createElement('div', {
-                      className: `w-full aspect-square rounded-lg mb-3 flex items-center justify-center text-4xl ${
-                        playlist.sourceUrl
-                          ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
-                          : 'bg-gradient-to-br from-purple-500 to-pink-500'
-                      }`
-                    }, playlist.sourceUrl ? '🌐' : '📋'),
-                    React.createElement('div', { className: 'font-semibold truncate' }, playlist.title),
-                    React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, playlist.creator)
-                  )
-                )
+                      className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow'
+                    },
+                      hasMosaic ?
+                        // 2x2 mosaic grid
+                        React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                          mosaicTracks.slice(0, 4).map((track, idx) =>
+                            track.albumArt ?
+                              React.createElement('img', {
+                                key: idx,
+                                src: track.albumArt,
+                                alt: '',
+                                className: 'w-full h-full object-cover'
+                              })
+                            :
+                              React.createElement('div', {
+                                key: idx,
+                                className: 'w-full h-full bg-gray-200 flex items-center justify-center'
+                              }, React.createElement(Music, { size: 20, className: 'text-gray-400' }))
+                          )
+                        )
+                      :
+                        // Placeholder
+                        React.createElement('div', {
+                          className: `w-full h-full flex items-center justify-center ${
+                            playlist.sourceUrl
+                              ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
+                              : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                          }`
+                        }, React.createElement(Music, { size: 48, className: 'text-white/80' })),
+
+                      // Hosted indicator
+                      playlist.sourceUrl && React.createElement('div', {
+                        className: 'absolute top-2 right-2 flex items-center gap-1'
+                      },
+                        React.createElement('span', {
+                          className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
+                          title: 'Hosted playlist'
+                        }, '🌐 Hosted'),
+                        React.createElement('button', {
+                          onClick: async (e) => {
+                            e.stopPropagation();
+                            setRefreshingPlaylist(playlist.id);
+                            await refreshHostedPlaylist(playlist.id);
+                            setRefreshingPlaylist(null);
+                          },
+                          className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                          title: 'Refresh playlist'
+                        },
+                          React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                          )
+                        )
+                      ),
+
+                      // Hover play overlay
+                      React.createElement('div', {
+                        className: 'absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center'
+                      },
+                        React.createElement('div', {
+                          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg'
+                        }, React.createElement(Play, { size: 24, className: 'text-gray-800 ml-1' }))
+                      )
+                    ),
+                    // Playlist info
+                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
+                    React.createElement('div', { className: 'text-sm text-gray-500 truncate' },
+                      playlist.creator || `${playlist.tracks?.length || 0} Songs`
+                    )
+                  );
+                })
               )
-            )
+          )
         ),
         
         activeView === 'friends' && React.createElement('div', {
@@ -4799,260 +4921,180 @@ useEffect(() => {
         }, '👥 Connect with friends to see what they\'re listening to'),
         activeView === 'discover' && React.createElement('div', {
           className: 'text-center py-12 text-gray-400'
-        }, '📻 Discover new music from trending charts')
+        }, '📻 Discover new music from trending charts'),
+        activeView === 'new-releases' && React.createElement('div', {
+          className: 'text-center py-12 text-gray-400'
+        }, '🆕 New releases coming soon')
       )
-    ),
+    )
+    ), // Close the sidebar + main wrapper
 
-    // Player bar (always visible)
+    // Player bar (always visible) - New Tomahawk-inspired layout
+    // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
     React.createElement('div', {
-      className: 'bg-black/40 backdrop-blur-xl border-t border-white/10 p-4 no-drag flex-shrink-0'
+      className: 'bg-gray-800/90 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0',
+      style: { minHeight: '72px' }
     },
-      !currentTrack ?
-        // Empty state - no track playing (same layout as normal player)
-        React.createElement(React.Fragment, null,
-          React.createElement('div', { className: 'flex items-center justify-between mb-2' },
-            React.createElement('div', {
-              className: 'flex items-center gap-4 relative',
-              onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
-              onDragOver: (e) => handleDragOver(e, 'now-playing'),
-              onDragLeave: handleDragLeave,
-              onDrop: (e) => handleDrop(e, 'now-playing')
-            },
-              React.createElement(DropZoneOverlay, {
-                zone: 'now-playing',
-                isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
-              }),
-              React.createElement('div', {
-                className: 'w-14 h-14 bg-slate-700/50 rounded-lg flex items-center justify-center text-2xl text-slate-500'
-              }, React.createElement(Music)),
-              React.createElement('div', null,
-                React.createElement('div', { className: 'font-semibold text-slate-500' }, 'No track playing'),
-                React.createElement('div', { className: 'text-sm text-slate-600' }, 'Drop a URL or select a track')
-              )
-            ),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(Heart))
-          ),
-          React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('span', { className: 'text-sm text-slate-600 w-12 text-right' }, '0:00'),
-            React.createElement('div', { className: 'flex-1' },
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: 0,
-                disabled: true,
-                className: 'w-full h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
-              })
-            ),
-            React.createElement('span', { className: 'text-sm text-slate-600 w-12' }, '0:00')
-          ),
-          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(SkipBack)),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-4 bg-slate-700 rounded-full text-xl text-slate-500 cursor-not-allowed'
-            }, React.createElement(Play)),
-            React.createElement('button', {
-              disabled: true,
-              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
-            }, React.createElement(SkipForward)),
-            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
-              React.createElement('span', { className: 'text-xl text-slate-600' }, React.createElement(Volume2)),
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: volume,
-                disabled: true,
-                className: 'w-24 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
-              })
-            ),
-            React.createElement('button', {
-              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-              title: `Queue (${currentQueue.length} tracks)`
-            },
-              React.createElement(List),
-              currentQueue.length > 0 && React.createElement('span', {
-                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-            )
-          )
-        )
-      :
-      isExternalPlayback && !browserPlaybackActive ?
-        // External Playback State (no extension control)
-        React.createElement('div', { className: 'flex flex-col items-center space-y-4 w-full' },
-          React.createElement('div', { className: 'text-center' },
-            React.createElement('div', { className: 'text-sm text-slate-400 mb-2' }, '🌐 Playing in browser'),
-            React.createElement('div', { className: 'text-lg font-semibold text-white' }, currentTrack.title),
-            React.createElement('div', { className: 'text-sm text-slate-400' }, currentTrack.artist),
-            React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
-              (() => {
-                const resolverId = determineResolverIdFromTrack(currentTrack);
-                const resolver = allResolvers.find(r => r.id === resolverId);
-                return resolver ? `🌐 via ${resolver.name}` : null;
-              })()
-            )
-          ),
-
-          // Grayed out progress bar
-          React.createElement('div', { className: 'w-full max-w-md' },
-            React.createElement('div', { className: 'h-1 bg-slate-700 rounded-full opacity-50 border border-dashed border-slate-600' }),
-            React.createElement('div', { className: 'flex justify-between text-xs text-slate-500 mt-1' },
-              React.createElement('span', null, '0:00'),
-              React.createElement('span', null, currentTrack.duration ? Math.floor(currentTrack.duration / 60) + ':' + String(Math.floor(currentTrack.duration % 60)).padStart(2, '0') : '--:--')
-            )
-          ),
-
-          // Done button
+      React.createElement('div', { className: 'flex items-center justify-between gap-4' },
+        // LEFT: Transport controls + Queue button
+        React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('button', {
-            onClick: handleDoneWithExternalTrack,
-            className: 'bg-green-600 hover:bg-green-700 text-white py-3 px-8 rounded-lg font-medium transition-colors flex items-center gap-2'
+            onClick: handlePrevious,
+            disabled: !currentTrack,
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+          }, React.createElement(SkipBack, { size: 18 })),
+          React.createElement('button', {
+            onClick: handlePlayPause,
+            disabled: !currentTrack,
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+          }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 })),
+          React.createElement('button', {
+            onClick: handleNext,
+            disabled: !currentTrack,
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+          }, React.createElement(SkipForward, { size: 18 })),
+          // Queue button (hamburger style)
+          React.createElement('button', {
+            onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+            className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
+            title: `Queue (${currentQueue.length} tracks)`
           },
-            React.createElement('span', null, '✓'),
-            React.createElement('span', null, 'Done - Play Next')
-          ),
-
-          // Navigation buttons (grayed)
-          React.createElement('div', { className: 'flex gap-4 opacity-50' },
-            React.createElement('button', {
-              onClick: handlePrevious,
-              className: 'w-10 h-10 flex items-center justify-center rounded-full bg-slate-700 text-white'
-            }, '⏮'),
-            React.createElement('button', {
-              onClick: handleNext,
-              className: 'w-10 h-10 flex items-center justify-center rounded-full bg-slate-700 text-white'
-            }, '⏭')
+            React.createElement(List, { size: 18 }),
+            currentQueue.length > 0 && React.createElement('span', {
+              className: `absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[10px] font-medium ${queueAnimating ? 'badge-flash' : ''}`
+            }, currentQueue.length > 99 ? '99+' : currentQueue.length)
           )
-        )
-      :
-        // Normal player controls
-        React.createElement(React.Fragment, null,
-          React.createElement('div', { className: 'flex items-center justify-between mb-2' },
-            React.createElement('div', {
-              className: 'flex items-center gap-4 relative',
-              onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
-              onDragOver: (e) => handleDragOver(e, 'now-playing'),
-              onDragLeave: handleDragLeave,
-              onDrop: (e) => handleDrop(e, 'now-playing')
-            },
-              React.createElement(DropZoneOverlay, {
-                zone: 'now-playing',
-                isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
-              }),
-              currentTrack.albumArt ?
-                React.createElement('img', {
-                  src: currentTrack.albumArt,
-                  alt: currentTrack.album,
-                  className: 'w-14 h-14 rounded-lg object-cover'
-                })
-              :
-                React.createElement('div', {
-                  className: 'w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
-                }, React.createElement(Music)),
-              React.createElement('div', null,
-                React.createElement('div', { className: 'font-semibold' }, currentTrack.title),
-                React.createElement('div', { className: 'text-sm text-gray-400 flex items-center gap-2' },
-                  React.createElement('button', {
-                    onClick: () => {
-                      console.log('Navigating to artist:', currentTrack.artist);
-                      fetchArtistData(currentTrack.artist);
-                    },
-                    className: 'hover:text-purple-400 hover:underline transition-colors cursor-pointer no-drag',
-                    style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
-                  }, currentTrack.artist)
-                ),
-                React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
-                  (() => {
-                    const resolverId = determineResolverIdFromTrack(currentTrack);
-                    const resolver = allResolvers.find(r => r.id === resolverId);
-                    if (browserPlaybackActive && resolver) {
-                      return `🌐 Playing in browser via ${resolver.name}`;
-                    }
-                    return resolver ? `▶️ via ${resolver.name}` : null;
-                  })()
-                )
+        ),
+
+        // CENTER: Track info (album art + metadata)
+        React.createElement('div', {
+          className: 'flex-1 flex items-center justify-center gap-3 max-w-md relative',
+          onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
+          onDragOver: (e) => handleDragOver(e, 'now-playing'),
+          onDragLeave: handleDragLeave,
+          onDrop: (e) => handleDrop(e, 'now-playing')
+        },
+          React.createElement(DropZoneOverlay, {
+            zone: 'now-playing',
+            isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
+          }),
+          currentTrack ? [
+            currentTrack.albumArt ?
+              React.createElement('img', {
+                key: 'album-art',
+                src: currentTrack.albumArt,
+                alt: currentTrack.album,
+                className: 'w-12 h-12 rounded object-cover flex-shrink-0'
+              })
+            :
+              React.createElement('div', {
+                key: 'album-placeholder',
+                className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center flex-shrink-0'
+              }, React.createElement(Music, { size: 20, className: 'text-gray-500' })),
+            React.createElement('div', { key: 'track-info', className: 'min-w-0 text-center' },
+              React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
+              React.createElement('div', { className: 'text-xs text-gray-400 truncate flex items-center justify-center gap-1' },
+                React.createElement('button', {
+                  onClick: () => fetchArtistData(currentTrack.artist),
+                  className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
+                }, currentTrack.artist),
+                (() => {
+                  const resolverId = determineResolverIdFromTrack(currentTrack);
+                  const resolver = allResolvers.find(r => r.id === resolverId);
+                  if (resolver) {
+                    const meta = {
+                      spotify: { color: 'text-green-400' },
+                      bandcamp: { color: 'text-cyan-400' },
+                      qobuz: { color: 'text-blue-400' },
+                      youtube: { color: 'text-red-400' }
+                    }[resolverId] || { color: 'text-purple-400' };
+                    return React.createElement('span', { className: meta.color }, ` · ${resolver.name}`);
+                  }
+                  return null;
+                })()
               )
+            )
+          ] : React.createElement('div', { className: 'text-sm text-gray-500' }, 'No track playing')
+        ),
+
+        // RIGHT: Progress bar + Shuffle + Repeat + Volume
+        React.createElement('div', { className: 'flex items-center gap-3' },
+          // Progress section
+          React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-right font-mono' },
+              currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
             ),
-            React.createElement('button', {
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(Heart))
-          ),
-          React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('span', { className: `text-sm w-12 text-right ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(progress)),
-            React.createElement('div', { className: 'flex-1' },
+            React.createElement('div', { className: 'flex-1 w-24' },
               React.createElement('input', {
                 type: 'range',
                 min: '0',
-                max: currentTrack.duration || 100,
-                value: browserPlaybackActive ? 0 : progress,
-                disabled: browserPlaybackActive,
+                max: currentTrack?.duration || 100,
+                value: currentTrack && !browserPlaybackActive ? progress : 0,
+                disabled: !currentTrack || browserPlaybackActive,
                 onChange: async (e) => {
-                  if (browserPlaybackActive) return;
+                  if (browserPlaybackActive || !currentTrack) return;
                   const newPosition = Number(e.target.value);
                   setProgress(newPosition);
-
-                  // Seek in Spotify if playing Spotify track
                   if ((currentTrack.sources?.spotify || currentTrack.spotifyUri) && spotifyPlayer) {
                     try {
-                      await spotifyPlayer.seek(newPosition * 1000); // Convert to milliseconds
-                      console.log('Seeked to', newPosition);
+                      await spotifyPlayer.seek(newPosition * 1000);
                     } catch (err) {
                       console.error('Seek error:', err);
                     }
                   }
                 },
-                className: `w-full h-1 rounded-full appearance-none ${browserPlaybackActive ? 'bg-white/10 cursor-not-allowed opacity-50' : 'bg-white/20 cursor-pointer'}`
+                className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-700 cursor-not-allowed' : 'bg-gray-600 cursor-pointer'}`
               })
             ),
-            React.createElement('span', { className: `text-sm w-12 ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(currentTrack.duration))
-          ),
-          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
-            // Playback controls
-            React.createElement('button', {
-              onClick: handlePrevious,
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(SkipBack)),
-            React.createElement('button', {
-              onClick: handlePlayPause,
-              className: 'p-4 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-xl'
-            }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
-            React.createElement('button', {
-              onClick: handleNext,
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
-            }, React.createElement(SkipForward)),
-            // Volume slider
-            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
-              React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: volume,
-                onChange: (e) => setVolume(Number(e.target.value)),
-                className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
-              })
-            ),
-            // Queue button
-            React.createElement('button', {
-              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-              title: `Queue (${currentQueue.length} tracks)`
-            },
-              React.createElement(List),
-              currentQueue.length > 0 && React.createElement('span', {
-                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 font-mono' },
+              currentTrack ? formatTime(currentTrack.duration) : '0:00'
             )
+          ),
+          // Shuffle button (placeholder)
+          React.createElement('button', {
+            disabled: true,
+            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
+            title: 'Shuffle (coming soon)'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+            )
+          ),
+          // Repeat button (placeholder)
+          React.createElement('button', {
+            disabled: true,
+            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
+            title: 'Repeat (coming soon)'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+            )
+          ),
+          // Volume
+          React.createElement('div', { className: 'flex items-center gap-1' },
+            React.createElement('span', { className: 'text-gray-400' }, React.createElement(Volume2, { size: 16 })),
+            React.createElement('input', {
+              type: 'range',
+              min: '0',
+              max: '100',
+              value: volume,
+              onChange: (e) => setVolume(Number(e.target.value)),
+              className: 'w-20 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer'
+            })
           )
         )
+      ),
+
+      // External playback notice (if applicable)
+      isExternalPlayback && !browserPlaybackActive && currentTrack && React.createElement('div', {
+        className: 'mt-2 flex items-center justify-center gap-4'
+      },
+        React.createElement('span', { className: 'text-xs text-gray-400' }, '🌐 Playing in browser'),
+        React.createElement('button', {
+          onClick: handleDoneWithExternalTrack,
+          className: 'bg-green-600 hover:bg-green-700 text-white py-1 px-4 rounded text-sm font-medium transition-colors'
+        }, 'Done - Play Next')
+      )
     ),
 
     // Import Playlist Dialog Modal
@@ -5067,32 +5109,32 @@ useEffect(() => {
       }
     },
       React.createElement('div', {
-        className: 'bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4'
+        className: 'bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl'
       },
         // Header
         React.createElement('div', {
           className: 'flex items-center justify-between mb-6'
         },
-          React.createElement('h2', { className: 'text-xl font-bold' }, '📥 Import Playlist'),
+          React.createElement('h2', { className: 'text-xl font-bold text-gray-900' }, '📥 Import Playlist'),
           React.createElement('button', {
             onClick: () => {
               setShowUrlImportDialog(false);
               setUrlImportValue('');
             },
-            className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
+            className: 'p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500'
           }, React.createElement(X))
         ),
 
         // Option 1: Import from file
         React.createElement('div', { className: 'mb-6' },
-          React.createElement('h3', { className: 'text-sm font-semibold text-gray-300 mb-2' }, '📁 From File'),
+          React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 mb-2' }, '📁 From File'),
           React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import an XSPF playlist file from your computer.'),
           React.createElement('button', {
             onClick: async () => {
               setShowUrlImportDialog(false);
               await handleImportPlaylist();
             },
-            className: 'w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors flex items-center justify-center gap-2',
+            className: 'w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2',
             disabled: urlImportLoading
           },
             React.createElement('span', null, '📁'),
@@ -5102,21 +5144,21 @@ useEffect(() => {
 
         // Divider
         React.createElement('div', { className: 'flex items-center gap-4 mb-6' },
-          React.createElement('div', { className: 'flex-1 h-px bg-white/20' }),
-          React.createElement('span', { className: 'text-gray-500 text-sm' }, 'or'),
-          React.createElement('div', { className: 'flex-1 h-px bg-white/20' })
+          React.createElement('div', { className: 'flex-1 h-px bg-gray-200' }),
+          React.createElement('span', { className: 'text-gray-400 text-sm' }, 'or'),
+          React.createElement('div', { className: 'flex-1 h-px bg-gray-200' })
         ),
 
         // Option 2: Import from URL
         React.createElement('div', null,
-          React.createElement('h3', { className: 'text-sm font-semibold text-gray-300 mb-2' }, '🌐 From URL'),
+          React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 mb-2' }, '🌐 From URL'),
           React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import a hosted XSPF playlist. It will auto-update when the source changes.'),
           React.createElement('input', {
             type: 'url',
             value: urlImportValue,
             onChange: (e) => setUrlImportValue(e.target.value),
             placeholder: 'https://example.com/playlist.xspf',
-            className: 'w-full px-4 py-3 bg-slate-700 rounded-lg border border-white/10 focus:border-blue-500 focus:outline-none text-white mb-3',
+            className: 'w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 focus:border-green-500 focus:outline-none text-gray-900 mb-3',
             disabled: urlImportLoading
           }),
           React.createElement('button', {
