@@ -74,10 +74,15 @@ const FALLBACK_RESOLVERS = [
 
 
 // TrackRow component - defined outside to prevent recreation on every render
-const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allResolvers, resolverOrder, activeResolvers }) => {
+const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
   // Get available sources (track.sources is an object with resolver IDs as keys)
+  // Sort by priority order (left to right = highest to lowest priority)
   const availableSources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources)
-    ? Object.keys(track.sources)
+    ? Object.keys(track.sources).sort((a, b) => {
+        const aIndex = resolverOrder?.indexOf(a) ?? 999;
+        const bIndex = resolverOrder?.indexOf(b) ?? 999;
+        return aIndex - bIndex;
+      })
     : [];
 
   // Resolver metadata for badge display
@@ -109,7 +114,13 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
   const primaryResolver = getPrimaryResolver();
 
   return React.createElement('div', {
-    className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors no-drag'
+    className: 'group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors no-drag',
+    onContextMenu: (e) => {
+      e.preventDefault();
+      if (onContextMenu) {
+        onContextMenu(track);
+      }
+    }
   },
     // Album art or play button
     React.createElement('div', { className: 'relative w-12 h-12 flex-shrink-0' },
@@ -373,7 +384,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 };
 
 // ReleaseCard component - FRESH START - Ultra simple, no complications
-const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = true }) => {
+const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
   
   const cardStyle = {
@@ -399,9 +410,19 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = tru
       display: isVisible ? 'block' : 'none'  // Hide with CSS instead of destroying DOM
     },
     onClick: handleClick,
+    onContextMenu: (e) => {
+      e.preventDefault();
+      if (onContextMenu) {
+        onContextMenu(release);
+      }
+    },
     onMouseEnter: (e) => {
       e.currentTarget.style.transform = 'scale(1.05)';
       e.currentTarget.style.backgroundColor = 'rgba(124, 58, 237, 0.2)';
+      // Prefetch release tracks on hover
+      if (onHoverFetch) {
+        onHoverFetch(release);
+      }
     },
     onMouseLeave: (e) => {
       e.currentTarget.style.transform = 'scale(1)';
@@ -502,7 +523,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = tru
 };
 
 // ReleasePage component - Shows full album/EP/single with tracklist
-const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, resolvers = [] }) => {
+const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackContextMenu, trackSources = {}, resolvers = [] }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -600,11 +621,47 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                     album: release.title,
                     sources: sources
                   };
-                  handlePlay(trackWithSources);
+
+                  // Build queue from remaining tracks (after this one)
+                  const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
+                    const tKey = `${t.position}-${t.title}`;
+                    const tSources = trackSources[tKey] || {};
+                    const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                    return {
+                      ...t,
+                      id: tId,
+                      artist: release.artist.name,
+                      album: release.title,
+                      albumArt: release.albumArt,
+                      sources: tSources
+                    };
+                  });
+
+                  if (onTrackPlay) {
+                    onTrackPlay(trackWithSources, tracksAfter);
+                  } else {
+                    handlePlay(trackWithSources);
+                  }
                 } else {
                   // No resolved sources yet, fall back to search
                   console.log('No resolved sources, searching...');
                   handleSearch(`${release.artist.name} ${track.title}`);
+                }
+              },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                // Build track object for context menu
+                const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                const trackForMenu = {
+                  ...track,
+                  id: trackId,
+                  artist: release.artist.name,
+                  album: release.title,
+                  albumArt: release.albumArt,
+                  sources: sources
+                };
+                if (onTrackContextMenu) {
+                  onTrackContextMenu(trackForMenu);
                 }
               }
             },
@@ -634,18 +691,25 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                 (() => {
                   const trackKey = `${track.position}-${track.title}`;
                   const sources = trackSources[trackKey] || {};
-                  const availableResolvers = Object.keys(sources);
-                  
-                  if (availableResolvers.length === 0) {
+                  const availableResolverIds = Object.keys(sources);
+
+                  if (availableResolverIds.length === 0) {
                     // Show loading indicator while resolving
                     return React.createElement('span', {
                       className: 'text-xs text-gray-500',
                       title: 'Searching for sources...'
                     }, '🔍');
                   }
-                  
+
+                  // Sort resolvers by priority order (left to right = highest to lowest priority)
+                  const sortedResolverIds = [...availableResolverIds].sort((a, b) => {
+                    const aIndex = resolvers.findIndex(r => r.id === a);
+                    const bIndex = resolvers.findIndex(r => r.id === b);
+                    return aIndex - bIndex;
+                  });
+
                   // Show resolver icons for available sources (only if they support playback)
-                  return availableResolvers.map(resolverId => {
+                  return sortedResolverIds.map(resolverId => {
                     const resolver = resolvers.find(r => r.id === resolverId);
                     if (!resolver || !resolver.play) return null;
                     
@@ -670,7 +734,27 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                           sources: sources,
                           preferredResolver: resolverId
                         };
-                        handlePlay(trackWithSources);
+
+                        // Build queue from remaining tracks (after this one)
+                        const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
+                          const tKey = `${t.position}-${t.title}`;
+                          const tSources = trackSources[tKey] || {};
+                          const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return {
+                            ...t,
+                            id: tId,
+                            artist: release.artist.name,
+                            album: release.title,
+                            albumArt: release.albumArt,
+                            sources: tSources
+                          };
+                        });
+
+                        if (onTrackPlay) {
+                          onTrackPlay(trackWithSources, tracksAfter);
+                        } else {
+                          handlePlay(trackWithSources);
+                        }
                       },
                       style: {
                         width: '24px',
@@ -766,6 +850,7 @@ const Parachord = () => {
   const [loadingArtist, setLoadingArtist] = useState(false);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
+  const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
   const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
@@ -1413,6 +1498,18 @@ const Parachord = () => {
     }
   }, []);
 
+  // Listen for track/playlist context menu actions
+  useEffect(() => {
+    if (window.electron?.contextMenu?.onAction) {
+      window.electron.contextMenu.onAction((data) => {
+        console.log('Track context menu action received:', data);
+        if (data.action === 'add-to-queue' && data.tracks) {
+          addToQueue(data.tracks);
+        }
+      });
+    }
+  }, []);
+
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
@@ -1456,13 +1553,14 @@ const Parachord = () => {
         console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from files`);
         
         if (loadedPlaylists.length > 0) {
-          // Parse each playlist to get title and creator
+          // Parse each playlist to get title, creator, and tracks
           const parsedPlaylists = loadedPlaylists.map(playlist => {
             const parsed = parseXSPF(playlist.xspf);
             return {
               ...playlist,
               title: parsed?.title || playlist.id,
-              creator: parsed?.creator || 'Unknown'
+              creator: parsed?.creator || 'Unknown',
+              tracks: parsed?.tracks || []
             };
           });
           
@@ -1811,9 +1909,15 @@ const Parachord = () => {
     }
 
     if (resolverId === 'spotify' && config.token) {
-      console.log('🔄 Starting Spotify playback polling for auto-advance (5s interval)...');
+      const trackUri = track.spotifyUri || track.uri;
+      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval)... trackUri=${trackUri}`);
+
+      if (!trackUri) {
+        console.warn('⚠️ No Spotify URI found on track, auto-advance may not work');
+      }
 
       let errorCount = 0; // Track consecutive polling errors
+      let lastTrackUri = trackUri; // Track what we started playing
 
       const pollInterval = setInterval(async () => {
         try {
@@ -1837,11 +1941,20 @@ const Parachord = () => {
           const data = await response.json();
           errorCount = 0; // Reset on success
 
-          // Check if we're still playing the same track
-          if (data.item && data.item.uri === track.spotifyUri) {
-            const progressMs = data.progress_ms;
-            const durationMs = data.item.duration_ms;
+          if (!data.item) {
+            // No track playing - playback stopped
+            console.log('⏹️ Spotify playback stopped');
+            clearInterval(pollInterval);
+            playbackPollerRef.current = null;
+            return;
+          }
 
+          const currentUri = data.item.uri;
+          const progressMs = data.progress_ms;
+          const durationMs = data.item.duration_ms;
+
+          // Check if we're still playing the same track we started with
+          if (currentUri === lastTrackUri) {
             // If within 1 second of end, trigger next
             if (progressMs >= durationMs - 1000) {
               console.log('🎵 Track ending, auto-advancing to next...');
@@ -1850,10 +1963,13 @@ const Parachord = () => {
               // Use ref to avoid stale closure in interval callback
               if (handleNextRef.current) handleNextRef.current();
             }
-          } else if (!data.item || !data.is_playing) {
-            // Playback stopped or track changed externally
+          } else {
+            // Track changed - Spotify advanced on its own or user changed track
+            // Advance to our next track to stay in sync
+            console.log('🔄 Spotify track changed externally, advancing our queue...');
             clearInterval(pollInterval);
             playbackPollerRef.current = null;
+            if (handleNextRef.current) handleNextRef.current();
           }
         } catch (error) {
           console.error('Spotify polling error:', error);
@@ -2266,6 +2382,15 @@ const Parachord = () => {
   const clearQueue = () => {
     setCurrentQueue([]);
     console.log('🗑️ Cleared queue');
+  };
+
+  const addToQueue = (tracks) => {
+    const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
+    setCurrentQueue(prev => [...prev, ...tracksArray]);
+    // Trigger queue animation
+    setQueueAnimating(true);
+    setTimeout(() => setQueueAnimating(false), 600);
+    console.log(`➕ Added ${tracksArray.length} track(s) to queue`);
   };
 
   const handleSearchInput = (value) => {
@@ -2945,6 +3070,86 @@ const Parachord = () => {
       console.error('Error fetching release data:', error);
       alert('Failed to load release data. Please try again.');
       setLoadingRelease(false);
+    }
+  };
+
+  // Prefetch release tracks on hover (for context menu "Add All to Queue")
+  const prefetchReleaseTracks = async (release, artist) => {
+    // Skip if already prefetched or currently loaded
+    if (prefetchedReleases[release.id] || currentRelease?.id === release.id) {
+      return;
+    }
+
+    try {
+      console.log('🔍 Prefetching tracks for:', release.title);
+
+      // Try fetching as a direct release ID first
+      let releaseId = release.id;
+      let releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      // If that fails (404), it might be a release-group ID
+      if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
+        const releaseGroupResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+
+        if (!releaseGroupResponse.ok) return;
+
+        const releaseGroupData = await releaseGroupResponse.json();
+        if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
+
+        releaseId = releaseGroupData.releases[0].id;
+        releaseDetailsResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+      }
+
+      if (!releaseDetailsResponse.ok) return;
+
+      const releaseData = await releaseDetailsResponse.json();
+
+      // Extract tracks
+      const tracks = [];
+      if (releaseData.media && releaseData.media.length > 0) {
+        releaseData.media.forEach((medium) => {
+          if (medium.tracks) {
+            medium.tracks.forEach(track => {
+              const trackId = `${artist?.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              tracks.push({
+                id: trackId,
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                length: track.length,
+                recordingId: track.recording?.id,
+                artist: artist?.name,
+                album: release.title,
+                albumArt: release.albumArt,
+                sources: {}
+              });
+            });
+          }
+        });
+      }
+
+      // Cache the prefetched tracks
+      setPrefetchedReleases(prev => ({
+        ...prev,
+        [release.id]: {
+          tracks,
+          title: release.title,
+          albumArt: release.albumArt,
+          artist: artist?.name
+        }
+      }));
+
+      console.log(`✅ Prefetched ${tracks.length} tracks for ${release.title}`);
+    } catch (error) {
+      console.error('Error prefetching release tracks:', error);
     }
   };
 
@@ -3933,6 +4138,34 @@ const Parachord = () => {
     );
   }, [playlistTracks]);
 
+  // Sync queue tracks with trackSources updates (for release/album tracks)
+  // This ensures queue items get their sources updated when resolution completes
+  useEffect(() => {
+    if (currentQueue.length === 0 || Object.keys(trackSources).length === 0) return;
+
+    // Check if any queue tracks need source updates from trackSources
+    // trackSources uses keys like "1-Track Title" (position-title)
+    let hasUpdates = false;
+    const updatedQueue = currentQueue.map(queueTrack => {
+      // Try to find matching sources in trackSources
+      // Queue tracks from releases have position property
+      if (queueTrack.position && queueTrack.title) {
+        const trackKey = `${queueTrack.position}-${queueTrack.title}`;
+        const resolvedSources = trackSources[trackKey];
+
+        if (resolvedSources && Object.keys(resolvedSources).length > Object.keys(queueTrack.sources || {}).length) {
+          hasUpdates = true;
+          return { ...queueTrack, sources: { ...queueTrack.sources, ...resolvedSources } };
+        }
+      }
+      return queueTrack;
+    });
+
+    if (hasUpdates) {
+      setCurrentQueue(updatedQueue);
+    }
+  }, [trackSources]);
+
   // Navigation helpers
   const navigateTo = (view) => {
     if (view !== activeView) {
@@ -4088,12 +4321,13 @@ const Parachord = () => {
         filename: filename,
         title: parsed.title,
         creator: parsed.creator,
+        tracks: parsed.tracks || [],
         xspf: content
       };
-      
+
       setPlaylists(prev => [...prev, newPlaylist]);
-      
-      console.log(`✅ Imported playlist: ${parsed.title}`);
+
+      console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
       alert(`✅ Imported playlist: ${parsed.title}`);
     } catch (error) {
       console.error('Import error:', error);
@@ -4140,10 +4374,10 @@ const Parachord = () => {
         // Update existing playlist
         setPlaylists(prev => prev.map((p, i) =>
           i === existingIndex
-            ? { ...p, xspf: content, title: parsed.title, creator: parsed.creator, lastUpdated: Date.now() }
+            ? { ...p, xspf: content, title: parsed.title, creator: parsed.creator, tracks: parsed.tracks || [], lastUpdated: Date.now() }
             : p
         ));
-        console.log(`🔄 Updated hosted playlist: ${parsed.title}`);
+        console.log(`🔄 Updated hosted playlist: ${parsed.title} (${parsed.tracks?.length || 0} tracks)`);
         return { updated: true, playlist: parsed };
       }
 
@@ -4153,6 +4387,7 @@ const Parachord = () => {
         filename: null,  // No local file for hosted playlists
         title: parsed.title,
         creator: parsed.creator,
+        tracks: parsed.tracks || [],
         xspf: content,
         sourceUrl: url,  // Track the source URL for updates
         lastUpdated: Date.now()
@@ -5230,6 +5465,19 @@ useEffect(() => {
             release: currentRelease,
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
+            onTrackPlay: (track, tracksAfter) => {
+              // Set queue with remaining tracks from the album, then play
+              setCurrentQueue(tracksAfter);
+              handlePlay(track);
+            },
+            onTrackContextMenu: (track) => {
+              if (window.electron?.contextMenu?.showTrackMenu) {
+                window.electron.contextMenu.showTrackMenu({
+                  type: 'track',
+                  track: track
+                });
+              }
+            },
             trackSources: trackSources,
             resolvers: resolvers
           })
@@ -5298,6 +5546,52 @@ useEffect(() => {
                   release: release,
                   currentArtist: currentArtist,
                   fetchReleaseData: fetchReleaseData,
+                  onHoverFetch: (rel) => {
+                    // Prefetch release tracks on hover for context menu
+                    prefetchReleaseTracks(rel, currentArtist);
+                  },
+                  onContextMenu: async (rel) => {
+                    // For releases, show context menu with tracks
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      // Check prefetched cache first
+                      const prefetched = prefetchedReleases[rel.id];
+                      if (prefetched?.tracks?.length > 0) {
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'release',
+                          title: rel.title,
+                          tracks: prefetched.tracks
+                        });
+                      } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
+                        // Use already loaded tracks from current release
+                        const tracks = currentRelease.tracks.map(t => {
+                          const trackId = `${currentArtist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return {
+                            ...t,
+                            id: trackId,
+                            artist: currentArtist?.name,
+                            album: rel.title,
+                            albumArt: rel.albumArt,
+                            sources: trackSources[`${t.position}-${t.title}`] || {}
+                          };
+                        });
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'release',
+                          title: rel.title,
+                          tracks: tracks
+                        });
+                      } else {
+                        // No tracks available yet - show with 0 tracks
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'release',
+                          title: rel.title,
+                          releaseId: rel.id,
+                          artist: currentArtist?.name,
+                          albumArt: rel.albumArt,
+                          tracks: []
+                        });
+                      }
+                    }
+                  },
                   isVisible: releaseTypeFilter === 'all' || release.releaseType === releaseTypeFilter
                 })
               )
@@ -5450,6 +5744,15 @@ useEffect(() => {
                   const tracksAfter = playlistTracks.slice(index + 1);
                   setCurrentQueue(tracksAfter);
                   handlePlay(track);  // Pass full track object - will resolve if needed
+                },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'track',
+                      track: track
+                    });
+                  }
                 }
               },
                 React.createElement('div', {
@@ -5485,46 +5788,53 @@ useEffect(() => {
                     })
                   :
                     hasResolved ?
-                      Object.entries(track.sources).map(([resolverId, source]) => {
-                        const resolver = allResolvers.find(r => r.id === resolverId);
-                        if (!resolver || !resolver.play) return null;
-                        return React.createElement('button', {
-                          key: resolverId,
-                          className: 'no-drag',
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            // Queue tracks AFTER the clicked track (not including it)
-                            const tracksAfter = playlistTracks.slice(index + 1);
-                            setCurrentQueue(tracksAfter);
-                            // Pass track with preferredResolver hint so queue ID is preserved
-                            handlePlay({ ...track, preferredResolver: resolverId });
-                          },
-                          style: {
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '4px',
-                            backgroundColor: resolver.color,
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 'bold',
-                            color: 'white',
-                            pointerEvents: 'auto',
-                            opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                            transition: 'transform 0.1s'
-                          },
-                          onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                          onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                          title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                        }, (() => {
-                          // Custom abbreviations for resolvers
-                          const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
-                          return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                        })());
-                      })
+                      // Sort resolver icons by priority order (left to right = highest to lowest priority)
+                      Object.entries(track.sources)
+                        .sort(([aId], [bId]) => {
+                          const aIndex = resolverOrder.indexOf(aId);
+                          const bIndex = resolverOrder.indexOf(bId);
+                          return aIndex - bIndex;
+                        })
+                        .map(([resolverId, source]) => {
+                          const resolver = allResolvers.find(r => r.id === resolverId);
+                          if (!resolver || !resolver.play) return null;
+                          return React.createElement('button', {
+                            key: resolverId,
+                            className: 'no-drag',
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              // Queue tracks AFTER the clicked track (not including it)
+                              const tracksAfter = playlistTracks.slice(index + 1);
+                              setCurrentQueue(tracksAfter);
+                              // Pass track with preferredResolver hint so queue ID is preserved
+                              handlePlay({ ...track, preferredResolver: resolverId });
+                            },
+                            style: {
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '4px',
+                              backgroundColor: resolver.color,
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              color: 'white',
+                              pointerEvents: 'auto',
+                              opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                              transition: 'transform 0.1s'
+                            },
+                            onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                            onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                            title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                          }, (() => {
+                            // Custom abbreviations for resolvers
+                            const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                            return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                          })());
+                        })
                     :
                       React.createElement('span', {
                         className: 'text-xs text-gray-500',
@@ -5579,6 +5889,14 @@ useEffect(() => {
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData,
+              onContextMenu: (track) => {
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'track',
+                    track: track
+                  });
+                }
+              },
               allResolvers: allResolvers,
               resolverOrder: resolverOrder,
               activeResolvers: activeResolvers
@@ -5658,6 +5976,25 @@ useEffect(() => {
                       e.preventDefault();
                       e.stopPropagation();
                       loadPlaylist(playlist);
+                    },
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      if (window.electron?.contextMenu?.showTrackMenu) {
+                        // Build track objects with IDs for queue compatibility
+                        const tracksWithIds = (playlist.tracks || []).map((track, idx) => {
+                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return {
+                            ...track,
+                            id: trackId,
+                            sources: {} // Will resolve on-demand when played
+                          };
+                        });
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'playlist',
+                          name: playlist.name,
+                          tracks: tracksWithIds
+                        });
+                      }
                     },
                     className: 'group cursor-pointer'
                   },
@@ -6533,12 +6870,17 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-400 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          React.createElement('div', { className: 'divide-y divide-gray-100' },
+          React.createElement('div', { className: 'space-y-1 p-2' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
               const isError = track.status === 'error';
-              const availableSources = Object.keys(track.sources || {});
+              // Sort by priority order (left to right = highest to lowest priority)
+              const availableSources = Object.keys(track.sources || {}).sort((a, b) => {
+                const aIndex = resolverOrder.indexOf(a);
+                const bIndex = resolverOrder.indexOf(b);
+                return aIndex - bIndex;
+              });
 
               return React.createElement('div', {
                 key: track.id,
@@ -6552,7 +6894,16 @@ useEffect(() => {
                   setDraggedQueueTrack(null);
                 },
                 onDragEnd: () => setDraggedQueueTrack(null),
-                className: `flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition-colors ${
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'track',
+                      track: track
+                    });
+                  }
+                },
+                className: `group flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 transition-colors ${
                   isCurrentTrack ? 'bg-purple-50' : ''
                 } ${draggedQueueTrack === index ? 'opacity-50' : ''} ${
                   isError ? 'opacity-50' : ''
@@ -6560,7 +6911,7 @@ useEffect(() => {
               },
                 // Track number / status indicator
                 React.createElement('div', {
-                  className: 'w-6 text-center text-gray-500 text-sm flex-shrink-0'
+                  className: 'text-xs text-gray-400 w-8 text-center flex-shrink-0'
                 },
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
                   isError ? '⚠' :
@@ -6570,33 +6921,38 @@ useEffect(() => {
                 // Track info
                 React.createElement('div', {
                   className: `flex-1 min-w-0 ${isLoading || isError ? '' : 'cursor-pointer'}`,
-                  onClick: () => !isLoading && !isError && handlePlay(track)
+                  onClick: () => {
+                    if (isLoading || isError) return;
+                    // Remove clicked track and all tracks above it from queue
+                    setCurrentQueue(prev => prev.slice(index + 1));
+                    handlePlay(track);
+                  }
                 },
                   isLoading ?
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'font-medium text-gray-500'
+                        className: 'text-xs font-medium text-gray-500'
                       }, 'Loading...'),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-400 truncate'
+                        className: 'text-xs text-gray-400 truncate'
                       }, `from ${track.sourceDomain || 'unknown'}`)
                     )
                   : isError ?
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'font-medium text-red-500'
+                        className: 'text-xs font-medium text-red-500'
                       }, 'Could not load track'),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-400 truncate'
+                        className: 'text-xs text-gray-400 truncate'
                       }, track.errorMessage || 'Unknown error')
                     )
                   :
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: `font-medium truncate ${isCurrentTrack ? 'text-purple-600' : 'text-gray-900'}`
+                        className: `text-xs font-medium truncate ${isCurrentTrack ? 'text-purple-600' : 'text-gray-900'}`
                       }, track.title),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-500 truncate'
+                        className: 'text-xs text-gray-500 truncate'
                       }, track.artist)
                     )
                 ),

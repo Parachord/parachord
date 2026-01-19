@@ -761,6 +761,56 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
   return { shown: true };
 });
 
+// Show context menu for tracks/playlists/releases
+ipcMain.handle('show-track-context-menu', async (event, data) => {
+  console.log('=== Show Track Context Menu ===');
+  console.log('  Type:', data.type);
+
+  const { Menu } = require('electron');
+
+  let menuLabel;
+  let enabled = true;
+
+  switch (data.type) {
+    case 'track':
+      menuLabel = 'Add to Queue';
+      break;
+    case 'playlist':
+      menuLabel = `Add All to Queue (${data.tracks?.length || 0} tracks)`;
+      enabled = data.tracks?.length > 0;
+      break;
+    case 'release':
+      if (data.tracks?.length > 0) {
+        menuLabel = `Add All to Queue (${data.tracks.length} tracks)`;
+      } else {
+        menuLabel = 'Add All to Queue (click album first)';
+        enabled = false;
+      }
+      break;
+    default:
+      menuLabel = 'Add to Queue';
+  }
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: menuLabel,
+      enabled: enabled,
+      click: () => {
+        // Send tracks back to renderer
+        const tracks = data.type === 'track' ? [data.track] : data.tracks;
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'add-to-queue',
+          tracks: tracks
+        });
+      }
+    }
+  ]);
+
+  menu.popup({ window: mainWindow });
+
+  return { shown: true };
+});
+
 // Marketplace handlers
 ipcMain.handle('marketplace-get-manifest', async () => {
   console.log('=== Get Marketplace Manifest ===');

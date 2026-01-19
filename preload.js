@@ -94,6 +94,16 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Track/playlist context menu operations
+  contextMenu: {
+    showTrackMenu: (data) => ipcRenderer.invoke('show-track-context-menu', data),
+    onAction: (callback) => {
+      ipcRenderer.on('track-context-menu-action', (event, data) => {
+        callback(data);
+      });
+    }
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
