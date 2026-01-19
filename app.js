@@ -607,6 +607,7 @@ const Parachord = () => {
   // Refs to keep current values available in event handlers (avoids stale closure issues)
   const currentQueueRef = useRef([]);
   const currentTrackRef = useRef(null);
+  const handleNextRef = useRef(null);
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
@@ -1079,8 +1080,8 @@ const Parachord = () => {
             // Store tab ID to close when next track connects
             pendingCloseTabIdRef.current = message.tabId;
             setBrowserPlaybackActive(false);
-            // Auto-advance to next track
-            handleNext();
+            // Auto-advance to next track (use ref to avoid stale closure)
+            if (handleNextRef.current) handleNextRef.current();
             break;
 
           case 'tabClosed':
@@ -1093,8 +1094,8 @@ const Parachord = () => {
               // Don't call handleNext() - we're already loading the selected track
             } else {
               console.log('🚪 Browser tab closed by user');
-              // Treat as skip to next
-              handleNext();
+              // Treat as skip to next (use ref to avoid stale closure)
+              if (handleNextRef.current) handleNextRef.current();
             }
             break;
 
@@ -1206,7 +1207,8 @@ const Parachord = () => {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
-          handleNext();
+          // Use ref to avoid stale closure in interval callback
+          if (handleNextRef.current) handleNextRef.current();
         } else {
           setProgress(elapsed);
         }
@@ -1562,7 +1564,8 @@ const Parachord = () => {
               console.log('🎵 Track ending, auto-advancing to next...');
               clearInterval(pollInterval);
               playbackPollerRef.current = null;
-              handleNext();
+              // Use ref to avoid stale closure in interval callback
+              if (handleNextRef.current) handleNextRef.current();
             }
           } else if (!data.item || !data.is_playing) {
             // Playback stopped or track changed externally
@@ -1919,6 +1922,9 @@ const Parachord = () => {
       handlePlay(nextTrack);
     }
   };
+
+  // Keep handleNextRef in sync so event handlers always call the latest version
+  useEffect(() => { handleNextRef.current = handleNext; });
 
   const handlePrevious = async () => {
     // Stop browser playback if active
