@@ -5205,40 +5205,40 @@ useEffect(() => {
 
     // Settings Modal
     showSettings && React.createElement('div', {
-      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50'
+      className: 'fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50'
     },
       React.createElement('div', {
-        className: 'bg-slate-800 rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col'
+        className: 'bg-white rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col shadow-2xl'
       },
         // Header
         React.createElement('div', {
           className: 'flex items-center justify-between mb-6'
         },
-          React.createElement('h2', { className: 'text-2xl font-bold' }, 'Settings'),
+          React.createElement('h2', { className: 'text-2xl font-bold text-gray-900' }, 'Settings'),
           React.createElement('button', {
             onClick: () => setShowSettings(false),
-            className: 'p-2 hover:bg-white/10 rounded-lg transition-colors text-xl'
+            className: 'p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 hover:text-gray-700'
           }, React.createElement(X))
         ),
 
         // Tab Navigation
         React.createElement('div', {
-          className: 'flex gap-2 mb-6 border-b border-white/10'
+          className: 'flex gap-2 mb-6 border-b border-gray-200'
         },
           React.createElement('button', {
             onClick: () => setSettingsTab('installed'),
             className: `px-4 py-2 font-semibold transition-colors ${
               settingsTab === 'installed'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-gray-400 hover:text-gray-200'
+                ? 'text-purple-600 border-b-2 border-purple-600'
+                : 'text-gray-500 hover:text-gray-700'
             }`
           }, '🔌 Installed Resolvers'),
           React.createElement('button', {
             onClick: () => setSettingsTab('marketplace'),
             className: `px-4 py-2 font-semibold transition-colors ${
               settingsTab === 'marketplace'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-gray-400 hover:text-gray-200'
+                ? 'text-purple-600 border-b-2 border-purple-600'
+                : 'text-gray-500 hover:text-gray-700'
             }`
           }, '🛒 Browse Marketplace')
         ),
@@ -5250,8 +5250,8 @@ useEffect(() => {
           // Installed Resolvers Tab
           settingsTab === 'installed' && React.createElement('div', { className: 'space-y-6' },
           React.createElement('div', null,
-            React.createElement('h3', { className: 'text-lg font-semibold mb-2' }, '🔌 Resolver Plugins'),
-            React.createElement('p', { className: 'text-sm text-gray-400 mb-4' },
+            React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-2' }, '🔌 Resolver Plugins'),
+            React.createElement('p', { className: 'text-sm text-gray-500 mb-4' },
               'Drag ⋮⋮ to reorder • Right-click 📦 User resolvers to uninstall'
             ),
             React.createElement('div', { className: 'space-y-2' },
@@ -5278,49 +5278,49 @@ useEffect(() => {
                   },
                   className: `p-4 rounded-lg border transition-all ${
                     isDragging
-                      ? 'opacity-50 bg-purple-900/20 border-purple-500'
+                      ? 'opacity-50 bg-purple-100 border-purple-400'
                       : isActive
-                        ? 'bg-white/10 border-white/20 hover:bg-white/15'
-                        : 'bg-white/5 border-white/10 hover:bg-white/8'
+                        ? 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                        : 'bg-gray-50/50 border-gray-200 hover:bg-gray-100'
                   }`,
                   style: { userSelect: 'none' },
                   title: 'Right-click to uninstall'
                 },
                   React.createElement('div', { className: 'flex items-start gap-3' },
                     // Drag handle (only this part is draggable)
-                    React.createElement('div', { 
+                    React.createElement('div', {
                       draggable: true,
                       onDragStart: (e) => {
                         e.stopPropagation();
                         handleResolverDragStart(e, resolver.id);
                       },
                       onDragEnd: handleResolverDragEnd,
-                      className: 'text-gray-500 mt-1 cursor-move',
+                      className: 'text-gray-400 mt-1 cursor-move hover:text-gray-600',
                       title: 'Drag to reorder'
                     }, '⋮⋮'),
-                    
+
                     // Priority number
                     React.createElement('div', {
                       className: 'w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 mt-0.5',
-                      style: { 
-                        backgroundColor: isActive ? resolver.color + '40' : '#ffffff10',
-                        color: isActive ? resolver.color : '#ffffff40'
+                      style: {
+                        backgroundColor: isActive ? resolver.color + '20' : '#00000010',
+                        color: isActive ? resolver.color : '#00000040'
                       }
                     }, index + 1),
-                    
+
                     // Resolver info
                     React.createElement('div', { className: 'flex-1 min-w-0' },
                       React.createElement('div', { className: 'flex items-center gap-2 mb-1' },
                         React.createElement('span', { className: 'text-lg' }, resolver.icon),
-                        React.createElement('span', { className: 'font-semibold' }, resolver.name),
+                        React.createElement('span', { className: 'font-semibold text-gray-900' }, resolver.name),
                         resolver.requiresAuth && React.createElement('span', {
-                          className: 'text-xs px-2 py-0.5 bg-yellow-900/30 text-yellow-400 rounded-full'
+                          className: 'text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full'
                         }, '🔑 Auth Required')
                       ),
-                      React.createElement('p', { 
-                        className: 'text-xs text-gray-400 mb-2'
+                      React.createElement('p', {
+                        className: 'text-xs text-gray-500 mb-2'
                       }, resolver.description),
-                      
+
                       // Capabilities
                       React.createElement('div', { className: 'flex flex-wrap gap-1.5' },
                         Object.entries(resolver.capabilities).map(([capability, enabled]) => {
@@ -5333,13 +5333,13 @@ useEffect(() => {
                           };
                           return enabled && React.createElement('span', {
                             key: capability,
-                            className: 'text-xs px-2 py-0.5 bg-white/10 text-gray-300 rounded-full',
+                            className: 'text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full',
                             title: capability
                           }, icons[capability] || '✓', ' ', capability);
                         })
                       )
                     ),
-                    
+
                     // Toggle
                     React.createElement('label', { className: 'relative inline-block w-12 h-6 flex-shrink-0 mt-1' },
                       React.createElement('input', {
@@ -5349,10 +5349,10 @@ useEffect(() => {
                         className: 'sr-only peer'
                       }),
                       React.createElement('div', {
-                        className: 'w-full h-full bg-gray-600 rounded-full peer-checked:bg-purple-600 transition-colors'
+                        className: 'w-full h-full bg-gray-300 rounded-full peer-checked:bg-purple-600 transition-colors'
                       }),
                       React.createElement('div', {
-                        className: 'absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6'
+                        className: 'absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-6'
                       })
                     )
                   )
@@ -5372,35 +5372,35 @@ useEffect(() => {
           
           // How It Works Section
           React.createElement('div', null,
-            React.createElement('h3', { className: 'text-lg font-semibold mb-4' }, '💡 How Priority Works'),
-            React.createElement('div', { className: 'bg-white/5 rounded-lg p-4 space-y-2 text-sm text-gray-300' },
+            React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-4' }, '💡 How Priority Works'),
+            React.createElement('div', { className: 'bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2 text-sm text-gray-600' },
               React.createElement('p', null,
-                React.createElement('strong', null, '🎯 Resolution Order: '),
+                React.createElement('strong', { className: 'text-gray-900' }, '🎯 Resolution Order: '),
                 'When resolving a track, Parachord queries resolvers in priority order (top to bottom). Higher priority resolvers are checked first.'
               ),
               React.createElement('p', null,
-                React.createElement('strong', null, '🔀 Track Click Behavior: '),
+                React.createElement('strong', { className: 'text-gray-900' }, '🔀 Track Click Behavior: '),
                 'When clicking a track row, Parachord plays from the highest-priority enabled resolver that found a match.'
               ),
               React.createElement('p', null,
-                React.createElement('strong', null, '🎵 Source Icons: '),
+                React.createElement('strong', { className: 'text-gray-900' }, '🎵 Source Icons: '),
                 'Click specific resolver icons to override priority and play from that specific source.'
               ),
               React.createElement('p', null,
-                React.createElement('strong', null, '⋮⋮ Drag Handle: '),
+                React.createElement('strong', { className: 'text-gray-900' }, '⋮⋮ Drag Handle: '),
                 'Drag the ⋮⋮ icon to reorder resolvers. Changes take effect immediately for new resolutions.'
               ),
               React.createElement('p', null,
-                React.createElement('strong', null, '🗑️ Right-Click: '),
+                React.createElement('strong', { className: 'text-gray-900' }, '🗑️ Right-Click: '),
                 'Right-click user-installed resolvers (with 📦 badge) to uninstall them. Built-in resolvers cannot be removed.'
               )
             )
           ),
-          
+
           // About Section
           React.createElement('div', null,
-            React.createElement('h3', { className: 'text-lg font-semibold mb-4' }, 'About'),
-            React.createElement('div', { className: 'text-sm text-gray-400 space-y-2' },
+            React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-4' }, 'About'),
+            React.createElement('div', { className: 'text-sm text-gray-500 space-y-2' },
               React.createElement('p', null, 'Parachord Desktop v1.0.0'),
               React.createElement('p', null, 'A modern multi-source music player inspired by Tomahawk.'),
               React.createElement('p', null,
@@ -5422,14 +5422,14 @@ useEffect(() => {
               placeholder: 'Search resolvers...',
               value: marketplaceSearchQuery,
               onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-              className: 'flex-1 px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500'
+              className: 'flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
             }),
 
             // Category filter
             React.createElement('select', {
               value: marketplaceCategory,
               onChange: (e) => setMarketplaceCategory(e.target.value),
-              className: 'px-4 py-2 bg-white/10 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500'
+              className: 'px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
             },
               React.createElement('option', { value: 'all' }, 'All Categories'),
               React.createElement('option', { value: 'streaming' }, 'Streaming'),
@@ -5441,13 +5441,13 @@ useEffect(() => {
 
           // Loading state
           marketplaceLoading && React.createElement('div', {
-            className: 'text-center py-12 text-gray-400'
+            className: 'text-center py-12 text-gray-500'
           }, '⏳ Loading marketplace...'),
 
           // Error state (empty marketplace)
           !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers.length === 0 &&
             React.createElement('div', {
-              className: 'text-center py-12 text-gray-400'
+              className: 'text-center py-12 text-gray-500'
             }, 'No resolvers available in marketplace yet.'),
 
           // Resolver grid
@@ -5481,7 +5481,7 @@ useEffect(() => {
 
                   return React.createElement('div', {
                     key: resolver.id,
-                    className: 'p-4 bg-white/5 border border-white/10 rounded-lg hover:bg-white/8 transition-colors'
+                    className: 'p-4 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors'
                   },
                     // Header
                     React.createElement('div', {
@@ -5498,15 +5498,15 @@ useEffect(() => {
                         className: 'flex-1 min-w-0'
                       },
                         React.createElement('h4', {
-                          className: 'font-semibold text-lg truncate'
+                          className: 'font-semibold text-lg text-gray-900 truncate'
                         }, resolver.name),
                         React.createElement('p', {
-                          className: 'text-xs text-gray-400 truncate'
+                          className: 'text-xs text-gray-500 truncate'
                         }, 'by ', resolver.author),
 
                         // Version badge
                         React.createElement('span', {
-                          className: 'inline-block text-xs px-2 py-0.5 bg-white/10 text-gray-300 rounded-full mt-1'
+                          className: 'inline-block text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full mt-1'
                         }, 'v', resolver.version)
                       ),
 
@@ -5514,15 +5514,15 @@ useEffect(() => {
                       isInstalled && React.createElement('span', {
                         className: `text-xs px-2 py-0.5 rounded-full ${
                           hasUpdate
-                            ? 'bg-orange-900/30 text-orange-400'
-                            : 'bg-green-900/30 text-green-400'
+                            ? 'bg-orange-100 text-orange-700'
+                            : 'bg-green-100 text-green-700'
                         }`
                       }, hasUpdate ? '🔄 Update' : '✅ Installed')
                     ),
 
                     // Description
                     React.createElement('p', {
-                      className: 'text-sm text-gray-300 mb-3 line-clamp-2'
+                      className: 'text-sm text-gray-600 mb-3 line-clamp-2'
                     }, resolver.description),
 
                     // Capabilities
@@ -5540,27 +5540,27 @@ useEffect(() => {
                         };
                         return React.createElement('span', {
                           key: cap,
-                          className: 'text-xs px-2 py-0.5 bg-white/10 text-gray-300 rounded-full'
+                          className: 'text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full'
                         }, icons[cap], ' ', cap);
                       })
                     ),
 
                     // Auth requirement
                     resolver.requiresAuth && React.createElement('div', {
-                      className: 'text-xs text-yellow-400 mb-3'
+                      className: 'text-xs text-yellow-700 mb-3'
                     }, '🔑 Requires authentication'),
 
                     // Install button
                     React.createElement('button', {
                       onClick: () => handleInstallFromMarketplace(resolver),
                       disabled: isInstalling,
-                      className: `w-full px-4 py-2 rounded-lg font-semibold transition-colors ${
+                      className: `w-full px-4 py-2 rounded-lg font-semibold text-white transition-colors ${
                         isInstalling
-                          ? 'bg-gray-600 cursor-not-allowed'
+                          ? 'bg-gray-400 cursor-not-allowed'
                           : hasUpdate
-                            ? 'bg-orange-600 hover:bg-orange-700'
+                            ? 'bg-orange-500 hover:bg-orange-600'
                             : isInstalled
-                              ? 'bg-green-600/50 hover:bg-green-600'
+                              ? 'bg-green-500 hover:bg-green-600'
                               : 'bg-purple-600 hover:bg-purple-700'
                       }`
                     },
@@ -5579,7 +5579,7 @@ useEffect(() => {
 
     // Queue Drawer
     React.createElement('div', {
-      className: 'fixed left-0 right-0 bg-slate-900 border-t border-white/20 shadow-2xl transition-all duration-300 ease-in-out z-40',
+      className: 'fixed left-0 right-0 bg-white border-t border-gray-200 shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
         bottom: queueDrawerOpen ? 0 : -queueDrawerHeight,
         height: queueDrawerHeight + 'px'
@@ -5587,7 +5587,7 @@ useEffect(() => {
     },
       // Drawer header with drag handle
       React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-white/10 cursor-ns-resize',
+        className: 'flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 cursor-ns-resize',
         onMouseDown: (e) => {
           const startY = e.clientY;
           const startHeight = queueDrawerHeight;
@@ -5611,13 +5611,13 @@ useEffect(() => {
           className: 'flex items-center gap-3'
         },
           React.createElement('div', {
-            className: 'w-8 h-1 bg-white/30 rounded-full'
+            className: 'w-8 h-1 bg-gray-300 rounded-full'
           }),
           React.createElement('span', {
-            className: 'text-sm font-medium text-white'
+            className: 'text-sm font-medium text-gray-900'
           }, 'Queue'),
           React.createElement('span', {
-            className: 'text-xs text-gray-400'
+            className: 'text-xs text-gray-500'
           }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`)
         ),
         React.createElement('div', {
@@ -5625,11 +5625,11 @@ useEffect(() => {
         },
           currentQueue.length > 0 && React.createElement('button', {
             onClick: clearQueue,
-            className: 'text-xs text-gray-400 hover:text-white px-2 py-1 hover:bg-white/10 rounded transition-colors'
+            className: 'text-xs text-gray-500 hover:text-gray-900 px-2 py-1 hover:bg-gray-200 rounded transition-colors'
           }, 'Clear'),
           React.createElement('button', {
             onClick: () => setQueueDrawerOpen(false),
-            className: 'p-1 hover:bg-white/10 rounded transition-colors'
+            className: 'p-1 hover:bg-gray-200 rounded transition-colors text-gray-500 hover:text-gray-700'
           }, React.createElement(X))
         )
       ),
@@ -5650,14 +5650,14 @@ useEffect(() => {
         }),
         currentQueue.length === 0 ?
           React.createElement('div', {
-            className: 'flex flex-col items-center justify-center h-full text-gray-500'
+            className: 'flex flex-col items-center justify-center h-full text-gray-400'
           },
             React.createElement('span', { className: 'text-4xl mb-2' }, '🎵'),
-            React.createElement('span', null, 'Queue is empty'),
-            React.createElement('span', { className: 'text-sm text-gray-600 mt-1' }, 'Play a playlist to add tracks')
+            React.createElement('span', { className: 'text-gray-600' }, 'Queue is empty'),
+            React.createElement('span', { className: 'text-sm text-gray-400 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          React.createElement('div', { className: 'divide-y divide-white/5' },
+          React.createElement('div', { className: 'divide-y divide-gray-100' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -5676,8 +5676,8 @@ useEffect(() => {
                   setDraggedQueueTrack(null);
                 },
                 onDragEnd: () => setDraggedQueueTrack(null),
-                className: `flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors ${
-                  isCurrentTrack ? 'bg-purple-600/20' : ''
+                className: `flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition-colors ${
+                  isCurrentTrack ? 'bg-purple-50' : ''
                 } ${draggedQueueTrack === index ? 'opacity-50' : ''} ${
                   isError ? 'opacity-50' : ''
                 } ${isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
@@ -5699,28 +5699,28 @@ useEffect(() => {
                   isLoading ?
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'font-medium text-gray-400'
+                        className: 'font-medium text-gray-500'
                       }, 'Loading...'),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-500 truncate'
+                        className: 'text-sm text-gray-400 truncate'
                       }, `from ${track.sourceDomain || 'unknown'}`)
                     )
                   : isError ?
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: 'font-medium text-red-400'
+                        className: 'font-medium text-red-500'
                       }, 'Could not load track'),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-500 truncate'
+                        className: 'text-sm text-gray-400 truncate'
                       }, track.errorMessage || 'Unknown error')
                     )
                   :
                     React.createElement('div', null,
                       React.createElement('div', {
-                        className: `font-medium truncate ${isCurrentTrack ? 'text-purple-400' : 'text-white'}`
+                        className: `font-medium truncate ${isCurrentTrack ? 'text-purple-600' : 'text-gray-900'}`
                       }, track.title),
                       React.createElement('div', {
-                        className: 'text-sm text-gray-400 truncate'
+                        className: 'text-sm text-gray-500 truncate'
                       }, track.artist)
                     )
                 ),
@@ -5738,7 +5738,7 @@ useEffect(() => {
                           handleUrlDrop(track.sourceUrl, 'queue');
                         }
                       },
-                      className: 'px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
+                      className: 'px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors',
                       title: 'Retry'
                     }, '↻ Retry'),
                     React.createElement('button', {
@@ -5746,7 +5746,7 @@ useEffect(() => {
                         e.stopPropagation();
                         removeFromQueue(track.id);
                       },
-                      className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                      className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
                       title: 'Remove from queue'
                     }, React.createElement(X, { size: 16 }))
                   )
@@ -5756,7 +5756,7 @@ useEffect(() => {
                       e.stopPropagation();
                       removeFromQueue(track.id);
                     },
-                    className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                    className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
                     title: 'Cancel'
                   }, React.createElement(X, { size: 16 }))
                 :
@@ -5805,7 +5805,7 @@ useEffect(() => {
                         e.stopPropagation();
                         removeFromQueue(track.id);
                       },
-                      className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors',
+                      className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors',
                       title: 'Remove from queue'
                     }, React.createElement(X, { size: 16 }))
                   )
