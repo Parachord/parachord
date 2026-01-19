@@ -181,13 +181,36 @@
 
   // Initialize
   if (site === 'bandcamp') {
-    // For Bandcamp, start auto-play attempt immediately and also after media loads
+    // For Bandcamp, start auto-play attempt after page is ready
     // The audio element may not exist until play is clicked
-    setTimeout(() => autoPlayBandcamp(), 1000);
+    console.log('[Parachord] Bandcamp detected, scheduling auto-play...');
+
+    // Try multiple approaches since timing can vary
+    setTimeout(() => {
+      console.log('[Parachord] First auto-play attempt (1s)');
+      autoPlayBandcamp();
+    }, 1000);
+
+    setTimeout(() => {
+      console.log('[Parachord] Second auto-play attempt (2s)');
+      autoPlayBandcamp();
+    }, 2000);
+
+    // Also try when DOM is fully ready
+    if (document.readyState === 'complete') {
+      console.log('[Parachord] DOM already complete, trying auto-play now');
+      setTimeout(() => autoPlayBandcamp(), 100);
+    } else {
+      window.addEventListener('load', () => {
+        console.log('[Parachord] Window load event, trying auto-play');
+        setTimeout(() => autoPlayBandcamp(), 500);
+      });
+    }
   }
 
   waitForMedia((media) => {
     setupMediaListeners(media);
+    console.log('[Parachord] Media element found:', media.tagName);
   });
 
   // Also handle dynamic page navigation (SPA)
