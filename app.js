@@ -551,6 +551,7 @@ const Parachord = () => {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
+  const [artistImage, setArtistImage] = useState(null); // Artist image from Last.fm
   const [artistReleases, setArtistReleases] = useState([]); // Discography
   const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -929,11 +930,15 @@ const Parachord = () => {
   // trackKey format: "artist|title|album"
   const trackSourcesCache = useRef({});
 
+  // Cache for artist images from Last.fm (artistName -> { url, timestamp })
+  const artistImageCache = useRef({});
+
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
-    trackSources: 7 * 24 * 60 * 60 * 1000  // 7 days (track availability changes)
+    trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
+    artistImage: 90 * 24 * 60 * 60 * 1000  // 90 days
   };
 
   // Generate a hash of current resolver settings for cache invalidation
@@ -2275,6 +2280,18 @@ const Parachord = () => {
         console.log(`📦 Loaded ${validEntries.length} track source entries from cache`);
       }
 
+      // Load artist image cache
+      const artistImageData = await window.electron.store.get('cache_artist_images');
+      if (artistImageData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(artistImageData).filter(
+          ([_, entry]) => now - entry.timestamp < CACHE_TTL.artistImage
+        );
+        artistImageCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} artist image entries from cache`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -2316,6 +2333,9 @@ const Parachord = () => {
 
       // Save track sources cache (already has timestamps)
       await window.electron.store.set('cache_track_sources', trackSourcesCache.current);
+
+      // Save artist image cache (already has timestamps)
+      await window.electron.store.set('cache_artist_images', artistImageCache.current);
 
       // Save resolver settings
       await window.electron.store.set('active_resolvers', activeResolvers);
@@ -2364,6 +2384,11 @@ const Parachord = () => {
     if (cacheValid) {
       console.log('📦 Using cached artist data for:', artistName);
       setCurrentArtist(cachedData.artist);
+
+      // Fetch artist image from Last.fm (async, non-blocking)
+      getArtistImage(artistName).then(imageUrl => {
+        setArtistImage(imageUrl);
+      });
 
       // Pre-populate releases with cached album art
       const releasesWithCache = cachedData.releases.map(release => ({
@@ -2475,6 +2500,11 @@ const Parachord = () => {
       };
 
       setCurrentArtist(artistData);
+
+      // Fetch artist image from Last.fm (async, non-blocking)
+      getArtistImage(artistName).then(imageUrl => {
+        setArtistImage(imageUrl);
+      });
 
       // Cache the artist data with resolver settings hash
       artistDataCache.current[cacheKey] = {
@@ -3301,6 +3331,49 @@ const Parachord = () => {
     }
   };
 
+  // Fetch artist image from Last.fm with caching
+  const getArtistImage = async (artistName) => {
+    if (!artistName) return null;
+
+    const normalizedName = artistName.trim().toLowerCase();
+    const cached = artistImageCache.current[normalizedName];
+    const now = Date.now();
+
+    // Check cache validity
+    if (cached && (now - cached.timestamp) < CACHE_TTL.artistImage) {
+      return cached.url;
+    }
+
+    try {
+      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
+      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.artist?.image) {
+        // Get largest available image (prefer mega > extralarge > large)
+        const images = data.artist.image;
+        const imageUrl = images.find(img => img.size === 'mega')?.['#text'] ||
+                         images.find(img => img.size === 'extralarge')?.['#text'] ||
+                         images.find(img => img.size === 'large')?.['#text'];
+
+        if (imageUrl && imageUrl.length > 0) {
+          artistImageCache.current[normalizedName] = {
+            url: imageUrl,
+            timestamp: now
+          };
+          return imageUrl;
+        }
+      }
+
+      return null; // No image available, don't cache failure
+    } catch (error) {
+      console.error('Failed to fetch artist image from Last.fm:', error);
+      return null; // Don't cache failures
+    }
+  };
+
   const loadPlaylist = async (playlistOrId) => {
     // Accept either a playlist object or an ID for backwards compatibility
     let playlist;
@@ -3431,6 +3504,7 @@ const Parachord = () => {
       // Clear associated state when leaving certain views
       if (currentView === 'artist') {
         setCurrentArtist(null);
+        setArtistImage(null);
         setArtistReleases([]);
         setReleaseTypeFilter('all');
       }
@@ -4416,40 +4490,71 @@ useEffect(() => {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
       },
-        // Artist page header (not inside scrollable area) - only show when NOT viewing a release
-        !currentRelease && React.createElement('div', { 
-          className: 'p-6 border-b border-white/10'
+        // Artist page hero header (not inside scrollable area) - only show when NOT viewing a release
+        !currentRelease && React.createElement('div', {
+          className: 'relative',
+          style: {
+            height: '280px',
+            flexShrink: 0
+          }
         },
-          React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('button', {
-              onClick: () => {
-                // Navigate back to previous view
-                navigateBack();
-              },
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors no-drag',
-              title: 'Go back'
-            }, 
-              React.createElement('svg', {
-                className: 'w-6 h-6',
-                fill: 'none',
-                viewBox: '0 0 24 24',
-                stroke: 'currentColor'
-              },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  strokeWidth: 2,
-                  d: 'M15 19l-7-7 7-7'
-                })
-              )
-            ),
-            !loadingArtist && !loadingRelease && !currentRelease && currentArtist && React.createElement('div', null,
-              React.createElement('h1', { className: 'text-3xl font-bold' }, currentArtist.name),
-              currentArtist.disambiguation && React.createElement('p', { className: 'text-sm text-gray-400 mt-1' }, currentArtist.disambiguation),
-              React.createElement('div', { className: 'flex gap-3 mt-2 text-sm text-gray-500' },
-                currentArtist.type && React.createElement('span', null, currentArtist.type),
-                currentArtist.country && React.createElement('span', null, `• ${currentArtist.country}`)
-              )
+          // Background image with gradient overlay
+          artistImage && React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              backgroundImage: `url(${artistImage})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center 20%',
+              filter: 'blur(0px)'
+            }
+          }),
+          // Gradient overlay for readability
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              background: artistImage
+                ? 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
+                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+            }
+          }),
+          // Back button (absolute positioned top-left)
+          React.createElement('button', {
+            onClick: () => navigateBack(),
+            className: 'absolute top-4 left-4 p-2 bg-black/30 hover:bg-black/50 rounded-full transition-colors no-drag z-10',
+            title: 'Go back'
+          },
+            React.createElement('svg', {
+              className: 'w-6 h-6',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor'
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                strokeWidth: 2,
+                d: 'M15 19l-7-7 7-7'
+              })
+            )
+          ),
+          // Artist info overlay (centered)
+          !loadingArtist && !loadingRelease && currentArtist && React.createElement('div', {
+            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
+          },
+            React.createElement('h1', {
+              className: 'text-5xl font-bold tracking-wide',
+              style: { textShadow: '0 2px 20px rgba(0,0,0,0.5)' }
+            }, currentArtist.name),
+            currentArtist.disambiguation && React.createElement('p', {
+              className: 'text-lg text-gray-300 mt-2',
+              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+            }, currentArtist.disambiguation),
+            React.createElement('div', {
+              className: 'flex gap-4 mt-4 text-sm text-gray-300',
+              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+            },
+              currentArtist.type && React.createElement('span', null, currentArtist.type),
+              currentArtist.country && React.createElement('span', null, `• ${currentArtist.country}`)
             )
           )
         ),
