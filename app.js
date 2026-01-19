@@ -3212,24 +3212,49 @@ const Parachord = () => {
     }
   };
 
-  // Fetch album art from Cover Art Archive
-  const fetchCoverArtArchive = async (artist, album) => {
+  // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
+  const albumToReleaseIdCache = useRef({});
+
+  // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
+  const getAlbumArt = async (artist, album) => {
     if (!artist || !album) return null;
+
+    const lookupKey = `${artist}-${album}`.toLowerCase();
+
+    // Check if we've already looked up this artist+album combo
+    if (albumToReleaseIdCache.current[lookupKey] !== undefined) {
+      const releaseId = albumToReleaseIdCache.current[lookupKey];
+      if (releaseId === null) return null; // Previously failed lookup
+      // Return from the shared albumArtCache
+      return albumArtCache.current[releaseId] || null;
+    }
 
     try {
       // Search MusicBrainz for the release
       const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
       const mbResponse = await fetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0 (contact@parachord.app)' } }
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
 
-      if (!mbResponse.ok) return null;
+      if (!mbResponse.ok) {
+        albumToReleaseIdCache.current[lookupKey] = null;
+        return null;
+      }
 
       const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) return null;
+      if (!mbData.releases || mbData.releases.length === 0) {
+        albumToReleaseIdCache.current[lookupKey] = null;
+        return null;
+      }
 
       const releaseId = mbData.releases[0].id;
+      albumToReleaseIdCache.current[lookupKey] = releaseId;
+
+      // Check if we already have art for this release in the shared cache
+      if (albumArtCache.current[releaseId]) {
+        return albumArtCache.current[releaseId];
+      }
 
       // Fetch cover art from Cover Art Archive
       const caaResponse = await fetch(
@@ -3238,30 +3263,18 @@ const Parachord = () => {
       );
 
       if (caaResponse.ok) {
-        return caaResponse.url;
+        const artUrl = caaResponse.url;
+        // Store in the shared albumArtCache
+        albumArtCache.current[releaseId] = artUrl;
+        return artUrl;
       }
 
       return null;
     } catch (error) {
       console.log(`Cover art not found for: ${artist} - ${album}`);
+      albumToReleaseIdCache.current[lookupKey] = null;
       return null;
     }
-  };
-
-  // Cache for Cover Art Archive lookups to avoid duplicate requests
-  const coverArtCache = useRef({});
-
-  // Fetch album art for a track, using cache
-  const getAlbumArt = async (artist, album) => {
-    const cacheKey = `${artist}-${album}`.toLowerCase();
-
-    if (coverArtCache.current[cacheKey] !== undefined) {
-      return coverArtCache.current[cacheKey];
-    }
-
-    const artUrl = await fetchCoverArtArchive(artist, album);
-    coverArtCache.current[cacheKey] = artUrl;
-    return artUrl;
   };
 
   const loadPlaylist = async (playlistOrId) => {
