@@ -4951,35 +4951,34 @@ useEffect(() => {
     )
     ), // Close the sidebar + main wrapper
 
-    // Player bar (always visible) - Tomahawk-inspired layout with frosted glass
-    // Row 1: [Left: transport + queue] [Center: track info] [Right: shuffle + repeat + volume]
-    // Row 2: Full-width progress bar
+    // Player bar (always visible) - New Tomahawk-inspired layout
+    // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
     React.createElement('div', {
-      className: 'bg-white/70 backdrop-blur-xl border-t border-gray-200 no-drag flex-shrink-0 flex flex-col'
+      className: 'bg-gray-800/90 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0',
+      style: { minHeight: '72px' }
     },
-      // Main controls row
-      React.createElement('div', { className: 'flex items-center justify-between gap-4 px-4 py-3' },
+      React.createElement('div', { className: 'flex items-center justify-between gap-4' },
         // LEFT: Transport controls + Queue button
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('button', {
             onClick: handlePrevious,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-black/10 transition-colors ${!currentTrack ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
           }, React.createElement(SkipBack, { size: 18 })),
           React.createElement('button', {
             onClick: handlePlayPause,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-black/10 transition-colors ${!currentTrack ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
           }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 })),
           React.createElement('button', {
             onClick: handleNext,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-black/10 transition-colors ${!currentTrack ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
           }, React.createElement(SkipForward, { size: 18 })),
           // Queue button (hamburger style)
           React.createElement('button', {
             onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-            className: `relative p-2 ml-1 rounded hover:bg-black/10 transition-colors ${queueDrawerOpen ? 'bg-black/10 text-gray-900' : 'text-gray-500'} ${queueAnimating ? 'queue-pulse' : ''}`,
+            className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
             title: `Queue (${currentQueue.length} tracks)`
           },
             React.createElement(List, { size: 18 }),
@@ -5012,40 +5011,71 @@ useEffect(() => {
             :
               React.createElement('div', {
                 key: 'album-placeholder',
-                className: 'w-12 h-12 bg-gray-200 rounded flex items-center justify-center flex-shrink-0'
-              }, React.createElement(Music, { size: 20, className: 'text-gray-400' })),
+                className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center flex-shrink-0'
+              }, React.createElement(Music, { size: 20, className: 'text-gray-500' })),
             React.createElement('div', { key: 'track-info', className: 'min-w-0 text-center' },
-              React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, currentTrack.title),
-              React.createElement('div', { className: 'text-xs text-gray-500 truncate flex items-center justify-center gap-1' },
+              React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
+              React.createElement('div', { className: 'text-xs text-gray-400 truncate flex items-center justify-center gap-1' },
                 React.createElement('button', {
                   onClick: () => fetchArtistData(currentTrack.artist),
-                  className: 'hover:text-gray-900 hover:underline transition-colors cursor-pointer no-drag'
+                  className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
                 }, currentTrack.artist),
                 (() => {
                   const resolverId = determineResolverIdFromTrack(currentTrack);
                   const resolver = allResolvers.find(r => r.id === resolverId);
                   if (resolver) {
                     const meta = {
-                      spotify: { color: 'text-green-600' },
-                      bandcamp: { color: 'text-cyan-600' },
-                      qobuz: { color: 'text-blue-600' },
-                      youtube: { color: 'text-red-600' }
-                    }[resolverId] || { color: 'text-purple-600' };
+                      spotify: { color: 'text-green-400' },
+                      bandcamp: { color: 'text-cyan-400' },
+                      qobuz: { color: 'text-blue-400' },
+                      youtube: { color: 'text-red-400' }
+                    }[resolverId] || { color: 'text-purple-400' };
                     return React.createElement('span', { className: meta.color }, ` · ${resolver.name}`);
                   }
                   return null;
                 })()
               )
             )
-          ] : React.createElement('div', { className: 'text-sm text-gray-400' }, 'No track playing')
+          ] : React.createElement('div', { className: 'text-sm text-gray-500' }, 'No track playing')
         ),
 
-        // RIGHT: Shuffle + Repeat + Volume
-        React.createElement('div', { className: 'flex items-center gap-2' },
+        // RIGHT: Progress bar + Shuffle + Repeat + Volume
+        React.createElement('div', { className: 'flex items-center gap-3' },
+          // Progress section
+          React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-right font-mono' },
+              currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
+            ),
+            React.createElement('div', { className: 'flex-1 w-24' },
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: currentTrack?.duration || 100,
+                value: currentTrack && !browserPlaybackActive ? progress : 0,
+                disabled: !currentTrack || browserPlaybackActive,
+                onChange: async (e) => {
+                  if (browserPlaybackActive || !currentTrack) return;
+                  const newPosition = Number(e.target.value);
+                  setProgress(newPosition);
+                  if ((currentTrack.sources?.spotify || currentTrack.spotifyUri) && spotifyPlayer) {
+                    try {
+                      await spotifyPlayer.seek(newPosition * 1000);
+                    } catch (err) {
+                      console.error('Seek error:', err);
+                    }
+                  }
+                },
+                className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-700 cursor-not-allowed' : 'bg-gray-600 cursor-pointer'}`
+              })
+            ),
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 font-mono' },
+              currentTrack ? formatTime(currentTrack.duration) : '0:00'
+            )
+          ),
           // Shuffle button (placeholder)
           React.createElement('button', {
             disabled: true,
-            className: 'p-2 rounded text-gray-300 cursor-not-allowed',
+            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
             title: 'Shuffle (coming soon)'
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -5055,7 +5085,7 @@ useEffect(() => {
           // Repeat button (placeholder)
           React.createElement('button', {
             disabled: true,
-            className: 'p-2 rounded text-gray-300 cursor-not-allowed',
+            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
             title: 'Repeat (coming soon)'
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -5064,14 +5094,14 @@ useEffect(() => {
           ),
           // Volume
           React.createElement('div', { className: 'flex items-center gap-1' },
-            React.createElement('span', { className: 'text-gray-500' }, React.createElement(Volume2, { size: 16 })),
+            React.createElement('span', { className: 'text-gray-400' }, React.createElement(Volume2, { size: 16 })),
             React.createElement('input', {
               type: 'range',
               min: '0',
               max: '100',
               value: volume,
               onChange: (e) => setVolume(Number(e.target.value)),
-              className: 'w-20 h-1 bg-gray-300 rounded-full appearance-none cursor-pointer'
+              className: 'w-20 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer'
             })
           )
         )
@@ -5079,45 +5109,13 @@ useEffect(() => {
 
       // External playback notice (if applicable)
       isExternalPlayback && !browserPlaybackActive && currentTrack && React.createElement('div', {
-        className: 'flex items-center justify-center gap-4 pb-2'
+        className: 'mt-2 flex items-center justify-center gap-4'
       },
-        React.createElement('span', { className: 'text-xs text-gray-500' }, '🌐 Playing in browser'),
+        React.createElement('span', { className: 'text-xs text-gray-400' }, '🌐 Playing in browser'),
         React.createElement('button', {
           onClick: handleDoneWithExternalTrack,
           className: 'bg-green-600 hover:bg-green-700 text-white py-1 px-4 rounded text-sm font-medium transition-colors'
         }, 'Done - Play Next')
-      ),
-
-      // Full-width progress bar row
-      React.createElement('div', { className: 'flex items-center gap-2 px-4 pb-2' },
-        React.createElement('span', { className: 'text-xs text-gray-500 w-10 text-right font-mono' },
-          currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
-        ),
-        React.createElement('div', { className: 'flex-1' },
-          React.createElement('input', {
-            type: 'range',
-            min: '0',
-            max: currentTrack?.duration || 100,
-            value: currentTrack && !browserPlaybackActive ? progress : 0,
-            disabled: !currentTrack || browserPlaybackActive,
-            onChange: async (e) => {
-              if (browserPlaybackActive || !currentTrack) return;
-              const newPosition = Number(e.target.value);
-              setProgress(newPosition);
-              if ((currentTrack.sources?.spotify || currentTrack.spotifyUri) && spotifyPlayer) {
-                try {
-                  await spotifyPlayer.seek(newPosition * 1000);
-                } catch (err) {
-                  console.error('Seek error:', err);
-                }
-              }
-            },
-            className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-200 cursor-not-allowed' : 'bg-gray-300 cursor-pointer'}`
-          })
-        ),
-        React.createElement('span', { className: 'text-xs text-gray-500 w-10 font-mono' },
-          currentTrack ? formatTime(currentTrack.duration) : '0:00'
-        )
       )
     ),
 
