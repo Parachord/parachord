@@ -133,7 +133,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
       )
     ),
     React.createElement('div', { className: 'flex-1 min-w-0' },
-      React.createElement('div', { className: `font-medium truncate ${isPlaying ? 'text-purple-400' : ''}` }, track.title),
+      React.createElement('div', { className: `text-xs font-medium truncate ${isPlaying ? 'text-purple-600' : 'text-gray-900'}` }, track.title),
       React.createElement('div', { className: 'flex items-center gap-2' },
         React.createElement('button', {
           onClick: (e) => {
@@ -142,7 +142,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
               onArtistClick(track.artist);
             }
           },
-          className: 'text-sm text-gray-400 truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+          className: 'text-xs text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
           title: `View ${track.artist}'s discography`
         }, track.artist),
         // Resolver badges - clickable for manual override
@@ -162,10 +162,10 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
           }, meta.label);
         })
       ),
-      primaryResolver && React.createElement('div', { className: 'text-xs text-slate-400 mt-0.5' }, `via ${primaryResolver.name}`)
+      primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),
-    React.createElement('div', { className: 'text-sm text-gray-400 truncate max-w-[200px]' }, track.album),
-    React.createElement('div', { className: 'text-sm text-gray-400 w-12 text-right' },
+    React.createElement('div', { className: 'text-xs text-gray-500 truncate max-w-[200px]' }, track.album),
+    React.createElement('div', { className: 'text-xs text-gray-500 w-12 text-right' },
       `${Math.floor(track.duration / 60)}:${(track.duration % 60).toString().padStart(2, '0')}`
     )
   );
@@ -409,19 +409,19 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
             },
               // Track number
               React.createElement('span', {
-                className: 'text-gray-400 text-sm w-8 flex-shrink-0',
+                className: 'text-xs text-gray-400 w-8 flex-shrink-0',
                 style: { pointerEvents: 'none' }
               }, track.position),
-              
+
               // Track title
               React.createElement('span', {
-                className: 'flex-1 group-hover:text-purple-400 transition-colors',
+                className: 'text-xs text-gray-900 flex-1 transition-colors',
                 style: { pointerEvents: 'none' }
               }, track.title),
-              
+
               // Duration
               track.length && React.createElement('span', {
-                className: 'text-gray-400 text-sm flex-shrink-0',
+                className: 'text-xs text-gray-500 flex-shrink-0',
                 style: { pointerEvents: 'none' }
               }, formatDuration(track.length)),
               
@@ -4654,8 +4654,8 @@ useEffect(() => {
                   handlePlay(track);  // Pass full track object - will resolve if needed
                 }
               },
-                React.createElement('div', { 
-                  className: 'text-gray-400 w-8 text-center',
+                React.createElement('div', {
+                  className: 'text-xs text-gray-400 w-8 text-center',
                   style: { pointerEvents: 'none' }
                 }, index + 1),
                 React.createElement('div', {
@@ -4663,17 +4663,17 @@ useEffect(() => {
                   style: { pointerEvents: 'none' }
                 },
                   React.createElement('div', {
-                    className: `font-medium truncate ${hasResolved ? 'group-hover:text-purple-400' : ''}`
+                    className: `text-xs font-medium truncate ${hasResolved ? 'text-gray-900' : 'text-gray-500'}`
                   }, track.title),
-                  React.createElement('div', { className: 'text-sm text-gray-400 truncate' }, track.artist),
+                  React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
                   (() => {
                     const resolverId = determineResolverIdFromTrack(track);
                     const resolver = allResolvers.find(r => r.id === resolverId);
-                    return resolver ? React.createElement('div', { className: 'text-xs text-slate-400 mt-0.5' }, `via ${resolver.name}`) : null;
+                    return resolver ? React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${resolver.name}`) : null;
                   })()
                 ),
-                React.createElement('div', { 
-                  className: 'hidden md:block text-sm text-gray-400 truncate w-48',
+                React.createElement('div', {
+                  className: 'hidden md:block text-xs text-gray-500 truncate w-48',
                   style: { pointerEvents: 'none' }
                 }, track.album || '-'),
                 React.createElement('div', { 
