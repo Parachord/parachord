@@ -3505,12 +3505,12 @@ const Parachord = () => {
     }
   };
 
-  // Load marketplace when settings modal opens to marketplace tab
+  // Load marketplace when settings page opens to marketplace tab
   useEffect(() => {
-    if (showSettings && settingsTab === 'marketplace' && !marketplaceManifest) {
+    if (activeView === 'settings' && settingsTab === 'marketplace' && !marketplaceManifest) {
       loadMarketplaceManifest();
     }
-  }, [showSettings, settingsTab, marketplaceManifest]);
+  }, [activeView, settingsTab, marketplaceManifest]);
 
   // Playlist functions
   const parseXSPF = (xspfString) => {
@@ -3919,6 +3919,9 @@ const Parachord = () => {
     if (view !== activeView) {
       setViewHistory(prev => [...prev, view]);
       setActiveView(view);
+      if (view === 'settings') {
+        setSettingsTab('installed');
+      }
     }
   };
 
@@ -5530,6 +5533,7 @@ useEffect(() => {
       },
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
+            activeView === 'settings' ? '' :
             activeView === 'library' ? 'My Library' :
             activeView === 'playlists' ? 'Playlists' :
             activeView === 'playlist-view' && selectedPlaylist ? selectedPlaylist.title :
