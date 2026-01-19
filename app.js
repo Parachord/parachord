@@ -5762,38 +5762,27 @@ useEffect(() => {
                 :
                   React.createElement(React.Fragment, null,
                     React.createElement('div', {
-                      className: 'flex items-center gap-1 flex-shrink-0'
+                      className: 'flex items-center gap-1.5 flex-shrink-0'
                     },
                       availableSources.length > 0 ?
                         availableSources.map(resolverId => {
-                          const resolver = allResolvers.find(r => r.id === resolverId);
-                          if (!resolver) return null;
+                          const resolverMeta = {
+                            spotify: { label: '♫ Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-600' },
+                            youtube: { label: '🎥 YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-600' },
+                            bandcamp: { label: '▶ Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-600' },
+                            qobuz: { label: '◆ Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-600' }
+                          };
+                          const meta = resolverMeta[resolverId];
+                          if (!meta) return null;
                           return React.createElement('button', {
                             key: resolverId,
                             onClick: (e) => {
                               e.stopPropagation();
                               handlePlay({ ...track, preferredResolver: resolverId });
                             },
-                            style: {
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '4px',
-                              backgroundColor: resolver.color,
-                              border: 'none',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              color: 'white',
-                              opacity: 0.8,
-                              transition: 'opacity 0.1s, transform 0.1s'
-                            },
-                            onMouseEnter: (e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.1)'; },
-                            onMouseLeave: (e) => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.transform = 'scale(1)'; },
-                            title: `Play via ${resolver.name}`
-                          }, resolver.icon);
+                            className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
+                            title: `Play from ${meta.label} (manual override)`
+                          }, meta.label);
                         })
                       :
                         React.createElement('span', {
