@@ -2321,7 +2321,7 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
     setLoadingArtist(true);
-    setActiveView('artist'); // Show artist page immediately with loading animation
+    navigateTo('artist'); // Show artist page immediately with loading animation
 
     // Check cache first
     const cacheKey = artistName.toLowerCase();
@@ -2622,7 +2622,7 @@ const Parachord = () => {
       }, artist);
 
       // Switch to artist view to show the release
-      setActiveView('artist');
+      navigateTo('artist');
     } catch (error) {
       console.error('Error fetching album from search:', error);
       alert('Failed to load album. Please try again.');
@@ -3295,7 +3295,7 @@ const Parachord = () => {
     console.log('📋 Found playlist:', playlist.title);
 
     setSelectedPlaylist(playlist);
-    setActiveView('playlist-view');
+    navigateTo('playlist-view');
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
     // Parse XSPF if we have the content
@@ -3399,17 +3399,23 @@ const Parachord = () => {
   const navigateBack = () => {
     if (viewHistory.length > 1) {
       const newHistory = [...viewHistory];
-      newHistory.pop(); // Remove current view
+      const currentView = newHistory.pop(); // Remove current view
       const previousView = newHistory[newHistory.length - 1];
       setViewHistory(newHistory);
       setActiveView(previousView);
-      // Clear associated state when going back
-      if (previousView !== 'artist') {
+
+      // Clear associated state when leaving certain views
+      if (currentView === 'artist') {
         setCurrentArtist(null);
         setArtistReleases([]);
+        setReleaseTypeFilter('all');
       }
-      if (previousView !== 'release') {
+      if (currentView === 'release') {
         setCurrentRelease(null);
+      }
+      if (currentView === 'playlist-view') {
+        setSelectedPlaylist(null);
+        setPlaylistTracks([]);
       }
     }
   };
@@ -4017,9 +4023,13 @@ useEffect(() => {
       React.createElement('div', {
         className: 'w-64 bg-gray-50 border-r border-gray-200 flex flex-col no-drag'
       },
-        // Navigation arrows and window drag area
+        // Draggable title bar area (space for macOS traffic lights)
         React.createElement('div', {
-          className: 'flex items-center gap-2 p-4 pb-2 drag'
+          className: 'h-8 drag flex-shrink-0'
+        }),
+        // Navigation arrows
+        React.createElement('div', {
+          className: 'flex items-center gap-2 px-4 pb-2'
         },
           React.createElement('button', {
             onClick: navigateBack,
@@ -4389,14 +4399,11 @@ useEffect(() => {
           React.createElement('div', { className: 'flex items-center gap-4' },
             React.createElement('button', {
               onClick: () => {
-                // If viewing artist page, go back to library
-                setActiveView('library');
-                setCurrentArtist(null);
-                setArtistReleases([]);
-                setReleaseTypeFilter('all');
+                // Navigate back to previous view
+                navigateBack();
               },
               className: 'p-2 hover:bg-white/10 rounded-full transition-colors no-drag',
-              title: 'Back to library'
+              title: 'Go back'
             }, 
               React.createElement('svg', {
                 className: 'w-6 h-6',
@@ -4606,9 +4613,7 @@ useEffect(() => {
                 ),
                 React.createElement('button', {
                   onClick: () => {
-                    setActiveView('playlists');
-                    setSelectedPlaylist(null);
-                    setPlaylistTracks([]);
+                    navigateBack();
                   },
                   className: 'px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors no-drag'
                 }, 'Back to Playlists')
