@@ -301,7 +301,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = tru
 };
 
 // ReleasePage component - Shows full album/EP/single with tracklist
-const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, resolvers = [], setCurrentQueue }) => {
+const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, resolvers = [] }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -399,24 +399,6 @@ const ReleasePage = ({ release, handleSearch, handlePlay, trackSources = {}, res
                     album: release.title,
                     sources: sources
                   };
-
-                  // Build queue from tracks after clicked position (not the current track)
-                  if (setCurrentQueue) {
-                    const remainingTracks = release.tracks.slice(index + 1).map((t, i) => {
-                      const tKey = `${t.position}-${t.title}`;
-                      const tSources = trackSources[tKey] || {};
-                      const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                      return {
-                        ...t,
-                        id: tId,
-                        artist: release.artist.name,
-                        album: release.title,
-                        sources: tSources
-                      };
-                    });
-                    setCurrentQueue(remainingTracks);
-                  }
-
                   handlePlay(trackWithSources);
                 } else {
                   // No resolved sources yet, fall back to search
@@ -608,6 +590,12 @@ const Parachord = () => {
   const queueAnimationRef = useRef(null);
   const [queueAnimating, setQueueAnimating] = useState(false);
   const resolverLoaderRef = useRef(null);
+
+  // Browser extension state
+  const [extensionConnected, setExtensionConnected] = useState(false);
+  const [browserPlaybackActive, setBrowserPlaybackActive] = useState(false);
+  const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
+  const pendingCloseTabIdRef = useRef(null);
 
   // URL drag & drop helpers
   const isValidUrl = (string) => {
@@ -1004,6 +992,100 @@ const Parachord = () => {
   useEffect(() => {
     loadedResolversRef.current = loadedResolvers;
   }, [loadedResolvers]);
+
+  // Browser extension event handlers
+  useEffect(() => {
+    console.log('🔌 Setting up browser extension event handlers...');
+
+    // Connection state handlers
+    window.electron.extension.onConnected(() => {
+      console.log('✅ Browser extension connected');
+      setExtensionConnected(true);
+    });
+
+    window.electron.extension.onDisconnected(() => {
+      console.log('❌ Browser extension disconnected');
+      setExtensionConnected(false);
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    });
+
+    // Message handler for extension events
+    window.electron.extension.onMessage((message) => {
+      if (message.type === 'event') {
+        switch (message.event) {
+          case 'connected':
+            // Browser tab with media content connected
+            console.log(`🎬 Browser playback connected: ${message.site}`);
+            setActiveExtensionTabId(message.tabId);
+            setBrowserPlaybackActive(true);
+            setIsExternalPlayback(true);
+
+            // Close previous tab if one was pending
+            if (pendingCloseTabIdRef.current && pendingCloseTabIdRef.current !== message.tabId) {
+              window.electron.extension.sendCommand({
+                type: 'command',
+                action: 'closeTab',
+                tabId: pendingCloseTabIdRef.current
+              });
+              pendingCloseTabIdRef.current = null;
+            }
+            break;
+
+          case 'playing':
+            console.log('▶️ Browser playback playing');
+            setIsPlaying(true);
+            // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
+            setBrowserPlaybackActive(true);
+            setIsExternalPlayback(true);
+            break;
+
+          case 'paused':
+            console.log('⏸️ Browser playback paused');
+            setIsPlaying(false);
+            break;
+
+          case 'ended':
+            console.log('⏹️ Browser playback ended');
+            // Store tab ID to close when next track connects
+            pendingCloseTabIdRef.current = message.tabId;
+            setBrowserPlaybackActive(false);
+            // Auto-advance to next track
+            handleNext();
+            break;
+
+          case 'tabClosed':
+            setBrowserPlaybackActive(false);
+            setActiveExtensionTabId(null);
+            // Check if this was a programmatic close (switching tracks)
+            if (pendingCloseTabIdRef.current && message.tabId === pendingCloseTabIdRef.current) {
+              console.log('🔄 Browser tab closed programmatically (switching tracks)');
+              pendingCloseTabIdRef.current = null;
+              // Don't call handleNext() - we're already loading the selected track
+            } else {
+              console.log('🚪 Browser tab closed by user');
+              // Treat as skip to next
+              handleNext();
+            }
+            break;
+
+          case 'heartbeat':
+            // Keep-alive from extension - silently maintain active state
+            if (message.tabId) {
+              setActiveExtensionTabId(message.tabId);
+              setBrowserPlaybackActive(true);
+              setIsExternalPlayback(true);
+            }
+            break;
+        }
+      }
+    });
+
+    // Check initial connection status
+    window.electron.extension.getStatus().then(status => {
+      setExtensionConnected(status.connected);
+    });
+  }, []);
 
   // Listen for context menu actions (only set up once)
   useEffect(() => {
@@ -1538,6 +1620,20 @@ const Parachord = () => {
       return;
     }
 
+    // Close previous browser tab if one is active
+    if (activeExtensionTabId && extensionConnected) {
+      console.log('🔄 Closing previous browser tab:', activeExtensionTabId);
+      // Mark this as a programmatic close so tabClosed handler doesn't call handleNext()
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'closeTab',
+        tabId: activeExtensionTabId
+      });
+      setActiveExtensionTabId(null);
+      setBrowserPlaybackActive(false);
+    }
+
     // Open in external browser FIRST
     try {
       const config = getResolverConfig(resolverId);
@@ -1655,23 +1751,34 @@ const Parachord = () => {
 
   const handlePlayPause = async () => {
     if (!currentTrack) return;
-    
+
+    // Check if browser extension is controlling playback
+    if (browserPlaybackActive && extensionConnected) {
+      console.log('🌐 Sending play/pause to browser extension');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: isPlaying ? 'pause' : 'play'
+      });
+      // State will be updated when extension sends back playing/paused event
+      return;
+    }
+
     const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
-    
+
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       try {
-        const endpoint = isPlaying ? 
+        const endpoint = isPlaying ?
           'https://api.spotify.com/v1/me/player/pause' :
           'https://api.spotify.com/v1/me/player/play';
-        
+
         const response = await fetch(endpoint, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${spotifyToken}`
           }
         });
-        
+
         if (response.ok || response.status === 204) {
           setIsPlaying(!isPlaying);
           console.log(isPlaying ? 'Paused' : 'Resumed', 'Spotify playback');
@@ -1696,6 +1803,19 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // Stop browser playback if active
+    if (browserPlaybackActive && activeExtensionTabId) {
+      console.log('⏹️ Stopping browser playback before next track');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'pause'
+      });
+      // Store the tab ID to close when next track connects
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    }
+
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -1749,6 +1869,19 @@ const Parachord = () => {
   };
 
   const handlePrevious = async () => {
+    // Stop browser playback if active
+    if (browserPlaybackActive && activeExtensionTabId) {
+      console.log('⏹️ Stopping browser playback before previous track');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'pause'
+      });
+      // Store the tab ID to close when next track connects
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    }
+
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -3620,7 +3753,10 @@ const playOnSpotifyConnect = async (track) => {
       console.log('✅ Playing on Spotify:', activeDevice.name);
       setCurrentTrack(track);
       setIsPlaying(true);
-      
+      // Reset browser playback state since we're now using Spotify Connect
+      setBrowserPlaybackActive(false);
+      setIsExternalPlayback(false);
+
       // Don't call getCurrentPlaybackState() here - let polling handle it
       // This prevents flickering when starting playback
       return true;
@@ -3648,29 +3784,35 @@ const playOnSpotifyConnect = async (track) => {
 // Get current playback state from Spotify
 const getCurrentPlaybackState = async () => {
   if (!spotifyToken) return;
-  
+
+  // Don't update track info from Spotify when browser playback is active
+  // This prevents overwriting the current track with whatever Spotify last played
+  if (browserPlaybackActive || isExternalPlayback) {
+    return;
+  }
+
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player', {
       headers: {
         'Authorization': `Bearer ${spotifyToken}`
       }
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       if (data && data.item) {
         const newIsPlaying = data.is_playing;
         const newProgress = data.progress_ms / 1000;
         const newTrackId = `spotify-${data.item.id}`;
-        
+
         // Only update if something changed
         if (isPlaying !== newIsPlaying) {
           setIsPlaying(newIsPlaying);
         }
-        
+
         // Update progress (always, for smooth progress bar)
         setProgress(newProgress);
-        
+
         // Only update track if it's different
         if (currentTrack?.id !== newTrackId) {
           setCurrentTrack({
@@ -4249,8 +4391,7 @@ useEffect(() => {
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             trackSources: trackSources,
-            resolvers: resolvers,
-            setCurrentQueue: setCurrentQueue
+            resolvers: resolvers
           })
         ),
         
@@ -4409,8 +4550,8 @@ useEffect(() => {
                   isResolving ? 'opacity-60' : ''
                 }`,
                 onClick: () => {
-                  // Add tracks after clicked position to queue (not the current track)
-                  setCurrentQueue(playlistTracks.slice(index + 1));
+                  // Add all tracks to queue starting from clicked track
+                  setCurrentQueue(playlistTracks);
                   handlePlay(track);  // Pass full track object - will resolve if needed
                 }
               },
@@ -4455,8 +4596,8 @@ useEffect(() => {
                           className: 'no-drag',
                           onClick: (e) => {
                             e.stopPropagation();
-                            // Add tracks after clicked position to queue (not the current track)
-                            setCurrentQueue(playlistTracks.slice(index + 1));
+                            // Add all tracks to queue
+                            setCurrentQueue(playlistTracks);
                             // Pass track with preferredResolver hint so queue ID is preserved
                             handlePlay({ ...track, preferredResolver: resolverId });
                           },
@@ -4512,14 +4653,13 @@ useEffect(() => {
               'Your library is empty. Search for music to add tracks!'
             )
           :
-          library.map((track, index) =>
+          library.map(track =>
             React.createElement(TrackRow, {
               key: track.id,
               track: track,
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
-                // Add tracks after clicked position to queue (not the current track)
-                setCurrentQueue(library.slice(index + 1));
+                setCurrentQueue(library);
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData,
@@ -4626,49 +4766,17 @@ useEffect(() => {
                 isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
               }),
               React.createElement('div', {
-                className: 'w-12 h-12 bg-slate-700/50 rounded-lg flex items-center justify-center text-xl text-slate-500'
+                className: 'w-14 h-14 bg-slate-700/50 rounded-lg flex items-center justify-center text-2xl text-slate-500'
               }, React.createElement(Music)),
               React.createElement('div', null,
                 React.createElement('div', { className: 'font-semibold text-slate-500' }, 'No track playing'),
                 React.createElement('div', { className: 'text-sm text-slate-600' }, 'Drop a URL or select a track')
               )
             ),
-            // Controls in same row
-            React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('button', {
-                disabled: true,
-                className: 'p-1 rounded-full transition-colors text-lg text-slate-600 cursor-not-allowed'
-              }, React.createElement(SkipBack)),
-              React.createElement('button', {
-                disabled: true,
-                className: 'p-2 bg-slate-700 rounded-full text-lg text-slate-500 cursor-not-allowed'
-              }, React.createElement(Play)),
-              React.createElement('button', {
-                disabled: true,
-                className: 'p-1 rounded-full transition-colors text-lg text-slate-600 cursor-not-allowed'
-              }, React.createElement(SkipForward)),
-              React.createElement('div', { className: 'flex items-center gap-1 ml-2' },
-                React.createElement('span', { className: 'text-lg text-slate-600' }, React.createElement(Volume2)),
-                React.createElement('input', {
-                  type: 'range',
-                  min: '0',
-                  max: '100',
-                  value: volume,
-                  disabled: true,
-                  className: 'w-20 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
-                })
-              ),
-              React.createElement('button', {
-                onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-                className: `relative p-1 ml-1 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-                title: `Queue (${currentQueue.length} tracks)`
-              },
-                React.createElement(List),
-                currentQueue.length > 0 && React.createElement('span', {
-                  className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-                }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-              )
-            )
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(Heart))
           ),
           React.createElement('div', { className: 'flex items-center gap-4' },
             React.createElement('span', { className: 'text-sm text-slate-600 w-12 text-right' }, '0:00'),
@@ -4683,11 +4791,46 @@ useEffect(() => {
               })
             ),
             React.createElement('span', { className: 'text-sm text-slate-600 w-12' }, '0:00')
+          ),
+          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(SkipBack)),
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-4 bg-slate-700 rounded-full text-xl text-slate-500 cursor-not-allowed'
+            }, React.createElement(Play)),
+            React.createElement('button', {
+              disabled: true,
+              className: 'p-2 rounded-full transition-colors text-xl text-slate-600 cursor-not-allowed'
+            }, React.createElement(SkipForward)),
+            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
+              React.createElement('span', { className: 'text-xl text-slate-600' }, React.createElement(Volume2)),
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: volume,
+                disabled: true,
+                className: 'w-24 h-1 bg-white/10 rounded-full appearance-none cursor-not-allowed'
+              })
+            ),
+            React.createElement('button', {
+              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
+              title: `Queue (${currentQueue.length} tracks)`
+            },
+              React.createElement(List),
+              currentQueue.length > 0 && React.createElement('span', {
+                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
+              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+            )
           )
         )
       :
-      isExternalPlayback ?
-        // External Playback State
+      isExternalPlayback && !browserPlaybackActive ?
+        // External Playback State (no extension control)
         React.createElement('div', { className: 'flex flex-col items-center space-y-4 w-full' },
           React.createElement('div', { className: 'text-center' },
             React.createElement('div', { className: 'text-sm text-slate-400 mb-2' }, '🌐 Playing in browser'),
@@ -4751,15 +4894,15 @@ useEffect(() => {
                 React.createElement('img', {
                   src: currentTrack.albumArt,
                   alt: currentTrack.album,
-                  className: 'w-12 h-12 rounded-lg object-cover'
+                  className: 'w-14 h-14 rounded-lg object-cover'
                 })
               :
                 React.createElement('div', {
-                  className: 'w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-xl'
+                  className: 'w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl'
                 }, React.createElement(Music)),
               React.createElement('div', null,
-                React.createElement('div', { className: 'font-semibold text-sm' }, currentTrack.title),
-                React.createElement('div', { className: 'text-xs text-gray-400 flex items-center gap-2' },
+                React.createElement('div', { className: 'font-semibold' }, currentTrack.title),
+                React.createElement('div', { className: 'text-sm text-gray-400 flex items-center gap-2' },
                   React.createElement('button', {
                     onClick: () => {
                       console.log('Navigating to artist:', currentTrack.artist);
@@ -4769,61 +4912,33 @@ useEffect(() => {
                     style: { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit' }
                   }, currentTrack.artist)
                 ),
-                React.createElement('div', { className: 'text-xs text-purple-400' },
+                React.createElement('div', { className: 'text-xs text-purple-400 mt-1' },
                   (() => {
                     const resolverId = determineResolverIdFromTrack(currentTrack);
                     const resolver = allResolvers.find(r => r.id === resolverId);
+                    if (browserPlaybackActive && resolver) {
+                      return `🌐 Playing in browser via ${resolver.name}`;
+                    }
                     return resolver ? `▶️ via ${resolver.name}` : null;
                   })()
                 )
               )
             ),
-            // Controls in same row
-            React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('button', {
-                onClick: handlePrevious,
-                className: 'p-1 hover:bg-white/10 rounded-full transition-colors text-lg'
-              }, React.createElement(SkipBack)),
-              React.createElement('button', {
-                onClick: handlePlayPause,
-                className: 'p-2 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-lg'
-              }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
-              React.createElement('button', {
-                onClick: handleNext,
-                className: 'p-1 hover:bg-white/10 rounded-full transition-colors text-lg'
-              }, React.createElement(SkipForward)),
-              React.createElement('div', { className: 'flex items-center gap-1 ml-2' },
-                React.createElement('span', { className: 'text-lg' }, React.createElement(Volume2)),
-                React.createElement('input', {
-                  type: 'range',
-                  min: '0',
-                  max: '100',
-                  value: volume,
-                  onChange: (e) => setVolume(Number(e.target.value)),
-                  className: 'w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
-                })
-              ),
-              React.createElement('button', {
-                onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
-                className: `relative p-1 ml-1 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
-                title: `Queue (${currentQueue.length} tracks)`
-              },
-                React.createElement(List),
-                currentQueue.length > 0 && React.createElement('span', {
-                  className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
-                }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-              )
-            )
+            React.createElement('button', {
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(Heart))
           ),
           React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('span', { className: 'text-sm text-gray-400 w-12 text-right' }, formatTime(progress)),
+            React.createElement('span', { className: `text-sm w-12 text-right ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(progress)),
             React.createElement('div', { className: 'flex-1' },
               React.createElement('input', {
                 type: 'range',
                 min: '0',
-                max: currentTrack.duration,
-                value: progress,
+                max: currentTrack.duration || 100,
+                value: browserPlaybackActive ? 0 : progress,
+                disabled: browserPlaybackActive,
                 onChange: async (e) => {
+                  if (browserPlaybackActive) return;
                   const newPosition = Number(e.target.value);
                   setProgress(newPosition);
 
@@ -4837,10 +4952,48 @@ useEffect(() => {
                     }
                   }
                 },
-                className: 'w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+                className: `w-full h-1 rounded-full appearance-none ${browserPlaybackActive ? 'bg-white/10 cursor-not-allowed opacity-50' : 'bg-white/20 cursor-pointer'}`
               })
             ),
-            React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
+            React.createElement('span', { className: `text-sm w-12 ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(currentTrack.duration))
+          ),
+          React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
+            // Playback controls
+            React.createElement('button', {
+              onClick: handlePrevious,
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(SkipBack)),
+            React.createElement('button', {
+              onClick: handlePlayPause,
+              className: 'p-4 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors text-xl'
+            }, isPlaying ? React.createElement(Pause) : React.createElement(Play)),
+            React.createElement('button', {
+              onClick: handleNext,
+              className: 'p-2 hover:bg-white/10 rounded-full transition-colors text-xl'
+            }, React.createElement(SkipForward)),
+            // Volume slider
+            React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
+              React.createElement('span', { className: 'text-xl' }, React.createElement(Volume2)),
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: volume,
+                onChange: (e) => setVolume(Number(e.target.value)),
+                className: 'w-24 h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+              })
+            ),
+            // Queue button
+            React.createElement('button', {
+              onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
+              className: `relative p-2 ml-2 hover:bg-white/10 rounded-full transition-colors ${queueDrawerOpen ? 'bg-purple-600/30 text-purple-400' : ''} ${queueAnimating ? 'queue-pulse' : ''}`,
+              title: `Queue (${currentQueue.length} tracks)`
+            },
+              React.createElement(List),
+              currentQueue.length > 0 && React.createElement('span', {
+                className: `absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${queueAnimating ? 'badge-flash' : ''}`
+              }, currentQueue.length > 99 ? '99+' : currentQueue.length)
+            )
           )
         )
     ),

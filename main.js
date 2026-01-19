@@ -20,10 +20,13 @@ const { app, BrowserWindow, ipcMain, globalShortcut, shell } = require('electron
 const path = require('path');
 const Store = require('electron-store');
 const express = require('express');
+const WebSocket = require('ws');
 
 const store = new Store();
 let mainWindow;
 let authServer;
+let wss; // WebSocket server for browser extension
+let extensionSocket = null; // Current connected extension
 
 function createWindow() {
   console.log('Creating main window...');
@@ -108,6 +111,48 @@ function startAuthServer() {
   });
 }
 
+// WebSocket server for browser extension communication
+function startExtensionServer() {
+  if (wss) return;
+
+  const EXTENSION_PORT = 9876;
+
+  wss = new WebSocket.Server({ port: EXTENSION_PORT, host: '127.0.0.1' });
+  console.log(`Extension WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
+
+  wss.on('connection', (ws) => {
+    console.log('Browser extension connected');
+    extensionSocket = ws;
+    mainWindow?.webContents.send('extension-connected');
+
+    ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        console.log('Extension message:', message.type, message.event || message.action || '');
+
+        // Forward all messages to renderer
+        mainWindow?.webContents.send('extension-message', message);
+      } catch (error) {
+        console.error('Failed to parse extension message:', error);
+      }
+    });
+
+    ws.on('close', () => {
+      console.log('Browser extension disconnected');
+      extensionSocket = null;
+      mainWindow?.webContents.send('extension-disconnected');
+    });
+
+    ws.on('error', (error) => {
+      console.error('Extension WebSocket error:', error);
+    });
+  });
+
+  wss.on('error', (error) => {
+    console.error('Extension server error:', error);
+  });
+}
+
 async function exchangeCodeForToken(code) {
   console.log('=== Exchange Code for Token ===');
   console.log('Code received:', code ? 'Yes' : 'No');
@@ -171,9 +216,10 @@ async function exchangeCodeForToken(code) {
 
 app.whenReady().then(() => {
   console.log('=== Electron App Starting ===');
-  
+
   createWindow();
   startAuthServer();
+  startExtensionServer();
 
   // Register media key shortcuts
   globalShortcut.register('MediaPlayPause', () => {
@@ -199,6 +245,9 @@ app.on('window-all-closed', () => {
   globalShortcut.unregisterAll();
   if (authServer) {
     authServer.close();
+  }
+  if (wss) {
+    wss.close();
   }
   if (process.platform !== 'darwin') {
     app.quit();
@@ -737,4 +786,24 @@ ipcMain.handle('playlists-export', async (event, defaultFilename, xspfContent) =
     console.error('  ❌ Export failed:', error.message);
     return { success: false, error: error.message };
   }
+});
+
+// Browser extension IPC handlers
+ipcMain.handle('extension-send-command', (event, command) => {
+  console.log('=== Send Extension Command ===');
+  console.log('  Command:', command.type, command.action || '');
+
+  if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
+    extensionSocket.send(JSON.stringify(command));
+    return { success: true };
+  }
+
+  console.log('  ❌ No extension connected');
+  return { success: false, error: 'No extension connected' };
+});
+
+ipcMain.handle('extension-get-status', () => {
+  return {
+    connected: extensionSocket !== null && extensionSocket.readyState === WebSocket.OPEN
+  };
 });

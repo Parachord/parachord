@@ -68,5 +68,26 @@ contextBridge.exposeInMainWorld('electron', {
     import: () => ipcRenderer.invoke('playlists-import'),
     save: (filename, xspfContent) => ipcRenderer.invoke('playlists-save', filename, xspfContent),
     export: (defaultFilename, xspfContent) => ipcRenderer.invoke('playlists-export', defaultFilename, xspfContent)
+  },
+
+  // Browser extension operations
+  extension: {
+    sendCommand: (command) => ipcRenderer.invoke('extension-send-command', command),
+    getStatus: () => ipcRenderer.invoke('extension-get-status'),
+    onMessage: (callback) => {
+      ipcRenderer.on('extension-message', (event, message) => {
+        callback(message);
+      });
+    },
+    onConnected: (callback) => {
+      ipcRenderer.on('extension-connected', () => {
+        callback();
+      });
+    },
+    onDisconnected: (callback) => {
+      ipcRenderer.on('extension-disconnected', () => {
+        callback();
+      });
+    }
   }
 });
