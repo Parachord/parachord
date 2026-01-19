@@ -603,6 +603,14 @@ const Parachord = () => {
   const pendingCloseTabIdRef = useRef(null);
   const streamingPlaybackActiveRef = useRef(false); // Track when playing via Spotify/streaming to ignore browser events
 
+  // Refs to keep current values available in event handlers (avoids stale closure issues)
+  const currentQueueRef = useRef([]);
+  const currentTrackRef = useRef(null);
+
+  // Keep refs in sync with state
+  useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
+  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+
   // URL drag & drop helpers
   const isValidUrl = (string) => {
     try {
@@ -1699,32 +1707,36 @@ const Parachord = () => {
     // (Simplified - full toast system out of scope)
     console.log('ℹ️ Skipped external track');
 
+    // Use refs to get current values (avoids stale closure when called from event handlers)
+    const queue = currentQueueRef.current;
+    const track = currentTrackRef.current;
+
     // Find next track BEFORE removing current from queue
-    if (currentQueue.length === 0) {
+    if (queue.length === 0) {
       console.log('Queue is empty, cannot skip');
       return;
     }
 
-    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-    console.log(`🔍 Skip: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
-    console.log(`🔍 currentTrack.id="${currentTrack?.id}", title="${currentTrack?.title}"`);
-    console.log(`🔍 Queue track IDs:`, currentQueue.map(t => `"${t.id}"`));
-    console.log(`🔍 Queue track titles:`, currentQueue.map(t => t.title));
+    const currentIndex = queue.findIndex(t => t.id === track?.id);
+    console.log(`🔍 Skip: currentIndex=${currentIndex}, queueLength=${queue.length}`);
+    console.log(`🔍 currentTrack.id="${track?.id}", title="${track?.title}"`);
+    console.log(`🔍 Queue track IDs:`, queue.map(t => `"${t.id}"`));
+    console.log(`🔍 Queue track titles:`, queue.map(t => t.title));
 
     let nextTrack;
     if (currentIndex === -1) {
       // Track not found, play first
-      nextTrack = currentQueue[0];
-    } else if (currentIndex === currentQueue.length - 1) {
+      nextTrack = queue[0];
+    } else if (currentIndex === queue.length - 1) {
       // Last track, loop to first
-      nextTrack = currentQueue[0];
+      nextTrack = queue[0];
     } else {
       // Play next track
-      nextTrack = currentQueue[currentIndex + 1];
+      nextTrack = queue[currentIndex + 1];
     }
 
     // Remove current track from queue
-    const newQueue = currentQueue.filter(t => t.id !== currentTrack?.id);
+    const newQueue = queue.filter(t => t.id !== track?.id);
     setCurrentQueue(newQueue);
     console.log(`📋 Removed track. New queue length: ${newQueue.length}`);
 
@@ -1741,32 +1753,36 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
+    // Use refs to get current values (avoids stale closure when called from event handlers)
+    const queue = currentQueueRef.current;
+    const track = currentTrackRef.current;
+
     // Find next track BEFORE removing current from queue
-    if (currentQueue.length === 0) {
+    if (queue.length === 0) {
       console.log('Queue is empty, nothing to play');
       return;
     }
 
-    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-    console.log(`🔍 Done: currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
-    console.log(`🔍 currentTrack.id="${currentTrack?.id}", title="${currentTrack?.title}"`);
-    console.log(`🔍 Queue track IDs:`, currentQueue.map(t => `"${t.id}"`));
-    console.log(`🔍 Queue track titles:`, currentQueue.map(t => t.title));
+    const currentIndex = queue.findIndex(t => t.id === track?.id);
+    console.log(`🔍 Done: currentIndex=${currentIndex}, queueLength=${queue.length}`);
+    console.log(`🔍 currentTrack.id="${track?.id}", title="${track?.title}"`);
+    console.log(`🔍 Queue track IDs:`, queue.map(t => `"${t.id}"`));
+    console.log(`🔍 Queue track titles:`, queue.map(t => t.title));
 
     let nextTrack;
     if (currentIndex === -1) {
       // Track not found, play first
-      nextTrack = currentQueue[0];
-    } else if (currentIndex === currentQueue.length - 1) {
+      nextTrack = queue[0];
+    } else if (currentIndex === queue.length - 1) {
       // Last track, loop to first
-      nextTrack = currentQueue[0];
+      nextTrack = queue[0];
     } else {
       // Play next track
-      nextTrack = currentQueue[currentIndex + 1];
+      nextTrack = queue[currentIndex + 1];
     }
 
     // Remove current track from queue
-    const newQueue = currentQueue.filter(t => t.id !== currentTrack?.id);
+    const newQueue = queue.filter(t => t.id !== track?.id);
     setCurrentQueue(newQueue);
     console.log(`📋 Removed track. New queue length: ${newQueue.length}`);
 
@@ -1858,39 +1874,43 @@ const Parachord = () => {
 
     // Always use our local queue for navigation
     // (Spotify doesn't know about our queue - tracks may resolve to different services)
-    if (currentQueue.length === 0) {
+    // Use refs to get current values (avoids stale closure when called from event handlers)
+    const queue = currentQueueRef.current;
+    const track = currentTrackRef.current;
+
+    if (queue.length === 0) {
       console.log('No queue set, cannot go to next track');
       return;
     }
 
-    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-    console.log(`🔍 Queue navigation: currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+    const currentIndex = queue.findIndex(t => t.id === track?.id);
+    console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", currentIndex=${currentIndex}, queueLength=${queue.length}`);
 
     if (currentIndex === -1) {
       // Current track not in queue, play first non-error track
       console.log('⚠️ Current track not found in queue, playing first track');
-      const firstPlayable = currentQueue.find(t => t.status !== 'error');
+      const firstPlayable = queue.find(t => t.status !== 'error');
       if (firstPlayable) {
         handlePlay(firstPlayable);
       }
     } else {
       // Play next non-error track, loop to beginning if at end
-      let nextIndex = (currentIndex + 1) % currentQueue.length;
+      let nextIndex = (currentIndex + 1) % queue.length;
       let attempts = 0;
 
       // Skip error tracks
-      while (currentQueue[nextIndex]?.status === 'error' && attempts < currentQueue.length) {
-        nextIndex = (nextIndex + 1) % currentQueue.length;
+      while (queue[nextIndex]?.status === 'error' && attempts < queue.length) {
+        nextIndex = (nextIndex + 1) % queue.length;
         attempts++;
       }
 
-      if (attempts >= currentQueue.length) {
+      if (attempts >= queue.length) {
         console.log('⚠️ All tracks in queue have errors');
         return;
       }
 
       console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
-      const nextTrack = currentQueue[nextIndex];
+      const nextTrack = queue[nextIndex];
       handlePlay(nextTrack);
     }
   };
@@ -1922,27 +1942,31 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
-    if (!currentTrack) return;
+    // Use refs to get current values (avoids stale closure when called from event handlers)
+    const queue = currentQueueRef.current;
+    const track = currentTrackRef.current;
+
+    if (!track) return;
 
     // Always use our local queue for navigation
     // (Spotify doesn't know about our queue - tracks may resolve to different services)
-    if (currentQueue.length === 0) {
+    if (queue.length === 0) {
       console.log('No queue set, cannot go to previous track');
       return;
     }
 
-    const currentIndex = currentQueue.findIndex(t => t.id === currentTrack?.id);
-    console.log(`🔍 Queue navigation (prev): currentTrack.id="${currentTrack?.id}", currentIndex=${currentIndex}, queueLength=${currentQueue.length}`);
+    const currentIndex = queue.findIndex(t => t.id === track?.id);
+    console.log(`🔍 Queue navigation (prev): currentTrack.id="${track?.id}", currentIndex=${currentIndex}, queueLength=${queue.length}`);
 
     if (currentIndex === -1) {
       // Current track not in queue, play last track
       console.log('⚠️ Current track not found in queue, playing last track');
-      handlePlay(currentQueue[currentQueue.length - 1]);
+      handlePlay(queue[queue.length - 1]);
     } else {
       // Play previous track, loop to end if at beginning
-      const prevIndex = (currentIndex - 1 + currentQueue.length) % currentQueue.length;
+      const prevIndex = (currentIndex - 1 + queue.length) % queue.length;
       console.log(`⬅️ Moving from index ${currentIndex} to ${prevIndex}`);
-      const prevTrack = currentQueue[prevIndex];
+      const prevTrack = queue[prevIndex];
       handlePlay(prevTrack);
     }
   };
