@@ -112,6 +112,7 @@
 - [ ] **Bandcamp Daily integration** - Featured artists/albums
 - [ ] **Collection integration** - Login, show purchases
 - [ ] **Direct streaming** - Play Bandcamp tracks (if API allows)
+- [ ] **Debug embedded player autoplay** - Playback window opens but autoplay is unreliable (reports "paused" immediately after "playing"). Need to investigate Bandcamp's embedded player behavior and possibly adjust injection timing or use a different approach
 
 ### MusicBrainz
 - [ ] **Lookup by MBID** - Auto-match on Spotify/YouTube

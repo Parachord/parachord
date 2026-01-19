@@ -1287,6 +1287,37 @@ const Parachord = () => {
     window.electron.extension.getStatus().then(status => {
       setExtensionConnected(status.connected);
     });
+
+    // Playback window event handlers (for Bandcamp embedded player, etc.)
+    if (window.electron?.playbackWindow?.onEvent) {
+      window.electron.playbackWindow.onEvent((eventType) => {
+        console.log(`🎵 Playback window event: ${eventType}`);
+        switch (eventType) {
+          case 'playing':
+            setIsPlaying(true);
+            setBrowserPlaybackActive(true);
+            setIsExternalPlayback(true);
+            break;
+          case 'paused':
+            setIsPlaying(false);
+            break;
+          case 'ended':
+            console.log('🎵 Playback window track ended, advancing to next');
+            setBrowserPlaybackActive(false);
+            handleNext();
+            break;
+        }
+      });
+    }
+
+    if (window.electron?.playbackWindow?.onClosed) {
+      window.electron.playbackWindow.onClosed(() => {
+        console.log('🎵 Playback window closed');
+        setBrowserPlaybackActive(false);
+        // Don't auto-advance, just stop playback
+        setIsPlaying(false);
+      });
+    }
   }, []);
 
   // Listen for context menu actions (only set up once)
@@ -1848,6 +1879,12 @@ const Parachord = () => {
       setBrowserPlaybackActive(false);
     }
 
+    // Close previous playback window if one is active (for Bandcamp, etc.)
+    if (window.electron?.playbackWindow?.close) {
+      console.log('🔄 Closing previous playback window');
+      await window.electron.playbackWindow.close();
+    }
+
     // Open in external browser FIRST
     try {
       const config = getResolverConfig(resolverId);
@@ -2036,6 +2073,11 @@ const Parachord = () => {
       pendingCloseTabIdRef.current = activeExtensionTabId;
       setBrowserPlaybackActive(false);
       setActiveExtensionTabId(null);
+    }
+
+    // Close playback window if active (for Bandcamp, etc.)
+    if (window.electron?.playbackWindow?.close) {
+      await window.electron.playbackWindow.close();
     }
 
     // Clean up any active polling or timeouts

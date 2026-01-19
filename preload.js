@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('electron', {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)
   },
 
+  // Proxy fetch - bypasses CORS for resolvers
+  proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
+
   // Media key handlers
   onMediaKey: (callback) => {
     ipcRenderer.on('media-key', (event, action) => {
@@ -98,6 +101,11 @@ contextBridge.exposeInMainWorld('electron', {
     onClosed: (callback) => {
       ipcRenderer.on('playback-window-closed', () => {
         callback();
+      });
+    },
+    onEvent: (callback) => {
+      ipcRenderer.on('playback-window-event', (event, eventType) => {
+        callback(eventType);
       });
     }
   }

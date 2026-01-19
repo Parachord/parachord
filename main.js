@@ -420,9 +420,9 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
 
   playbackWindow = new BrowserWindow({
     width: options.width || 400,
-    height: options.height || 150,
+    height: options.height || 200,
     minWidth: 300,
-    minHeight: 100,
+    minHeight: 150,
     frame: true,
     titleBarStyle: 'default',
     title: options.title || 'Parachord Player',
@@ -437,6 +437,88 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   });
 
   playbackWindow.loadURL(url);
+
+  // When page finishes loading, inject script to auto-click play button and set up event listeners
+  playbackWindow.webContents.on('did-finish-load', () => {
+    console.log('Playback window loaded, injecting auto-play script...');
+
+    // Wait for the embed to load, then click play and set up audio event listeners
+    setTimeout(async () => {
+      try {
+        const result = await playbackWindow.webContents.executeJavaScript(`
+          (function() {
+            // Click the play button first
+            const playBtn = document.querySelector('.embeddedplaybutton') ||
+                           document.querySelector('.playbutton') ||
+                           document.querySelector('.inline_player');
+            if (playBtn) {
+              playBtn.click();
+            }
+
+            // Wait a bit for audio to be created, then set up event listeners and force play
+            setTimeout(() => {
+              const audio = document.querySelector('audio');
+              if (audio) {
+                // Set up event listeners - use console.log with special prefix that main process will catch
+                audio.addEventListener('play', () => {
+                  console.log('__PLAYBACK_EVENT__:playing');
+                });
+                audio.addEventListener('pause', () => {
+                  console.log('__PLAYBACK_EVENT__:paused');
+                });
+                audio.addEventListener('ended', () => {
+                  console.log('__PLAYBACK_EVENT__:ended');
+                });
+
+                // Force play
+                audio.play().then(() => {
+                  console.log('Audio started playing!');
+                }).catch(err => {
+                  console.log('Audio play failed:', err.message);
+                });
+              }
+            }, 500);
+
+            return playBtn ? 'clicked: ' + playBtn.className : 'no button found';
+          })();
+        `);
+        console.log('Auto-play injection result:', result);
+
+        // Also try playing audio directly after another delay
+        setTimeout(async () => {
+          try {
+            const audioResult = await playbackWindow.webContents.executeJavaScript(`
+              (function() {
+                const audio = document.querySelector('audio');
+                if (audio) {
+                  audio.play();
+                  return 'audio play called, src: ' + (audio.src ? 'yes' : 'no');
+                }
+                return 'no audio element found';
+              })();
+            `);
+            console.log('Direct audio play result:', audioResult);
+          } catch (e) {
+            console.log('Direct audio play error:', e);
+          }
+        }, 2000);
+      } catch (err) {
+        console.log('JS injection error:', err);
+      }
+    }, 1000);
+
+    // Listen for console messages from the playback window to catch playback events
+    playbackWindow.webContents.on('console-message', (event, level, message) => {
+      if (message.startsWith('__PLAYBACK_EVENT__:')) {
+        const eventType = message.replace('__PLAYBACK_EVENT__:', '');
+        console.log('Playback window event:', eventType);
+        // Forward to main renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('playback-window-event', eventType);
+        }
+      }
+    });
+  });
 
   playbackWindow.once('ready-to-show', () => {
     playbackWindow.show();
@@ -459,6 +541,44 @@ ipcMain.handle('close-playback-window', async () => {
     playbackWindow = null;
   }
   return { success: true };
+});
+
+// Proxy fetch handler - bypasses CORS for resolvers that need to fetch external content
+ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
+  console.log('=== Proxy Fetch ===');
+  console.log('URL:', url);
+
+  try {
+    const response = await fetch(url, {
+      method: options.method || 'GET',
+      headers: options.headers || {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      }
+    });
+
+    console.log('Proxy fetch response status:', response.status);
+
+    if (!response.ok) {
+      console.log('Proxy fetch failed with status:', response.status);
+      return { success: false, status: response.status, error: `HTTP ${response.status}` };
+    }
+
+    const text = await response.text();
+    console.log('Proxy fetch got text, length:', text.length);
+
+    // Check if track_id is in the response (may be HTML-encoded as &quot;)
+    const trackIdMatch = text.match(/track_id(?:"|&quot;):(\d+)/);
+    if (trackIdMatch) {
+      console.log('Found track_id in response:', trackIdMatch[1]);
+    } else {
+      console.log('No track_id found in response');
+    }
+
+    return { success: true, status: response.status, text };
+  } catch (error) {
+    console.error('Proxy fetch error:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Resolver loading handler
