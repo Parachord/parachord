@@ -1091,8 +1091,9 @@ const Parachord = () => {
     return null;
   };
 
-  // Cache for album art URLs (releaseId -> imageUrl)
+  // Cache for album art URLs (releaseId -> { url, timestamp })
   const albumArtCache = useRef({});
+  const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
 
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
@@ -2388,17 +2389,15 @@ const Parachord = () => {
     if (!window.electron?.store) return;
 
     try {
-      // Load album art cache
+      // Load album art cache (keep full { url, timestamp } structure)
       const albumArtData = await window.electron.store.get('cache_album_art');
       if (albumArtData) {
         // Filter out expired entries
         const now = Date.now();
         const validEntries = Object.entries(albumArtData).filter(
-          ([_, entry]) => now - entry.timestamp < CACHE_TTL.albumArt
+          ([_, entry]) => entry && entry.timestamp && (now - entry.timestamp) < CACHE_TTL.albumArt
         );
-        albumArtCache.current = Object.fromEntries(
-          validEntries.map(([key, entry]) => [key, entry.url])
-        );
+        albumArtCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} album art entries from cache`);
       }
 
@@ -2454,10 +2453,13 @@ const Parachord = () => {
 
       // Mark settings as loaded so save useEffect knows it's safe to save
       resolverSettingsLoaded.current = true;
+      setCacheLoaded(true);
+      console.log('📦 All caches loaded from persistent storage');
     } catch (error) {
       console.error('Failed to load cache from store:', error);
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
+      setCacheLoaded(true);
     }
   };
 
@@ -2465,14 +2467,8 @@ const Parachord = () => {
     if (!window.electron?.store) return;
 
     try {
-      // Save album art cache with timestamps
-      const albumArtData = Object.fromEntries(
-        Object.entries(albumArtCache.current).map(([key, url]) => [
-          key,
-          { url, timestamp: Date.now() }
-        ])
-      );
-      await window.electron.store.set('cache_album_art', albumArtData);
+      // Save album art cache (already has timestamps from when items were added)
+      await window.electron.store.set('cache_album_art', albumArtCache.current);
 
       // Save artist data cache (already has timestamps)
       await window.electron.store.set('cache_artist_data', artistDataCache.current);
@@ -2560,7 +2556,7 @@ const Parachord = () => {
       // Pre-populate releases with cached album art
       const releasesWithCache = cachedData.releases.map(release => ({
         ...release,
-        albumArt: albumArtCache.current[release.id] || null
+        albumArt: albumArtCache.current[release.id]?.url || null
       }));
 
       setArtistReleases(releasesWithCache);
@@ -2695,7 +2691,7 @@ const Parachord = () => {
       // Pre-populate releases with cached album art
       const releasesWithCache = uniqueReleases.map(release => ({
         ...release,
-        albumArt: albumArtCache.current[release.id] || null
+        albumArt: albumArtCache.current[release.id]?.url || null
       }));
 
       // Show page immediately (with cached album art if available)
@@ -3090,9 +3086,9 @@ const Parachord = () => {
           
           if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
             const albumArtUrl = frontCover.thumbnails['250'];
-            
-            // Store in cache
-            albumArtCache.current[release.id] = albumArtUrl;
+
+            // Store in cache with timestamp
+            albumArtCache.current[release.id] = { url: albumArtUrl, timestamp: Date.now() };
             
             // Update just this release with album art
             setArtistReleases(prev => 
@@ -3457,7 +3453,7 @@ const Parachord = () => {
       const releaseId = albumToReleaseIdCache.current[lookupKey];
       if (releaseId === null) return null; // Previously failed lookup
       // Return from the shared albumArtCache
-      return albumArtCache.current[releaseId] || null;
+      return albumArtCache.current[releaseId]?.url || null;
     }
 
     try {
@@ -3483,8 +3479,8 @@ const Parachord = () => {
       albumToReleaseIdCache.current[lookupKey] = releaseId;
 
       // Check if we already have art for this release in the shared cache
-      if (albumArtCache.current[releaseId]) {
-        return albumArtCache.current[releaseId];
+      if (albumArtCache.current[releaseId]?.url) {
+        return albumArtCache.current[releaseId].url;
       }
 
       // Fetch cover art from Cover Art Archive
@@ -3495,8 +3491,8 @@ const Parachord = () => {
 
       if (caaResponse.ok) {
         const artUrl = caaResponse.url;
-        // Store in the shared albumArtCache
-        albumArtCache.current[releaseId] = artUrl;
+        // Store in the shared albumArtCache with timestamp
+        albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
         return artUrl;
       }
 
@@ -3864,7 +3860,7 @@ const Parachord = () => {
           setCurrentArtist(cachedData.artist);
           const releasesWithCache = cachedData.releases.map(release => ({
             ...release,
-            albumArt: albumArtCache.current[release.id] || null
+            albumArt: albumArtCache.current[release.id]?.url || null
           }));
           setArtistReleases(releasesWithCache);
           setLoadingArtist(false);
