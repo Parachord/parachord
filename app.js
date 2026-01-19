@@ -1,5 +1,5 @@
 // Parachord Desktop App - Electron Version
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 
 // Use lucide-react icons if available, otherwise fallback to emoji
 const Icons = typeof lucideReact !== 'undefined' ? lucideReact : {
@@ -555,6 +555,12 @@ const Parachord = () => {
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
   const [artistReleases, setArtistReleases] = useState([]); // Discography
   const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false); // Artist page header collapse state
+  const [artistPageTab, setArtistPageTab] = useState('music'); // music | biography | related
+  const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm
+  const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm
+  const [loadingBio, setLoadingBio] = useState(false);
+  const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
@@ -610,11 +616,26 @@ const Parachord = () => {
   const currentQueueRef = useRef([]);
   const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
+  const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
+
+  // Artist page scroll handler for header collapse
+  const handleArtistPageScroll = useCallback((e) => {
+    const scrollTop = e.target.scrollTop;
+    setIsHeaderCollapsed(scrollTop > 100);
+  }, []);
+
+  // Reset header collapse and tab when navigating away from artist page or to new artist
+  useEffect(() => {
+    setIsHeaderCollapsed(false);
+    setArtistPageTab('music');
+    setArtistBio(null);
+    setRelatedArtists([]);
+  }, [currentArtist]);
 
   // URL drag & drop helpers
   const isValidUrl = (string) => {
@@ -3445,6 +3466,76 @@ const Parachord = () => {
     }
   };
 
+  // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
+  const getArtistBio = async (artistName) => {
+    if (!artistName) return null;
+
+    setLoadingBio(true);
+    try {
+      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
+      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error('Last.fm artist info request failed:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.artist?.bio) {
+        // Strip HTML tags from bio content
+        const bioContent = data.artist.bio.content || data.artist.bio.summary || '';
+        const cleanBio = bioContent.replace(/<[^>]*>/g, '').trim();
+
+        // Also get the Last.fm URL for "Read more" link
+        const lastfmUrl = data.artist.url || null;
+
+        return { bio: cleanBio, url: lastfmUrl };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch artist bio from Last.fm:', error);
+      return null;
+    } finally {
+      setLoadingBio(false);
+    }
+  };
+
+  // Fetch related artists from Last.fm (lazy loaded on Related Artists tab click)
+  const getRelatedArtists = async (artistName) => {
+    if (!artistName) return [];
+
+    setLoadingRelated(true);
+    try {
+      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
+      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=12`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error('Last.fm similar artists request failed:', response.status);
+        return [];
+      }
+
+      const data = await response.json();
+      if (data.similarartists?.artist) {
+        // Map to our format with match percentage
+        return data.similarartists.artist.map(a => ({
+          name: a.name,
+          match: Math.round(parseFloat(a.match) * 100), // Convert 0-1 to percentage
+          url: a.url
+        }));
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch related artists from Last.fm:', error);
+      return [];
+    } finally {
+      setLoadingRelated(false);
+    }
+  };
+
   const loadPlaylist = async (playlistOrId) => {
     // Accept either a playlist object or an ID for backwards compatibility
     let playlist;
@@ -4566,8 +4657,10 @@ useEffect(() => {
         !currentRelease && React.createElement('div', {
           className: 'relative',
           style: {
-            height: '280px',
-            flexShrink: 0
+            height: isHeaderCollapsed ? '80px' : '320px',
+            flexShrink: 0,
+            transition: 'height 300ms ease',
+            overflow: 'hidden'
           }
         },
           // Background image with gradient overlay
@@ -4585,7 +4678,9 @@ useEffect(() => {
             className: 'absolute inset-0',
             style: {
               background: artistImage
-                ? 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
+                ? isHeaderCollapsed
+                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
+                  : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
                 : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
             }
           }),
@@ -4609,25 +4704,122 @@ useEffect(() => {
               })
             )
           ),
-          // Artist info overlay (centered)
-          !loadingArtist && !loadingRelease && currentArtist && React.createElement('div', {
-            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
+          // EXPANDED STATE - Artist info overlay (centered)
+          !loadingArtist && !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
+            className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+            style: {
+              opacity: isHeaderCollapsed ? 0 : 1,
+              transition: 'opacity 300ms ease'
+            }
           },
             React.createElement('h1', {
-              className: 'text-5xl font-bold tracking-wide',
-              style: { textShadow: '0 2px 20px rgba(0,0,0,0.5)' }
+              className: 'text-5xl font-bold',
+              style: {
+                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase'
+              }
             }, currentArtist.name),
-            currentArtist.disambiguation && React.createElement('p', {
-              className: 'text-lg text-gray-300 mt-2',
-              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-            }, currentArtist.disambiguation),
+            // Navigation tabs (centered)
             React.createElement('div', {
-              className: 'flex gap-4 mt-4 text-sm text-gray-300',
+              className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              currentArtist.type && React.createElement('span', null, currentArtist.type),
-              currentArtist.country && React.createElement('span', null, `• ${currentArtist.country}`)
-            )
+              ['music', 'biography', 'related'].map((tab, index) => [
+                index > 0 && React.createElement('span', {
+                  key: `sep-${tab}`,
+                  className: 'text-gray-400 mx-2'
+                }, '|'),
+                React.createElement('button', {
+                  key: tab,
+                  onClick: async () => {
+                    setArtistPageTab(tab);
+                    // Lazy load data when tab is first clicked
+                    if (tab === 'biography' && !artistBio && currentArtist) {
+                      const bioData = await getArtistBio(currentArtist.name);
+                      if (bioData) setArtistBio(bioData);
+                    }
+                    if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
+                      const related = await getRelatedArtists(currentArtist.name);
+                      if (related.length > 0) setRelatedArtists(related);
+                    }
+                  },
+                  className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                    artistPageTab === tab
+                      ? 'text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`
+                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+              ]).flat().filter(Boolean)
+            ),
+            // Start Artist Station button
+            React.createElement('button', {
+              onClick: () => console.log('Start Artist Station - placeholder'),
+              className: 'mt-6 px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
+              style: {
+                backgroundColor: '#E91E63',
+                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+              }
+            }, 'Start Artist Station')
+          ),
+          // COLLAPSED STATE - Inline layout
+          !loadingArtist && !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
+            className: 'absolute inset-0 flex items-center px-16 z-10',
+            style: {
+              opacity: isHeaderCollapsed ? 1 : 0,
+              transition: 'opacity 300ms ease'
+            }
+          },
+            // Left side: Artist name
+            React.createElement('h1', {
+              className: 'text-2xl font-bold mr-6',
+              style: {
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap'
+              }
+            }, currentArtist.name),
+            // Center: Navigation tabs
+            React.createElement('div', {
+              className: 'flex items-center gap-1',
+              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+            },
+              ['music', 'biography', 'related'].map((tab, index) => [
+                index > 0 && React.createElement('span', {
+                  key: `sep-collapsed-${tab}`,
+                  className: 'text-gray-400 mx-2'
+                }, '|'),
+                React.createElement('button', {
+                  key: `collapsed-${tab}`,
+                  onClick: async () => {
+                    setArtistPageTab(tab);
+                    if (tab === 'biography' && !artistBio && currentArtist) {
+                      const bioData = await getArtistBio(currentArtist.name);
+                      if (bioData) setArtistBio(bioData);
+                    }
+                    if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
+                      const related = await getRelatedArtists(currentArtist.name);
+                      if (related.length > 0) setRelatedArtists(related);
+                    }
+                  },
+                  className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                    artistPageTab === tab
+                      ? 'text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`
+                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+              ]).flat().filter(Boolean)
+            ),
+            // Right side: Start Artist Station button
+            React.createElement('button', {
+              onClick: () => console.log('Start Artist Station - placeholder'),
+              className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+              style: {
+                backgroundColor: '#E91E63',
+                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+              }
+            }, 'Start Artist Station')
           )
         ),
         
@@ -4710,47 +4902,50 @@ useEffect(() => {
         ),
         
         // Artist content (scrollable) - only show if no release is being viewed
-        !currentRelease && !loadingArtist && currentArtist && React.createElement('div', { 
+        !currentRelease && !loadingArtist && currentArtist && React.createElement('div', {
+          ref: artistPageScrollRef,
           className: 'scrollable-content',
-          style: { 
+          style: {
             flex: 1,
             overflowY: 'scroll',
             padding: '24px',
             pointerEvents: 'auto'
-          }
+          },
+          onScroll: handleArtistPageScroll
         },
-          React.createElement('div', { 
+          // MUSIC TAB - Discography
+          artistPageTab === 'music' && React.createElement('div', {
             className: 'space-y-6'
           },
             // Release type filters
             React.createElement('div', { className: 'flex gap-2' },
               ['all', 'album', 'ep', 'single'].map(type => {
-                const count = type === 'all' 
-                  ? artistReleases.length 
+                const count = type === 'all'
+                  ? artistReleases.length
                   : artistReleases.filter(r => r.releaseType === type).length;
-                
+
                 return React.createElement('button', {
                   key: type,
                   onClick: () => setReleaseTypeFilter(type),
                   className: `px-4 py-2 rounded-full transition-all no-drag ${
-                    releaseTypeFilter === type 
-                      ? 'bg-purple-600 text-white' 
+                    releaseTypeFilter === type
+                      ? 'bg-purple-600 text-white'
                       : 'bg-white/10 text-gray-400 hover:bg-white/20'
                   }`,
                 }, `${type.charAt(0).toUpperCase() + type.slice(1)}s (${count})`);
               })
             ),
-            
+
             // Releases count
             React.createElement('p', { className: 'text-sm text-gray-400' },
               `${artistReleases.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter).length} releases`
             ),
-            
+
             // Discography grid
-            React.createElement('div', { 
+            React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
-              artistReleases.map(release => 
+              artistReleases.map(release =>
                 React.createElement(ReleaseCard, {
                   key: release.id,
                   release: release,
@@ -4760,12 +4955,73 @@ useEffect(() => {
                 })
               )
             ),
-            
+
             // Empty state
-            artistReleases.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter).length === 0 && 
+            artistReleases.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter).length === 0 &&
               React.createElement('div', { className: 'text-center py-12 text-gray-400' },
                 `No ${releaseTypeFilter === 'all' ? '' : releaseTypeFilter + ' '}releases found`
               )
+          ),
+
+          // BIOGRAPHY TAB
+          artistPageTab === 'biography' && React.createElement('div', {
+            className: 'max-w-3xl'
+          },
+            // Loading state
+            loadingBio && React.createElement('div', { className: 'flex items-center justify-center py-12' },
+              React.createElement('div', {
+                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
+              })
+            ),
+            // Bio content
+            !loadingBio && artistBio && React.createElement('div', { className: 'space-y-4' },
+              React.createElement('div', {
+                className: 'text-gray-300 leading-relaxed whitespace-pre-wrap'
+              }, artistBio.bio),
+              artistBio.url && React.createElement('a', {
+                href: artistBio.url,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                className: 'inline-block mt-4 text-purple-400 hover:text-purple-300 text-sm'
+              }, 'Read more on Last.fm →')
+            ),
+            // No bio found
+            !loadingBio && !artistBio && React.createElement('div', {
+              className: 'text-center py-12 text-gray-400'
+            }, 'No biography available for this artist.')
+          ),
+
+          // RELATED ARTISTS TAB
+          artistPageTab === 'related' && React.createElement('div', null,
+            // Loading state
+            loadingRelated && React.createElement('div', { className: 'flex items-center justify-center py-12' },
+              React.createElement('div', {
+                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
+              })
+            ),
+            // Related artists grid
+            !loadingRelated && relatedArtists.length > 0 && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-6'
+            },
+              relatedArtists.map((artist, index) =>
+                React.createElement('button', {
+                  key: `related-${index}`,
+                  onClick: () => handleSearchInput(artist.name),
+                  className: 'group p-4 bg-white/5 hover:bg-white/10 rounded-lg transition-all text-left no-drag'
+                },
+                  React.createElement('div', { className: 'font-medium text-white group-hover:text-purple-400 transition-colors' },
+                    artist.name
+                  ),
+                  React.createElement('div', { className: 'text-sm text-gray-500 mt-1' },
+                    `${artist.match}% match`
+                  )
+                )
+              )
+            ),
+            // No related artists found
+            !loadingRelated && relatedArtists.length === 0 && React.createElement('div', {
+              className: 'text-center py-12 text-gray-400'
+            }, 'No related artists found.')
           )
         )
       )
