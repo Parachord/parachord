@@ -4713,7 +4713,7 @@ useEffect(() => {
             }
           },
             React.createElement('h1', {
-              className: 'text-5xl font-bold',
+              className: 'text-5xl font-bold text-white',
               style: {
                 textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                 letterSpacing: '0.2em',
@@ -4772,7 +4772,7 @@ useEffect(() => {
           },
             // Left side: Artist name
             React.createElement('h1', {
-              className: 'text-2xl font-bold mr-6',
+              className: 'text-2xl font-bold mr-6 text-white',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.15em',
@@ -4965,7 +4965,7 @@ useEffect(() => {
 
           // BIOGRAPHY TAB
           artistPageTab === 'biography' && React.createElement('div', {
-            className: 'max-w-3xl'
+            className: 'max-w-3xl mx-auto'
           },
             // Loading state
             loadingBio && React.createElement('div', { className: 'flex items-center justify-center py-12' },
@@ -4976,7 +4976,7 @@ useEffect(() => {
             // Bio content
             !loadingBio && artistBio && React.createElement('div', { className: 'space-y-4' },
               React.createElement('div', {
-                className: 'text-gray-300 leading-relaxed whitespace-pre-wrap'
+                className: 'text-black leading-relaxed whitespace-pre-wrap'
               }, artistBio.bio),
               artistBio.url && React.createElement('a', {
                 href: artistBio.url,
