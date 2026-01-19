@@ -551,7 +551,8 @@ const Parachord = () => {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
-  const [artistImage, setArtistImage] = useState(null); // Artist image from Last.fm
+  const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
+  const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
   const [artistReleases, setArtistReleases] = useState([]); // Discography
   const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -2369,6 +2370,7 @@ const Parachord = () => {
     console.log('Fetching artist data for:', artistName);
     setLoadingArtist(true);
     setArtistImage(null); // Clear previous artist's image immediately
+    setArtistImagePosition('center 25%'); // Reset to default position
     navigateTo('artist'); // Show artist page immediately with loading animation
 
     // Check cache first
@@ -2389,9 +2391,12 @@ const Parachord = () => {
       console.log('📦 Using cached artist data for:', artistName);
       setCurrentArtist(cachedData.artist);
 
-      // Fetch artist image from Last.fm (async, non-blocking)
-      getArtistImage(artistName).then(imageUrl => {
-        setArtistImage(imageUrl);
+      // Fetch artist image from Spotify (async, non-blocking)
+      getArtistImage(artistName).then(result => {
+        if (result) {
+          setArtistImage(result.url);
+          setArtistImagePosition(result.facePosition || 'center 25%');
+        }
       });
 
       // Pre-populate releases with cached album art
@@ -2505,9 +2510,12 @@ const Parachord = () => {
 
       setCurrentArtist(artistData);
 
-      // Fetch artist image from Last.fm (async, non-blocking)
-      getArtistImage(artistName).then(imageUrl => {
-        setArtistImage(imageUrl);
+      // Fetch artist image from Spotify (async, non-blocking)
+      getArtistImage(artistName).then(result => {
+        if (result) {
+          setArtistImage(result.url);
+          setArtistImagePosition(result.facePosition || 'center 25%');
+        }
       });
 
       // Cache the artist data with resolver settings hash
@@ -3335,7 +3343,52 @@ const Parachord = () => {
     }
   };
 
-  // Fetch artist image from Spotify API with caching
+  // Detect face position in an image using browser's FaceDetector API
+  const detectFacePosition = async (imageUrl) => {
+    // Check if FaceDetector API is available (Chromium/Electron)
+    if (!('FaceDetector' in window)) {
+      console.log('FaceDetector API not available');
+      return null;
+    }
+
+    try {
+      // Load image into an HTMLImageElement
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+
+      // Detect faces
+      const detector = new FaceDetector();
+      const faces = await detector.detect(img);
+
+      if (faces.length === 0) {
+        console.log('No faces detected in image');
+        return null;
+      }
+
+      // Find largest face (by bounding box area) - likely the main artist
+      const largest = faces.reduce((a, b) =>
+        (a.boundingBox.width * a.boundingBox.height) >
+        (b.boundingBox.width * b.boundingBox.height) ? a : b
+      );
+
+      // Calculate vertical center of face as percentage
+      const faceCenter = largest.boundingBox.y + (largest.boundingBox.height / 2);
+      const percentage = Math.round((faceCenter / img.height) * 100);
+
+      console.log(`Face detected at ${percentage}% from top`);
+      return `center ${percentage}%`;
+    } catch (error) {
+      console.error('Face detection failed:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist image from Spotify API with caching and face detection
   const getArtistImage = async (artistName) => {
     if (!artistName) return null;
 
@@ -3343,9 +3396,9 @@ const Parachord = () => {
     const cached = artistImageCache.current[normalizedName];
     const now = Date.now();
 
-    // Check cache validity
+    // Check cache validity - return both url and facePosition
     if (cached && (now - cached.timestamp) < CACHE_TTL.artistImage) {
-      return cached.url;
+      return { url: cached.url, facePosition: cached.facePosition };
     }
 
     // Spotify requires authentication
@@ -3371,14 +3424,18 @@ const Parachord = () => {
 
       if (artist?.images?.length > 0) {
         // Spotify returns images sorted by size (largest first)
-        // Use the largest image for best quality in hero header
         const imageUrl = artist.images[0].url;
+
+        // Detect face position for smart cropping
+        const facePosition = await detectFacePosition(imageUrl);
 
         artistImageCache.current[normalizedName] = {
           url: imageUrl,
+          facePosition: facePosition, // may be null
           timestamp: now
         };
-        return imageUrl;
+
+        return { url: imageUrl, facePosition };
       }
 
       return null; // No image available, don't cache failure
@@ -3519,6 +3576,7 @@ const Parachord = () => {
       if (currentView === 'artist') {
         setCurrentArtist(null);
         setArtistImage(null);
+        setArtistImagePosition('center 25%');
         setArtistReleases([]);
         setReleaseTypeFilter('all');
       }
@@ -4518,7 +4576,7 @@ useEffect(() => {
             style: {
               backgroundImage: `url(${artistImage})`,
               backgroundSize: 'cover',
-              backgroundPosition: 'center 20%',
+              backgroundPosition: artistImagePosition,
               filter: 'blur(0px)'
             }
           }),
