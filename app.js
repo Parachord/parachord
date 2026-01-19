@@ -211,6 +211,7 @@ const ResolverCard = React.memo(({
   isInstalled,
   hasUpdate,
   isInstalling,
+  priorityNumber,
   onClick,
   onDragStart,
   onDragOver,
@@ -239,6 +240,10 @@ const ResolverCard = React.memo(({
       style: { backgroundColor: resolver.color || '#6B7280' },
       onClick: onClick
     },
+      // Priority number badge (top-left)
+      priorityNumber && React.createElement('div', {
+        className: 'absolute top-2 left-2 w-6 h-6 bg-white/90 rounded-full flex items-center justify-center text-xs font-bold text-gray-700 shadow-sm'
+      }, priorityNumber),
       // Centered logo or emoji fallback
       logo ? logo : React.createElement('span', {
         className: 'text-5xl text-white drop-shadow-md'
@@ -249,6 +254,10 @@ const ResolverCard = React.memo(({
           hasUpdate ? 'bg-orange-500 text-white' : 'bg-white text-green-600'
         }`
       }, hasUpdate ? '↑' : '✓'),
+      // Update badge for installed tab (top-right, only when not showing installed badge)
+      !isInstalled && hasUpdate && React.createElement('div', {
+        className: 'absolute top-2 right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs text-white'
+      }, '↑'),
       // Installing spinner
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center'
@@ -6140,7 +6149,7 @@ useEffect(() => {
                 React.createElement('div', null,
                   React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Installed Resolvers'),
                   React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
-                    'Select the platforms you want to stream music from. Parachord works better when more services are activated.'
+                    'Select the platforms you want to stream music from. Drag and drop to reorder priority.'
                   )
                 ),
                 // Add from file button
@@ -6175,6 +6184,7 @@ useEffect(() => {
                     resolver: resolver,
                     isActive: isActive,
                     hasUpdate: hasUpdate,
+                    priorityNumber: index + 1,
                     draggable: true,
                     onClick: () => setSelectedResolver(resolver),
                     onDragStart: (e) => handleResolverDragStart(e, resolver.id),
