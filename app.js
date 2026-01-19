@@ -5766,23 +5766,18 @@ useEffect(() => {
                     },
                       availableSources.length > 0 ?
                         availableSources.map(resolverId => {
-                          const resolverMeta = {
-                            spotify: { label: '♫ Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-600' },
-                            youtube: { label: '🎥 YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-600' },
-                            bandcamp: { label: '▶ Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-600' },
-                            qobuz: { label: '◆ Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-600' }
-                          };
-                          const meta = resolverMeta[resolverId];
-                          if (!meta) return null;
+                          const resolver = allResolvers.find(r => r.id === resolverId);
+                          if (!resolver) return null;
                           return React.createElement('button', {
                             key: resolverId,
                             onClick: (e) => {
                               e.stopPropagation();
                               handlePlay({ ...track, preferredResolver: resolverId });
                             },
-                            className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
-                            title: `Play from ${meta.label} (manual override)`
-                          }, meta.label);
+                            className: 'w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold text-white hover:scale-110 transition-transform cursor-pointer',
+                            style: { backgroundColor: resolver.color },
+                            title: `Play via ${resolver.name}`
+                          }, resolver.icon);
                         })
                       :
                         React.createElement('span', {
