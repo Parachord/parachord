@@ -171,24 +171,46 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
   );
 });
 
-// ResolverCard component - Tomahawk-style colored card with centered icon
+// Service logo SVGs - white versions for colored backgrounds
+const SERVICE_LOGOS = {
+  spotify: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+  ),
+  bandcamp: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M0 18.75l7.437-13.5H24l-7.438 13.5H0z' })
+  ),
+  qobuz: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-7c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z' })
+  ),
+  youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
+  ),
+  soundcloud: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z' })
+  ),
+  musicbrainz: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
+  )
+};
+
+// ResolverCard component - Tomahawk-style colored card with centered logo
 const ResolverCard = React.memo(({
   resolver,
   isActive,
   isInstalled,
   hasUpdate,
   isInstalling,
-  onToggle,
-  onInstall,
+  onClick,
   onDragStart,
   onDragOver,
   onDrop,
   onDragEnd,
   onContextMenu,
-  showToggle = false,
-  showInstall = false,
   draggable = false
 }) => {
+  // Get the logo SVG or fall back to emoji icon
+  const logo = SERVICE_LOGOS[resolver.id];
+
   return React.createElement('div', {
     className: 'flex flex-col items-center',
     draggable: draggable,
@@ -200,37 +222,33 @@ const ResolverCard = React.memo(({
   },
     // Card with colored background
     React.createElement('div', {
-      className: `relative w-32 h-32 rounded-lg flex items-center justify-center cursor-pointer transition-all hover:scale-105 hover:shadow-lg ${
-        !isActive && showToggle ? 'opacity-50 grayscale' : ''
+      className: `relative w-32 h-32 rounded-xl flex items-center justify-center cursor-pointer transition-all hover:scale-105 hover:shadow-lg ${
+        isActive === false ? 'opacity-50 grayscale' : ''
       }`,
       style: { backgroundColor: resolver.color || '#6B7280' },
-      onClick: showToggle ? onToggle : (showInstall ? onInstall : undefined)
+      onClick: onClick
     },
-      // Centered icon
-      React.createElement('span', {
+      // Centered logo or emoji fallback
+      logo ? logo : React.createElement('span', {
         className: 'text-5xl text-white drop-shadow-md'
       }, resolver.icon),
-      // Status overlay for installed/update
-      isInstalled && !showToggle && React.createElement('div', {
+      // Status overlay for installed/update (marketplace view)
+      isInstalled && React.createElement('div', {
         className: `absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs ${
           hasUpdate ? 'bg-orange-500 text-white' : 'bg-white text-green-600'
         }`
       }, hasUpdate ? '↑' : '✓'),
       // Installing spinner
       isInstalling && React.createElement('div', {
-        className: 'absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center'
+        className: 'absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center'
       },
         React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
       )
     ),
     // Name below card
     React.createElement('span', {
-      className: 'mt-2 text-sm text-gray-900 font-medium text-center truncate w-32'
-    }, resolver.name),
-    // Subtitle (author or status)
-    showInstall && React.createElement('span', {
-      className: 'text-xs text-gray-500 truncate w-32 text-center'
-    }, resolver.author)
+      className: 'mt-3 text-sm text-gray-900 font-medium text-center truncate w-32'
+    }, resolver.name)
   );
 });
 
@@ -800,6 +818,7 @@ const Parachord = () => {
   const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
+  const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
@@ -5812,9 +5831,8 @@ useEffect(() => {
                     key: resolver.id,
                     resolver: resolver,
                     isActive: isActive,
-                    showToggle: true,
                     draggable: true,
-                    onToggle: () => toggleResolver(resolver.id),
+                    onClick: () => setSelectedResolver(resolver),
                     onDragStart: (e) => handleResolverDragStart(e, resolver.id),
                     onDragOver: handleResolverDragOver,
                     onDrop: (e) => handleResolverDrop(e, resolver.id),
@@ -5902,8 +5920,7 @@ useEffect(() => {
                         isInstalled: isInstalled,
                         hasUpdate: hasUpdate,
                         isInstalling: isInstalling,
-                        showInstall: true,
-                        onInstall: () => handleInstallFromMarketplace(resolver)
+                        onClick: isInstalled ? () => setSelectedResolver(resolver) : () => handleInstallFromMarketplace(resolver)
                       });
                     })
                 )
@@ -6181,6 +6198,139 @@ useEffect(() => {
           },
             urlImportLoading ? '⏳ Importing...' : '🌐 Import from URL'
           )
+        )
+      )
+    ),
+
+    // Resolver Detail Modal
+    selectedResolver && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50',
+      onClick: (e) => { if (e.target === e.currentTarget) setSelectedResolver(null); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden'
+      },
+        // Modal header with colored background
+        React.createElement('div', {
+          className: 'p-6 flex items-center gap-4',
+          style: { backgroundColor: selectedResolver.color || '#6B7280' }
+        },
+          // Logo
+          React.createElement('div', {
+            className: 'w-16 h-16 flex items-center justify-center'
+          }, SERVICE_LOGOS[selectedResolver.id] || React.createElement('span', { className: 'text-4xl' }, selectedResolver.icon)),
+          // Name and description
+          React.createElement('div', { className: 'flex-1 text-white' },
+            React.createElement('h2', { className: 'text-xl font-bold' }, selectedResolver.name),
+            React.createElement('p', { className: 'text-white/80 text-sm' }, selectedResolver.author || 'Parachord Team')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setSelectedResolver(null),
+            className: 'w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors'
+          }, '✕')
+        ),
+        // Modal body
+        React.createElement('div', { className: 'p-6 space-y-6' },
+          // Description
+          React.createElement('p', { className: 'text-gray-600 text-sm' }, selectedResolver.description),
+
+          // Capabilities
+          React.createElement('div', null,
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Capabilities'),
+            React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) => {
+                if (!enabled) return null;
+                const capLabels = {
+                  resolve: { icon: '🎯', label: 'Resolve' },
+                  search: { icon: '🔍', label: 'Search' },
+                  stream: { icon: '▶️', label: 'Stream' },
+                  browse: { icon: '📁', label: 'Browse' },
+                  urlLookup: { icon: '🔗', label: 'URL Lookup' }
+                };
+                const capInfo = capLabels[cap] || { icon: '✓', label: cap };
+                return React.createElement('span', {
+                  key: cap,
+                  className: 'px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700 flex items-center gap-1'
+                }, capInfo.icon, ' ', capInfo.label);
+              })
+            )
+          ),
+
+          // Enable/Disable toggle
+          React.createElement('div', {
+            className: 'flex items-center justify-between py-3 border-t border-gray-100'
+          },
+            React.createElement('div', null,
+              React.createElement('span', { className: 'font-medium text-gray-900' }, 'Enable Resolver'),
+              React.createElement('p', { className: 'text-xs text-gray-500' }, 'Include in search and playback')
+            ),
+            React.createElement('label', { className: 'relative inline-block w-12 h-6' },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: activeResolvers.includes(selectedResolver.id),
+                onChange: () => toggleResolver(selectedResolver.id),
+                className: 'sr-only peer'
+              }),
+              React.createElement('div', {
+                className: 'w-full h-full bg-gray-300 rounded-full peer-checked:bg-purple-600 transition-colors'
+              }),
+              React.createElement('div', {
+                className: 'absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-6'
+              })
+            )
+          ),
+
+          // Authentication section (for services that require it)
+          selectedResolver.id === 'spotify' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', { className: 'font-medium text-gray-900' }, 'Spotify Account'),
+                React.createElement('p', { className: 'text-xs text-gray-500' },
+                  spotifyConnected ? 'Connected and ready' : 'Sign in to enable streaming'
+                )
+              ),
+              spotifyConnected
+                ? React.createElement('button', {
+                    onClick: disconnectSpotify,
+                    className: 'px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+                  }, 'Disconnect')
+                : React.createElement('button', {
+                    onClick: connectSpotify,
+                    className: 'px-4 py-2 text-sm text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors'
+                  }, 'Connect')
+            ),
+            spotifyConnected && React.createElement('div', {
+              className: 'mt-3 flex items-center gap-2 text-green-600 text-sm'
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'Spotify Premium connected')
+            )
+          ),
+
+          // Qobuz authentication section
+          selectedResolver.id === 'qobuz' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('div', null,
+              React.createElement('span', { className: 'font-medium text-gray-900' }, 'Qobuz Streaming'),
+              React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+                'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
+              )
+            )
+          )
+        ),
+
+        // Modal footer
+        React.createElement('div', {
+          className: 'px-6 py-4 bg-gray-50 flex justify-end'
+        },
+          React.createElement('button', {
+            onClick: () => setSelectedResolver(null),
+            className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
+          }, 'Done')
         )
       )
     ),
