@@ -541,22 +541,36 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  return React.createElement('div', { className: 'space-y-6' },
-    // Release info and album art
-    React.createElement('div', { className: 'flex gap-6' },
+  // Format full date nicely
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Unknown';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return React.createElement('div', { className: 'flex gap-0 p-6' },
+    // LEFT COLUMN: Album art and metadata
+    React.createElement('div', {
+      className: 'flex-shrink-0 pr-8',
+      style: { width: '240px' }
+    },
       // Album art
       release.albumArt ?
         React.createElement('img', {
           src: release.albumArt,
           alt: release.title,
-          className: 'w-64 h-64 rounded-lg object-cover'
+          className: 'w-48 h-48 rounded object-cover shadow-lg'
         })
       :
         React.createElement('div', {
-          className: 'w-64 h-64 rounded-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center'
+          className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg'
         },
           React.createElement('svg', {
-            className: 'w-24 h-24 text-white/50',
+            className: 'w-16 h-16 text-white/50',
             fill: 'none',
             viewBox: '0 0 24 24',
             stroke: 'currentColor'
@@ -569,45 +583,25 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
             })
           )
         ),
-      
-      // Metadata
-      React.createElement('div', { className: 'flex-1' },
-        React.createElement('div', { className: 'space-y-2 text-sm' },
-          release.releaseType && React.createElement('div', {},
-            React.createElement('span', { className: 'text-gray-400' }, 'Type: '),
-            React.createElement('span', {
-              className: `inline-block px-2 py-0.5 rounded-full text-xs ${
-                release.releaseType === 'album' ? 'bg-blue-600/20 text-blue-400' :
-                release.releaseType === 'ep' ? 'bg-green-600/20 text-green-400' :
-                'bg-purple-600/20 text-purple-400'
-              }`
-            }, release.releaseType.toUpperCase())
-          ),
-          release.date && React.createElement('div', {},
-            React.createElement('span', { className: 'text-gray-400' }, 'Released: '),
-            React.createElement('span', {}, release.date)
-          ),
-          release.label && React.createElement('div', {},
-            React.createElement('span', { className: 'text-gray-400' }, 'Label: '),
-            React.createElement('span', {}, release.label)
-          ),
-          release.country && React.createElement('div', {},
-            React.createElement('span', { className: 'text-gray-400' }, 'Country: '),
-            React.createElement('span', {}, release.country)
-          ),
-          release.tracks.length > 0 && React.createElement('div', {},
-            React.createElement('span', { className: 'text-gray-400' }, 'Tracks: '),
-            React.createElement('span', {}, release.tracks.length)
-          )
-        )
+
+      // Album title and metadata
+      React.createElement('div', { className: 'mt-4 space-y-1' },
+        React.createElement('h2', {
+          className: 'font-bold text-gray-900 text-lg leading-tight'
+        }, release.title),
+        React.createElement('p', {
+          className: 'text-sm text-gray-500'
+        }, formatDate(release.date)),
+        React.createElement('p', {
+          className: 'text-sm text-gray-500'
+        }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
       )
     ),
-    
-    // Tracklist
-    React.createElement('div', { className: 'mt-8' },
-      React.createElement('h2', { className: 'text-2xl font-bold mb-4' }, 'Tracklist'),
+
+    // RIGHT COLUMN: Tracklist
+    React.createElement('div', { className: 'flex-1 min-w-0' },
       release.tracks.length > 0 ?
-        React.createElement('div', { className: 'space-y-1' },
+        React.createElement('div', { className: 'space-y-0' },
           release.tracks.map((track, index) => {
             const trackKey = `${track.position}-${track.title}`;
             const sources = trackSources[trackKey] || {};
@@ -615,7 +609,7 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
             
             return React.createElement('div', {
               key: index,
-              className: 'flex items-center gap-4 p-3 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors no-drag group',
+              className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group',
               onClick: () => {
                 console.log('Track row clicked:', track.title);
 
@@ -676,19 +670,19 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
             },
               // Track number
               React.createElement('span', {
-                className: 'text-xs text-gray-400 w-8 flex-shrink-0',
+                className: 'text-sm text-gray-400 w-6 flex-shrink-0 text-right',
                 style: { pointerEvents: 'none' }
-              }, track.position),
+              }, String(track.position).padStart(2, '0')),
 
               // Track title
               React.createElement('span', {
-                className: 'text-xs text-gray-900 flex-1 transition-colors',
+                className: 'text-sm text-gray-700 flex-1 truncate transition-colors group-hover:text-gray-900',
                 style: { pointerEvents: 'none' }
               }, track.title),
 
               // Duration
               track.length && React.createElement('span', {
-                className: 'text-xs text-gray-500 flex-shrink-0',
+                className: 'text-sm text-gray-400 flex-shrink-0 tabular-nums',
                 style: { pointerEvents: 'none' }
               }, formatDuration(track.length)),
               
@@ -860,6 +854,11 @@ const Parachord = () => {
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
+
+  // Critic's Picks state
+  const [criticsPicks, setCriticsPicks] = useState([]);
+  const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
+  const criticsPicksLoaded = useRef(false);
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
   const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
@@ -891,6 +890,30 @@ const Parachord = () => {
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    show: false,
+    type: 'success', // 'success' | 'error' | 'info'
+    title: '',
+    message: '',
+    onConfirm: null
+  });
+
+  // Helper to show styled confirmation dialogs
+  const showConfirmDialog = (options) => {
+    setConfirmDialog({
+      show: true,
+      type: options.type || 'info',
+      title: options.title || '',
+      message: options.message || '',
+      onConfirm: options.onConfirm || null
+    });
+  };
+
+  const closeConfirmDialog = () => {
+    setConfirmDialog(prev => ({ ...prev, show: false }));
+  };
   const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
 
   // Drag & drop URL state
@@ -1280,6 +1303,9 @@ const Parachord = () => {
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
 
+  // API keys loaded from environment via IPC
+  const lastfmApiKey = useRef(null);
+
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
@@ -1303,11 +1329,26 @@ const Parachord = () => {
     { id: 5, title: 'Forest Path', artist: 'Nature Sound', album: 'Wilderness', duration: 301, sources: ['youtube', 'soundcloud'] },
   ];
 
-  // Initialize resolver plugin system
+  // Initialize resolver plugin system and load config
   useEffect(() => {
     const initResolvers = async () => {
       console.log('🔌 Initializing resolver plugin system...');
-      
+
+      // Load API keys from environment via IPC
+      if (window.electron?.config?.get) {
+        try {
+          const lfmKey = await window.electron.config.get('LASTFM_API_KEY');
+          if (lfmKey) {
+            lastfmApiKey.current = lfmKey;
+            console.log('🔑 Last.fm API key loaded from environment');
+          } else {
+            console.warn('⚠️ LASTFM_API_KEY not found in .env file');
+          }
+        } catch (error) {
+          console.error('❌ Failed to load API keys from config:', error);
+        }
+      }
+
       // Check if ResolverLoader is available
       if (typeof ResolverLoader === 'undefined') {
         console.error('❌ ResolverLoader not found! Make sure resolver-loader.js is loaded.');
@@ -1753,7 +1794,11 @@ const Parachord = () => {
         availableResolvers = Object.keys(trackOrSource.sources);
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
-          alert('Could not find a playable source for this track. Try enabling more resolvers in settings.');
+          showConfirmDialog({
+            type: 'error',
+            title: 'No Source Found',
+            message: 'Could not find a playable source for this track. Try enabling more resolvers in settings.'
+          });
           return;
         }
       }
@@ -1893,7 +1938,11 @@ const Parachord = () => {
           // Force refresh to bypass cache
           await resolveTrack(trackData, artistName, true);
 
-          alert(`Playback failed. Track has been re-resolved. Please try playing again.`);
+          showConfirmDialog({
+            type: 'info',
+            title: 'Track Re-resolved',
+            message: 'Playback failed. Track has been re-resolved. Please try playing again.'
+          });
         }
       }
     } catch (error) {
@@ -2104,7 +2153,11 @@ const Parachord = () => {
       setCurrentTrack(track);
     } catch (error) {
       console.error('❌ Failed to open external track:', error);
-      alert(`Failed to open browser: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Browser Error',
+        message: `Failed to open browser: ${error.message}`
+      });
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
       setShowExternalPrompt(false);
@@ -2694,6 +2747,13 @@ const Parachord = () => {
         console.log(`📦 Loaded ${validEntries.length} artist image entries from cache`);
       }
 
+      // Load album-to-release-ID mapping cache (for Critic's Picks and track art lookups)
+      const albumReleaseIdData = await window.electron.store.get('cache_album_release_ids');
+      if (albumReleaseIdData) {
+        albumToReleaseIdCache.current = albumReleaseIdData;
+        console.log(`📦 Loaded ${Object.keys(albumReleaseIdData).length} album-to-release-ID mappings from cache`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -2735,6 +2795,9 @@ const Parachord = () => {
 
       // Save artist image cache (already has timestamps)
       await window.electron.store.set('cache_artist_images', artistImageCache.current);
+
+      // Save album-to-release-ID mapping cache
+      await window.electron.store.set('cache_album_release_ids', albumToReleaseIdCache.current);
 
       // Save resolver settings
       await window.electron.store.set('active_resolvers', activeResolvers);
@@ -2858,7 +2921,11 @@ const Parachord = () => {
       
       if (!searchData.artists || searchData.artists.length === 0) {
         console.log('Artist not found');
-        alert(`Artist "${artistName}" not found in MusicBrainz`);
+        showConfirmDialog({
+          type: 'info',
+          title: 'Artist Not Found',
+          message: `"${artistName}" was not found in MusicBrainz`
+        });
         setLoadingArtist(false);
         return;
       }
@@ -2960,7 +3027,11 @@ const Parachord = () => {
       
     } catch (error) {
       console.error('Error fetching artist data:', error);
-      alert('Failed to load artist data. Please try again.');
+      showConfirmDialog({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load artist data. Please try again.'
+      });
       setLoadingArtist(false);
     }
   };
@@ -3077,7 +3148,11 @@ const Parachord = () => {
       
     } catch (error) {
       console.error('Error fetching release data:', error);
-      alert('Failed to load release data. Please try again.');
+      showConfirmDialog({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load release data. Please try again.'
+      });
       setLoadingRelease(false);
     }
   };
@@ -3189,7 +3264,11 @@ const Parachord = () => {
       navigateTo('artist');
     } catch (error) {
       console.error('Error fetching album from search:', error);
-      alert('Failed to load album. Please try again.');
+      showConfirmDialog({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load album. Please try again.'
+      });
     }
   };
 
@@ -3501,22 +3580,30 @@ const Parachord = () => {
   // Install new resolver from .axe file (hot-reload, no restart)
   const handleInstallResolver = async () => {
     if (!window.electron?.resolvers?.pickFile) {
-      alert('File picker not available. Make sure you are running in Electron.');
+      showConfirmDialog({
+        type: 'error',
+        title: 'Not Available',
+        message: 'File picker not available. Make sure you are running in Electron.'
+      });
       return;
     }
 
     console.log('📦 Opening file picker for resolver...');
-    
+
     try {
       const result = await window.electron.resolvers.pickFile();
-      
+
       if (!result) {
         console.log('User cancelled file picker');
         return;
       }
-      
+
       if (result.error) {
-        alert(`Error reading file: ${result.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'File Error',
+          message: result.error
+        });
         return;
       }
       
@@ -3545,7 +3632,11 @@ const Parachord = () => {
       const installResult = await window.electron.resolvers.install(content, filename);
       
       if (!installResult.success) {
-        alert(`Failed to install resolver: ${installResult.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Installation Failed',
+          message: installResult.error
+        });
         return;
       }
       
@@ -3562,27 +3653,43 @@ const Parachord = () => {
             r.id === resolverId ? newResolverInstance : r
           ));
           console.log(`🔄 Updated resolver: ${resolverName}`);
-          alert(`✅ Successfully updated "${resolverName}"!`);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Resolver Updated',
+            message: resolverName
+          });
         } else {
           // Add new resolver
           setLoadedResolvers(prev => [...prev, newResolverInstance]);
-          
+
           // Add to resolver order
           setResolverOrder(prev => [...prev, resolverId]);
-          
+
           // Enable by default
           setActiveResolvers(prev => [...prev, resolverId]);
-          
+
           console.log(`➕ Added resolver: ${resolverName}`);
-          alert(`✅ Successfully installed "${resolverName}"!`);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Resolver Installed',
+            message: resolverName
+          });
         }
       } catch (error) {
         console.error('Failed to hot-load resolver:', error);
-        alert(`Resolver installed but failed to load. Please restart the app.\n\nError: ${error.message}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Load Failed',
+          message: `Resolver installed but failed to load. Please restart the app.\n\n${error.message}`
+        });
       }
     } catch (error) {
       console.error('Error installing resolver:', error);
-      alert(`Error installing resolver: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Installation Error',
+        message: error.message
+      });
     }
   };
 
@@ -3597,7 +3704,11 @@ const Parachord = () => {
 
     if (!resolver) {
       console.error('❌ Resolver not found:', resolverId);
-      alert(`Resolver "${resolverId}" not found. This might be a bug.`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Resolver Not Found',
+        message: `Resolver "${resolverId}" not found. This might be a bug.`
+      });
       return;
     }
 
@@ -3618,7 +3729,11 @@ const Parachord = () => {
       const result = await window.electron.resolvers.uninstall(resolverId);
 
       if (!result.success) {
-        alert(`Failed to uninstall: ${result.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Uninstall Failed',
+          message: result.error
+        });
         return;
       }
 
@@ -3629,10 +3744,18 @@ const Parachord = () => {
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
 
-      alert(`✅ Successfully uninstalled "${resolver.name}"!`);
+      showConfirmDialog({
+        type: 'success',
+        title: 'Resolver Uninstalled',
+        message: resolver.name
+      });
     } catch (error) {
       console.error('Error uninstalling resolver:', error);
-      alert(`Error uninstalling resolver: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Uninstall Error',
+        message: error.message
+      });
     }
   };
 
@@ -3681,7 +3804,11 @@ const Parachord = () => {
       const downloadResult = await window.electron.resolvers.downloadResolver(downloadUrl);
 
       if (!downloadResult.success) {
-        alert(`Failed to download ${name}: ${downloadResult.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Download Failed',
+          message: `Failed to download ${name}: ${downloadResult.error}`
+        });
         return;
       }
 
@@ -3707,7 +3834,11 @@ const Parachord = () => {
       const installResult = await window.electron.resolvers.install(content, filename);
 
       if (!installResult.success) {
-        alert(`Failed to install ${resolverName}: ${installResult.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Installation Failed',
+          message: `Failed to install ${resolverName}: ${installResult.error}`
+        });
         return;
       }
 
@@ -3719,16 +3850,28 @@ const Parachord = () => {
         setLoadedResolvers(prev => prev.map(r =>
           r.id === resolverId ? newResolverInstance : r
         ));
-        alert(`✅ Successfully updated "${resolverName}"!`);
+        showConfirmDialog({
+          type: 'success',
+          title: 'Resolver Updated',
+          message: resolverName
+        });
       } else {
         setLoadedResolvers(prev => [...prev, newResolverInstance]);
         setResolverOrder(prev => [...prev, resolverId]);
         setActiveResolvers(prev => [...prev, resolverId]);
-        alert(`✅ Successfully installed "${resolverName}"!`);
+        showConfirmDialog({
+          type: 'success',
+          title: 'Resolver Installed',
+          message: resolverName
+        });
       }
     } catch (error) {
       console.error('Marketplace install error:', error);
-      alert(`Installation failed: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Installation Failed',
+        message: error.message
+      });
     } finally {
       setInstallingResolvers(prev => {
         const next = new Set(prev);
@@ -3773,6 +3916,288 @@ const Parachord = () => {
     } catch (error) {
       console.error('Error parsing XSPF:', error);
       return null;
+    }
+  };
+
+  // Parse Critic's Picks RSS feed
+  const parseCriticsPicksRSS = (rssString) => {
+    try {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(rssString, 'text/xml');
+
+      const items = xml.querySelectorAll('item');
+      const albums = [];
+
+      items.forEach(item => {
+        const titleText = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '';
+        const description = item.querySelector('description')?.textContent || '';
+        const score = item.querySelector('creator')?.textContent || ''; // dc:creator contains score
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+
+        // Parse "Album by Artist" format
+        // Examples: "Valentine by Courtney Marie Andrews", "Tragic Magic by Julianna Barwick & Mary Lattimore"
+        let artist = '';
+        let album = '';
+
+        const byMatch = titleText.match(/^(.+?)\s+by\s+(.+)$/i);
+        if (byMatch) {
+          album = byMatch[1].trim();
+          artist = byMatch[2].trim();
+        } else {
+          // Fallback: use full title as album name
+          artist = 'Unknown Artist';
+          album = titleText;
+        }
+
+        if (album) {
+          albums.push({
+            id: `critics-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+            artist: artist,
+            title: album,
+            score: parseInt(score) || null,
+            link: link,
+            description: description,
+            pubDate: pubDate ? new Date(pubDate) : null,
+            albumArt: null // Will be fetched separately
+          });
+        }
+      });
+
+      return albums;
+    } catch (error) {
+      console.error('Error parsing Critic\'s Picks RSS:', error);
+      return [];
+    }
+  };
+
+  // Load Critic's Picks from RSS feed
+  const loadCriticsPicks = async () => {
+    if (criticsPicksLoading || criticsPicksLoaded.current) return;
+
+    setCriticsPicksLoading(true);
+    console.log('📰 Loading Critic\'s Picks...');
+
+    try {
+      const response = await fetch('https://fetchrss.com/rss/6749eb6afa8030e1220ad6736749eb5b3c110a8c250ae1c2.xml');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch RSS: ${response.status}`);
+      }
+
+      const rssText = await response.text();
+      const albums = parseCriticsPicksRSS(rssText);
+
+      console.log(`📰 Parsed ${albums.length} albums from Critic's Picks`);
+
+      // Set albums immediately (without album art)
+      setCriticsPicks(albums);
+      criticsPicksLoaded.current = true;
+
+      // Fetch album art in background
+      fetchCriticsPicksAlbumArt(albums);
+
+    } catch (error) {
+      console.error('Failed to load Critic\'s Picks:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load Critic\'s Picks. Please try again.'
+      });
+    } finally {
+      setCriticsPicksLoading(false);
+    }
+  };
+
+  // Fetch album art for Critic's Picks in background
+  const fetchCriticsPicksAlbumArt = async (albums) => {
+    // First pass: check cache for all albums (instant, no network)
+    const albumsNeedingFetch = [];
+    const cachedUpdates = [];
+
+    for (const album of albums) {
+      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+      const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
+
+      if (cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url) {
+        // We have cached art - collect for batch update
+        cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
+      } else if (cachedReleaseId !== null) {
+        // No cached art or release ID not yet looked up - need to fetch
+        albumsNeedingFetch.push(album);
+      }
+      // If cachedReleaseId === null, we previously failed to find this album, skip it
+    }
+
+    // Apply cached updates immediately
+    if (cachedUpdates.length > 0) {
+      console.log(`📰 Using cached art for ${cachedUpdates.length} Critic's Picks albums`);
+      setCriticsPicks(prev => prev.map(a => {
+        const cached = cachedUpdates.find(u => u.id === a.id);
+        return cached ? { ...a, albumArt: cached.albumArt } : a;
+      }));
+    }
+
+    // Second pass: fetch art for albums not in cache
+    for (const album of albumsNeedingFetch) {
+      try {
+        const artUrl = await getAlbumArt(album.artist, album.title);
+        if (artUrl) {
+          setCriticsPicks(prev => prev.map(a =>
+            a.id === album.id ? { ...a, albumArt: artUrl } : a
+          ));
+        }
+      } catch (error) {
+        console.log(`Could not fetch art for: ${album.artist} - ${album.title}`);
+      }
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  };
+
+  // Navigate to a Critic's Picks album release page
+  const openCriticsPicksAlbum = async (album) => {
+    console.log(`🎵 Opening Critic's Pick: ${album.artist} - ${album.title}`);
+
+    try {
+      // Search MusicBrainz for the release
+      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) {
+        throw new Error('MusicBrainz search failed');
+      }
+
+      const mbData = await mbResponse.json();
+
+      if (!mbData.releases || mbData.releases.length === 0) {
+        // Fallback: just navigate to artist page
+        console.log('Release not found in MusicBrainz, navigating to artist page');
+        fetchArtistData(album.artist);
+        return;
+      }
+
+      const release = mbData.releases[0];
+      const artistCredit = release['artist-credit']?.[0];
+
+      // Create artist object for the release page
+      const artist = {
+        id: artistCredit?.artist?.id,
+        name: artistCredit?.artist?.name || album.artist
+      };
+
+      // Create release object matching the expected format
+      const releaseObj = {
+        id: release.id,
+        title: release.title,
+        date: release.date,
+        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
+        albumArt: album.albumArt
+      };
+
+      // Set artist context and fetch release data
+      setCurrentArtist(artist);
+      navigateTo('artist');
+      fetchReleaseData(releaseObj, artist);
+
+    } catch (error) {
+      console.error('Error opening Critic\'s Pick album:', error);
+      // Fallback: navigate to artist page
+      fetchArtistData(album.artist);
+    }
+  };
+
+  // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
+  const prefetchCriticsPicksTracks = async (album) => {
+    // Skip if already prefetched
+    if (prefetchedReleases[album.id]) {
+      return;
+    }
+
+    try {
+      console.log('🔍 Prefetching Critic\'s Pick tracks for:', album.title);
+
+      // Search MusicBrainz for the release
+      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) return;
+
+      const mbData = await mbResponse.json();
+      if (!mbData.releases || mbData.releases.length === 0) return;
+
+      const releaseId = mbData.releases[0].id;
+
+      // Fetch release details with tracks
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!releaseDetailsResponse.ok) return;
+
+      const releaseData = await releaseDetailsResponse.json();
+
+      // Extract tracks
+      const tracks = [];
+      if (releaseData.media && releaseData.media.length > 0) {
+        releaseData.media.forEach((medium) => {
+          if (medium.tracks) {
+            medium.tracks.forEach(track => {
+              const trackId = `${album.artist}-${track.title || 'untitled'}-${album.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              tracks.push({
+                id: trackId,
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                length: track.length,
+                recordingId: track.recording?.id,
+                artist: album.artist,
+                album: album.title,
+                albumArt: album.albumArt,
+                sources: {}
+              });
+            });
+          }
+        });
+      }
+
+      // Cache the prefetched tracks
+      setPrefetchedReleases(prev => ({
+        ...prev,
+        [album.id]: {
+          tracks,
+          title: album.title,
+          albumArt: album.albumArt,
+          artist: album.artist
+        }
+      }));
+
+      console.log(`✅ Prefetched ${tracks.length} tracks for ${album.title}`);
+    } catch (error) {
+      console.error('Error prefetching Critic\'s Pick tracks:', error);
+    }
+  };
+
+  // Add Critic's Picks album to queue
+  const addCriticsPicksToQueue = async (album) => {
+    // Check if we have prefetched tracks
+    const prefetched = prefetchedReleases[album.id];
+
+    if (prefetched?.tracks?.length > 0) {
+      addToQueue(prefetched.tracks);
+      return;
+    }
+
+    // Otherwise, fetch and add
+    await prefetchCriticsPicksTracks(album);
+    const newPrefetched = prefetchedReleases[album.id];
+    if (newPrefetched?.tracks?.length > 0) {
+      addToQueue(newPrefetched.tracks);
     }
   };
 
@@ -3970,9 +4395,14 @@ const Parachord = () => {
   const getArtistBio = async (artistName) => {
     if (!artistName) return null;
 
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) {
+      console.warn('⚠️ Last.fm API key not available, cannot fetch artist bio');
+      return null;
+    }
+
     setLoadingBio(true);
     try {
-      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
 
       const response = await fetch(url);
@@ -4006,9 +4436,14 @@ const Parachord = () => {
   const getRelatedArtists = async (artistName) => {
     if (!artistName) return [];
 
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) {
+      console.warn('⚠️ Last.fm API key not available, cannot fetch related artists');
+      return [];
+    }
+
     setLoadingRelated(true);
     try {
-      const apiKey = '3b09ef20686c217dbd8e2e8e5da1ec7a';
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=12`;
 
       const response = await fetch(url);
@@ -4300,16 +4735,24 @@ const Parachord = () => {
       }
       
       if (result.error) {
-        alert(`Failed to import playlist: ${result.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Import Failed',
+          message: result.error
+        });
         return;
       }
-      
+
       const { content, filename } = result;
-      
+
       // Parse to get playlist info
       const parsed = parseXSPF(content);
       if (!parsed) {
-        alert('Failed to parse XSPF file');
+        showConfirmDialog({
+          type: 'error',
+          title: 'Import Failed',
+          message: 'Failed to parse XSPF file'
+        });
         return;
       }
       
@@ -4320,7 +4763,11 @@ const Parachord = () => {
       const saveResult = await window.electron.playlists.save(filename, content);
       
       if (!saveResult.success) {
-        alert(`Failed to save playlist: ${saveResult.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Save Failed',
+          message: saveResult.error
+        });
         return;
       }
       
@@ -4337,10 +4784,18 @@ const Parachord = () => {
       setPlaylists(prev => [...prev, newPlaylist]);
 
       console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
-      alert(`✅ Imported playlist: ${parsed.title}`);
+      showConfirmDialog({
+        type: 'success',
+        title: 'Playlist Imported',
+        message: parsed.title
+      });
     } catch (error) {
       console.error('Import error:', error);
-      alert(`Error importing playlist: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Import Failed',
+        message: error.message
+      });
     }
   };
 
@@ -4360,7 +4815,11 @@ const Parachord = () => {
       // Parse to get playlist info
       const parsed = parseXSPF(content);
       if (!parsed) {
-        alert('Failed to parse XSPF file from URL');
+        showConfirmDialog({
+          type: 'error',
+          title: 'Import Failed',
+          message: 'Failed to parse XSPF file from URL'
+        });
         return;
       }
 
@@ -4568,15 +5027,27 @@ const Parachord = () => {
       }
       
       if (!result.success) {
-        alert(`Failed to export playlist: ${result.error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Export Failed',
+          message: result.error
+        });
         return;
       }
-      
+
       console.log(`✅ Exported to: ${result.filepath}`);
-      alert(`✅ Playlist exported successfully!`);
+      showConfirmDialog({
+        type: 'success',
+        title: 'Playlist Exported',
+        message: 'Successfully saved to disk'
+      });
     } catch (error) {
       console.error('Export error:', error);
-      alert(`Error exporting playlist: ${error.message}`);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Export Error',
+        message: error.message
+      });
     }
   };
 
@@ -4625,11 +5096,19 @@ const Parachord = () => {
         console.log('Authenticate result:', result);
       } catch (error) {
         console.error('Spotify auth error:', error);
-        alert('Spotify authentication failed. Check console for details.');
+        showConfirmDialog({
+          type: 'error',
+          title: 'Authentication Failed',
+          message: 'Spotify authentication failed. Check console for details.'
+        });
       }
     } else {
       console.error('window.electron.spotify not available!');
-      alert('Electron API not available. Make sure preload.js is loaded correctly.');
+      showConfirmDialog({
+        type: 'error',
+        title: 'API Not Available',
+        message: 'Electron API not available. Make sure preload.js is loaded correctly.'
+      });
     }
   };
 
@@ -4669,7 +5148,11 @@ useEffect(() => {
     });
     window.electron.spotify.onAuthError((error) => {
       console.error('Spotify auth failed:', error);
-      alert('Spotify authentication failed: ' + error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Spotify Authentication Failed',
+        message: error
+      });
     });
   }
 
@@ -4706,17 +5189,25 @@ const getSpotifyDevices = async () => {
 // Play on Spotify Connect (controls external Spotify clients)
 const playOnSpotifyConnect = async (track) => {
   if (!spotifyToken) {
-    alert('Spotify not connected');
+    showConfirmDialog({
+      type: 'error',
+      title: 'Spotify Not Connected',
+      message: 'Please connect to Spotify in Settings to use this feature.'
+    });
     return false;
   }
-  
+
   try {
     // Get available devices
     const devices = await getSpotifyDevices();
     console.log('Available Spotify devices:', devices);
-    
+
     if (devices.length === 0) {
-      alert('No Spotify devices found. Please open Spotify on your phone, computer, or web player (spotify.com), then try again.');
+      showConfirmDialog({
+        type: 'info',
+        title: 'No Devices Found',
+        message: 'No Spotify devices found. Please open Spotify on your phone, computer, or web player (spotify.com), then try again.'
+      });
       return false;
     }
     
@@ -4792,17 +5283,33 @@ const playOnSpotifyConnect = async (track) => {
       
       // Provide specific error messages
       if (response.status === 404) {
-        alert(`Spotify device not responding.\n\nTry:\n1. Play any song on Spotify first\n2. Then use Parachord\n\nDevice: ${activeDevice.name}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Device Not Responding',
+          message: `Spotify device "${activeDevice.name}" is not responding.\n\nTry playing any song on Spotify first, then use Parachord.`
+        });
       } else if (response.status === 403) {
-        alert('Spotify Premium required for remote playback.');
+        showConfirmDialog({
+          type: 'error',
+          title: 'Premium Required',
+          message: 'Spotify Premium is required for remote playback.'
+        });
       } else {
-        alert(`Failed to play on Spotify. Error: ${response.status}\n\n${error}`);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Playback Failed',
+          message: `Failed to play on Spotify. Error: ${response.status}`
+        });
       }
       return false;
     }
   } catch (error) {
     console.error('Spotify Connect error:', error);
-    alert('Error playing on Spotify: ' + error.message);
+    showConfirmDialog({
+      type: 'error',
+      title: 'Spotify Error',
+      message: error.message
+    });
     return false;
   }
 };
@@ -4948,15 +5455,42 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => navigateTo('discover'),
               className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-                activeView === 'discover' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+                activeView === 'discover' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
-            }, 'Charts'),
+            },
+              // Bar chart icon for Charts
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+              ),
+              'Charts'
+            ),
             React.createElement('button', {
               onClick: () => navigateTo('new-releases'),
               className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-                activeView === 'new-releases' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+                activeView === 'new-releases' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
-            }, 'New Releases')
+            },
+              // Sparkles icon for New Releases
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              'New Releases'
+            ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('critics-picks');
+                loadCriticsPicks();
+              },
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'critics-picks' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            },
+              // Award/trophy icon for Critical Darlings
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+              ),
+              "Critical Darlings"
+            )
           ),
 
           // YOUR MUSIC section
@@ -5264,8 +5798,8 @@ useEffect(() => {
         className: 'flex-1 flex flex-col',
         style: { overflow: 'hidden' }
       },
-        // Artist page hero header (not inside scrollable area) - only show when NOT viewing a release
-        !currentRelease && React.createElement('div', {
+        // Artist page hero header (not inside scrollable area) - only show when NOT viewing or loading a release
+        !currentRelease && !loadingRelease && React.createElement('div', {
           className: 'relative',
           style: {
             height: isHeaderCollapsed ? '80px' : '320px',
@@ -5427,49 +5961,148 @@ useEffect(() => {
           )
         ),
         
-        // Release page header (not inside scrollable area)
-        !loadingRelease && currentRelease && React.createElement('div', { 
-          className: 'p-6 border-b border-white/10'
+        // Release page - artist header (shows artist image/name/tabs at top)
+        !loadingRelease && currentRelease && React.createElement('div', {
+          className: 'relative',
+          style: {
+            height: '140px',
+            flexShrink: 0,
+            overflow: 'hidden'
+          }
         },
-          React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('button', {
-              onClick: () => setCurrentRelease(null),
-              className: 'p-2 hover:bg-white/10 rounded-full transition-colors no-drag',
-              title: 'Back to artist'
-            }, 
-              React.createElement('svg', {
-                className: 'w-6 h-6',
-                fill: 'none',
-                viewBox: '0 0 24 24',
-                stroke: 'currentColor'
+          // Background image with gradient overlay
+          artistImage && React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              backgroundImage: `url(${artistImage})`,
+              backgroundSize: 'cover',
+              backgroundPosition: artistImagePosition,
+              filter: 'blur(0px)'
+            }
+          }),
+          // Gradient overlay for readability
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              background: artistImage
+                ? 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(17,17,17,0.95) 100%)'
+                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+            }
+          }),
+          // Artist info overlay (inline layout for release page)
+          React.createElement('div', {
+            className: 'absolute inset-0 flex items-center px-8 z-10'
+          },
+            // Left side: Artist name
+            React.createElement('h1', {
+              className: 'text-2xl font-bold mr-8 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag',
+              style: {
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap'
               },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  strokeWidth: 2,
-                  d: 'M15 19l-7-7 7-7'
-                })
-              )
+              onClick: () => {
+                const artistName = currentRelease?.artist?.name || currentArtist?.name;
+                setCurrentRelease(null);
+                // Ensure full artist data is loaded
+                if (artistName && artistReleases.length === 0) {
+                  fetchArtistData(artistName);
+                }
+              },
+              title: 'Back to artist'
+            }, currentRelease.artist?.name || currentArtist?.name),
+            // Center: Navigation tabs
+            React.createElement('div', {
+              className: 'flex items-center gap-1',
+              style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+            },
+              ['music', 'biography', 'related'].map((tab, index) => [
+                index > 0 && React.createElement('span', {
+                  key: `sep-release-${tab}`,
+                  className: 'text-gray-400 mx-2'
+                }, '|'),
+                React.createElement('button', {
+                  key: `release-${tab}`,
+                  onClick: async () => {
+                    // Go back to artist page and switch to the selected tab
+                    const artistName = currentRelease?.artist?.name || currentArtist?.name;
+                    setCurrentRelease(null);
+                    setArtistPageTab(tab);
+                    // Ensure full artist data is loaded if navigating to music tab
+                    if (tab === 'music' && artistName && artistReleases.length === 0) {
+                      fetchArtistData(artistName);
+                    }
+                    if (tab === 'biography' && !artistBio && artistName) {
+                      // Ensure artist data is loaded first
+                      if (artistReleases.length === 0) {
+                        fetchArtistData(artistName);
+                      }
+                      const bioData = await getArtistBio(artistName);
+                      if (bioData) setArtistBio(bioData);
+                    }
+                    if (tab === 'related' && relatedArtists.length === 0 && artistName) {
+                      // Ensure artist data is loaded first
+                      if (artistReleases.length === 0) {
+                        fetchArtistData(artistName);
+                      }
+                      const related = await getRelatedArtists(artistName);
+                      if (related.length > 0) setRelatedArtists(related);
+                    }
+                  },
+                  className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                    tab === 'music'
+                      ? 'text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`
+                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+              ]).flat().filter(Boolean)
             ),
-            React.createElement('div', null,
-              React.createElement('h1', { className: 'text-3xl font-bold' }, currentRelease.title),
-              React.createElement('p', { className: 'text-sm text-gray-400 mt-1' }, 
-                `${currentRelease.artist.name} • ${currentRelease.date ? currentRelease.date.split('-')[0] : 'Unknown'}`
-              )
-            )
+            // Right side: Start Album Station button
+            React.createElement('button', {
+              onClick: () => console.log('Start Album Station - placeholder'),
+              className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+              style: {
+                backgroundColor: '#E91E63',
+                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+              }
+            }, 'Start Album Station')
           )
         ),
-        
-        // Release page content (scrollable)
-        !loadingRelease && currentRelease && React.createElement('div', { 
-          className: 'scrollable-content',
-          style: { 
+
+        // Release page content (scrollable) - new layout with album details header
+        !loadingRelease && currentRelease && React.createElement('div', {
+          className: 'scrollable-content bg-white',
+          style: {
             flex: 1,
             overflowY: 'scroll',
-            padding: '24px',
             pointerEvents: 'auto'
           }
         },
+          // ALBUM DETAILS section header with Close button
+          React.createElement('div', {
+            className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+          },
+            React.createElement('span', {
+              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
+            }, 'Album Details'),
+            React.createElement('button', {
+              onClick: () => {
+                // Clear the release view
+                setCurrentRelease(null);
+                // If artist releases aren't loaded, fetch full artist data
+                const artistName = currentRelease?.artist?.name || currentArtist?.name;
+                if (artistName && artistReleases.length === 0) {
+                  fetchArtistData(artistName);
+                }
+              },
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            },
+              'CLOSE',
+              React.createElement('span', { className: 'text-gray-400' }, '×')
+            )
+          ),
+          // Two-column layout: album art + metadata on left, tracklist on right
           React.createElement(ReleasePage, {
             release: currentRelease,
             handleSearch: handleSearchInput,
@@ -5492,8 +6125,8 @@ useEffect(() => {
           })
         ),
         
-        // Loading state for artist
-        !currentRelease && loadingArtist && React.createElement('div', { 
+        // Loading state for artist - hide when loading a release
+        !currentRelease && !loadingRelease && loadingArtist && React.createElement('div', {
           className: 'flex-1 flex items-center justify-center'
         },
           React.createElement('div', { className: 'text-center' },
@@ -5505,8 +6138,8 @@ useEffect(() => {
           )
         ),
         
-        // Artist content (scrollable) - only show if no release is being viewed
-        !currentRelease && !loadingArtist && currentArtist && React.createElement('div', {
+        // Artist content (scrollable) - only show if no release is being viewed or loaded
+        !currentRelease && !loadingRelease && !loadingArtist && currentArtist && React.createElement('div', {
           ref: artistPageScrollRef,
           className: 'scrollable-content',
           style: {
@@ -5862,79 +6495,131 @@ useEffect(() => {
       
       // Main content area - Normal views (Library, Search, etc.)
       : React.createElement('div', {
-        className: 'flex-1 overflow-y-auto p-6 scrollable-content',
-        style: { 
-          minHeight: 0, 
+        className: `flex-1 overflow-y-auto scrollable-content ${
+          // No padding for views with full-bleed heroes
+          ['library', 'discover', 'new-releases', 'critics-picks', 'playlists'].includes(activeView) ? '' : 'p-6'
+        }`,
+        style: {
+          minHeight: 0,
           flexBasis: 0,
           pointerEvents: activeView === 'artist' || activeView === 'playlist-view' ? 'none' : 'auto'
         }
       },
+        // Shared header - only show for views without custom heroes
+        !['library', 'discover', 'new-releases', 'critics-picks', 'playlists', 'settings'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
-            activeView === 'settings' ? '' :
-            activeView === 'library' ? 'My Library' :
-            activeView === 'playlists' ? 'Playlists' :
             activeView === 'playlist-view' && selectedPlaylist ? selectedPlaylist.title :
             activeView === 'friends' ? 'Friends' :
             'Discover'
           )
         ),
-        // Library view - always shows library tracks
-        activeView === 'library' && React.createElement('div', { className: 'space-y-2' },
-          library.length === 0 ?
-            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-              'Your library is empty. Search for music to add tracks!'
+
+        // Library view with hero
+        activeView === 'library' && React.createElement('div', {
+          className: 'h-full overflow-y-auto scrollable-content'
+        },
+          // Hero section
+          React.createElement('div', {
+            className: 'relative h-64 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 overflow-hidden'
+          },
+            // Background pattern - vinyl/music notes
+            React.createElement('div', {
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'8\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'3\' fill=\'%23000\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Hero content
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', null,
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' })
+                  ),
+                  `${library.length} Tracks`
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'My Collection'),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Your personal music library')
+              )
             )
-          :
-          library.map((track, index) =>
-            React.createElement(TrackRow, {
-              key: track.id,
-              track: track,
-              isPlaying: isPlaying && currentTrack?.id === track.id,
-              handlePlay: (track) => {
-                // Queue tracks AFTER the clicked track (not including it)
-                const tracksAfter = library.slice(index + 1);
-                setCurrentQueue(tracksAfter);
-                handlePlay(track);
-              },
-              onArtistClick: fetchArtistData,
-              onContextMenu: (track) => {
-                if (window.electron?.contextMenu?.showTrackMenu) {
-                  window.electron.contextMenu.showTrackMenu({
-                    type: 'track',
-                    track: track
-                  });
-                }
-              },
-              allResolvers: allResolvers,
-              resolverOrder: resolverOrder,
-              activeResolvers: activeResolvers
-            })
+          ),
+          // Content area
+          React.createElement('div', { className: 'p-6' },
+            library.length === 0 ?
+              React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                React.createElement('div', { className: 'text-5xl mb-4' }, '📚'),
+                React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Your Collection is Empty'),
+                React.createElement('div', { className: 'text-sm' }, 'Search for music to add tracks!')
+              )
+            :
+            React.createElement('div', { className: 'space-y-2' },
+              library.map((track, index) =>
+                React.createElement(TrackRow, {
+                  key: track.id,
+                  track: track,
+                  isPlaying: isPlaying && currentTrack?.id === track.id,
+                  handlePlay: (track) => {
+                    // Queue tracks AFTER the clicked track (not including it)
+                    const tracksAfter = library.slice(index + 1);
+                    setCurrentQueue(tracksAfter);
+                    handlePlay(track);
+                  },
+                  onArtistClick: fetchArtistData,
+                  onContextMenu: (track) => {
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'track',
+                        track: track
+                      });
+                    }
+                  },
+                  allResolvers: allResolvers,
+                  resolverOrder: resolverOrder,
+                  activeResolvers: activeResolvers
+                })
+              )
+            )
           )
         ),
-        // Playlists View - Tomahawk/Rdio style with hero header
+
+        // Playlists View - with hero header
         activeView === 'playlists' && React.createElement('div', { className: 'flex flex-col h-full' },
           // Hero Header
           React.createElement('div', {
-            className: 'relative h-64 flex-shrink-0 bg-gradient-to-b from-gray-300 to-gray-200 flex items-center justify-center overflow-hidden'
+            className: 'relative h-64 flex-shrink-0 bg-gradient-to-br from-rose-500 via-pink-500 to-fuchsia-600 overflow-hidden'
           },
-            // Placeholder background image (to be replaced with actual hero image)
+            // Background pattern - playlist/music lines
             React.createElement('div', {
-              className: 'absolute inset-0 bg-cover bg-center opacity-60',
-              style: { backgroundImage: 'url(https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1200&q=80)' }
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'2\'%3E%3Cpath d=\'M5 15h50M5 30h35M5 45h45\'/%3E%3Ccircle cx=\'50\' cy=\'30\' r=\'5\' fill=\'%23ffffff\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
             }),
-            // Overlay gradient
-            React.createElement('div', { className: 'absolute inset-0 bg-gradient-to-b from-transparent via-white/30 to-white/80' }),
             // Hero content
-            React.createElement('div', { className: 'relative z-10 text-center' },
-              React.createElement('div', { className: 'flex items-center justify-center gap-3 mb-2' },
-                React.createElement('div', { className: 'w-3 h-3 bg-green-500 rounded-full' })
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', { className: 'flex-1' },
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+                  ),
+                  `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Playlists'),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Your curated music collections')
               ),
-              React.createElement('h1', { className: 'text-4xl font-light text-gray-800 tracking-wide mb-2' }, 'PLAYLISTS'),
-              React.createElement('p', { className: 'text-gray-600 mb-4' }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`),
+              // Import button
               React.createElement('button', {
                 onClick: () => setShowUrlImportDialog(true),
-                className: 'inline-flex items-center gap-2 px-6 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-full transition-colors text-sm font-medium'
+                className: 'inline-flex items-center gap-2 px-5 py-2.5 bg-white text-gray-900 rounded-full transition-colors text-sm font-medium hover:bg-gray-100 shadow-lg'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
@@ -6086,12 +6771,226 @@ useEffect(() => {
         activeView === 'friends' && React.createElement('div', {
           className: 'text-center py-12 text-gray-400'
         }, '👥 Connect with friends to see what they\'re listening to'),
+
+        // Charts view with hero
         activeView === 'discover' && React.createElement('div', {
-          className: 'text-center py-12 text-gray-400'
-        }, '📻 Discover new music from trending charts'),
+          className: 'h-full overflow-y-auto scrollable-content'
+        },
+          // Hero section
+          React.createElement('div', {
+            className: 'relative h-64 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600 overflow-hidden'
+          },
+            // Background pattern
+            React.createElement('div', {
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.4\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Hero content
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', null,
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' })
+                  ),
+                  'Trending Now'
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Charts'),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Discover what\'s trending in music right now')
+              )
+            )
+          ),
+          // Placeholder content
+          React.createElement('div', { className: 'p-6' },
+            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+              React.createElement('div', { className: 'text-5xl mb-4' }, '📊'),
+              React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Charts Coming Soon'),
+              React.createElement('div', { className: 'text-sm' }, 'We\'re working on bringing you the hottest charts')
+            )
+          )
+        ),
+
+        // New Releases view with hero
         activeView === 'new-releases' && React.createElement('div', {
-          className: 'text-center py-12 text-gray-400'
-        }, '🆕 New releases coming soon'),
+          className: 'h-full overflow-y-auto scrollable-content'
+        },
+          // Hero section
+          React.createElement('div', {
+            className: 'relative h-64 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 overflow-hidden'
+          },
+            // Background pattern - sparkles
+            React.createElement('div', {
+              className: 'absolute inset-0 opacity-30',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Hero content
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', null,
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                  ),
+                  'Fresh Music'
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'New Releases'),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'The latest albums and singles, just dropped')
+              )
+            )
+          ),
+          // Placeholder content
+          React.createElement('div', { className: 'p-6' },
+            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+              React.createElement('div', { className: 'text-5xl mb-4' }, '✨'),
+              React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'New Releases Coming Soon'),
+              React.createElement('div', { className: 'text-sm' }, 'Stay tuned for the freshest music')
+            )
+          )
+        ),
+
+        // Critic's Picks view with hero
+        activeView === 'critics-picks' && React.createElement('div', {
+          className: 'h-full overflow-y-auto scrollable-content'
+        },
+          // Hero section
+          React.createElement('div', {
+            className: 'relative h-64 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 overflow-hidden'
+          },
+            // Background pattern - award/star pattern
+            React.createElement('div', {
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Cpath d=\'M40 5l4.5 13.8h14.5l-11.7 8.5 4.5 13.8L40 32.6l-11.8 8.5 4.5-13.8-11.7-8.5h14.5z\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Hero content
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', null,
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4' })
+                  ),
+                  'Critically Acclaimed'
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, "Critical Darlings"),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Top-rated albums from leading music publications')
+              )
+            )
+          ),
+          // Content area
+          React.createElement('div', { className: 'p-6' },
+
+          // Loading state
+          criticsPicksLoading && React.createElement('div', {
+            className: 'flex items-center justify-center py-12'
+          },
+            React.createElement('div', {
+              className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
+            })
+          ),
+
+          // Albums grid
+          !criticsPicksLoading && criticsPicks.length > 0 && React.createElement('div', {
+            className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+          },
+            criticsPicks.map(album =>
+              React.createElement('div', {
+                key: album.id,
+                className: 'group cursor-pointer',
+                onMouseEnter: () => prefetchCriticsPicksTracks(album),
+                onClick: () => openCriticsPicksAlbum(album)
+              },
+                // Album art with hover overlay
+                React.createElement('div', {
+                  className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
+                },
+                  album.albumArt ?
+                    React.createElement('img', {
+                      src: album.albumArt,
+                      alt: album.title,
+                      className: 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
+                    })
+                  :
+                    React.createElement('div', {
+                      className: 'w-full h-full flex items-center justify-center text-white/80 text-4xl'
+                    }, '💿'),
+                  // Metacritic score badge
+                  album.score && React.createElement('div', {
+                    className: `absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold ${
+                      album.score >= 80 ? 'bg-green-500 text-white' :
+                      album.score >= 60 ? 'bg-yellow-500 text-black' :
+                      'bg-red-500 text-white'
+                    }`
+                  }, album.score),
+                  // Hover overlay with Add to Queue button
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
+                  },
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        addCriticsPicksToQueue(album);
+                      },
+                      className: 'bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg'
+                    },
+                      React.createElement('svg', {
+                        className: 'w-4 h-4',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor'
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          strokeWidth: 2,
+                          d: 'M12 4v16m8-8H4'
+                        })
+                      ),
+                      'Add to Queue'
+                    )
+                  )
+                ),
+                // Album info
+                React.createElement('div', { className: 'space-y-1' },
+                  React.createElement('div', {
+                    className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                  }, album.title),
+                  React.createElement('div', {
+                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      fetchArtistData(album.artist);
+                    }
+                  }, album.artist)
+                )
+              )
+            )
+          ),
+
+          // Empty state
+            !criticsPicksLoading && criticsPicks.length === 0 && React.createElement('div', {
+              className: 'text-center py-12 text-gray-400'
+            },
+              React.createElement('div', { className: 'text-4xl mb-4' }, '📰'),
+              React.createElement('div', null, 'No albums found. Try refreshing.')
+            )
+          )
+        ),
+
         activeView === 'settings' && React.createElement('div', {
           className: 'flex h-full'
         },
@@ -6606,12 +7505,17 @@ useEffect(() => {
                 const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
                 setShowUrlImportDialog(false);
                 setUrlImportValue('');
-                alert(result.updated
-                  ? `🔄 Updated playlist: ${result.playlist.title}`
-                  : `✅ Imported playlist: ${result.playlist.title}`
-                );
+                showConfirmDialog({
+                  type: 'success',
+                  title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
+                  message: result.playlist.title
+                });
               } catch (error) {
-                alert(`❌ Failed to import: ${error.message}`);
+                showConfirmDialog({
+                  type: 'error',
+                  title: 'Import Failed',
+                  message: error.message
+                });
               } finally {
                 setUrlImportLoading(false);
               }
@@ -6796,6 +7700,64 @@ useEffect(() => {
               className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
             }, 'Done')
           )
+        )
+      )
+    ),
+
+    // Confirmation Dialog Modal
+    confirmDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]',
+      onClick: (e) => {
+        if (e.target === e.currentTarget) closeConfirmDialog();
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden transform transition-all',
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header with colored indicator
+        React.createElement('div', {
+          className: `px-6 pt-6 pb-4 flex flex-col items-center text-center`
+        },
+          // Icon based on type
+          React.createElement('div', {
+            className: `w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
+              confirmDialog.type === 'success' ? 'bg-green-100' :
+              confirmDialog.type === 'error' ? 'bg-red-100' :
+              'bg-purple-100'
+            }`
+          },
+            React.createElement('span', {
+              className: 'text-3xl'
+            }, confirmDialog.type === 'success' ? '✓' :
+               confirmDialog.type === 'error' ? '✕' : 'ℹ')
+          ),
+          // Title
+          confirmDialog.title && React.createElement('h3', {
+            className: `text-lg font-semibold mb-2 ${
+              confirmDialog.type === 'success' ? 'text-green-800' :
+              confirmDialog.type === 'error' ? 'text-red-800' :
+              'text-gray-900'
+            }`
+          }, confirmDialog.title),
+          // Message
+          confirmDialog.message && React.createElement('p', {
+            className: 'text-gray-600 text-sm leading-relaxed'
+          }, confirmDialog.message)
+        ),
+        // Footer with button
+        React.createElement('div', { className: 'px-6 pb-6 pt-2' },
+          React.createElement('button', {
+            onClick: () => {
+              if (confirmDialog.onConfirm) confirmDialog.onConfirm();
+              closeConfirmDialog();
+            },
+            className: `w-full py-3 px-4 rounded-xl font-medium transition-colors ${
+              confirmDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700 text-white' :
+              confirmDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700 text-white' :
+              'bg-purple-600 hover:bg-purple-700 text-white'
+            }`
+          }, 'OK')
         )
       )
     ),

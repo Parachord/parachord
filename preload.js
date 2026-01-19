@@ -118,5 +118,10 @@ contextBridge.exposeInMainWorld('electron', {
         callback(eventType);
       });
     }
+  },
+
+  // Config - expose select environment variables to renderer
+  config: {
+    get: (key) => ipcRenderer.invoke('config-get', key)
   }
 });

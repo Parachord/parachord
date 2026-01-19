@@ -269,6 +269,17 @@ ipcMain.handle('store-delete', (event, key) => {
   return true;
 });
 
+// Config handler - expose select environment variables to renderer
+// Only expose whitelisted keys for security
+const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'QOBUZ_APP_ID'];
+ipcMain.handle('config-get', (event, key) => {
+  if (ALLOWED_CONFIG_KEYS.includes(key)) {
+    return process.env[key] || null;
+  }
+  console.warn(`⚠️ Attempted to access non-whitelisted config key: ${key}`);
+  return null;
+});
+
 // Spotify OAuth handler
 ipcMain.handle('spotify-auth', async () => {
   // Get credentials from environment variables
