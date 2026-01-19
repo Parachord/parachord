@@ -171,6 +171,75 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, allR
   );
 });
 
+// RelatedArtistCard component - Shows artist image with name below
+const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadImage = async () => {
+      setImageLoading(true);
+      const result = await getArtistImage(artist.name);
+      if (!cancelled && result?.url) {
+        setImageUrl(result.url);
+      }
+      if (!cancelled) {
+        setImageLoading(false);
+      }
+    };
+    loadImage();
+    return () => { cancelled = true; };
+  }, [artist.name, getArtistImage]);
+
+  return React.createElement('button', {
+    onClick: onNavigate,
+    className: 'group text-center no-drag transition-transform hover:scale-105'
+  },
+    // Artist image container
+    React.createElement('div', {
+      className: 'w-full aspect-square rounded-lg overflow-hidden mb-2',
+      style: {
+        background: imageUrl ? 'none' : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'
+      }
+    },
+      imageLoading && React.createElement('div', {
+        className: 'w-full h-full flex items-center justify-center'
+      },
+        React.createElement('div', {
+          className: 'w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin'
+        })
+      ),
+      !imageLoading && imageUrl && React.createElement('img', {
+        src: imageUrl,
+        alt: artist.name,
+        className: 'w-full h-full object-cover'
+      }),
+      !imageLoading && !imageUrl && React.createElement('div', {
+        className: 'w-full h-full flex items-center justify-center'
+      },
+        React.createElement('svg', {
+          className: 'w-12 h-12 text-white/50',
+          fill: 'none',
+          viewBox: '0 0 24 24',
+          stroke: 'currentColor',
+          strokeWidth: 2
+        },
+          React.createElement('path', {
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'
+          })
+        )
+      )
+    ),
+    // Artist name
+    React.createElement('p', {
+      className: 'text-sm font-medium text-black group-hover:text-purple-600 transition-colors truncate'
+    }, artist.name)
+  );
+};
+
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
@@ -265,7 +334,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, isVisible = tru
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
-        color: 'white',
+        color: 'black',
         pointerEvents: 'none'  // KEY FIX!
       },
       title: release.title
@@ -4999,23 +5068,17 @@ useEffect(() => {
                 className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
               })
             ),
-            // Related artists grid
+            // Related artists grid (sorted by match, highest first)
             !loadingRelated && relatedArtists.length > 0 && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-6'
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
-              relatedArtists.map((artist, index) =>
-                React.createElement('button', {
+              [...relatedArtists].sort((a, b) => b.match - a.match).map((artist, index) =>
+                React.createElement(RelatedArtistCard, {
                   key: `related-${index}`,
-                  onClick: () => handleSearchInput(artist.name),
-                  className: 'group p-4 bg-white/5 hover:bg-white/10 rounded-lg transition-all text-left no-drag'
-                },
-                  React.createElement('div', { className: 'font-medium text-white group-hover:text-purple-400 transition-colors' },
-                    artist.name
-                  ),
-                  React.createElement('div', { className: 'text-sm text-gray-500 mt-1' },
-                    `${artist.match}% match`
-                  )
-                )
+                  artist: artist,
+                  getArtistImage: getArtistImage,
+                  onNavigate: () => handleSearchInput(artist.name)
+                })
               )
             ),
             // No related artists found
