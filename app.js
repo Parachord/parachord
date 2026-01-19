@@ -6290,9 +6290,14 @@ useEffect(() => {
           React.createElement('div', {
             className: 'w-16 h-16 flex items-center justify-center'
           }, SERVICE_LOGOS[selectedResolver.id] || React.createElement('span', { className: 'text-4xl' }, selectedResolver.icon)),
-          // Name and description
+          // Name and version
           React.createElement('div', { className: 'flex-1 text-white' },
-            React.createElement('h2', { className: 'text-xl font-bold' }, selectedResolver.name),
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('h2', { className: 'text-xl font-bold' }, selectedResolver.name),
+              selectedResolver.version && React.createElement('span', {
+                className: 'px-2 py-0.5 bg-white/20 rounded text-xs'
+              }, 'v', selectedResolver.version)
+            ),
             React.createElement('p', { className: 'text-white/80 text-sm' }, selectedResolver.author || 'Parachord Team')
           ),
           // Close button
@@ -6394,14 +6399,47 @@ useEffect(() => {
           )
         ),
 
-        // Modal footer
+        // Modal footer with action buttons
         React.createElement('div', {
-          className: 'px-6 py-4 bg-gray-50 flex justify-end'
+          className: 'px-6 py-4 bg-gray-50 flex items-center justify-between'
         },
-          React.createElement('button', {
-            onClick: () => setSelectedResolver(null),
-            className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
-          }, 'Done')
+          // Left side: Remove button (only for user-installed resolvers)
+          React.createElement('div', null,
+            // Check if this is a user-installed resolver (not built-in)
+            !['spotify', 'bandcamp', 'qobuz', 'musicbrainz'].includes(selectedResolver.id) &&
+              React.createElement('button', {
+                onClick: async () => {
+                  await handleUninstallResolver(selectedResolver.id);
+                  setSelectedResolver(null);
+                },
+                className: 'px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+              }, 'Remove')
+          ),
+          // Right side: Update button (if available) and Done
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            // Update button - show if marketplace has newer version
+            (() => {
+              const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === selectedResolver.id);
+              const hasUpdate = marketplaceResolver && marketplaceResolver.version !== selectedResolver.version;
+              if (hasUpdate) {
+                return React.createElement('button', {
+                  onClick: async () => {
+                    await handleInstallFromMarketplace(marketplaceResolver);
+                    setSelectedResolver(null);
+                  },
+                  disabled: installingResolvers.has(selectedResolver.id),
+                  className: `px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors ${
+                    installingResolvers.has(selectedResolver.id) ? 'opacity-50 cursor-not-allowed' : ''
+                  }`
+                }, installingResolvers.has(selectedResolver.id) ? 'Updating...' : `Update to v${marketplaceResolver.version}`);
+              }
+              return null;
+            })(),
+            React.createElement('button', {
+              onClick: () => setSelectedResolver(null),
+              className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
+            }, 'Done')
+          )
         )
       )
     ),
