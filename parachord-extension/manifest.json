@@ -5,7 +5,9 @@
   "description": "Connect your browser to Parachord desktop for playback control and content discovery",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "alarms",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",

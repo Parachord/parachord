@@ -23,6 +23,8 @@
     event: 'connected',
     site: site,
     url: window.location.href
+  }).catch(() => {
+    // Background script may not be ready yet, will retry via message queue
   });
 
   // Get video/audio element based on site
@@ -46,8 +48,6 @@
       } else if (attempts < maxAttempts) {
         attempts++;
         setTimeout(check, 200);
-      } else {
-        console.warn('[Parachord] Media element not found after', maxAttempts, 'attempts');
       }
     }
 
@@ -56,50 +56,43 @@
 
   // Set up media event listeners
   function setupMediaListeners(media) {
-    console.log('[Parachord] Setting up media listeners');
-
     media.addEventListener('play', () => {
-      console.log('[Parachord] Media playing');
       chrome.runtime.sendMessage({
         type: 'event',
         event: 'playing',
         site: site
-      });
+      }).catch(() => {});
     });
 
     media.addEventListener('pause', () => {
-      console.log('[Parachord] Media paused');
       chrome.runtime.sendMessage({
         type: 'event',
         event: 'paused',
         site: site
-      });
+      }).catch(() => {});
     });
 
     media.addEventListener('ended', () => {
-      console.log('[Parachord] Media ended');
       chrome.runtime.sendMessage({
         type: 'event',
         event: 'ended',
         site: site
-      });
+      }).catch(() => {});
     });
 
-    // Report initial state
+    // Report initial state if already playing
     if (!media.paused) {
       chrome.runtime.sendMessage({
         type: 'event',
         event: 'playing',
         site: site
-      });
+      }).catch(() => {});
     }
   }
 
   // Handle commands from background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type !== 'command') return;
-
-    console.log('[Parachord] Received command:', message.action);
 
     const media = getMediaElement();
 
@@ -117,15 +110,13 @@
     // Fallback: direct media control
     if (media) {
       if (message.action === 'play') {
-        media.play().catch(err => console.error('[Parachord] Play failed:', err));
+        media.play().catch(() => {});
       } else if (message.action === 'pause') {
         media.pause();
       } else if (message.action === 'stop') {
         media.pause();
         media.currentTime = 0;
       }
-    } else {
-      console.warn('[Parachord] No media element found for command');
     }
   });
 
@@ -137,7 +128,6 @@
   const observer = new MutationObserver(() => {
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href;
-      console.log('[Parachord] URL changed, re-initializing');
       waitForMedia(setupMediaListeners);
 
       // Notify about new page
@@ -146,7 +136,7 @@
         event: 'connected',
         site: site,
         url: window.location.href
-      });
+      }).catch(() => {});
     }
   });
 

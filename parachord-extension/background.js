@@ -10,13 +10,17 @@ let activeTabId = null;
 // Connection state
 let isConnected = false;
 
+// Queue for messages that arrive before WebSocket is connected
+let pendingMessages = [];
+
+// Track tab ID being programmatically closed (to avoid clearing activeTabId)
+let programmaticCloseTabId = null;
+
 // Connect to Parachord desktop
 function connect() {
   if (socket && socket.readyState === WebSocket.OPEN) {
     return;
   }
-
-  console.log('[Parachord] Connecting to desktop app...');
 
   try {
     socket = new WebSocket(PARACHORD_WS_URL);
@@ -29,12 +33,20 @@ function connect() {
       // Update badge to show connected status
       chrome.action.setBadgeText({ text: '' });
       chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
+
+      // Send any queued messages
+      if (pendingMessages.length > 0) {
+        pendingMessages.forEach(msg => {
+          socket.send(JSON.stringify(msg));
+        });
+        pendingMessages = [];
+      }
     };
 
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('[Parachord] Received:', message);
+        console.log('[Parachord] WebSocket received:', message.type, message.action || message.event || '');
         handleDesktopMessage(message);
       } catch (error) {
         console.error('[Parachord] Failed to parse message:', error);
@@ -42,7 +54,6 @@ function connect() {
     };
 
     socket.onclose = () => {
-      console.log('[Parachord] Disconnected from desktop app');
       isConnected = false;
       socket = null;
 
@@ -54,11 +65,10 @@ function connect() {
       scheduleReconnect();
     };
 
-    socket.onerror = (error) => {
-      console.error('[Parachord] WebSocket error:', error);
+    socket.onerror = () => {
+      // Error will trigger onclose, which handles reconnection
     };
   } catch (error) {
-    console.error('[Parachord] Failed to create WebSocket:', error);
     scheduleReconnect();
   }
 }
@@ -66,7 +76,6 @@ function connect() {
 function scheduleReconnect() {
   clearReconnectTimer();
   reconnectTimer = setTimeout(() => {
-    console.log('[Parachord] Attempting to reconnect...');
     connect();
   }, 5000);
 }
@@ -84,18 +93,39 @@ function sendToDesktop(message) {
     socket.send(JSON.stringify(message));
     return true;
   }
-  console.warn('[Parachord] Cannot send - not connected');
+  // Queue the message if not connected yet
+  pendingMessages.push(message);
+  connect();
   return false;
 }
 
 // Handle messages from desktop
 function handleDesktopMessage(message) {
+  console.log('[Parachord] handleDesktopMessage:', JSON.stringify(message));
   if (message.type === 'command') {
-    // Forward command to content script
-    if (activeTabId) {
-      chrome.tabs.sendMessage(activeTabId, message).catch(err => {
-        console.error('[Parachord] Failed to send to content script:', err);
+    console.log('[Parachord] Command received, action:', message.action, 'tabId:', message.tabId);
+    if (message.action === 'closeTab' && message.tabId) {
+      // Close the specified tab
+      console.log('[Parachord] Closing tab:', message.tabId);
+      // Mark as programmatic close so onRemoved doesn't clear activeTabId or send tabClosed
+      programmaticCloseTabId = message.tabId;
+      chrome.tabs.remove(message.tabId).then(() => {
+        console.log('[Parachord] Tab closed successfully:', message.tabId);
+        // Clear the flag after a short delay to allow onRemoved to check it
+        setTimeout(() => {
+          if (programmaticCloseTabId === message.tabId) {
+            programmaticCloseTabId = null;
+          }
+        }, 100);
+      }).catch((err) => {
+        console.error('[Parachord] Failed to close tab:', message.tabId, err);
+        programmaticCloseTabId = null;
       });
+    } else {
+      // Forward other commands to content script
+      if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, message).catch(() => {});
+      }
     }
   } else if (message.type === 'injectCode') {
     // Inject browser control code from resolver
@@ -117,7 +147,6 @@ async function injectBrowserControlCode(tabId, code) {
           pause: codeObj.browserPause ? new Function('return (' + codeObj.browserPause + ')();') : null,
           getState: codeObj.browserGetState ? new Function('return (' + codeObj.browserGetState + ')();') : null
         };
-        console.log('[Parachord] Browser control code injected');
       },
       args: [code]
     });
@@ -128,8 +157,6 @@ async function injectBrowserControlCode(tabId, code) {
 
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('[Parachord] Message from content script:', message);
-
   if (message.type === 'event') {
     // Track active tab for playback events
     if (message.event === 'connected' && sender.tab) {
@@ -143,17 +170,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Forward to desktop
     sendToDesktop(message);
+
+    sendResponse({ received: true });
+    return true;
   } else if (message.type === 'getStatus') {
-    // Content script asking for connection status
     sendResponse({ connected: isConnected });
     return true;
   }
+
+  return true;
 });
 
 // Handle tab close - notify desktop if it was the active playback tab
 chrome.tabs.onRemoved.addListener((tabId) => {
+  // Skip if this was a programmatic close (switching tracks)
+  if (tabId === programmaticCloseTabId) {
+    console.log('[Parachord] Ignoring programmatic tab close for:', tabId);
+    return;
+  }
+
   if (tabId === activeTabId) {
-    console.log('[Parachord] Active playback tab closed');
+    console.log('[Parachord] User closed playback tab:', tabId);
     sendToDesktop({
       type: 'event',
       event: 'tabClosed',
@@ -166,9 +203,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Handle command to close a tab from desktop
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'closeTab' && message.tabId) {
-    chrome.tabs.remove(message.tabId).catch(err => {
-      console.error('[Parachord] Failed to close tab:', err);
-    });
+    chrome.tabs.remove(message.tabId).catch(() => {});
   }
 });
 
@@ -183,4 +218,44 @@ chrome.runtime.onStartup.addListener(() => {
 // Reconnect on install/update
 chrome.runtime.onInstalled.addListener(() => {
   connect();
+});
+
+// Keep-alive mechanism using Chrome alarms API
+// This survives service worker restarts
+const KEEP_ALIVE_ALARM = 'parachord-keepalive';
+
+// Set up alarm for keep-alive (fires every 20 seconds)
+chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 0.33 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === KEEP_ALIVE_ALARM) {
+    // Check connection and reconnect if needed
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      connect();
+    } else {
+      // Send ping to keep connection alive
+      socket.send(JSON.stringify({ type: 'ping' }));
+    }
+
+    // Re-send heartbeat if we have an active tab
+    if (activeTabId && socket && socket.readyState === WebSocket.OPEN) {
+      chrome.tabs.get(activeTabId).then(tab => {
+        if (tab && tab.url) {
+          let site = 'unknown';
+          if (tab.url.includes('youtube.com')) site = 'youtube';
+          else if (tab.url.includes('bandcamp.com')) site = 'bandcamp';
+
+          socket.send(JSON.stringify({
+            type: 'event',
+            event: 'heartbeat',
+            site: site,
+            tabId: activeTabId,
+            url: tab.url
+          }));
+        }
+      }).catch(() => {
+        activeTabId = null;
+      });
+    }
+  }
 });

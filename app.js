@@ -1012,19 +1012,17 @@ const Parachord = () => {
 
     // Message handler for extension events
     window.electron.extension.onMessage((message) => {
-      console.log('📨 Extension message:', message);
-
       if (message.type === 'event') {
         switch (message.event) {
           case 'connected':
             // Browser tab with media content connected
-            console.log(`🎬 Browser playback connected: ${message.site} - ${message.url}`);
+            console.log(`🎬 Browser playback connected: ${message.site}`);
             setActiveExtensionTabId(message.tabId);
             setBrowserPlaybackActive(true);
+            setIsExternalPlayback(true);
 
             // Close previous tab if one was pending
-            if (pendingCloseTabIdRef.current) {
-              console.log('🗑️ Closing previous tab:', pendingCloseTabIdRef.current);
+            if (pendingCloseTabIdRef.current && pendingCloseTabIdRef.current !== message.tabId) {
               window.electron.extension.sendCommand({
                 type: 'command',
                 action: 'closeTab',
@@ -1037,6 +1035,9 @@ const Parachord = () => {
           case 'playing':
             console.log('▶️ Browser playback playing');
             setIsPlaying(true);
+            // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
+            setBrowserPlaybackActive(true);
+            setIsExternalPlayback(true);
             break;
 
           case 'paused':
@@ -1054,11 +1055,27 @@ const Parachord = () => {
             break;
 
           case 'tabClosed':
-            console.log('🚪 Browser tab closed by user');
             setBrowserPlaybackActive(false);
             setActiveExtensionTabId(null);
-            // Treat as skip to next
-            handleNext();
+            // Check if this was a programmatic close (switching tracks)
+            if (pendingCloseTabIdRef.current && message.tabId === pendingCloseTabIdRef.current) {
+              console.log('🔄 Browser tab closed programmatically (switching tracks)');
+              pendingCloseTabIdRef.current = null;
+              // Don't call handleNext() - we're already loading the selected track
+            } else {
+              console.log('🚪 Browser tab closed by user');
+              // Treat as skip to next
+              handleNext();
+            }
+            break;
+
+          case 'heartbeat':
+            // Keep-alive from extension - silently maintain active state
+            if (message.tabId) {
+              setActiveExtensionTabId(message.tabId);
+              setBrowserPlaybackActive(true);
+              setIsExternalPlayback(true);
+            }
             break;
         }
       }
@@ -1603,6 +1620,20 @@ const Parachord = () => {
       return;
     }
 
+    // Close previous browser tab if one is active
+    if (activeExtensionTabId && extensionConnected) {
+      console.log('🔄 Closing previous browser tab:', activeExtensionTabId);
+      // Mark this as a programmatic close so tabClosed handler doesn't call handleNext()
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'closeTab',
+        tabId: activeExtensionTabId
+      });
+      setActiveExtensionTabId(null);
+      setBrowserPlaybackActive(false);
+    }
+
     // Open in external browser FIRST
     try {
       const config = getResolverConfig(resolverId);
@@ -1772,6 +1803,19 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // Stop browser playback if active
+    if (browserPlaybackActive && activeExtensionTabId) {
+      console.log('⏹️ Stopping browser playback before next track');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'pause'
+      });
+      // Store the tab ID to close when next track connects
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    }
+
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -1825,6 +1869,19 @@ const Parachord = () => {
   };
 
   const handlePrevious = async () => {
+    // Stop browser playback if active
+    if (browserPlaybackActive && activeExtensionTabId) {
+      console.log('⏹️ Stopping browser playback before previous track');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'pause'
+      });
+      // Store the tab ID to close when next track connects
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    }
+
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -3696,7 +3753,10 @@ const playOnSpotifyConnect = async (track) => {
       console.log('✅ Playing on Spotify:', activeDevice.name);
       setCurrentTrack(track);
       setIsPlaying(true);
-      
+      // Reset browser playback state since we're now using Spotify Connect
+      setBrowserPlaybackActive(false);
+      setIsExternalPlayback(false);
+
       // Don't call getCurrentPlaybackState() here - let polling handle it
       // This prevents flickering when starting playback
       return true;
@@ -3724,29 +3784,35 @@ const playOnSpotifyConnect = async (track) => {
 // Get current playback state from Spotify
 const getCurrentPlaybackState = async () => {
   if (!spotifyToken) return;
-  
+
+  // Don't update track info from Spotify when browser playback is active
+  // This prevents overwriting the current track with whatever Spotify last played
+  if (browserPlaybackActive || isExternalPlayback) {
+    return;
+  }
+
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player', {
       headers: {
         'Authorization': `Bearer ${spotifyToken}`
       }
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       if (data && data.item) {
         const newIsPlaying = data.is_playing;
         const newProgress = data.progress_ms / 1000;
         const newTrackId = `spotify-${data.item.id}`;
-        
+
         // Only update if something changed
         if (isPlaying !== newIsPlaying) {
           setIsPlaying(newIsPlaying);
         }
-        
+
         // Update progress (always, for smooth progress bar)
         setProgress(newProgress);
-        
+
         // Only update track if it's different
         if (currentTrack?.id !== newTrackId) {
           setCurrentTrack({
@@ -4763,8 +4829,8 @@ useEffect(() => {
           )
         )
       :
-      isExternalPlayback ?
-        // External Playback State
+      isExternalPlayback && !browserPlaybackActive ?
+        // External Playback State (no extension control)
         React.createElement('div', { className: 'flex flex-col items-center space-y-4 w-full' },
           React.createElement('div', { className: 'text-center' },
             React.createElement('div', { className: 'text-sm text-slate-400 mb-2' }, '🌐 Playing in browser'),
@@ -4850,6 +4916,9 @@ useEffect(() => {
                   (() => {
                     const resolverId = determineResolverIdFromTrack(currentTrack);
                     const resolver = allResolvers.find(r => r.id === resolverId);
+                    if (browserPlaybackActive && resolver) {
+                      return `🌐 Playing in browser via ${resolver.name}`;
+                    }
                     return resolver ? `▶️ via ${resolver.name}` : null;
                   })()
                 )
@@ -4860,14 +4929,16 @@ useEffect(() => {
             }, React.createElement(Heart))
           ),
           React.createElement('div', { className: 'flex items-center gap-4' },
-            React.createElement('span', { className: 'text-sm text-gray-400 w-12 text-right' }, formatTime(progress)),
+            React.createElement('span', { className: `text-sm w-12 text-right ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(progress)),
             React.createElement('div', { className: 'flex-1' },
               React.createElement('input', {
                 type: 'range',
                 min: '0',
-                max: currentTrack.duration,
-                value: progress,
+                max: currentTrack.duration || 100,
+                value: browserPlaybackActive ? 0 : progress,
+                disabled: browserPlaybackActive,
                 onChange: async (e) => {
+                  if (browserPlaybackActive) return;
                   const newPosition = Number(e.target.value);
                   setProgress(newPosition);
 
@@ -4881,10 +4952,10 @@ useEffect(() => {
                     }
                   }
                 },
-                className: 'w-full h-1 bg-white/20 rounded-full appearance-none cursor-pointer'
+                className: `w-full h-1 rounded-full appearance-none ${browserPlaybackActive ? 'bg-white/10 cursor-not-allowed opacity-50' : 'bg-white/20 cursor-pointer'}`
               })
             ),
-            React.createElement('span', { className: 'text-sm text-gray-400 w-12' }, formatTime(currentTrack.duration))
+            React.createElement('span', { className: `text-sm w-12 ${browserPlaybackActive ? 'text-gray-600' : 'text-gray-400'}` }, browserPlaybackActive ? '--:--' : formatTime(currentTrack.duration))
           ),
           React.createElement('div', { className: 'flex items-center justify-center gap-4 mt-2' },
             // Playback controls
