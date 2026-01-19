@@ -70,7 +70,8 @@ contextBridge.exposeInMainWorld('electron', {
     load: () => ipcRenderer.invoke('playlists-load'),
     import: () => ipcRenderer.invoke('playlists-import'),
     save: (filename, xspfContent) => ipcRenderer.invoke('playlists-save', filename, xspfContent),
-    export: (defaultFilename, xspfContent) => ipcRenderer.invoke('playlists-export', defaultFilename, xspfContent)
+    export: (defaultFilename, xspfContent) => ipcRenderer.invoke('playlists-export', defaultFilename, xspfContent),
+    delete: (playlistId) => ipcRenderer.invoke('playlists-delete', playlistId)
   },
 
   // Browser extension operations

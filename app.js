@@ -688,8 +688,8 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
               
               // Resolver icons (sources available for this track)
               React.createElement('div', {
-                className: 'flex items-center gap-1 flex-shrink-0',
-                style: { pointerEvents: 'none', minHeight: '24px' }
+                className: 'flex items-center gap-1 flex-shrink-0 ml-auto',
+                style: { pointerEvents: 'none', minHeight: '24px', width: '100px', justifyContent: 'flex-end' }
               },
                 (() => {
                   const trackKey = `${track.position}-${track.title}`;
@@ -840,6 +840,8 @@ const Parachord = () => {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
+  const [draggedPlaylistTrack, setDraggedPlaylistTrack] = useState(null); // For playlist track reordering
+  const [playlistDropTarget, setPlaylistDropTarget] = useState(null); // Index where track will be dropped
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -886,6 +888,7 @@ const Parachord = () => {
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
+  const [queueDropTarget, setQueueDropTarget] = useState(null); // Index where track will be dropped in queue
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
@@ -1556,10 +1559,28 @@ const Parachord = () => {
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
-      window.electron.contextMenu.onAction((data) => {
+      window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           addToQueue(data.tracks);
+        } else if (data.action === 'delete-playlist' && data.playlistId) {
+          // Show confirmation alert
+          const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
+          if (confirmed) {
+            const result = await window.electron.playlists.delete(data.playlistId);
+            if (result.success) {
+              // Remove from state
+              setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
+              // Clear cover cache for deleted playlist
+              setAllPlaylistCovers(prev => {
+                const updated = { ...prev };
+                delete updated[data.playlistId];
+                return updated;
+              });
+            } else {
+              alert(`Failed to delete playlist: ${result.error}`);
+            }
+          }
         }
       });
     }
@@ -1615,10 +1636,12 @@ const Parachord = () => {
               ...playlist,
               title: parsed?.title || playlist.id,
               creator: parsed?.creator || 'Unknown',
-              tracks: parsed?.tracks || []
+              tracks: parsed?.tracks || [],
+              createdAt: parsed?.date || playlist.createdAt || null, // Use XSPF date if available
+              lastModified: playlist.lastModified || null
             };
           });
-          
+
           setPlaylists(parsedPlaylists);
         } else {
           console.log('📋 No playlists found - playlists/ folder is empty');
@@ -2481,6 +2504,24 @@ const Parachord = () => {
       console.log(`🔀 Moved track from index ${fromIndex} to ${toIndex}`);
       return newQueue;
     });
+  };
+
+  const moveInPlaylist = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    setPlaylistTracks(prev => {
+      const newTracks = [...prev];
+      const [removed] = newTracks.splice(fromIndex, 1);
+      newTracks.splice(toIndex, 0, removed);
+      console.log(`🔀 Moved playlist track from index ${fromIndex} to ${toIndex}`);
+      return newTracks;
+    });
+    // Update lastModified on the selected playlist
+    if (selectedPlaylist) {
+      setSelectedPlaylist(prev => ({ ...prev, lastModified: Date.now() }));
+      setPlaylists(prev => prev.map(p =>
+        p.id === selectedPlaylist.id ? { ...p, lastModified: Date.now() } : p
+      ));
+    }
   };
 
   const clearQueue = () => {
@@ -3950,10 +3991,15 @@ const Parachord = () => {
     try {
       const parser = new DOMParser();
       const xml = parser.parseFromString(xspfString, 'text/xml');
-      
+
+      // Parse date from XSPF (ISO 8601 format)
+      const dateStr = xml.querySelector('playlist > date')?.textContent;
+      const parsedDate = dateStr ? new Date(dateStr).getTime() : null;
+
       const playlist = {
         title: xml.querySelector('playlist > title')?.textContent || 'Untitled Playlist',
         creator: xml.querySelector('playlist > creator')?.textContent || 'Unknown',
+        date: parsedDate, // Original creation date from XSPF
         tracks: []
       };
       
@@ -4575,6 +4621,19 @@ const Parachord = () => {
     return covers;
   };
 
+  // Fetch and update covers for a single playlist (used after import)
+  const fetchPlaylistCovers = async (playlistId, tracks) => {
+    if (!tracks || tracks.length === 0) return;
+
+    const covers = await getPlaylistCovers(playlistId, tracks);
+    if (covers.length > 0) {
+      setAllPlaylistCovers(prev => ({
+        ...prev,
+        [playlistId]: covers
+      }));
+    }
+  };
+
   // State for current playlist's cover art grid
   const [playlistCoverArt, setPlaylistCoverArt] = useState([]);
 
@@ -4905,10 +4964,15 @@ const Parachord = () => {
         title: parsed.title,
         creator: parsed.creator,
         tracks: parsed.tracks || [],
-        xspf: content
+        xspf: content,
+        createdAt: parsed.date || Date.now(), // Use XSPF date or import time
+        lastModified: Date.now()
       };
 
       setPlaylists(prev => [...prev, newPlaylist]);
+
+      // Fetch covers for the 2x2 grid display immediately
+      fetchPlaylistCovers(id, parsed.tracks || []);
 
       console.log(`✅ Imported playlist: ${parsed.title} (${newPlaylist.tracks.length} tracks)`);
       showConfirmDialog({
@@ -4985,10 +5049,14 @@ const Parachord = () => {
         tracks: parsed.tracks || [],
         xspf: content,
         sourceUrl: url,  // Track the source URL for updates
-        lastUpdated: Date.now()
+        createdAt: parsed.date || Date.now(), // Use XSPF date or import time
+        lastModified: Date.now()
       };
 
       setPlaylists(prev => [...prev, newPlaylist]);
+
+      // Fetch covers for the 2x2 grid display immediately
+      fetchPlaylistCovers(id, parsed.tracks || []);
 
       // Save URL to persistent storage for reload on app start
       // Skip this when loading from storage to avoid duplicates
@@ -6610,7 +6678,15 @@ useEffect(() => {
                 }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
                 React.createElement('p', {
                   className: 'text-sm text-gray-500'
-                }, `${playlistTracks.length.toString().padStart(2, '0')} Songs`)
+                }, `${playlistTracks.length.toString().padStart(2, '0')} Songs`),
+                // Created date
+                selectedPlaylist.createdAt && React.createElement('p', {
+                  className: 'text-xs text-gray-400'
+                }, `Created: ${new Date(selectedPlaylist.createdAt).toLocaleDateString()}`),
+                // Last modified date
+                selectedPlaylist.lastModified && React.createElement('p', {
+                  className: 'text-xs text-gray-400'
+                }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`)
               )
             ),
 
@@ -6621,13 +6697,43 @@ useEffect(() => {
                   playlistTracks.map((track, index) => {
                     const hasResolved = Object.keys(track.sources || {}).length > 0;
                     const isResolving = Object.keys(track.sources || {}).length === 0;
+                    const isDraggedOver = playlistDropTarget === index;
+                    const isDragging = draggedPlaylistTrack === index;
 
                     return React.createElement('div', {
-                      key: index,
-                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
+                      key: track.id || index,
+                      draggable: true,
+                      onDragStart: (e) => {
+                        setDraggedPlaylistTrack(index);
+                        e.dataTransfer.effectAllowed = 'move';
+                      },
+                      onDragEnd: () => {
+                        setDraggedPlaylistTrack(null);
+                        setPlaylistDropTarget(null);
+                      },
+                      onDragOver: (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
+                          setPlaylistDropTarget(index);
+                        }
+                      },
+                      onDragLeave: () => {
+                        setPlaylistDropTarget(null);
+                      },
+                      onDrop: (e) => {
+                        e.preventDefault();
+                        if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
+                          moveInPlaylist(draggedPlaylistTrack, index);
+                        }
+                        setDraggedPlaylistTrack(null);
+                        setPlaylistDropTarget(null);
+                      },
+                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors no-drag group ${
                         isResolving ? 'opacity-60' : ''
-                      }`,
+                      } ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''}`,
                       onClick: () => {
+                        if (draggedPlaylistTrack !== null) return; // Don't play if dragging
                         const tracksAfter = playlistTracks.slice(index + 1);
                         setCurrentQueue(tracksAfter);
                         handlePlay(track);
@@ -6672,7 +6778,7 @@ useEffect(() => {
 
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end',
+                        className: 'flex items-center gap-1 justify-end ml-auto',
                         style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                       },
                         isResolving ?
@@ -6934,6 +7040,7 @@ useEffect(() => {
                         });
                         window.electron.contextMenu.showTrackMenu({
                           type: 'playlist',
+                          playlistId: playlist.id,
                           name: playlist.name,
                           tracks: tracksWithIds
                         });
@@ -8110,18 +8217,40 @@ useEffect(() => {
                 return aIndex - bIndex;
               });
 
+              const isDraggedOver = queueDropTarget === index;
+              const isDragging = draggedQueueTrack === index;
+
               return React.createElement('div', {
                 key: track.id,
                 draggable: !isLoading && !isError,
-                onDragStart: () => !isLoading && !isError && setDraggedQueueTrack(index),
-                onDragOver: (e) => e.preventDefault(),
-                onDrop: () => {
+                onDragStart: (e) => {
+                  if (!isLoading && !isError) {
+                    setDraggedQueueTrack(index);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }
+                },
+                onDragEnd: () => {
+                  setDraggedQueueTrack(null);
+                  setQueueDropTarget(null);
+                },
+                onDragOver: (e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
+                    setQueueDropTarget(index);
+                  }
+                },
+                onDragLeave: () => {
+                  setQueueDropTarget(null);
+                },
+                onDrop: (e) => {
+                  e.preventDefault();
                   if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
                     moveInQueue(draggedQueueTrack, index);
                   }
                   setDraggedQueueTrack(null);
+                  setQueueDropTarget(null);
                 },
-                onDragEnd: () => setDraggedQueueTrack(null),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
@@ -8133,9 +8262,10 @@ useEffect(() => {
                 },
                 className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
                   isCurrentTrack ? 'bg-purple-50' : ''
-                } ${draggedQueueTrack === index ? 'opacity-50' : ''} ${
+                } ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${
                   isError ? 'opacity-50' : ''
-                } ${isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
+                } ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${
+                  isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
               },
                 // Track number / status indicator - fixed width
                 React.createElement('span', {
@@ -8215,6 +8345,8 @@ useEffect(() => {
                       if (!resolver) return null;
                       const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
                       const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                      const source = track.sources?.[resolverId];
+                      const confidence = source?.confidence || 0;
                       return React.createElement('button', {
                         key: resolverId,
                         onClick: (e) => {
@@ -8235,11 +8367,12 @@ useEffect(() => {
                           fontSize: '10px',
                           fontWeight: 'bold',
                           color: 'white',
+                          opacity: confidence > 0.8 ? 1 : 0.6,
                           transition: 'transform 0.1s'
                         },
                         onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                         onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                        title: `Play via ${resolver.name}`
+                        title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
                       }, abbrev);
                     })
                   :

@@ -802,7 +802,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuLabel = 'Add to Queue';
   }
 
-  const menu = Menu.buildFromTemplate([
+  const menuItems = [
     {
       label: menuLabel,
       enabled: enabled,
@@ -815,7 +815,24 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     }
-  ]);
+  ];
+
+  // Add delete option for playlists
+  if (data.type === 'playlist' && data.playlistId) {
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Delete Playlist',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'delete-playlist',
+          playlistId: data.playlistId,
+          name: data.name
+        });
+      }
+    });
+  }
+
+  const menu = Menu.buildFromTemplate(menuItems);
 
   menu.popup({ window: mainWindow });
 
@@ -988,6 +1005,42 @@ ipcMain.handle('playlists-save', async (event, filename, xspfContent) => {
     return { success: true, filepath };
   } catch (error) {
     console.error('  ❌ Save failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playlists-delete', async (event, playlistId) => {
+  console.log('=== Delete Playlist ===');
+  console.log('  Playlist ID:', playlistId);
+
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  try {
+    const playlistsDir = path.join(__dirname, 'playlists');
+    const files = await fs.readdir(playlistsDir);
+    const xspfFiles = files.filter(f => f.endsWith('.xspf'));
+
+    // Find the playlist file by ID
+    for (const filename of xspfFiles) {
+      const filepath = path.join(playlistsDir, filename);
+      const content = await fs.readFile(filepath, 'utf8');
+
+      // Extract the ID from the XSPF content or filename
+      // ID is typically the filename without extension, or derived from content
+      const filenameId = filename.replace('.xspf', '');
+
+      if (filenameId === playlistId || content.includes(`<identifier>${playlistId}</identifier>`)) {
+        await fs.unlink(filepath);
+        console.log('  ✅ Deleted:', filepath);
+        return { success: true, deletedFile: filename };
+      }
+    }
+
+    console.log('  ❌ Playlist not found');
+    return { success: false, error: 'Playlist not found' };
+  } catch (error) {
+    console.error('  ❌ Delete failed:', error.message);
     return { success: false, error: error.message };
   }
 });
