@@ -596,6 +596,7 @@ const Parachord = () => {
   const [browserPlaybackActive, setBrowserPlaybackActive] = useState(false);
   const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
   const pendingCloseTabIdRef = useRef(null);
+  const streamingPlaybackActiveRef = useRef(false); // Track when playing via Spotify/streaming to ignore browser events
 
   // URL drag & drop helpers
   const isValidUrl = (string) => {
@@ -1033,6 +1034,11 @@ const Parachord = () => {
             break;
 
           case 'playing':
+            // Ignore browser events when streaming playback (Spotify) is active
+            if (streamingPlaybackActiveRef.current) {
+              console.log('▶️ Browser playback playing (ignored - streaming active)');
+              break;
+            }
             console.log('▶️ Browser playback playing');
             setIsPlaying(true);
             // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
@@ -1041,6 +1047,11 @@ const Parachord = () => {
             break;
 
           case 'paused':
+            // Ignore browser events when streaming playback (Spotify) is active
+            if (streamingPlaybackActiveRef.current) {
+              console.log('⏸️ Browser playback paused (ignored - streaming active)');
+              break;
+            }
             console.log('⏸️ Browser playback paused');
             setIsPlaying(false);
             break;
@@ -1071,7 +1082,8 @@ const Parachord = () => {
 
           case 'heartbeat':
             // Keep-alive from extension - silently maintain active state
-            if (message.tabId) {
+            // Ignore when streaming playback (Spotify) is active
+            if (message.tabId && !streamingPlaybackActiveRef.current) {
               setActiveExtensionTabId(message.tabId);
               setBrowserPlaybackActive(true);
               setIsExternalPlayback(true);
@@ -1395,6 +1407,7 @@ const Parachord = () => {
     if (!resolver.capabilities.stream) {
       // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
+      streamingPlaybackActiveRef.current = false; // Allow browser events for external playback
       // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
       // Merge source with original track, explicitly preserving queue-essential properties
       const trackToSet = trackOrSource.sources ?
@@ -1427,6 +1440,7 @@ const Parachord = () => {
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
         // This ensures we don't show "Playing in browser" for Spotify Connect playback
         if (resolver.capabilities.stream) {
+          streamingPlaybackActiveRef.current = true; // Mark streaming active to ignore browser events
           setBrowserPlaybackActive(false);
           setIsExternalPlayback(false);
         }
