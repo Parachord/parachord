@@ -4643,9 +4643,9 @@ useEffect(() => {
                   isResolving ? 'opacity-60' : ''
                 }`,
                 onClick: () => {
-                  // Queue tracks starting from clicked track to end of playlist
-                  const tracksFromHere = playlistTracks.slice(index);
-                  setCurrentQueue(tracksFromHere);
+                  // Queue tracks AFTER the clicked track (not including it)
+                  const tracksAfter = playlistTracks.slice(index + 1);
+                  setCurrentQueue(tracksAfter);
                   handlePlay(track);  // Pass full track object - will resolve if needed
                 }
               },
@@ -4690,9 +4690,9 @@ useEffect(() => {
                           className: 'no-drag',
                           onClick: (e) => {
                             e.stopPropagation();
-                            // Queue tracks starting from clicked track to end of playlist
-                            const tracksFromHere = playlistTracks.slice(index);
-                            setCurrentQueue(tracksFromHere);
+                            // Queue tracks AFTER the clicked track (not including it)
+                            const tracksAfter = playlistTracks.slice(index + 1);
+                            setCurrentQueue(tracksAfter);
                             // Pass track with preferredResolver hint so queue ID is preserved
                             handlePlay({ ...track, preferredResolver: resolverId });
                           },
@@ -4769,9 +4769,9 @@ useEffect(() => {
               track: track,
               isPlaying: isPlaying && currentTrack?.id === track.id,
               handlePlay: (track) => {
-                // Queue tracks starting from clicked track to end of library
-                const tracksFromHere = library.slice(index);
-                setCurrentQueue(tracksFromHere);
+                // Queue tracks AFTER the clicked track (not including it)
+                const tracksAfter = library.slice(index + 1);
+                setCurrentQueue(tracksAfter);
                 handlePlay(track);
               },
               onArtistClick: fetchArtistData,
