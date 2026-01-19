@@ -5773,8 +5773,73 @@ useEffect(() => {
           React.createElement('div', {
             className: 'flex-1 overflow-y-auto p-8'
           },
-            // Placeholder content for now
-            React.createElement('div', { className: 'text-gray-500' }, 'Settings content placeholder')
+            // Installed Resolvers Tab
+            settingsTab === 'installed' && React.createElement('div', null,
+              // Header
+              React.createElement('div', { className: 'flex items-center justify-between mb-8' },
+                React.createElement('div', null,
+                  React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Installed Resolvers'),
+                  React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
+                    'Select the platforms you want to stream music from. Parachord works better when more services are activated.'
+                  )
+                ),
+                // Add from file button
+                React.createElement('button', {
+                  onClick: handleInstallResolver,
+                  className: 'px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' })
+                  ),
+                  'Add from file'
+                )
+              ),
+              // Resolver grid
+              React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+              },
+                resolverOrder.map((resolverId, index) => {
+                  const resolver = allResolvers.find(r => r.id === resolverId);
+                  if (!resolver) return null;
+
+                  const isActive = activeResolvers.includes(resolver.id);
+
+                  return React.createElement(ResolverCard, {
+                    key: resolver.id,
+                    resolver: resolver,
+                    isActive: isActive,
+                    showToggle: true,
+                    draggable: true,
+                    onToggle: () => toggleResolver(resolver.id),
+                    onDragStart: (e) => handleResolverDragStart(e, resolver.id),
+                    onDragOver: handleResolverDragOver,
+                    onDrop: (e) => handleResolverDrop(e, resolver.id),
+                    onDragEnd: handleResolverDragEnd,
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      if (window.electron?.resolvers?.showContextMenu) {
+                        window.electron.resolvers.showContextMenu(resolver.id);
+                      }
+                    }
+                  });
+                })
+              )
+            ),
+
+            // Marketplace Tab (placeholder for next task)
+            settingsTab === 'marketplace' && React.createElement('div', { className: 'text-gray-500 text-center py-12' },
+              'Marketplace content - next task'
+            ),
+
+            // General Tab (placeholder)
+            settingsTab === 'general' && React.createElement('div', {
+              className: 'flex items-center justify-center h-64 text-gray-400'
+            }, 'General settings coming soon'),
+
+            // About Tab (placeholder)
+            settingsTab === 'about' && React.createElement('div', {
+              className: 'flex items-center justify-center h-64 text-gray-400'
+            }, 'About coming soon')
           )
         )
       )
