@@ -616,6 +616,7 @@ const Parachord = () => {
   });
   const [activeView, setActiveView] = useState('library');
   const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
+  const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
@@ -2458,6 +2459,12 @@ const Parachord = () => {
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
+
+    // Save current artist to history stack before loading new one (for back navigation)
+    if (currentArtist && currentArtist.name !== artistName) {
+      setArtistHistory(prev => [...prev, currentArtist.name]);
+    }
+
     setLoadingArtist(true);
     setArtistImage(null); // Clear previous artist's image immediately
     setArtistImagePosition('center 25%'); // Reset to default position
@@ -3725,6 +3732,68 @@ const Parachord = () => {
   };
 
   const navigateBack = () => {
+    // If we're on artist page and have artist history, go to previous artist
+    if (activeView === 'artist' && artistHistory.length > 0) {
+      const newArtistHistory = [...artistHistory];
+      const previousArtist = newArtistHistory.pop();
+      setArtistHistory(newArtistHistory);
+
+      // Load the previous artist (without adding current to history again)
+      setLoadingArtist(true);
+      setArtistImage(null);
+      setArtistImagePosition('center 25%');
+
+      // Fetch the previous artist's data
+      const loadPreviousArtist = async () => {
+        const cacheKey = previousArtist.toLowerCase();
+        const cachedData = artistDataCache.current[cacheKey];
+        const now = Date.now();
+        const currentResolverHash = getResolverSettingsHash();
+
+        const cacheValid = cachedData &&
+                          (now - cachedData.timestamp) < CACHE_TTL.artistData &&
+                          cachedData.resolverHash === currentResolverHash;
+
+        if (cacheValid) {
+          setCurrentArtist(cachedData.artist);
+          getArtistImage(previousArtist).then(result => {
+            if (result) {
+              setArtistImage(result.url);
+              setArtistImagePosition(result.facePosition || 'center 25%');
+            }
+          });
+          const releasesWithCache = cachedData.releases.map(release => ({
+            ...release,
+            albumArt: albumArtCache.current[release.id] || null
+          }));
+          setArtistReleases(releasesWithCache);
+          setLoadingArtist(false);
+          fetchAlbumArtLazy(cachedData.releases);
+        } else {
+          // Refetch if not in cache (rare case)
+          // Use a simplified approach - just call fetchArtistData but prevent history push
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(previousArtist)}&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+          );
+          const searchData = await searchResponse.json();
+          if (searchData.artists?.[0]) {
+            const artist = searchData.artists[0];
+            setCurrentArtist(artist);
+            getArtistImage(previousArtist).then(result => {
+              if (result) {
+                setArtistImage(result.url);
+                setArtistImagePosition(result.facePosition || 'center 25%');
+              }
+            });
+          }
+          setLoadingArtist(false);
+        }
+      };
+      loadPreviousArtist();
+      return;
+    }
+
     if (viewHistory.length > 1) {
       const newHistory = [...viewHistory];
       const currentView = newHistory.pop(); // Remove current view
@@ -3739,6 +3808,7 @@ const Parachord = () => {
         setArtistImagePosition('center 25%');
         setArtistReleases([]);
         setReleaseTypeFilter('all');
+        setArtistHistory([]); // Clear artist history when leaving artist view
       }
       if (currentView === 'release') {
         setCurrentRelease(null);
@@ -5077,7 +5147,7 @@ useEffect(() => {
                   key: `related-${index}`,
                   artist: artist,
                   getArtistImage: getArtistImage,
-                  onNavigate: () => handleSearchInput(artist.name)
+                  onNavigate: () => fetchArtistData(artist.name)
                 })
               )
             ),
