@@ -5659,7 +5659,61 @@ useEffect(() => {
         }, '📻 Discover new music from trending charts'),
         activeView === 'new-releases' && React.createElement('div', {
           className: 'text-center py-12 text-gray-400'
-        }, '🆕 New releases coming soon')
+        }, '🆕 New releases coming soon'),
+        activeView === 'settings' && React.createElement('div', {
+          className: 'flex h-full'
+        },
+          // Settings vertical tabs (left side)
+          React.createElement('div', {
+            className: 'w-48 border-r border-gray-200 py-6 flex-shrink-0'
+          },
+            React.createElement('nav', { className: 'space-y-1 px-3' },
+              // Installed Resolvers tab
+              React.createElement('button', {
+                onClick: () => setSettingsTab('installed'),
+                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
+                  settingsTab === 'installed'
+                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
+                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
+                }`
+              }, 'Installed Resolvers'),
+              // Marketplace tab
+              React.createElement('button', {
+                onClick: () => setSettingsTab('marketplace'),
+                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
+                  settingsTab === 'marketplace'
+                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
+                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
+                }`
+              }, 'Marketplace'),
+              // General tab (placeholder)
+              React.createElement('button', {
+                onClick: () => setSettingsTab('general'),
+                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
+                  settingsTab === 'general'
+                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
+                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
+                }`
+              }, 'General'),
+              // About tab (placeholder)
+              React.createElement('button', {
+                onClick: () => setSettingsTab('about'),
+                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
+                  settingsTab === 'about'
+                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
+                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
+                }`
+              }, 'About')
+            )
+          ),
+          // Settings content area (right side)
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto p-8'
+          },
+            // Placeholder content for now
+            React.createElement('div', { className: 'text-gray-500' }, 'Settings content placeholder')
+          )
+        )
       )
     )
     ), // Close the sidebar + main wrapper
