@@ -5768,6 +5768,8 @@ useEffect(() => {
                         availableSources.map(resolverId => {
                           const resolver = allResolvers.find(r => r.id === resolverId);
                           if (!resolver) return null;
+                          const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                          const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                           return React.createElement('button', {
                             key: resolverId,
                             onClick: (e) => {
@@ -5777,7 +5779,7 @@ useEffect(() => {
                             className: 'w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold text-white hover:scale-110 transition-transform cursor-pointer',
                             style: { backgroundColor: resolver.color },
                             title: `Play via ${resolver.name}`
-                          }, resolver.icon);
+                          }, abbrev);
                         })
                       :
                         React.createElement('span', {
