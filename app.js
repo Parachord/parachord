@@ -1423,6 +1423,14 @@ const Parachord = () => {
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
+
+        // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
+        // This ensures we don't show "Playing in browser" for Spotify Connect playback
+        if (resolver.capabilities.stream) {
+          setBrowserPlaybackActive(false);
+          setIsExternalPlayback(false);
+        }
+
         // Merge source with original track, explicitly preserving queue-essential properties
         const trackToSet = trackOrSource.sources ?
           {
