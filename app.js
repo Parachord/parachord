@@ -1918,50 +1918,43 @@ const Parachord = () => {
       return;
     }
 
-    const currentIndex = queue.findIndex(t => t.id === track?.id);
-    console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", currentIndex=${currentIndex}, queueLength=${queue.length}`);
+    console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", queueLength=${queue.length}`);
 
-    if (currentIndex === -1) {
-      // Current track not in queue, play first non-error track
-      console.log('⚠️ Current track not found in queue, playing first track');
-      const firstPlayable = queue.find(t => t.status !== 'error');
-      if (firstPlayable) {
-        handlePlay(firstPlayable);
-      }
-    } else {
-      // Play next non-error track, loop to beginning if at end
-      let nextIndex = (currentIndex + 1) % queue.length;
-      let attempts = 0;
+    // Queue represents upcoming tracks - current track is NOT in the queue
+    // Find the first playable track in the queue
+    const nextTrackIndex = queue.findIndex(t => t.status !== 'error');
 
-      // Skip error tracks
-      while (queue[nextIndex]?.status === 'error' && attempts < queue.length) {
-        nextIndex = (nextIndex + 1) % queue.length;
-        attempts++;
-      }
-
-      if (attempts >= queue.length) {
-        console.log('⚠️ All tracks in queue have errors');
-        return;
-      }
-
-      console.log(`➡️ Moving from index ${currentIndex} to ${nextIndex}`);
-      const nextTrack = queue[nextIndex];
-      handlePlay(nextTrack);
+    if (nextTrackIndex === -1) {
+      console.log('⚠️ No playable tracks in queue');
+      return;
     }
+
+    const nextTrack = queue[nextTrackIndex];
+
+    // Remove the track we're about to play from the queue
+    const newQueue = queue.filter((_, index) => index !== nextTrackIndex);
+    setCurrentQueue(newQueue);
+
+    console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
+    handlePlay(nextTrack);
   };
 
   // Keep handleNextRef in sync so event handlers always call the latest version
   useEffect(() => { handleNextRef.current = handleNext; });
 
   const handlePrevious = async () => {
+    // Use refs to get current values (avoids stale closure when called from event handlers)
+    const track = currentTrackRef.current;
+
+    if (!track) return;
+
     // Stop browser playback if active
     if (browserPlaybackActive && activeExtensionTabId) {
-      console.log('⏹️ Stopping browser playback before previous track');
+      console.log('⏹️ Stopping browser playback before restarting track');
       window.electron.extension.sendCommand({
         type: 'command',
         action: 'pause'
       });
-      // Store the tab ID to close when next track connects
       pendingCloseTabIdRef.current = activeExtensionTabId;
       setBrowserPlaybackActive(false);
       setActiveExtensionTabId(null);
@@ -1980,33 +1973,10 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
-    // Use refs to get current values (avoids stale closure when called from event handlers)
-    const queue = currentQueueRef.current;
-    const track = currentTrackRef.current;
-
-    if (!track) return;
-
-    // Always use our local queue for navigation
-    // (Spotify doesn't know about our queue - tracks may resolve to different services)
-    if (queue.length === 0) {
-      console.log('No queue set, cannot go to previous track');
-      return;
-    }
-
-    const currentIndex = queue.findIndex(t => t.id === track?.id);
-    console.log(`🔍 Queue navigation (prev): currentTrack.id="${track?.id}", currentIndex=${currentIndex}, queueLength=${queue.length}`);
-
-    if (currentIndex === -1) {
-      // Current track not in queue, play last track
-      console.log('⚠️ Current track not found in queue, playing last track');
-      handlePlay(queue[queue.length - 1]);
-    } else {
-      // Play previous track, loop to end if at beginning
-      const prevIndex = (currentIndex - 1 + queue.length) % queue.length;
-      console.log(`⬅️ Moving from index ${currentIndex} to ${prevIndex}`);
-      const prevTrack = queue[prevIndex];
-      handlePlay(prevTrack);
-    }
+    // In a queue-based system, "previous" restarts the current track
+    // (we don't keep history of played tracks)
+    console.log(`⬅️ Restarting current track: "${track.title}"`);
+    handlePlay(track);
   };
 
   // Queue management functions
