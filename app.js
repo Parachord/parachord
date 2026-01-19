@@ -694,13 +694,12 @@ const Parachord = () => {
   const [audioContext, setAudioContext] = useState(null);
   const [currentSource, setCurrentSource] = useState(null);
   const [startTime, setStartTime] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
   const [isExternalPlayback, setIsExternalPlayback] = useState(false);
   const [showExternalPrompt, setShowExternalPrompt] = useState(false);
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
   const externalTrackTimeoutRef = useRef(null);
   const playbackPollerRef = useRef(null);
-  const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace'
+  const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace' | 'general' | 'about'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
