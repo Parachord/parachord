@@ -3683,17 +3683,45 @@ const Parachord = () => {
 
     try {
       // Step 1: Search for artist by name to get MBID
-      const searchResponse = await fetch(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=1`,
-        {
-          headers: {
-            'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)'
+      // Helper function to fetch with retry on rate limit
+      const fetchWithRetry = async (url, maxRetries = 3) => {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          const response = await fetch(url, {
+            headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+          });
+
+          if (response.ok) {
+            return response;
+          }
+
+          if (response.status === 503 || response.status === 429) {
+            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
+            console.log(`Rate limited (${response.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            // Non-retryable error
+            return response;
           }
         }
+        // Return last response after all retries exhausted
+        return fetch(url, {
+          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+        });
+      };
+
+      const searchResponse = await fetchWithRetry(
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=1`
       );
-      
+
       if (!searchResponse.ok) {
         console.error('Artist search failed:', searchResponse.status);
+        if (searchResponse.status === 503 || searchResponse.status === 429) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Service Busy',
+            message: 'MusicBrainz is temporarily unavailable. Please try again in a few seconds.'
+          });
+        }
         setLoadingArtist(false);
         return;
       }
@@ -3719,34 +3747,14 @@ const Parachord = () => {
       const releaseTypes = ['album', 'ep', 'single'];
 
       const releasePromises = releaseTypes.map(async (type, index) => {
-        // Stagger requests by 350ms each to avoid rate limiting
+        // Stagger requests by 500ms each to avoid rate limiting
         if (index > 0) {
-          await new Promise(resolve => setTimeout(resolve, index * 350));
+          await new Promise(resolve => setTimeout(resolve, index * 500));
         }
         try {
-          const releasesResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`,
-            {
-              headers: {
-                'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)'
-              }
-            }
+          const releasesResponse = await fetchWithRetry(
+            `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`
           );
-
-          // Retry on rate limit
-          if (releasesResponse.status === 503 || releasesResponse.status === 429) {
-            console.log(`Rate limited on ${type}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            const retryResponse = await fetch(
-              `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`,
-              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-            );
-            if (retryResponse.ok) {
-              const data = await retryResponse.json();
-              return (data.releases || []).map(release => ({ ...release, releaseType: type }));
-            }
-            return [];
-          }
 
           if (releasesResponse.ok) {
             const releasesData = await releasesResponse.json();
@@ -4775,7 +4783,77 @@ const Parachord = () => {
     console.log(`Album art: ${loadedCount} loaded, ${skippedCount} from cache, ${releases.length - loadedCount - skippedCount} not found`);
   };
 
+  // Remove a resolver's sources from all track data (trackSources, playlistTracks, queue, library)
+  const removeResolverSources = (resolverId) => {
+    console.log(`🧹 Removing sources for disabled/uninstalled resolver: ${resolverId}`);
+
+    // Remove from trackSources (release/album view)
+    setTrackSources(prev => {
+      const updated = {};
+      for (const [trackKey, sources] of Object.entries(prev)) {
+        const { [resolverId]: removed, ...remainingSources } = sources;
+        if (Object.keys(remainingSources).length > 0) {
+          updated[trackKey] = remainingSources;
+        }
+      }
+      return updated;
+    });
+
+    // Remove from playlistTracks
+    setPlaylistTracks(prev =>
+      prev.map(track => {
+        if (track.sources && track.sources[resolverId]) {
+          const { [resolverId]: removed, ...remainingSources } = track.sources;
+          return { ...track, sources: remainingSources };
+        }
+        return track;
+      })
+    );
+
+    // Remove from currentQueue
+    setCurrentQueue(prev =>
+      prev.map(track => {
+        if (track.sources && track.sources[resolverId]) {
+          const { [resolverId]: removed, ...remainingSources } = track.sources;
+          return { ...track, sources: remainingSources };
+        }
+        return track;
+      })
+    );
+
+    // Remove from library
+    setLibrary(prev =>
+      prev.map(track => {
+        if (track.sources && track.sources[resolverId]) {
+          const { [resolverId]: removed, ...remainingSources } = track.sources;
+          return { ...track, sources: remainingSources };
+        }
+        return track;
+      })
+    );
+
+    // Also clean up the cache
+    if (trackSourcesCache.current) {
+      for (const [cacheKey, cacheEntry] of Object.entries(trackSourcesCache.current)) {
+        if (cacheEntry.sources && cacheEntry.sources[resolverId]) {
+          const { [resolverId]: removed, ...remainingSources } = cacheEntry.sources;
+          trackSourcesCache.current[cacheKey] = {
+            ...cacheEntry,
+            sources: remainingSources
+          };
+        }
+      }
+    }
+  };
+
   const toggleResolver = (resolverId) => {
+    const isCurrentlyActive = activeResolvers.includes(resolverId);
+
+    // If disabling, remove the resolver's sources from all tracks
+    if (isCurrentlyActive) {
+      removeResolverSources(resolverId);
+    }
+
     setActiveResolvers(prev =>
       prev.includes(resolverId)
         ? prev.filter(id => id !== resolverId)
@@ -5003,6 +5081,9 @@ const Parachord = () => {
       }
 
       console.log(`✅ Uninstalled ${resolver.name}`);
+
+      // Remove the resolver's sources from all displayed tracks
+      removeResolverSources(resolverId);
 
       // Hot-reload: Remove from state without restarting
       setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
@@ -7036,7 +7117,8 @@ ${tracks}
       await window.electron.store.delete('spotify_token_expiry');
       setSpotifyToken(null);
       setSpotifyConnected(false);
-      // Remove Spotify from active resolvers
+      // Remove Spotify sources from all tracks and remove from active resolvers
+      removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
     }
   };
@@ -7496,8 +7578,25 @@ useEffect(() => {
       className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
     },
       React.createElement('div', {
-        className: 'bg-white rounded-lg p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl'
+        className: 'bg-white rounded-lg p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl relative'
       },
+        // Close button
+        React.createElement('button', {
+          onClick: () => {
+            // Clear the auto-skip timeout
+            if (externalTrackTimeoutRef.current) {
+              clearTimeout(externalTrackTimeoutRef.current);
+              externalTrackTimeoutRef.current = null;
+            }
+            // Pause playback and dismiss the prompt
+            setIsPlaying(false);
+            setShowExternalPrompt(false);
+            setPendingExternalTrack(null);
+            console.log('⏸️ User dismissed external track prompt, pausing playback');
+          },
+          className: 'absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors',
+          title: 'Dismiss and pause'
+        }, React.createElement(X, { size: 20 })),
         React.createElement('div', { className: 'text-center mb-6' },
           React.createElement('div', { className: 'text-6xl mb-4' }, '🌐'),
           React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-2' },
