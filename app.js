@@ -1143,6 +1143,7 @@ const Parachord = () => {
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
+  const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -13303,9 +13304,7 @@ useEffect(() => {
                         resolver: resolver,
                         isInstalled: isInstalled,
                         isInstalling: isInstalling,
-                        onClick: isInstalled
-                          ? () => setSelectedResolver(installedResolver)
-                          : () => handleInstallFromMarketplace(resolver)
+                        onClick: () => setSelectedMarketplaceItem({ ...resolver, isInstalled, installedResolver })
                       });
                     })
                 )
@@ -14123,6 +14122,139 @@ useEffect(() => {
             })(),
             React.createElement('button', {
               onClick: () => setSelectedResolver(null),
+              className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
+            }, 'Done')
+          )
+        )
+      )
+    ),
+
+    // Marketplace Item Detail Modal
+    selectedMarketplaceItem && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50',
+      onClick: (e) => { if (e.target === e.currentTarget) setSelectedMarketplaceItem(null); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden'
+      },
+        // Modal header with colored background
+        React.createElement('div', {
+          className: 'p-6 flex items-center gap-4',
+          style: { backgroundColor: selectedMarketplaceItem.color || '#6B7280' }
+        },
+          // Logo
+          React.createElement('div', {
+            className: 'w-16 h-16 flex items-center justify-center'
+          }, SERVICE_LOGOS[selectedMarketplaceItem.id] || React.createElement('span', { className: 'text-4xl' }, selectedMarketplaceItem.icon)),
+          // Name and version
+          React.createElement('div', { className: 'flex-1 text-white' },
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('h2', { className: 'text-xl font-bold' }, selectedMarketplaceItem.name),
+              selectedMarketplaceItem.version && React.createElement('span', {
+                className: 'px-2 py-0.5 bg-white/20 rounded text-xs'
+              }, 'v', selectedMarketplaceItem.version)
+            ),
+            React.createElement('p', { className: 'text-white/80 text-sm' }, selectedMarketplaceItem.author || 'Unknown')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setSelectedMarketplaceItem(null),
+            className: 'w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors'
+          }, '✕')
+        ),
+        // Modal body
+        React.createElement('div', { className: 'p-6 space-y-6' },
+          // Description
+          React.createElement('p', { className: 'text-gray-600 text-sm' }, selectedMarketplaceItem.description),
+
+          // Capabilities
+          selectedMarketplaceItem.capabilities && React.createElement('div', null,
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Capabilities'),
+            React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              Object.entries(selectedMarketplaceItem.capabilities || {}).map(([cap, enabled]) => {
+                if (!enabled) return null;
+                const capLabels = {
+                  resolve: { icon: '🎯', label: 'Resolve' },
+                  search: { icon: '🔍', label: 'Search' },
+                  stream: { icon: '▶️', label: 'Stream' },
+                  browse: { icon: '📁', label: 'Browse' },
+                  urlLookup: { icon: '🔗', label: 'URL Lookup' },
+                  recommendations: { icon: '⭐', label: 'Recommendations' },
+                  metadata: { icon: '📋', label: 'Metadata' }
+                };
+                const capInfo = capLabels[cap] || { icon: '✓', label: cap };
+                return React.createElement('span', {
+                  key: cap,
+                  className: 'px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700 flex items-center gap-1'
+                }, capInfo.icon, ' ', capInfo.label);
+              })
+            )
+          ),
+
+          // Category
+          selectedMarketplaceItem.category && React.createElement('div', null,
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Category'),
+            React.createElement('span', {
+              className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs capitalize'
+            }, selectedMarketplaceItem.category)
+          ),
+
+          // Installation status
+          React.createElement('div', {
+            className: 'flex items-center gap-2 py-3 border-t border-gray-100'
+          },
+            selectedMarketplaceItem.isInstalled
+              ? React.createElement('div', { className: 'flex items-center gap-2 text-green-600 text-sm' },
+                  React.createElement('span', null, '✓'),
+                  React.createElement('span', null, 'Installed'),
+                  selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                    React.createElement('span', { className: 'text-orange-500 ml-2' },
+                      `(Update available: v${selectedMarketplaceItem.version})`
+                    )
+                )
+              : React.createElement('span', { className: 'text-gray-500 text-sm' }, 'Not installed')
+          )
+        ),
+        // Modal footer with action buttons
+        React.createElement('div', {
+          className: 'px-6 py-4 bg-gray-50 flex items-center justify-between'
+        },
+          // Left side: placeholder
+          React.createElement('div', null),
+          // Right side: Install/Uninstall and Done buttons
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            selectedMarketplaceItem.isInstalled
+              ? React.createElement(React.Fragment, null,
+                  // Update button if newer version available
+                  selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                    React.createElement('button', {
+                      onClick: async () => {
+                        await handleInstallFromMarketplace(selectedMarketplaceItem);
+                        setSelectedMarketplaceItem(null);
+                      },
+                      disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                      className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
+                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
+                  // Uninstall button (only for non-built-in)
+                  !['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id) &&
+                    React.createElement('button', {
+                      onClick: async () => {
+                        await handleUninstallResolver(selectedMarketplaceItem.id);
+                        setSelectedMarketplaceItem(null);
+                      },
+                      className: 'px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+                    }, 'Uninstall')
+                )
+              : React.createElement('button', {
+                  onClick: async () => {
+                    await handleInstallFromMarketplace(selectedMarketplaceItem);
+                    setSelectedMarketplaceItem(null);
+                  },
+                  disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                  className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
+                }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
+            React.createElement('button', {
+              onClick: () => setSelectedMarketplaceItem(null),
               className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
             }, 'Done')
           )
