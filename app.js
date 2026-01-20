@@ -976,6 +976,7 @@ const Parachord = () => {
   const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
+  const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Keep refs in sync with state
@@ -2019,6 +2020,7 @@ const Parachord = () => {
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
+      else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
       else {
         console.error('❌ Could not determine resolver for source');
         return;
@@ -2033,6 +2035,70 @@ const Parachord = () => {
 
     // YouTube embedding is blocked in Electron, use resolver's play method instead
     // (which opens in external browser)
+
+    // Handle local file playback directly with HTML5 Audio
+    if (resolverId === 'localfiles') {
+      console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
+
+      // Create audio element if needed
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+        audioRef.current.addEventListener('timeupdate', () => {
+          if (audioRef.current) {
+            setProgress(audioRef.current.currentTime);
+          }
+        });
+        audioRef.current.addEventListener('ended', () => {
+          console.log('🎵 Local file playback ended');
+          handleNextRef.current?.();
+        });
+        audioRef.current.addEventListener('error', (e) => {
+          console.error('🎵 Audio error:', e.target.error);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: 'Could not play this file. It may have been moved or deleted.'
+          });
+        });
+      }
+
+      const fileUrl = sourceToPlay.fileUrl || `file://${sourceToPlay.filePath}`;
+      audioRef.current.src = fileUrl;
+      audioRef.current.volume = volume / 100;
+
+      try {
+        await audioRef.current.play();
+
+        // Set current track state
+        const trackToSet = trackOrSource.sources ? {
+          ...sourceToPlay,
+          id: trackOrSource.id,
+          artist: trackOrSource.artist,
+          title: trackOrSource.title,
+          album: trackOrSource.album,
+          duration: sourceToPlay.duration || trackOrSource.duration,
+          albumArt: sourceToPlay.albumArt || trackOrSource.albumArt,
+          sources: trackOrSource.sources
+        } : sourceToPlay;
+
+        setCurrentTrack(trackToSet);
+        setIsPlaying(true);
+        setProgress(0);
+        streamingPlaybackActiveRef.current = false;
+        setBrowserPlaybackActive(false);
+        setIsExternalPlayback(false);
+
+        console.log('✅ Local file playing');
+      } catch (error) {
+        console.error('❌ Local file playback failed:', error);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Playback Error',
+          message: 'Could not play this file: ' + error.message
+        });
+      }
+      return;
+    }
 
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
@@ -2532,6 +2598,18 @@ const Parachord = () => {
         action: isPlaying ? 'pause' : 'play'
       });
       // State will be updated when extension sends back playing/paused event
+      return;
+    }
+
+    // Handle local file playback
+    if (audioRef.current && currentTrack?.sources?.localfiles) {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        audioRef.current.play();
+        setIsPlaying(true);
+      }
       return;
     }
 
@@ -9284,6 +9362,8 @@ useEffect(() => {
                     } catch (err) {
                       console.error('Seek error:', err);
                     }
+                  } else if (currentTrack?.sources?.localfiles && audioRef.current) {
+                    audioRef.current.currentTime = newPosition;
                   }
                 },
                 className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-700 cursor-not-allowed' : 'bg-gray-600 cursor-pointer'}`
@@ -9325,7 +9405,13 @@ useEffect(() => {
               min: '0',
               max: '100',
               value: volume,
-              onChange: (e) => setVolume(Number(e.target.value)),
+              onChange: (e) => {
+                  const newVolume = Number(e.target.value);
+                  setVolume(newVolume);
+                  if (audioRef.current) {
+                    audioRef.current.volume = newVolume / 100;
+                  }
+                },
               className: 'w-20 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer'
             })
           )
