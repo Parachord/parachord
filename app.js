@@ -8585,8 +8585,8 @@ useEffect(() => {
             className: 'p-2 rounded text-gray-600 cursor-not-allowed',
             title: 'Shuffle (coming soon)'
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+            React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 18 18', fill: 'currentColor' },
+              React.createElement('path', { d: 'M17.5,1.5l-8.6,7l-8.4-7v14.9l8.3-6.9l8.8,7.1V1.5z M1.5,14.2V3.6l6.4,5.3L1.5,14.2z M16.5,14.4L9.8,9l6.7-5.4V14.4z' })
             )
           ),
           // Repeat button (placeholder)
@@ -8595,13 +8595,17 @@ useEffect(() => {
             className: 'p-2 rounded text-gray-600 cursor-not-allowed',
             title: 'Repeat (coming soon)'
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+            React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 16 16', fill: 'currentColor' },
+              React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
             )
           ),
           // Volume
           React.createElement('div', { className: 'flex items-center gap-1' },
-            React.createElement('span', { className: 'text-gray-400' }, React.createElement(Volume2, { size: 16 })),
+            React.createElement('span', { className: 'text-gray-400' },
+              React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
+                React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
+              )
+            ),
             React.createElement('input', {
               type: 'range',
               min: '0',
