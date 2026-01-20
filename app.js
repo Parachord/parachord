@@ -392,6 +392,61 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
   );
 };
 
+// SearchArtistCard component - for quick search results with artist image
+const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadImage = async () => {
+      setImageLoading(true);
+      const result = await getArtistImage(artist.name);
+      if (!cancelled && result?.url) {
+        setImageUrl(result.url);
+      }
+      if (!cancelled) {
+        setImageLoading(false);
+      }
+    };
+    loadImage();
+    return () => { cancelled = true; };
+  }, [artist.name, getArtistImage]);
+
+  return React.createElement('button', {
+    onClick: onClick,
+    className: 'flex-shrink-0 w-28 text-left group'
+  },
+    // Artist image square
+    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden' },
+      imageLoading && React.createElement('div', {
+        className: 'w-full h-full flex items-center justify-center'
+      },
+        React.createElement('div', {
+          className: 'w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
+        })
+      ),
+      !imageLoading && imageUrl && React.createElement('img', {
+        src: imageUrl,
+        alt: artist.name,
+        className: 'w-full h-full object-cover'
+      }),
+      !imageLoading && !imageUrl && React.createElement('div', {
+        className: 'w-full h-full flex items-center justify-center text-gray-300 text-2xl'
+      }, '👤')
+    ),
+    // Artist name
+    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name),
+    // Album and song counts
+    React.createElement('div', { className: 'text-xs text-gray-500' },
+      artist['release-count'] ? `${artist['release-count']} Albums` : ''
+    ),
+    React.createElement('div', { className: 'text-xs text-gray-500' },
+      artist['recording-count'] ? `${artist['recording-count']} Songs` : ''
+    )
+  );
+};
+
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
@@ -6846,121 +6901,78 @@ useEffect(() => {
           ) // end scrollable content
         ) // end detail view container
       :
-        // MAIN VIEW - existing horizontal scroll layout with hero
+        // MAIN VIEW - clean white layout matching reference
         React.createElement('div', {
-          className: 'h-full overflow-y-auto scrollable-content bg-gray-50'
+          className: 'h-full overflow-y-auto bg-white'
         },
-          // Hero section
-          React.createElement('div', {
-            className: 'relative h-64 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 overflow-hidden'
-          },
-            // Background pattern - search/magnifying glass themed
-            React.createElement('div', {
-              className: 'absolute inset-0 opacity-20',
-              style: {
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // Close button - top right
+          // Header bar with SEARCH title and CLOSE button
+          React.createElement('div', { className: 'flex items-center gap-4 px-8 py-4 border-b border-gray-100' },
+            React.createElement('span', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SEARCH'),
             React.createElement('button', {
               onClick: () => navigateBack(),
-              className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-10'
+              className: 'flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors border border-gray-200 rounded px-3 py-1'
             },
               'CLOSE',
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-              )
-            ),
-            // Hero content
-            React.createElement('div', {
-              className: 'absolute inset-0 flex items-end p-8'
-            },
-              React.createElement('div', null,
-                React.createElement('div', {
-                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
-                },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
-                  'Explore'
-                ),
-                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Search'),
-                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Find artists, albums, tracks, and playlists')
               )
             )
           ),
 
           // Content area
-          React.createElement('div', { className: 'p-6' },
+          React.createElement('div', { className: 'px-8 py-6' },
         // Main view content
         React.createElement('div', null,
-          // Large search input
-          React.createElement('div', { className: 'pb-6' },
-          React.createElement('input', {
-            ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
-            type: 'text',
-            value: searchQuery,
-            onChange: (e) => handleSearchInput(e.target.value),
-            placeholder: 'Search artists, tracks, albums...',
-            className: 'w-full text-5xl font-light text-gray-900 bg-transparent border-none outline-none placeholder-gray-300',
-            style: { caretColor: '#6b7280' }
-          })
-        ),
+          // Large search input with cursor styling
+          React.createElement('div', { className: 'mb-8' },
+            React.createElement('input', {
+              ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
+              type: 'text',
+              value: searchQuery,
+              onChange: (e) => handleSearchInput(e.target.value),
+              placeholder: '',
+              className: 'w-full text-6xl font-extralight text-gray-900 bg-transparent border-none outline-none tracking-tight',
+              style: {
+                caretColor: '#9ca3af',
+                fontFamily: 'system-ui, -apple-system, sans-serif'
+              }
+            })
+          ),
 
         // Results area
-        // Show skeletons when no query or loading
-        !searchQuery || isSearching ? React.createElement('div', { className: 'space-y-8' },
-          // Artists skeleton section
-          React.createElement('div', null,
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2' },
-              ...Array(6).fill(null).map((_, i) =>
-                React.createElement('div', { key: `artist-skeleton-${i}`, className: 'flex-shrink-0 w-44' },
-                  React.createElement('div', { className: 'w-44 h-24 bg-gray-200 rounded-lg animate-pulse mb-2' }),
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4' })
+        // Show nothing when no query (clean state)
+        !searchQuery ? null
+        :
+        isSearching ?
+          // Loading skeletons
+          React.createElement('div', { className: 'space-y-10' },
+            // Artists skeleton
+            React.createElement('div', null,
+              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
+              React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+                ...Array(7).fill(null).map((_, i) =>
+                  React.createElement('div', { key: `artist-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2' }),
+                    React.createElement('div', { className: 'h-3 bg-gray-100 w-3/4 mb-1' }),
+                    React.createElement('div', { className: 'h-2 bg-gray-100 w-1/2' })
+                  )
                 )
               )
-            )
-          ),
-          // Tracks skeleton section
-          React.createElement('div', null,
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'TRACKS'),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2' },
-              ...Array(6).fill(null).map((_, i) =>
-                React.createElement('div', { key: `track-skeleton-${i}`, className: 'flex-shrink-0 w-44' },
-                  React.createElement('div', { className: 'w-44 h-44 bg-gray-200 rounded-lg animate-pulse mb-2' }),
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4 mb-1' }),
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded animate-pulse w-1/2' })
-                )
-              )
-            )
-          ),
-          // Albums skeleton section
-          React.createElement('div', null,
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ALBUMS'),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2' },
-              ...Array(6).fill(null).map((_, i) =>
-                React.createElement('div', { key: `album-skeleton-${i}`, className: 'flex-shrink-0 w-44' },
-                  React.createElement('div', { className: 'w-44 h-44 bg-gray-200 rounded-lg animate-pulse mb-2' }),
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4 mb-1' }),
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded animate-pulse w-1/2' })
-                )
-              )
-            )
-          ),
-          // Playlists skeleton section
-          React.createElement('div', null,
-            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'PLAYLISTS'),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2' },
-              ...Array(6).fill(null).map((_, i) =>
-                React.createElement('div', { key: `playlist-skeleton-${i}`, className: 'flex-shrink-0 w-44' },
-                  React.createElement('div', { className: 'w-44 h-24 bg-gray-200 rounded-lg animate-pulse mb-2' }),
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4' })
+            ),
+            // Songs skeleton
+            React.createElement('div', null,
+              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
+              React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+                ...Array(7).fill(null).map((_, i) =>
+                  React.createElement('div', { key: `track-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2' }),
+                    React.createElement('div', { className: 'h-3 bg-gray-100 w-3/4 mb-1' }),
+                    React.createElement('div', { className: 'h-2 bg-gray-100 w-1/2' })
+                  )
                 )
               )
             )
           )
-        )
         :
         // No results state
         searchResults.artists.length === 0 &&
@@ -6972,104 +6984,125 @@ useEffect(() => {
           )
         :
         // Results
-        React.createElement('div', { className: 'space-y-8' },
-          // Artists section
+        React.createElement('div', { className: 'space-y-10' },
+          // Artists section with image cards
           searchResults.artists.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS'),
-              displayLimits.artists < searchResults.artists.length &&
+              searchResults.artists.length > 7 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('artists');
                     setSearchPreviewItem(searchResults.artists[0] || null);
                   },
-                  className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
+                  className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2 scrollable-content' },
-              ...searchResults.artists.slice(0, displayLimits.artists).map(artist =>
-                React.createElement('button', {
+            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+              ...searchResults.artists.slice(0, 7).map(artist =>
+                React.createElement(SearchArtistCard, {
                   key: artist.id,
+                  artist: artist,
                   onClick: () => fetchArtistData(artist.name),
-                  className: 'flex-shrink-0 w-44 text-left p-3 rounded-lg bg-white hover:bg-gray-100 transition-colors border border-gray-100'
+                  getArtistImage: getArtistImage
+                })
+              ),
+              // Show more link at end if more results
+              searchResults.artists.length > 7 && React.createElement('button', {
+                onClick: () => {
+                  setSearchDetailCategory('artists');
+                  setSearchPreviewItem(searchResults.artists[0] || null);
                 },
-                  React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, artist.name),
-                  artist.disambiguation && React.createElement('div', { className: 'text-xs text-gray-500 truncate mt-1' }, artist.disambiguation)
-                )
-              )
+                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
+              }, 'Show more')
             )
           ),
 
-          // Tracks section
+          // Songs/Tracks section with album art cards
           searchResults.tracks.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'TRACKS'),
-              displayLimits.tracks < searchResults.tracks.length &&
+              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS'),
+              searchResults.tracks.length > 7 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('tracks');
                     setSearchPreviewItem(searchResults.tracks[0] || null);
                   },
-                  className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
+                  className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2 scrollable-content' },
-              ...searchResults.tracks.slice(0, displayLimits.tracks).map(track =>
-                React.createElement('div', {
+            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+              ...searchResults.tracks.slice(0, 7).map(track =>
+                React.createElement('button', {
                   key: track.id,
-                  className: 'flex-shrink-0 w-44'
+                  onClick: () => handlePlay(track),
+                  className: 'flex-shrink-0 w-28 text-left group'
                 },
-                  React.createElement('button', {
-                    onClick: () => handlePlay(track),
-                    className: 'w-full text-left p-3 rounded-lg bg-white hover:bg-gray-100 transition-colors border border-gray-100'
-                  },
-                    // Track info
-                    React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, track.title),
-                    React.createElement('div', { className: 'text-xs text-gray-500 truncate mt-1' }, track.artist),
-                    // Resolver badges
-                    track.sources && Object.keys(track.sources).length > 0 &&
-                      React.createElement('div', { className: 'flex gap-1 mt-2 flex-wrap' },
-                        ...Object.keys(track.sources).map(source => {
-                          const colors = {
-                            spotify: 'bg-green-100 text-green-700',
-                            youtube: 'bg-red-100 text-red-700',
-                            bandcamp: 'bg-cyan-100 text-cyan-700',
-                            qobuz: 'bg-blue-100 text-blue-700'
-                          };
-                          return React.createElement('span', {
-                            key: source,
-                            className: `text-xs px-1.5 py-0.5 rounded ${colors[source] || 'bg-gray-100 text-gray-600'}`
-                          }, source);
-                        })
-                      )
-                  )
+                  // Album art square
+                  React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden' },
+                    track.albumArt ?
+                      React.createElement('img', {
+                        src: track.albumArt,
+                        alt: track.album,
+                        className: 'w-full h-full object-cover'
+                      })
+                    :
+                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300 text-2xl' }, '♪')
+                  ),
+                  // Track info
+                  React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
+                  React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
+                  // Resolver badges
+                  track.sources && Object.keys(track.sources).length > 0 &&
+                    React.createElement('div', { className: 'flex gap-1 mt-1' },
+                      ...Object.keys(track.sources).slice(0, 2).map(source => {
+                        const colors = {
+                          spotify: 'border-green-400 text-green-600',
+                          youtube: 'border-red-400 text-red-600',
+                          bandcamp: 'border-cyan-400 text-cyan-600',
+                          qobuz: 'border-blue-400 text-blue-600'
+                        };
+                        return React.createElement('span', {
+                          key: source,
+                          className: `text-xs px-1.5 py-0.5 border rounded ${colors[source] || 'border-gray-300 text-gray-500'}`
+                        }, source);
+                      })
+                    )
                 )
-              )
+              ),
+              // Show more link
+              searchResults.tracks.length > 7 && React.createElement('button', {
+                onClick: () => {
+                  setSearchDetailCategory('tracks');
+                  setSearchPreviewItem(searchResults.tracks[0] || null);
+                },
+                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
+              }, 'Show more')
             )
           ),
 
-          // Albums section
+          // Albums section with album art cards
           searchResults.albums.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ALBUMS'),
-              displayLimits.albums < searchResults.albums.length &&
+              searchResults.albums.length > 5 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('albums');
                     setSearchPreviewItem(searchResults.albums[0] || null);
                   },
-                  className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
+                  className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2 scrollable-content' },
-              ...searchResults.albums.slice(0, displayLimits.albums).map(album =>
+            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+              ...searchResults.albums.slice(0, 5).map(album =>
                 React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
-                  className: 'flex-shrink-0 w-44 text-left rounded-lg bg-white hover:bg-gray-100 transition-colors border border-gray-100 overflow-hidden'
+                  className: 'flex-shrink-0 w-44 text-left group'
                 },
-                  // Album art
-                  React.createElement('div', { className: 'w-44 h-44 bg-gray-100 flex items-center justify-center' },
+                  // Album art square
+                  React.createElement('div', { className: 'w-44 h-44 bg-gray-100 mb-2 relative overflow-hidden' },
                     album.albumArt ?
                       React.createElement('img', {
                         src: album.albumArt,
@@ -7077,41 +7110,47 @@ useEffect(() => {
                         className: 'w-full h-full object-cover'
                       })
                     :
-                      React.createElement('span', { className: 'text-4xl text-gray-300' }, '💿')
+                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300 text-3xl' }, '💿')
                   ),
                   // Album info
-                  React.createElement('div', { className: 'p-3' },
-                    React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, album.title),
-                    React.createElement('div', { className: 'text-xs text-gray-500 truncate mt-1' },
-                      `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
-                    )
+                  React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, album.title),
+                  React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
+                    `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
                   )
                 )
-              )
+              ),
+              // Show more link
+              searchResults.albums.length > 5 && React.createElement('button', {
+                onClick: () => {
+                  setSearchDetailCategory('albums');
+                  setSearchPreviewItem(searchResults.albums[0] || null);
+                },
+                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
+              }, 'Show more')
             )
           ),
 
-          // Playlists section
+          // Playlists section (kept simple)
           searchResults.playlists.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'PLAYLISTS'),
-              displayLimits.playlists < searchResults.playlists.length &&
+              searchResults.playlists.length > 5 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('playlists');
                     setSearchPreviewItem(searchResults.playlists[0] || null);
                   },
-                  className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
+                  className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-2 scrollable-content' },
-              ...searchResults.playlists.slice(0, displayLimits.playlists).map(playlist =>
+            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+              ...searchResults.playlists.slice(0, 5).map(playlist =>
                 React.createElement('button', {
                   key: playlist.title,
                   onClick: () => handlePlaylistClick(playlist),
-                  className: 'flex-shrink-0 w-44 text-left p-3 rounded-lg bg-white hover:bg-gray-100 transition-colors border border-gray-100'
+                  className: 'flex-shrink-0 w-44 text-left'
                 },
-                  React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, playlist.title),
+                  React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, playlist.title),
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate mt-1' },
                     `${playlist.tracks?.length || 0} tracks`
                   )
@@ -7119,10 +7158,10 @@ useEffect(() => {
               )
             )
           )
-        ) // end Results div
-        ) // end Content area div
-      ) // end Main view scrollable div
-    ) // end ternary for searchDetailCategory
+        )
+        )
+      )
+    ) // end main view
     ) : // end activeView === 'search' ternary
 
       // Main content area - Artist Page (completely separate layout)
