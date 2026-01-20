@@ -4344,8 +4344,18 @@ ${tracks}
       setCharts(albums);
       chartsLoaded.current = true;
 
-      // Fetch album art in background
-      fetchChartsAlbumArt(albums);
+      // Wait for cache to be loaded before fetching album art
+      if (cacheLoaded) {
+        fetchChartsAlbumArt(albums);
+      } else {
+        // If cache not ready, wait a bit and try again
+        const waitForCache = setInterval(() => {
+          if (cacheLoaded) {
+            clearInterval(waitForCache);
+            fetchChartsAlbumArt(albums);
+          }
+        }, 100);
+      }
 
     } catch (error) {
       console.error('Failed to load Charts:', error);
@@ -4394,7 +4404,8 @@ ${tracks}
       } catch (error) {
         console.log(`Could not fetch art for: ${album.artist} - ${album.title}`);
       }
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // MusicBrainz rate limit: 1 request per second
+      await new Promise(resolve => setTimeout(resolve, 1100));
     }
   };
 
