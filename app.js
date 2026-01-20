@@ -557,12 +557,27 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
-  
+
+  const handleDragStart = (e) => {
+    e.dataTransfer.effectAllowed = 'copy';
+    const albumData = {
+      type: 'album',
+      album: {
+        id: `${currentArtist?.name || release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+        title: release.title,
+        artist: currentArtist?.name || release.artist?.name,
+        year: year !== 'Unknown' ? parseInt(year) : null,
+        art: release.albumArt
+      }
+    };
+    e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
+  };
+
   const cardStyle = {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: '12px',
     padding: '16px',
-    cursor: 'pointer',
+    cursor: 'grab',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     transition: 'transform 0.2s, background-color 0.2s'
   };
@@ -574,6 +589,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   
   return React.createElement('button', {
     className: 'no-drag',
+    draggable: true,
+    onDragStart: handleDragStart,
     style: {
       ...cardStyle,
       width: '100%',
@@ -738,9 +755,24 @@ const ReleasePage = ({
       className: 'flex-shrink-0 pr-8',
       style: { width: '240px' }
     },
-      // Album art with fallback
+      // Album art container - make draggable
       React.createElement('div', {
-        className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg relative overflow-hidden'
+        draggable: true,
+        onDragStart: (e) => {
+          e.dataTransfer.effectAllowed = 'copy';
+          const albumData = {
+            type: 'album',
+            album: {
+              id: `${release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+              title: release.title,
+              artist: release.artist?.name,
+              year: release.date?.split('-')[0] || null,
+              art: release.albumArt
+            }
+          };
+          e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
+        },
+        className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg relative overflow-hidden cursor-grab active:cursor-grabbing'
       },
         // Image (absolute positioned, hides on error)
         release.albumArt && React.createElement('img', {
