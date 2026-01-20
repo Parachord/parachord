@@ -1334,7 +1334,7 @@ const Parachord = () => {
         case 'alpha-asc': return sorted.sort((a, b) => a.name.localeCompare(b.name));
         case 'alpha-desc': return sorted.sort((a, b) => b.name.localeCompare(a.name));
         case 'tracks': return sorted.sort((a, b) => b.trackCount - a.trackCount);
-        case 'recent': return sorted; // Keep original order (most recently added)
+        case 'recent': return sorted.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
         default: return sorted;
       }
     }
@@ -1345,7 +1345,7 @@ const Parachord = () => {
         case 'artist': return sorted.sort((a, b) => a.artist.localeCompare(b.artist));
         case 'year-new': return sorted.sort((a, b) => (b.year || 0) - (a.year || 0));
         case 'year-old': return sorted.sort((a, b) => (a.year || 9999) - (b.year || 9999));
-        case 'recent': return sorted;
+        case 'recent': return sorted.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
         default: return sorted;
       }
     }
@@ -1356,7 +1356,7 @@ const Parachord = () => {
         case 'artist': return sorted.sort((a, b) => (a.artist || '').localeCompare(b.artist || ''));
         case 'album': return sorted.sort((a, b) => (a.album || '').localeCompare(b.album || ''));
         case 'duration': return sorted.sort((a, b) => (a.duration || 0) - (b.duration || 0));
-        case 'recent': return sorted;
+        case 'recent': return sorted.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
         default: return sorted;
       }
     }
