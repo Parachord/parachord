@@ -4359,6 +4359,45 @@ ${tracks}
     }
   };
 
+  // Fetch album art for Charts in background
+  const fetchChartsAlbumArt = async (albums) => {
+    const albumsNeedingFetch = [];
+    const cachedUpdates = [];
+
+    for (const album of albums) {
+      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+      const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
+
+      if (cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url) {
+        cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
+      } else if (cachedReleaseId !== null) {
+        albumsNeedingFetch.push(album);
+      }
+    }
+
+    if (cachedUpdates.length > 0) {
+      console.log(`📊 Using cached art for ${cachedUpdates.length} Charts albums`);
+      setCharts(prev => prev.map(a => {
+        const cached = cachedUpdates.find(u => u.id === a.id);
+        return cached ? { ...a, albumArt: cached.albumArt } : a;
+      }));
+    }
+
+    for (const album of albumsNeedingFetch) {
+      try {
+        const artUrl = await getAlbumArt(album.artist, album.title);
+        if (artUrl) {
+          setCharts(prev => prev.map(a =>
+            a.id === album.id ? { ...a, albumArt: artUrl } : a
+          ));
+        }
+      } catch (error) {
+        console.log(`Could not fetch art for: ${album.artist} - ${album.title}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
