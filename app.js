@@ -11348,13 +11348,13 @@ useEffect(() => {
                     { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
-                      key: `sep-${tab.key}`,
+                      key: `sep-expanded-${tab.key}`,
                       className: 'text-gray-400 mx-2'
                     }, '|'),
                     React.createElement('button', {
-                      key: tab.key,
+                      key: `expanded-${tab.key}`,
                       onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                         collectionTab === tab.key
                           ? 'text-white'
                           : 'text-gray-400 hover:text-white'
@@ -11400,13 +11400,13 @@ useEffect(() => {
                     { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
-                      key: `sep-${tab.key}`,
+                      key: `sep-collapsed-${tab.key}`,
                       className: 'text-gray-400 mx-2'
                     }, '|'),
                     React.createElement('button', {
-                      key: tab.key,
+                      key: `collapsed-${tab.key}`,
                       onClick: () => setCollectionTab(tab.key),
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                         collectionTab === tab.key
                           ? 'text-white'
                           : 'text-gray-400 hover:text-white'
@@ -12582,13 +12582,13 @@ useEffect(() => {
                   { key: 'songs', label: `${recommendations.tracks.length} Songs` }
                 ].map((tab, index) => [
                   index > 0 && React.createElement('span', {
-                    key: `sep-${tab.key}`,
+                    key: `sep-expanded-${tab.key}`,
                     className: 'text-gray-400 mx-2'
                   }, '|'),
                   React.createElement('button', {
-                    key: tab.key,
+                    key: `expanded-${tab.key}`,
                     onClick: () => setRecommendationsTab(tab.key),
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                       recommendationsTab === tab.key
                         ? 'text-white'
                         : 'text-gray-400 hover:text-white'
