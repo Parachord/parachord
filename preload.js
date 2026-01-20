@@ -130,6 +130,12 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Collection operations (favorites)
+  collection: {
+    load: () => ipcRenderer.invoke('collection:load'),
+    save: (collection) => ipcRenderer.invoke('collection:save', collection)
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),

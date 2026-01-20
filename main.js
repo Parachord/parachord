@@ -1417,3 +1417,42 @@ ipcMain.handle('localFiles:saveId3Tags', async (event, filePath, tags) => {
     return { success: false, error: error.message };
   }
 });
+
+// Collection handlers
+ipcMain.handle('collection:load', async () => {
+  console.log('=== Load Collection ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  const collectionPath = path.join(__dirname, 'collection.json');
+
+  try {
+    const content = await fs.readFile(collectionPath, 'utf8');
+    const data = JSON.parse(content);
+    console.log(`✅ Loaded collection: ${data.tracks?.length || 0} tracks, ${data.albums?.length || 0} albums, ${data.artists?.length || 0} artists`);
+    return data;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.log('  No collection file found, returning empty collection');
+      return { tracks: [], albums: [], artists: [] };
+    }
+    console.error('  ❌ Load failed:', error.message);
+    return { tracks: [], albums: [], artists: [] };
+  }
+});
+
+ipcMain.handle('collection:save', async (event, collection) => {
+  console.log('=== Save Collection ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  try {
+    const collectionPath = path.join(__dirname, 'collection.json');
+    await fs.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
+    console.log(`✅ Saved collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Save failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
