@@ -6705,15 +6705,49 @@ useEffect(() => {
         ),
         
         // Loading state for release
-        loadingRelease && React.createElement('div', { 
-          className: 'flex-1 flex items-center justify-center'
+        loadingRelease && React.createElement('div', {
+          className: 'flex-1 bg-white animate-pulse'
         },
-          React.createElement('div', { className: 'text-center' },
-            React.createElement('div', { 
-              className: 'w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4'
-            }),
-            React.createElement('div', { className: 'text-gray-400 text-lg' }, 'Loading release...'),
-            React.createElement('div', { className: 'text-gray-500 text-sm mt-2' }, 'Fetching track information')
+          // Skeleton header
+          React.createElement('div', {
+            className: 'relative h-36 bg-gray-200'
+          }),
+          // Skeleton content
+          React.createElement('div', { className: 'p-6' },
+            // Skeleton section header
+            React.createElement('div', { className: 'flex items-center justify-between mb-6' },
+              React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-24' }),
+              React.createElement('div', { className: 'h-6 bg-gray-200 rounded w-16' })
+            ),
+            // Skeleton two-column layout
+            React.createElement('div', { className: 'flex gap-8' },
+              // Left column - album art + metadata
+              React.createElement('div', { className: 'w-64 flex-shrink-0' },
+                React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-4' }),
+                React.createElement('div', { className: 'h-6 bg-gray-200 rounded w-3/4 mb-2' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-1/2 mb-4' }),
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-full' }),
+                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-2/3' })
+                )
+              ),
+              // Right column - track list
+              React.createElement('div', { className: 'flex-1 space-y-3' },
+                Array.from({ length: 8 }).map((_, i) =>
+                  React.createElement('div', {
+                    key: `track-skeleton-${i}`,
+                    className: 'flex items-center gap-4 p-3 bg-gray-100 rounded'
+                  },
+                    React.createElement('div', { className: 'w-8 h-4 bg-gray-200 rounded' }),
+                    React.createElement('div', { className: 'flex-1' },
+                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-2/3 mb-1' }),
+                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/3' })
+                    ),
+                    React.createElement('div', { className: 'w-12 h-4 bg-gray-200 rounded' })
+                  )
+                )
+              )
+            )
           )
         ),
         
@@ -6881,16 +6915,40 @@ useEffect(() => {
           })
         ),
         
-        // Loading state for artist - hide when loading a release
+        // Skeleton loading state for artist - hide when loading a release
         !currentRelease && !loadingRelease && loadingArtist && React.createElement('div', {
-          className: 'flex-1 flex items-center justify-center'
+          className: 'flex-1 animate-pulse'
         },
-          React.createElement('div', { className: 'text-center' },
-            React.createElement('div', { 
-              className: 'w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4'
-            }),
-            React.createElement('div', { className: 'text-gray-400 text-lg' }, 'Loading discography...'),
-            React.createElement('div', { className: 'text-gray-500 text-sm mt-2' }, 'Fetching data from MusicBrainz')
+          // Skeleton header area
+          React.createElement('div', {
+            className: 'relative h-48 bg-gray-200'
+          }),
+          // Skeleton content
+          React.createElement('div', { className: 'p-6' },
+            // Skeleton filter buttons
+            React.createElement('div', { className: 'flex gap-2 mb-4' },
+              Array.from({ length: 4 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `filter-skeleton-${i}`,
+                  className: 'h-10 bg-gray-200 rounded-full',
+                  style: { width: `${80 + i * 15}px` }
+                })
+              )
+            ),
+            // Skeleton release count
+            React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-24 mb-6' }),
+            // Skeleton album grid
+            React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+            },
+              Array.from({ length: 10 }).map((_, i) =>
+                React.createElement('div', { key: `album-skeleton-${i}` },
+                  React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
+                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
+                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                )
+              )
+            )
           )
         ),
         
