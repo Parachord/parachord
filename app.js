@@ -291,104 +291,41 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     };
     loadImage();
     return () => { cancelled = true; };
-  }, [artist.name, getArtistImage]);
-
-  const cardStyle = {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: '12px',
-    padding: '16px',
-    cursor: 'pointer',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    transition: 'transform 0.2s, background-color 0.2s'
-  };
+    // Note: getArtistImage excluded from deps - function identity changes but behavior doesn't
+  }, [artist.name]);
 
   return React.createElement('button', {
     onClick: onNavigate,
-    className: 'no-drag',
-    style: {
-      ...cardStyle,
-      width: '100%',
-      textAlign: 'left'
-    },
-    onMouseEnter: (e) => {
-      e.currentTarget.style.transform = 'scale(1.05)';
-      e.currentTarget.style.backgroundColor = 'rgba(124, 58, 237, 0.2)';
-    },
-    onMouseLeave: (e) => {
-      e.currentTarget.style.transform = 'scale(1)';
-      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-    }
+    className: 'text-left group'
   },
-    // Artist image container
-    React.createElement('div', {
-      style: {
-        width: '100%',
-        aspectRatio: '1',
-        borderRadius: '8px',
-        background: imageUrl ? 'none' : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: '12px',
-        pointerEvents: 'none',
-        overflow: 'hidden',
-        position: 'relative'
-      }
-    },
+    // Artist image square (matches SearchArtistCard)
+    React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-2 relative overflow-hidden' },
       imageLoading && React.createElement('div', {
         className: 'w-full h-full flex items-center justify-center'
       },
         React.createElement('div', {
-          className: 'w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin'
+          className: 'w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
         })
       ),
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        style: {
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          pointerEvents: 'none'
-        }
+        className: 'w-full h-full object-cover'
       }),
       !imageLoading && !imageUrl && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center'
+        className: 'w-full h-full flex items-center justify-center text-gray-300'
       },
-        React.createElement('svg', {
-          style: {
-            width: '48px',
-            height: '48px',
-            color: 'rgba(255, 255, 255, 0.5)',
-            pointerEvents: 'none'
-          },
-          fill: 'none',
-          viewBox: '0 0 24 24',
-          stroke: 'currentColor',
-          strokeWidth: 2
-        },
-          React.createElement('path', {
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-            d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'
-          })
+        React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
         )
       )
     ),
     // Artist name
-    React.createElement('h3', {
-      style: {
-        fontWeight: '600',
-        fontSize: '14px',
-        marginBottom: '4px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        color: 'black',
-        pointerEvents: 'none'
-      },
-      title: artist.name
-    }, artist.name)
+    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name),
+    // Match percentage
+    artist.match && React.createElement('div', { className: 'text-xs text-gray-500' },
+      `${artist.match}% match`
+    )
   );
 };
 
@@ -411,7 +348,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
     };
     loadImage();
     return () => { cancelled = true; };
-  }, [artist.name, getArtistImage]);
+    // Note: getArtistImage excluded from deps - function identity changes but behavior doesn't
+  }, [artist.name]);
 
   return React.createElement('button', {
     onClick: onClick,
@@ -591,7 +529,18 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
 };
 
 // ReleasePage component - Shows full album/EP/single with tracklist
-const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackContextMenu, trackSources = {}, resolvers = [] }) => {
+const ReleasePage = ({
+  release,
+  handleSearch,
+  handlePlay,
+  onTrackPlay,
+  onTrackContextMenu,
+  trackSources = {},
+  resolvers = [],
+  // Drag and drop props (for adding tracks to playlists)
+  onDragStart,
+  onDragEnd
+}) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -666,24 +615,38 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
             const sources = trackSources[trackKey] || {};
             const availableResolvers = Object.keys(sources);
             
+            // Build track object for drag/drop and playback
+            const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const trackForDrag = {
+              ...track,
+              id: trackId,
+              artist: release.artist.name,
+              album: release.title,
+              albumArt: release.albumArt,
+              sources: sources
+            };
+
             return React.createElement('div', {
               key: index,
-              className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group',
+              draggable: true,
+              onDragStart: (e) => {
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track: trackForDrag }));
+                if (onDragStart) {
+                  onDragStart(trackForDrag);
+                }
+              },
+              onDragEnd: () => {
+                if (onDragEnd) {
+                  onDragEnd();
+                }
+              },
+              className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors no-drag group',
               onClick: () => {
                 console.log('Track row clicked:', track.title);
 
-                // Create a track object with sources for handlePlay to select the best one
+                // Play track with sources if resolved
                 if (availableResolvers.length > 0) {
-                  // Generate unique ID for queue tracking
-                  const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                  const trackWithSources = {
-                    ...track,
-                    id: trackId,
-                    artist: release.artist.name,
-                    album: release.title,
-                    sources: sources
-                  };
-
                   // Build queue from remaining tracks (after this one)
                   const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
                     const tKey = `${t.position}-${t.title}`;
@@ -700,9 +663,9 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
                   });
 
                   if (onTrackPlay) {
-                    onTrackPlay(trackWithSources, tracksAfter);
+                    onTrackPlay(trackForDrag, tracksAfter);
                   } else {
-                    handlePlay(trackWithSources);
+                    handlePlay(trackForDrag);
                   }
                 } else {
                   // No resolved sources yet, fall back to search
@@ -712,18 +675,8 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
               },
               onContextMenu: (e) => {
                 e.preventDefault();
-                // Build track object for context menu
-                const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                const trackForMenu = {
-                  ...track,
-                  id: trackId,
-                  artist: release.artist.name,
-                  album: release.title,
-                  albumArt: release.albumArt,
-                  sources: sources
-                };
                 if (onTrackContextMenu) {
-                  onTrackContextMenu(trackForMenu);
+                  onTrackContextMenu(trackForDrag);
                 }
               }
             },
@@ -785,17 +738,8 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
                         e.stopPropagation(); // Don't trigger row click
                         console.log(`Playing from ${resolver.name}:`, source);
 
-                        // Generate unique ID for queue tracking
-                        const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                        // Create full track object with sources and preferred resolver
-                        const trackWithSources = {
-                          ...track,
-                          id: trackId,
-                          artist: release.artist.name,
-                          album: release.title,
-                          sources: sources,
-                          preferredResolver: resolverId
-                        };
+                        // Create track with preferred resolver
+                        const trackWithResolver = { ...trackForDrag, preferredResolver: resolverId };
 
                         // Build queue from remaining tracks (after this one)
                         const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
@@ -813,9 +757,9 @@ const ReleasePage = ({ release, handleSearch, handlePlay, onTrackPlay, onTrackCo
                         });
 
                         if (onTrackPlay) {
-                          onTrackPlay(trackWithSources, tracksAfter);
+                          onTrackPlay(trackWithResolver, tracksAfter);
                         } else {
-                          handlePlay(trackWithSources);
+                          handlePlay(trackWithResolver);
                         }
                       },
                       style: {
@@ -3200,15 +3144,11 @@ const Parachord = () => {
     const cacheKey = artistName.toLowerCase();
     const cachedData = artistDataCache.current[cacheKey];
     const now = Date.now();
-    const currentResolverHash = getResolverSettingsHash();
 
-    // Cache is valid if:
-    // 1. Data exists
-    // 2. Not expired
-    // 3. Resolver settings haven't changed
+    // Cache is valid if data exists and not expired
+    // Note: Resolver settings don't affect artist/release metadata - tracks are re-resolved when loading a release
     const cacheValid = cachedData &&
-                      (now - cachedData.timestamp) < CACHE_TTL.artistData &&
-                      cachedData.resolverHash === currentResolverHash;
+                      (now - cachedData.timestamp) < CACHE_TTL.artistData;
 
     // Also check if artist image is in cache
     const normalizedName = artistName.trim().toLowerCase();
@@ -3297,34 +3237,58 @@ const Parachord = () => {
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
       
-      // Step 2: Fetch artist's releases (albums, EPs, singles)
+      // Step 2: Fetch artist's releases (albums, EPs, singles) with staggered requests
+      // MusicBrainz rate limits to ~1 req/sec, so we stagger by 350ms to stay under limit
       const releaseTypes = ['album', 'ep', 'single'];
-      const allReleases = [];
-      
-      for (const type of releaseTypes) {
-        const releasesResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`,
-          {
-            headers: {
-              'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)'
+
+      const releasePromises = releaseTypes.map(async (type, index) => {
+        // Stagger requests by 350ms each to avoid rate limiting
+        if (index > 0) {
+          await new Promise(resolve => setTimeout(resolve, index * 350));
+        }
+        try {
+          const releasesResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`,
+            {
+              headers: {
+                'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)'
+              }
+            }
+          );
+
+          // Retry on rate limit
+          if (releasesResponse.status === 503 || releasesResponse.status === 429) {
+            console.log(`Rate limited on ${type}, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const retryResponse = await fetch(
+              `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`,
+              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+            );
+            if (retryResponse.ok) {
+              const data = await retryResponse.json();
+              return (data.releases || []).map(release => ({ ...release, releaseType: type }));
+            }
+            return [];
+          }
+
+          if (releasesResponse.ok) {
+            const releasesData = await releasesResponse.json();
+            if (releasesData.releases) {
+              return releasesData.releases.map(release => ({
+                ...release,
+                releaseType: type
+              }));
             }
           }
-        );
-        
-        if (releasesResponse.ok) {
-          const releasesData = await releasesResponse.json();
-          if (releasesData.releases) {
-            const typedReleases = releasesData.releases.map(release => ({
-              ...release,
-              releaseType: type
-            }));
-            allReleases.push(...typedReleases);
-          }
+          return [];
+        } catch (error) {
+          console.error(`Error fetching ${type} releases:`, error);
+          return [];
         }
-        
-        // Rate limiting - wait 1 second between requests
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      });
+
+      const releaseResults = await Promise.all(releasePromises);
+      const allReleases = releaseResults.flat();
       
       console.log(`Found ${allReleases.length} releases for ${artist.name}`);
 
@@ -3367,12 +3331,11 @@ const Parachord = () => {
         }
       });
 
-      // Cache the artist data with resolver settings hash
+      // Cache the artist data
       artistDataCache.current[cacheKey] = {
         artist: artistData,
         releases: uniqueReleases,
-        timestamp: Date.now(),
-        resolverHash: getResolverSettingsHash()
+        timestamp: Date.now()
       };
       console.log('💾 Cached artist data for:', artistName);
 
@@ -3405,12 +3368,29 @@ const Parachord = () => {
     setLoadingRelease(true);
     setCurrentRelease(null);
 
+    // Helper to fetch with retry on rate limiting
+    const fetchWithRetry = async (url, options, maxRetries = 3) => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const response = await fetch(url, options);
+        if (response.status === 503 || response.status === 429) {
+          // Rate limited - wait and retry
+          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+          console.log(`Rate limited, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        return response;
+      }
+      // Final attempt
+      return fetch(url, options);
+    };
+
     try {
       console.log('Fetching release data for:', release.title);
 
       // Try fetching as a direct release ID first (for artist discography)
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetch(
+      let releaseDetailsResponse = await fetchWithRetry(
         `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
@@ -3420,7 +3400,7 @@ const Parachord = () => {
       if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
         console.log('Not a release ID, trying as release-group...');
 
-        const releaseGroupResponse = await fetch(
+        const releaseGroupResponse = await fetchWithRetry(
           `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
@@ -3440,7 +3420,7 @@ const Parachord = () => {
         console.log('Converted release-group to release ID:', releaseId);
 
         // Fetch again with the converted ID
-        releaseDetailsResponse = await fetch(
+        releaseDetailsResponse = await fetchWithRetry(
           `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
@@ -5607,16 +5587,15 @@ ${tracks}
         const cacheKey = previousArtist.toLowerCase();
         const cachedData = artistDataCache.current[cacheKey];
         const now = Date.now();
-        const currentResolverHash = getResolverSettingsHash();
 
         // Check if artist image is in cache
         const normalizedName = previousArtist.trim().toLowerCase();
         const cachedImage = artistImageCache.current[normalizedName];
         const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
 
+        // Cache is valid if data exists and not expired
         const cacheValid = cachedData &&
-                          (now - cachedData.timestamp) < CACHE_TTL.artistData &&
-                          cachedData.resolverHash === currentResolverHash;
+                          (now - cachedData.timestamp) < CACHE_TTL.artistData;
 
         if (cacheValid) {
           // Set artist image immediately from cache if available
@@ -6977,9 +6956,18 @@ useEffect(() => {
               React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
                 ...Array(7).fill(null).map((_, i) =>
                   React.createElement('div', { key: `artist-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
-                    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2' }),
-                    React.createElement('div', { className: 'h-3 bg-gray-100 w-3/4 mb-1' }),
-                    React.createElement('div', { className: 'h-2 bg-gray-100 w-1/2' })
+                    React.createElement('div', {
+                      className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
+                    })
                   )
                 )
               )
@@ -6990,9 +6978,18 @@ useEffect(() => {
               React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
                 ...Array(7).fill(null).map((_, i) =>
                   React.createElement('div', { key: `track-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
-                    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2' }),
-                    React.createElement('div', { className: 'h-3 bg-gray-100 w-3/4 mb-1' }),
-                    React.createElement('div', { className: 'h-2 bg-gray-100 w-1/2' })
+                    React.createElement('div', {
+                      className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
+                    })
                   )
                 )
               )
@@ -7346,29 +7343,51 @@ useEffect(() => {
         
         // Loading state for release
         loadingRelease && React.createElement('div', {
-          className: 'flex-1 bg-white animate-pulse'
+          className: 'flex-1 bg-white'
         },
           // Skeleton header
           React.createElement('div', {
-            className: 'relative h-36 bg-gray-200'
+            className: 'relative h-36 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+            style: { backgroundSize: '200% 100%' }
           }),
           // Skeleton content
           React.createElement('div', { className: 'p-6' },
             // Skeleton section header
             React.createElement('div', { className: 'flex items-center justify-between mb-6' },
-              React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-24' }),
-              React.createElement('div', { className: 'h-6 bg-gray-200 rounded w-16' })
+              React.createElement('div', {
+                className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-24 animate-shimmer',
+                style: { backgroundSize: '200% 100%' }
+              }),
+              React.createElement('div', {
+                className: 'h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-16 animate-shimmer',
+                style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
+              })
             ),
             // Skeleton two-column layout
             React.createElement('div', { className: 'flex gap-8' },
               // Left column - album art + metadata
               React.createElement('div', { className: 'w-64 flex-shrink-0' },
-                React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-4' }),
-                React.createElement('div', { className: 'h-6 bg-gray-200 rounded w-3/4 mb-2' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-1/2 mb-4' }),
+                React.createElement('div', {
+                  className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-shimmer',
+                  style: { backgroundSize: '200% 100%' }
+                }),
+                React.createElement('div', {
+                  className: 'h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '50ms' }
+                }),
+                React.createElement('div', {
+                  className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 mb-4 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
+                }),
                 React.createElement('div', { className: 'space-y-2' },
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-full' }),
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-2/3' })
+                  React.createElement('div', {
+                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-full animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: '150ms' }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/3 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: '200ms' }
+                  })
                 )
               ),
               // Right column - track list
@@ -7376,14 +7395,26 @@ useEffect(() => {
                 Array.from({ length: 8 }).map((_, i) =>
                   React.createElement('div', {
                     key: `track-skeleton-${i}`,
-                    className: 'flex items-center gap-4 p-3 bg-gray-100 rounded'
+                    className: 'flex items-center gap-4 p-3 bg-gray-50 rounded'
                   },
-                    React.createElement('div', { className: 'w-8 h-4 bg-gray-200 rounded' }),
+                    React.createElement('div', {
+                      className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                    }),
                     React.createElement('div', { className: 'flex-1' },
-                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-2/3 mb-1' }),
-                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/3' })
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/3 mb-1 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/3 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                      })
                     ),
-                    React.createElement('div', { className: 'w-12 h-4 bg-gray-200 rounded' })
+                    React.createElement('div', {
+                      className: 'w-12 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                    })
                   )
                 )
               )
@@ -7551,17 +7582,31 @@ useEffect(() => {
               }
             },
             trackSources: trackSources,
-            resolvers: resolvers
+            resolvers: resolvers,
+            // Drag and drop handlers for adding tracks to playlists
+            onDragStart: (track) => {
+              setDraggingTrackForPlaylist(track);
+            },
+            onDragEnd: () => {
+              setDraggingTrackForPlaylist(null);
+              setDropTargetPlaylistId(null);
+              setDropTargetNewPlaylist(false);
+              // Close panel if it was opened by drag and nothing was dropped
+              if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+              }
+            }
           })
         ),
         
         // Skeleton loading state for artist - hide when loading a release
         !currentRelease && !loadingRelease && loadingArtist && React.createElement('div', {
-          className: 'flex-1 animate-pulse'
+          className: 'flex-1'
         },
-          // Skeleton header area
+          // Skeleton header area with shimmer
           React.createElement('div', {
-            className: 'relative h-48 bg-gray-200'
+            className: 'relative h-48 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+            style: { backgroundSize: '200% 100%' }
           }),
           // Skeleton content
           React.createElement('div', { className: 'p-6' },
@@ -7570,22 +7615,34 @@ useEffect(() => {
               Array.from({ length: 4 }).map((_, i) =>
                 React.createElement('div', {
                   key: `filter-skeleton-${i}`,
-                  className: 'h-10 bg-gray-200 rounded-full',
-                  style: { width: `${80 + i * 15}px` }
+                  className: 'h-10 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-full animate-shimmer',
+                  style: { width: `${80 + i * 15}px`, backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
                 })
               )
             ),
             // Skeleton release count
-            React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-24 mb-6' }),
+            React.createElement('div', {
+              className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-24 mb-6 animate-shimmer',
+              style: { backgroundSize: '200% 100%' }
+            }),
             // Skeleton album grid
             React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
             },
               Array.from({ length: 10 }).map((_, i) =>
                 React.createElement('div', { key: `album-skeleton-${i}` },
-                  React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                  React.createElement('div', {
+                    className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-3 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                  })
                 )
               )
             )
@@ -8448,15 +8505,22 @@ useEffect(() => {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
               Array.from({ length: 15 }).map((_, i) =>
-                React.createElement('div', { key: `skeleton-${i}`, className: 'animate-pulse' },
+                React.createElement('div', { key: `skeleton-${i}` },
                   // Skeleton album art
                   React.createElement('div', {
-                    className: 'aspect-square rounded-lg mb-3 bg-gray-200'
+                    className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                   }),
                   // Skeleton title
                   React.createElement('div', { className: 'space-y-2' },
-                    React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4' }),
-                    React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                    })
                   )
                 )
               )
@@ -8636,15 +8700,22 @@ useEffect(() => {
             className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
           },
             Array.from({ length: 15 }).map((_, i) =>
-              React.createElement('div', { key: `skeleton-${i}`, className: 'animate-pulse' },
+              React.createElement('div', { key: `skeleton-${i}` },
                 // Skeleton album art
                 React.createElement('div', {
-                  className: 'aspect-square rounded-lg mb-3 bg-gray-200'
+                  className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                 }),
                 // Skeleton title
                 React.createElement('div', { className: 'space-y-2' },
-                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4' }),
-                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                  })
                 )
               )
             )
@@ -9110,7 +9181,7 @@ useEffect(() => {
         React.createElement('div', { className: 'flex items-center gap-3' },
           // Progress section
           React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
-            React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-right font-mono' },
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-right tabular-nums' },
               currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
             ),
             React.createElement('div', { className: 'flex-1 w-24' },
@@ -9135,7 +9206,7 @@ useEffect(() => {
                 className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-700 cursor-not-allowed' : 'bg-gray-600 cursor-pointer'}`
               })
             ),
-            React.createElement('span', { className: 'text-xs text-gray-400 w-10 font-mono' },
+            React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-left tabular-nums' },
               currentTrack ? formatTime(currentTrack.duration) : '0:00'
             )
           ),
@@ -9561,7 +9632,7 @@ useEffect(() => {
 
         // Playlist list (scrollable) - includes New Playlist row at top
         React.createElement('div', {
-          className: 'flex-1 overflow-y-auto'
+          className: 'flex-1 overflow-y-auto min-h-0'
         },
           // New Playlist row (always shown at top)
           // TODO: Fix drag-and-drop to create new playlist - onDrop events not firing in Electron

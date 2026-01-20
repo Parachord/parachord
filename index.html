@@ -92,6 +92,16 @@
     .badge-flash {
       animation: badge-flash 0.3s ease-out;
     }
+
+    /* Skeleton shimmer animation */
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .animate-shimmer {
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">
