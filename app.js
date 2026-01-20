@@ -11728,12 +11728,13 @@ useEffect(() => {
     ),
 
     // Queue Drawer - slides up above the playbar with matching dark theme
-    // Semi-translucent so page content is visible behind
+    // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
-      className: 'fixed left-0 right-0 bg-gray-900/80 backdrop-blur-md border-t border-gray-700/50 shadow-2xl transition-all duration-300 ease-in-out z-40',
+      className: 'fixed left-0 right-0 backdrop-blur-md border-t border-gray-700/50 shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
         bottom: queueDrawerOpen ? '72px' : -queueDrawerHeight, // Position above the playbar (72px height)
-        height: queueDrawerHeight + 'px'
+        height: queueDrawerHeight + 'px',
+        background: 'linear-gradient(to top, rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.5))'
       }
     },
       // Drawer header with drag handle - dark translucent theme
