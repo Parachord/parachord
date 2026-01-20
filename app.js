@@ -4597,7 +4597,24 @@ const Parachord = () => {
       
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
-      
+
+      // Set artist name immediately so header shows while releases load
+      setCurrentArtist({
+        name: artist.name,
+        mbid: artist.id,
+        country: artist.country,
+        disambiguation: artist.disambiguation,
+        type: artist.type
+      });
+
+      // Start fetching artist image early (non-blocking)
+      getArtistImage(artistName).then(result => {
+        if (result) {
+          setArtistImage(result.url);
+          setArtistImagePosition(result.facePosition || 'center 25%');
+        }
+      });
+
       // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
       // Using release-groups instead of releases to avoid duplicates (each album appears once)
       // MusicBrainz rate limits to ~1 req/sec, so we stagger by 500ms to stay under limit
@@ -4668,16 +4685,6 @@ const Parachord = () => {
         disambiguation: artist.disambiguation,
         type: artist.type
       };
-
-      setCurrentArtist(artistData);
-
-      // Fetch artist image from Spotify (async, non-blocking)
-      getArtistImage(artistName).then(result => {
-        if (result) {
-          setArtistImage(result.url);
-          setArtistImagePosition(result.facePosition || 'center 25%');
-        }
-      });
 
       // Cache the artist data (version 2: release-group categorization)
       artistDataCache.current[cacheKey] = {
@@ -9487,7 +9494,7 @@ useEffect(() => {
             }
           }),
           // EXPANDED STATE - Artist info overlay (centered)
-          !loadingArtist && !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
+          !loadingRelease && currentArtist && !isHeaderCollapsed && React.createElement('div', {
             className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
             style: {
               opacity: isHeaderCollapsed ? 0 : 1,
@@ -9545,7 +9552,7 @@ useEffect(() => {
             }, 'Start Artist Station')
           ),
           // COLLAPSED STATE - Inline layout
-          !loadingArtist && !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
+          !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
             className: 'absolute inset-0 flex items-center px-16 z-10',
             style: {
               opacity: isHeaderCollapsed ? 1 : 0,
