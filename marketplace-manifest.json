@@ -127,7 +127,28 @@
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/applemusic.axe",
       "category": "metadata",
       "tags": ["metadata", "free", "itunes", "apple", "url-lookup"]
+    },
+    {
+      "id": "localfiles",
+      "name": "Local Files",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Play music from your local library. Configure watch folders in settings to index your music collection.",
+      "icon": "📁",
+      "color": "#6366f1",
+      "homepage": "",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": false,
+      "builtin": true,
+      "category": "local",
+      "tags": ["local", "files", "library", "offline", "free"]
     }
   ],
-  "categories": ["streaming", "purchase", "metadata"]
+  "categories": ["streaming", "purchase", "metadata", "local"]
 }
