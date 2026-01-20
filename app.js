@@ -836,6 +836,7 @@ const Parachord = () => {
   const [searchPreviewItem, setSearchPreviewItem] = useState(null); // Currently previewed item in detail view
   const [searchPreviewArtistImage, setSearchPreviewArtistImage] = useState(null); // Artist image for preview pane
   const [searchPreviewArtistBio, setSearchPreviewArtistBio] = useState(null); // Artist bio snippet for preview pane
+  const [searchHeaderCollapsed, setSearchHeaderCollapsed] = useState(false); // Search detail header collapse state
   const [activeView, setActiveView] = useState('library');
   const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -976,6 +977,24 @@ const Parachord = () => {
     const scrollTop = e.target.scrollTop;
     setIsHeaderCollapsed(scrollTop > 100);
   }, []);
+
+  // Search detail page scroll handler for header collapse and infinite scroll
+  const handleSearchDetailScroll = useCallback((e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    // Header collapse
+    setSearchHeaderCollapsed(scrollTop > 100);
+    // Infinite scroll - load more when within 200px of bottom
+    if (scrollHeight - scrollTop - clientHeight < 200 && searchDetailCategory) {
+      handleLoadMore(searchDetailCategory);
+    }
+  }, [searchDetailCategory]);
+
+  // Reset search header collapse when leaving detail view
+  useEffect(() => {
+    if (!searchDetailCategory) {
+      setSearchHeaderCollapsed(false);
+    }
+  }, [searchDetailCategory]);
 
   // Reset header collapse and tab when navigating away from artist page or to new artist
   useEffect(() => {
@@ -6512,105 +6531,155 @@ useEffect(() => {
     ),
 
     // Search Page - Full page search view
-    activeView === 'search' ? React.createElement('div', {
-      className: 'h-full overflow-y-auto scrollable-content bg-gray-50'
-    },
-      // Hero section
-      React.createElement('div', {
-        className: 'relative h-64 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 overflow-hidden'
-      },
-        // Background pattern - search/magnifying glass themed
+    activeView === 'search' ? (
+      searchDetailCategory ?
+        // DETAIL VIEW - Similar structure to artist page with collapsible header
         React.createElement('div', {
-          className: 'absolute inset-0 opacity-20',
-          style: {
-            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
-          }
-        }),
-        // Close button - top right
-        React.createElement('button', {
-          onClick: () => navigateBack(),
-          className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-10'
+          className: 'flex-1 flex flex-col',
+          style: { overflow: 'hidden' }
         },
-          'CLOSE',
-          React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-          )
-        ),
-        // Hero content
-        React.createElement('div', {
-          className: 'absolute inset-0 flex items-end p-8'
-        },
-          React.createElement('div', null,
+          // Header section (outside scrollable area)
+          React.createElement('div', {
+            className: 'relative',
+            style: {
+              height: searchHeaderCollapsed ? '80px' : '200px',
+              flexShrink: 0,
+              transition: 'height 300ms ease',
+              overflow: 'hidden'
+            }
+          },
+            // Gradient background
             React.createElement('div', {
-              className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
-            },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-              ),
-              'Explore'
-            ),
-            React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Search'),
-            React.createElement('p', { className: 'text-white/80 text-lg' }, 'Find artists, albums, tracks, and playlists')
-          )
-        )
-      ),
-
-      // Content area
-      React.createElement('div', { className: 'p-6' },
-        searchDetailCategory ?
-          // Detail view - two-pane layout with preview and results list
-          React.createElement('div', { className: 'flex flex-col h-full' },
-            // Detail view header with search input, tabs, and close button
+              className: 'absolute inset-0 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600'
+            }),
+            // Background pattern
             React.createElement('div', {
-              className: 'flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 rounded-t-lg mb-6'
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Gradient overlay for readability
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                background: searchHeaderCollapsed
+                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, rgba(59,130,246,0.8) 100%)'
+                  : 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(99,102,241,0.4) 100%)'
+              }
+            }),
+            // EXPANDED STATE - Search input centered with tabs below
+            !searchHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center px-8 z-10',
+              style: {
+                opacity: searchHeaderCollapsed ? 0 : 1,
+                transition: 'opacity 300ms ease'
+              }
             },
-              // Left: Search input with icon
-              React.createElement('div', { className: 'flex items-center gap-3 flex-1 max-w-md' },
-                React.createElement('svg', { className: 'w-5 h-5 text-gray-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              // Search input with icon
+              React.createElement('div', { className: 'flex items-center gap-3 w-full max-w-2xl' },
+                React.createElement('svg', { className: 'w-6 h-6 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                 ),
                 React.createElement('input', {
                   type: 'text',
                   value: searchQuery,
                   onChange: (e) => handleSearchInput(e.target.value),
-                  className: 'text-2xl font-light text-gray-900 bg-transparent border-none outline-none flex-1',
-                  placeholder: 'Search...'
+                  className: 'flex-1 text-3xl font-light text-white bg-transparent border-none outline-none placeholder-white/50',
+                  placeholder: 'Search...',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
                 })
               ),
-
-              // Center: Category tabs with counts
-              React.createElement('div', { className: 'flex items-center gap-6' },
+              // Category tabs
+              React.createElement('div', {
+                className: 'flex items-center gap-6 mt-4',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+              },
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('artists'); setSearchPreviewItem(searchResults.artists[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                }, `${searchResults.artists.length} Artists`),
+                React.createElement('span', { className: 'text-white/40' }, '|'),
+                React.createElement('button', {
+                  onClick: () => { setSearchDetailCategory('albums'); setSearchPreviewItem(searchResults.albums[0] || null); },
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                }, `${searchResults.albums.length} Albums`),
+                React.createElement('span', { className: 'text-white/40' }, '|'),
+                React.createElement('button', {
+                  onClick: () => { setSearchDetailCategory('tracks'); setSearchPreviewItem(searchResults.tracks[0] || null); },
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                }, `${searchResults.tracks.length} Tracks`),
+                React.createElement('span', { className: 'text-white/40' }, '|'),
+                React.createElement('button', {
+                  onClick: () => { setSearchDetailCategory('playlists'); setSearchPreviewItem(searchResults.playlists[0] || null); },
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'playlists' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                }, `${searchResults.playlists.length} Playlists`)
+              )
+            ),
+            // COLLAPSED STATE - Inline layout
+            searchHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-8 z-10',
+              style: {
+                opacity: searchHeaderCollapsed ? 1 : 0,
+                transition: 'opacity 300ms ease'
+              }
+            },
+              // Left: Search icon + query
+              React.createElement('div', { className: 'flex items-center gap-3 flex-1' },
+                React.createElement('svg', { className: 'w-5 h-5 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                ),
+                React.createElement('input', {
+                  type: 'text',
+                  value: searchQuery,
+                  onChange: (e) => handleSearchInput(e.target.value),
+                  className: 'flex-1 text-xl font-light text-white bg-transparent border-none outline-none placeholder-white/50 max-w-md',
+                  placeholder: 'Search...',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+                })
+              ),
+              // Center: Category tabs
+              React.createElement('div', {
+                className: 'flex items-center gap-4',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+              },
+                React.createElement('button', {
+                  onClick: () => { setSearchDetailCategory('artists'); setSearchPreviewItem(searchResults.artists[0] || null); },
+                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.artists.length} Artists`),
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('albums'); setSearchPreviewItem(searchResults.albums[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`
+                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.albums.length} Albums`),
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('tracks'); setSearchPreviewItem(searchResults.tracks[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`
+                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.tracks.length} Tracks`),
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('playlists'); setSearchPreviewItem(searchResults.playlists[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'playlists' ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'}`
+                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'playlists' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.playlists.length} Playlists`)
-              ),
-
-              // Right: Close button with border
-              React.createElement('button', {
-                onClick: () => { setSearchDetailCategory(null); setSearchPreviewItem(null); },
-                className: 'ml-6 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors border border-gray-300 rounded px-3 py-1'
-              },
-                'CLOSE',
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                )
               )
             ),
+            // Close button - top right (always visible)
+            React.createElement('button', {
+              onClick: () => { setSearchDetailCategory(null); setSearchPreviewItem(null); },
+              className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-20'
+            },
+              'CLOSE',
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+              )
+            )
+          ),
+          // Scrollable content area with two-pane layout
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto bg-gray-50 scrollable-content',
+            onScroll: handleSearchDetailScroll,
+            style: { padding: '24px' }
+          },
             // Two-pane layout
-            React.createElement('div', { className: 'flex gap-6 flex-1' },
+            React.createElement('div', { className: 'flex gap-6 h-full' },
               // Left: Preview pane
               React.createElement('div', { className: 'w-80 flex-shrink-0 bg-white rounded-lg border border-gray-200 p-6' },
                 searchPreviewItem ? (
@@ -6693,14 +6762,7 @@ useEffect(() => {
 
                 // Scrollable list
                 React.createElement('div', {
-                  className: 'flex-1 overflow-y-auto',
-                  onScroll: (e) => {
-                    const { scrollTop, scrollHeight, clientHeight } = e.target;
-                    // Load more when within 200px of bottom
-                    if (scrollHeight - scrollTop - clientHeight < 200) {
-                      handleLoadMore(searchDetailCategory);
-                    }
-                  }
+                  className: 'flex-1 overflow-y-auto'
                 },
                   searchDetailCategory === 'artists' && searchResults.artists.map((artist, index) =>
                     React.createElement('div', {
@@ -6802,10 +6864,57 @@ useEffect(() => {
                   )
                 )
               )
+            ) // end two-pane layout
+          ) // end scrollable content
+        ) // end detail view container
+      :
+        // MAIN VIEW - existing horizontal scroll layout with hero
+        React.createElement('div', {
+          className: 'h-full overflow-y-auto scrollable-content bg-gray-50'
+        },
+          // Hero section
+          React.createElement('div', {
+            className: 'relative h-64 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 overflow-hidden'
+          },
+            // Background pattern - search/magnifying glass themed
+            React.createElement('div', {
+              className: 'absolute inset-0 opacity-20',
+              style: {
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // Close button - top right
+            React.createElement('button', {
+              onClick: () => navigateBack(),
+              className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-10'
+            },
+              'CLOSE',
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+              )
+            ),
+            // Hero content
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-end p-8'
+            },
+              React.createElement('div', null,
+                React.createElement('div', {
+                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  ),
+                  'Explore'
+                ),
+                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Search'),
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Find artists, albums, tracks, and playlists')
+              )
             )
-          )
-        :
-        // Main view - existing horizontal scroll layout
+          ),
+
+          // Content area
+          React.createElement('div', { className: 'p-6' },
+        // Main view content
         React.createElement('div', null,
           // Large search input
           React.createElement('div', { className: 'pb-6' },
@@ -7032,10 +7141,11 @@ useEffect(() => {
               )
             )
           )
-        )
-        )
-      )
-    ) :
+        ) // end Results div
+        ) // end Content area div
+      ) // end Main view scrollable div
+    ) // end ternary for searchDetailCategory
+    ) : // end activeView === 'search' ternary
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement('div', { 
