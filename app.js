@@ -792,7 +792,7 @@ const ReleasePage = ({
                       title: `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
                     }, (() => {
                       // Custom abbreviations for resolvers
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                       return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                     })());
                   });
@@ -922,6 +922,22 @@ const Parachord = () => {
   const [watchFolders, setWatchFolders] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
+
+  // ID3 Tag Editor state
+  const [id3EditorOpen, setId3EditorOpen] = useState(false);
+  const [id3EditorTrack, setId3EditorTrack] = useState(null);
+  const [id3EditorValues, setId3EditorValues] = useState({
+    title: '',
+    artist: '',
+    album: '',
+    trackNumber: '',
+    year: ''
+  });
+  const [id3EditorSaving, setId3EditorSaving] = useState(false);
+  const [id3ArtSuggestions, setId3ArtSuggestions] = useState([]);
+  const [id3ArtLoading, setId3ArtLoading] = useState(false);
+  const [id3SelectedArt, setId3SelectedArt] = useState(null);
+  const [id3ArtFetchKey, setId3ArtFetchKey] = useState(''); // Track last fetch to avoid duplicates
 
   // Add to Playlist panel state
   const [addToPlaylistPanel, setAddToPlaylistPanel] = useState({
@@ -1500,6 +1516,24 @@ const Parachord = () => {
     loadedResolversRef.current = loadedResolvers;
   }, [loadedResolvers]);
 
+  // Auto-add newly loaded resolvers to activeResolvers and resolverOrder
+  // This runs when both resolvers are loaded AND settings are loaded from storage
+  useEffect(() => {
+    if (loadedResolvers.length === 0) return;
+    if (!cacheLoaded) return; // Wait for settings to load first
+
+    // Find resolvers that are loaded but not in resolverOrder
+    const newResolverIds = loadedResolvers
+      .map(r => r.id)
+      .filter(id => !resolverOrder.includes(id));
+
+    if (newResolverIds.length > 0) {
+      console.log(`📋 Adding new resolvers to order/active: ${newResolverIds.join(', ')}`);
+      setResolverOrder(prev => [...prev, ...newResolverIds]);
+      setActiveResolvers(prev => [...prev, ...newResolverIds]);
+    }
+  }, [loadedResolvers, cacheLoaded, resolverOrder]);
+
   // Browser extension event handlers
   useEffect(() => {
     console.log('🔌 Setting up browser extension event handlers...');
@@ -1725,6 +1759,26 @@ const Parachord = () => {
               alert(`Failed to delete playlist: ${result.error}`);
             }
           }
+        } else if (data.action === 'edit-id3-tags' && data.track) {
+          // Open ID3 tag editor modal
+          console.log('🏷️ Opening ID3 tag editor for:', data.track.title);
+          setId3EditorTrack(data.track);
+          const newValues = {
+            title: data.track.title || '',
+            artist: data.track.artist || '',
+            album: data.track.album || '',
+            trackNumber: data.track.trackNumber ? String(data.track.trackNumber) : '',
+            year: data.track.year ? String(data.track.year) : ''
+          };
+          setId3EditorValues(newValues);
+          setId3ArtSuggestions([]);
+          setId3SelectedArt(null);
+          setId3EditorOpen(true);
+
+          // Auto-fetch album art if we have artist and album
+          if (newValues.artist && newValues.album) {
+            fetchAlbumArtSuggestions(newValues.artist, newValues.album);
+          }
         }
       });
     }
@@ -1762,7 +1816,30 @@ const Parachord = () => {
   const SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
 
   useEffect(() => {
-    setLibrary(sampleTracks);
+    // Load local files into library instead of placeholder tracks
+    const loadLocalFilesLibrary = async () => {
+      try {
+        if (window.electron?.localFiles?.search) {
+          const localTracks = await window.electron.localFiles.search('');
+          if (localTracks && localTracks.length > 0) {
+            console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
+            setLibrary(localTracks);
+          } else {
+            console.log('📚 No local files found - library is empty');
+            setLibrary([]);
+          }
+        } else {
+          console.log('📚 Local Files API not available');
+          setLibrary([]);
+        }
+      } catch (error) {
+        console.error('Failed to load local files library:', error);
+        setLibrary([]);
+      }
+    };
+
+    loadLocalFilesLibrary();
+
     const context = new (window.AudioContext || window.webkitAudioContext)();
     setAudioContext(context);
     
@@ -1796,17 +1873,31 @@ const Parachord = () => {
     };
     
     loadPlaylistsFromFiles();
-    
-    return () => context.close();
+
+    // Listen for local files library changes
+    let libraryChangeCleanup = null;
+    if (window.electron?.localFiles?.onLibraryChanged) {
+      libraryChangeCleanup = window.electron.localFiles.onLibraryChanged((changes) => {
+        console.log('📚 Library changed, reloading...', changes);
+        loadLocalFilesLibrary();
+      });
+    }
+
+    return () => {
+      context.close();
+      if (libraryChangeCleanup) libraryChangeCleanup();
+    };
   }, []);
 
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
+    // Skip for local files - they use HTML5 Audio with timeupdate event
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
     const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
+    const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -3984,6 +4075,228 @@ const Parachord = () => {
 
     console.log('✅ Track resolution complete');
   };
+
+  // Resolve library tracks against active resolvers (for local files)
+  const resolveLibraryTracks = async () => {
+    if (!library || library.length === 0) return;
+    if (!allResolvers || allResolvers.length === 0) return;
+    if (!activeResolvers || activeResolvers.length === 0) return;
+
+    console.log(`🔍 Resolving ${library.length} library tracks against active resolvers...`);
+
+    // Get enabled resolvers (excluding localfiles since tracks already have that source)
+    const enabledResolvers = resolverOrder
+      .filter(id => activeResolvers.includes(id) && id !== 'localfiles')
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(Boolean);
+
+    if (enabledResolvers.length === 0) {
+      console.log('📚 No external resolvers active, skipping library resolution');
+      return;
+    }
+
+    // Take a snapshot of current library to avoid stale closure issues
+    const librarySnapshot = [...library];
+    const updatedSources = {}; // Map of filePath -> sources
+
+    // Resolve tracks one at a time with delay to avoid rate limiting
+    for (let i = 0; i < librarySnapshot.length; i++) {
+      const track = librarySnapshot[i];
+      const trackKey = track.filePath || track.id;
+      const artistName = track.artist || 'Unknown Artist';
+
+      // Skip if track already has sources from external resolvers
+      const existingSources = track.sources || {};
+      const hasExternalSources = Object.keys(existingSources).some(id => id !== 'localfiles');
+      if (hasExternalSources) continue;
+
+      const sources = { ...existingSources };
+
+      // Query enabled resolvers
+      const resolverPromises = enabledResolvers.map(async (resolver) => {
+        if (!resolver.capabilities?.resolve || !resolver.play) return;
+
+        try {
+          const config = getResolverConfig(resolver.id);
+          const result = await resolver.resolve(artistName, track.title, null, config);
+
+          if (result) {
+            const confidence = calculateLibraryConfidence(track, result);
+            sources[resolver.id] = {
+              ...result,
+              confidence
+            };
+            console.log(`  ✅ ${resolver.name}: Found match for "${track.title}" (${(confidence * 100).toFixed(0)}%)`);
+          }
+        } catch (error) {
+          // Silently ignore resolver errors for library tracks
+        }
+      });
+
+      await Promise.all(resolverPromises);
+
+      // Store updated sources if we found new ones
+      if (Object.keys(sources).length > Object.keys(existingSources).length) {
+        updatedSources[trackKey] = sources;
+      }
+
+      // Small delay between tracks to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+
+    // Update library once with all resolved sources
+    if (Object.keys(updatedSources).length > 0) {
+      setLibrary(prev => prev.map(t => {
+        const trackKey = t.filePath || t.id;
+        if (updatedSources[trackKey]) {
+          return { ...t, sources: updatedSources[trackKey] };
+        }
+        return t;
+      }));
+    }
+
+    console.log('✅ Library track resolution complete');
+  };
+
+  // Calculate confidence for library track matches
+  const calculateLibraryConfidence = (originalTrack, foundTrack) => {
+    const titleMatch = originalTrack.title?.toLowerCase() === foundTrack.title?.toLowerCase();
+    const artistMatch = originalTrack.artist?.toLowerCase() === foundTrack.artist?.toLowerCase();
+    const durationMatch = originalTrack.duration && foundTrack.duration
+      ? Math.abs(originalTrack.duration - foundTrack.duration) < 10
+      : false;
+
+    if (titleMatch && artistMatch && durationMatch) return 0.98;
+    if (titleMatch && artistMatch) return 0.90;
+    if (titleMatch && durationMatch) return 0.85;
+    if (titleMatch) return 0.75;
+    return 0.50;
+  };
+
+  // Fetch album art suggestions from MusicBrainz/Cover Art Archive
+  const fetchAlbumArtSuggestions = async (artist, album) => {
+    if (!artist || !album) {
+      setId3ArtSuggestions([]);
+      return;
+    }
+
+    setId3ArtLoading(true);
+    setId3ArtSuggestions([]);
+
+    try {
+      // Search MusicBrainz for releases matching artist and album
+      const query = encodeURIComponent(`artist:"${artist}" AND release:"${album}"`);
+      const searchUrl = `https://musicbrainz.org/ws/2/release?query=${query}&fmt=json&limit=5`;
+
+      console.log('🎨 Searching MusicBrainz for album art:', artist, '-', album);
+
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`MusicBrainz search failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const releases = data.releases || [];
+
+      console.log(`🎨 Found ${releases.length} releases`);
+
+      // For each release, check if Cover Art Archive has artwork
+      const artPromises = releases.slice(0, 5).map(async (release) => {
+        try {
+          const artUrl = `https://coverartarchive.org/release/${release.id}`;
+          const artResponse = await fetch(artUrl, {
+            headers: {
+              'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)'
+            }
+          });
+
+          if (artResponse.ok) {
+            const artData = await artResponse.json();
+            const frontArt = artData.images?.find(img => img.front) || artData.images?.[0];
+
+            if (frontArt) {
+              return {
+                releaseId: release.id,
+                releaseName: release.title,
+                artistName: release['artist-credit']?.[0]?.name || artist,
+                year: release.date?.split('-')[0] || '',
+                thumbnailUrl: frontArt.thumbnails?.small || frontArt.thumbnails?.['250'] || frontArt.image,
+                fullUrl: frontArt.image
+              };
+            }
+          }
+          return null;
+        } catch (err) {
+          // Silently fail for individual releases
+          return null;
+        }
+      });
+
+      const artResults = (await Promise.all(artPromises)).filter(Boolean);
+      console.log(`🎨 Found ${artResults.length} releases with artwork`);
+
+      setId3ArtSuggestions(artResults);
+    } catch (error) {
+      console.error('Error fetching album art suggestions:', error);
+      setId3ArtSuggestions([]);
+    } finally {
+      setId3ArtLoading(false);
+    }
+  };
+
+  // Auto-fetch album art suggestions when artist or album changes in ID3 editor
+  useEffect(() => {
+    // Only run when editor is open
+    if (!id3EditorOpen) return;
+
+    const artist = id3EditorValues.artist?.trim();
+    const album = id3EditorValues.album?.trim();
+
+    // Need both artist and album
+    if (!artist || !album) {
+      return;
+    }
+
+    // Create a key to track what we've already fetched
+    const fetchKey = `${artist}|${album}`;
+    if (fetchKey === id3ArtFetchKey) {
+      return; // Already fetched for this combination
+    }
+
+    // Clear selection when search criteria change
+    setId3SelectedArt(null);
+
+    // Debounce the fetch
+    const timer = setTimeout(() => {
+      setId3ArtFetchKey(fetchKey);
+      fetchAlbumArtSuggestions(artist, album);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [id3EditorOpen, id3EditorValues.artist, id3EditorValues.album]);
+
+  // Reset fetch key when editor closes
+  useEffect(() => {
+    if (!id3EditorOpen) {
+      setId3ArtFetchKey('');
+    }
+  }, [id3EditorOpen]);
+
+  // Effect to resolve library tracks when library or resolvers change
+  useEffect(() => {
+    if (library.length > 0 && allResolvers.length > 0 && activeResolvers.length > 0) {
+      // Delay to let UI render first, then resolve in background
+      const timer = setTimeout(() => {
+        resolveLibraryTracks();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [library.length, allResolvers.length, activeResolvers.length]);
 
   // Lazy load album art after page is displayed
   const fetchAlbumArtLazy = async (releases) => {
@@ -7247,7 +7560,7 @@ useEffect(() => {
                           qobuz: '#0070CC',
                           applemusic: '#FA243C'
                         };
-                        const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                        const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                         return React.createElement('div', {
                           key: source,
                           style: {
@@ -8331,7 +8644,7 @@ useEffect(() => {
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                                 return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                               })());
                             })
@@ -8426,32 +8739,119 @@ useEffect(() => {
                 React.createElement('div', { className: 'text-sm' }, 'Search for music to add tracks!')
               )
             :
-            React.createElement('div', { className: 'space-y-2' },
-              library.map((track, index) =>
-                React.createElement(TrackRow, {
-                  key: track.id,
-                  track: track,
-                  isPlaying: isPlaying && currentTrack?.id === track.id,
-                  handlePlay: (track) => {
-                    // Queue tracks AFTER the clicked track (not including it)
+            React.createElement('div', { className: 'space-y-0' },
+              library.map((track, index) => {
+                const hasResolved = Object.keys(track.sources || {}).length > 0;
+                const isCurrentTrack = currentTrack?.id === track.id || currentTrack?.filePath === track.filePath;
+
+                return React.createElement('div', {
+                  key: track.id || track.filePath || index,
+                  className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
+                    isCurrentTrack && isPlaying ? 'bg-purple-50' : ''
+                  }`,
+                  onClick: () => {
                     const tracksAfter = library.slice(index + 1);
                     setCurrentQueue(tracksAfter);
                     handlePlay(track);
                   },
-                  onArtistClick: fetchArtistData,
-                  onContextMenu: (track) => {
+                  onContextMenu: (e) => {
+                    e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       window.electron.contextMenu.showTrackMenu({
                         type: 'track',
                         track: track
                       });
                     }
+                  }
+                },
+                  // Track number
+                  React.createElement('span', {
+                    className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                    style: { pointerEvents: 'none', width: '32px' }
+                  }, String(index + 1).padStart(2, '0')),
+
+                  // Track title - fixed width column
+                  React.createElement('span', {
+                    className: `text-sm truncate transition-colors ${isCurrentTrack && isPlaying ? 'text-purple-600 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`,
+                    style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                  }, track.title),
+
+                  // Artist name - fixed width column, clickable
+                  React.createElement('span', {
+                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    style: { width: '180px', flexShrink: 0 },
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      fetchArtistData(track.artist);
+                    }
+                  }, track.artist || 'Unknown Artist'),
+
+                  // Spacer to push duration and resolvers to the right
+                  React.createElement('div', { className: 'flex-1' }),
+
+                  // Duration - right-justified before resolver icons
+                  React.createElement('span', {
+                    className: 'text-sm text-gray-400 text-right tabular-nums mr-4',
+                    style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                  }, formatTime(track.duration)),
+
+                  // Resolver icons - fixed width column (last column)
+                  React.createElement('div', {
+                    className: 'flex items-center gap-1 justify-end',
+                    style: { width: '120px', flexShrink: 0, minHeight: '24px' }
                   },
-                  allResolvers: allResolvers,
-                  resolverOrder: resolverOrder,
-                  activeResolvers: activeResolvers
-                })
-              )
+                    hasResolved ?
+                      Object.entries(track.sources || {})
+                        .sort(([aId], [bId]) => {
+                          const aIndex = resolverOrder.indexOf(aId);
+                          const bIndex = resolverOrder.indexOf(bId);
+                          return aIndex - bIndex;
+                        })
+                        .map(([resolverId, source]) => {
+                          const resolver = allResolvers.find(r => r.id === resolverId);
+                          if (!resolver) return null;
+                          return React.createElement('button', {
+                            key: resolverId,
+                            className: 'no-drag',
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              const tracksAfter = library.slice(index + 1);
+                              setCurrentQueue(tracksAfter);
+                              handlePlay({ ...track, preferredResolver: resolverId });
+                            },
+                            style: {
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '4px',
+                              backgroundColor: resolver.color,
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              color: 'white',
+                              pointerEvents: 'auto',
+                              opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
+                              transition: 'transform 0.1s'
+                            },
+                            onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                            onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                            title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                          }, (() => {
+                            const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
+                            return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                          })());
+                        })
+                    :
+                      // Show "via Local Files" text for local tracks without other sources
+                      track.filePath && React.createElement('span', {
+                        className: 'text-xs text-gray-400'
+                      }, 'via Local Files')
+                  )
+                );
+              })
             )
           )
         ),
@@ -10301,6 +10701,245 @@ useEffect(() => {
       )
     ),
 
+    // ID3 Tag Editor Modal
+    id3EditorOpen && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]',
+      onClick: (e) => {
+        if (e.target === e.currentTarget && !id3EditorSaving) {
+          setId3EditorOpen(false);
+          setId3EditorTrack(null);
+        }
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden',
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header
+        React.createElement('div', {
+          className: 'px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white'
+        },
+          React.createElement('h2', { className: 'text-lg font-semibold' }, 'Edit ID3 Tags'),
+          React.createElement('p', { className: 'text-sm text-white/80 mt-1 truncate' },
+            id3EditorTrack?.filePath?.split('/').pop() || 'Unknown file'
+          )
+        ),
+        // Body
+        React.createElement('div', {
+          className: 'p-6 space-y-4 max-h-[60vh] overflow-y-auto'
+        },
+          // Title field
+          React.createElement('div', null,
+            React.createElement('label', {
+              className: 'block text-sm font-medium text-gray-700 mb-1'
+            }, 'Title'),
+            React.createElement('input', {
+              type: 'text',
+              value: id3EditorValues.title,
+              onChange: (e) => setId3EditorValues(v => ({ ...v, title: e.target.value })),
+              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+              placeholder: 'Track title'
+            })
+          ),
+          // Artist field
+          React.createElement('div', null,
+            React.createElement('label', {
+              className: 'block text-sm font-medium text-gray-700 mb-1'
+            }, 'Artist'),
+            React.createElement('input', {
+              type: 'text',
+              value: id3EditorValues.artist,
+              onChange: (e) => setId3EditorValues(v => ({ ...v, artist: e.target.value })),
+              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+              placeholder: 'Artist name'
+            })
+          ),
+          // Album field
+          React.createElement('div', null,
+            React.createElement('label', {
+              className: 'block text-sm font-medium text-gray-700 mb-1'
+            }, 'Album'),
+            React.createElement('input', {
+              type: 'text',
+              value: id3EditorValues.album,
+              onChange: (e) => setId3EditorValues(v => ({ ...v, album: e.target.value })),
+              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+              placeholder: 'Album name'
+            })
+          ),
+          // Track Number and Year row
+          React.createElement('div', { className: 'flex gap-4' },
+            // Track Number field
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('label', {
+                className: 'block text-sm font-medium text-gray-700 mb-1'
+              }, 'Track #'),
+              React.createElement('input', {
+                type: 'text',
+                value: id3EditorValues.trackNumber,
+                onChange: (e) => setId3EditorValues(v => ({ ...v, trackNumber: e.target.value })),
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                placeholder: '1'
+              })
+            ),
+            // Year field
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('label', {
+                className: 'block text-sm font-medium text-gray-700 mb-1'
+              }, 'Year'),
+              React.createElement('input', {
+                type: 'text',
+                value: id3EditorValues.year,
+                onChange: (e) => setId3EditorValues(v => ({ ...v, year: e.target.value })),
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                placeholder: '2024'
+              })
+            )
+          ),
+
+          // Album Art section
+          React.createElement('div', { className: 'pt-4 border-t border-gray-200' },
+            React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+              React.createElement('label', {
+                className: 'block text-sm font-medium text-gray-700'
+              }, 'Album Art'),
+              id3ArtLoading && React.createElement('span', {
+                className: 'text-sm text-purple-600 flex items-center gap-1'
+              },
+                React.createElement('span', { className: 'animate-spin' }, '⟳'),
+                'Searching...'
+              )
+            ),
+
+            // Current selection
+            id3SelectedArt && React.createElement('div', {
+              className: 'mb-3 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3'
+            },
+              React.createElement('img', {
+                src: id3SelectedArt.thumbnailUrl,
+                alt: 'Selected album art',
+                className: 'w-16 h-16 rounded object-cover'
+              }),
+              React.createElement('div', { className: 'flex-1 min-w-0' },
+                React.createElement('div', { className: 'text-sm font-medium text-green-800 truncate' }, id3SelectedArt.releaseName),
+                React.createElement('div', { className: 'text-xs text-green-600 truncate' }, id3SelectedArt.artistName),
+                id3SelectedArt.year && React.createElement('div', { className: 'text-xs text-green-600' }, id3SelectedArt.year)
+              ),
+              React.createElement('button', {
+                onClick: () => setId3SelectedArt(null),
+                className: 'text-green-600 hover:text-green-800 p-1'
+              }, '✕')
+            ),
+
+            // Art suggestions grid
+            id3ArtSuggestions.length > 0 && !id3SelectedArt && React.createElement('div', {
+              className: 'grid grid-cols-4 gap-2'
+            },
+              id3ArtSuggestions.map((art, idx) =>
+                React.createElement('button', {
+                  key: art.releaseId || idx,
+                  onClick: () => setId3SelectedArt(art),
+                  className: 'relative group rounded-lg overflow-hidden border-2 border-transparent hover:border-purple-500 transition-colors',
+                  title: `${art.releaseName} by ${art.artistName}${art.year ? ` (${art.year})` : ''}`
+                },
+                  React.createElement('img', {
+                    src: art.thumbnailUrl,
+                    alt: art.releaseName,
+                    className: 'w-full aspect-square object-cover'
+                  }),
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center'
+                  },
+                    React.createElement('span', { className: 'text-white text-xs font-medium' }, 'Select')
+                  )
+                )
+              )
+            ),
+
+            // Empty state messages
+            !id3ArtLoading && id3ArtSuggestions.length === 0 && !id3SelectedArt && React.createElement('div', {
+              className: 'text-center py-4 text-gray-400 text-sm'
+            },
+              (!id3EditorValues.artist || !id3EditorValues.album)
+                ? 'Enter artist and album to see artwork suggestions'
+                : 'No artwork found for this album'
+            )
+          )
+        ),
+        // Footer with buttons
+        React.createElement('div', {
+          className: 'px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3'
+        },
+          React.createElement('button', {
+            onClick: () => {
+              setId3EditorOpen(false);
+              setId3EditorTrack(null);
+            },
+            disabled: id3EditorSaving,
+            className: 'px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50'
+          }, 'Cancel'),
+          React.createElement('button', {
+            onClick: async () => {
+              if (!id3EditorTrack?.filePath) return;
+
+              setId3EditorSaving(true);
+              try {
+                const tagsToSave = {
+                  title: id3EditorValues.title,
+                  artist: id3EditorValues.artist,
+                  album: id3EditorValues.album,
+                  trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : null,
+                  year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : null
+                };
+
+                // If album art was selected, include it
+                if (id3SelectedArt?.fullUrl) {
+                  tagsToSave.albumArtUrl = id3SelectedArt.fullUrl;
+                }
+
+                const result = await window.electron.localFiles.saveId3Tags(
+                  id3EditorTrack.filePath,
+                  tagsToSave
+                );
+
+                if (result.success) {
+                  console.log('🏷️ ID3 tags saved successfully');
+                  // Update track in library
+                  setLibrary(prev => prev.map(t =>
+                    t.filePath === id3EditorTrack.filePath
+                      ? {
+                          ...t,
+                          ...id3EditorValues,
+                          trackNumber: id3EditorValues.trackNumber ? parseInt(id3EditorValues.trackNumber, 10) : t.trackNumber,
+                          year: id3EditorValues.year ? parseInt(id3EditorValues.year, 10) : t.year,
+                          albumArt: id3SelectedArt?.fullUrl || t.albumArt
+                        }
+                      : t
+                  ));
+                  setId3EditorOpen(false);
+                  setId3EditorTrack(null);
+                  setId3SelectedArt(null);
+                  setId3ArtSuggestions([]);
+                } else {
+                  alert('Failed to save ID3 tags: ' + result.error);
+                }
+              } catch (error) {
+                console.error('Error saving ID3 tags:', error);
+                alert('Failed to save ID3 tags: ' + error.message);
+              } finally {
+                setId3EditorSaving(false);
+              }
+            },
+            disabled: id3EditorSaving,
+            className: 'px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2'
+          },
+            id3EditorSaving && React.createElement('span', { className: 'animate-spin' }, '⟳'),
+            id3EditorSaving ? 'Saving...' : 'Save'
+          )
+        )
+      )
+    ),
+
     // Confirmation Dialog Modal
     confirmDialog.show && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]',
@@ -10594,7 +11233,7 @@ useEffect(() => {
                     availableSources.map(resolverId => {
                       const resolver = allResolvers.find(r => r.id === resolverId);
                       if (!resolver) return null;
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                       const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                       const source = track.sources?.[resolverId];
                       const confidence = source?.confidence || 0;

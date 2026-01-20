@@ -908,6 +908,20 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
+  // Add "Edit ID3 Tags" option for local files (tracks with filePath)
+  if (data.type === 'track' && data.track?.filePath) {
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Edit ID3 Tags',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'edit-id3-tags',
+          track: data.track
+        });
+      }
+    });
+  }
+
   const menu = Menu.buildFromTemplate(menuItems);
 
   menu.popup({ window: mainWindow });
@@ -1256,4 +1270,18 @@ ipcMain.handle('localFiles:resolve', async (event, params) => {
 
 ipcMain.handle('localFiles:getStats', async () => {
   return localFilesService.getStats();
+});
+
+ipcMain.handle('localFiles:saveId3Tags', async (event, filePath, tags) => {
+  console.log('=== Save ID3 Tags ===');
+  console.log('  File:', filePath);
+  console.log('  Tags:', tags);
+
+  try {
+    const result = await localFilesService.saveId3Tags(filePath, tags);
+    return result;
+  } catch (error) {
+    console.error('  Error:', error);
+    return { success: false, error: error.message };
+  }
 });

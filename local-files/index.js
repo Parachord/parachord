@@ -174,6 +174,149 @@ class LocalFilesService {
     }
   }
 
+  async saveId3Tags(filePath, tags) {
+    console.log(`[LocalFiles] Saving ID3 tags for: ${filePath}`);
+    console.log(`[LocalFiles] Tags:`, tags);
+
+    try {
+      const NodeID3 = require('node-id3');
+      const fs = require('fs');
+      const https = require('https');
+      const http = require('http');
+
+      // Verify file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`[LocalFiles] File not found: ${filePath}`);
+        return { success: false, error: 'File not found' };
+      }
+
+      // Check if it's an MP3 file (node-id3 only works with MP3)
+      const ext = filePath.toLowerCase().split('.').pop();
+      if (ext !== 'mp3') {
+        console.log(`[LocalFiles] File is ${ext}, not MP3 - only updating database`);
+        // For non-MP3 files, just update the database
+        this.db.updateTrackMetadata(filePath, tags);
+
+        // Notify of library change
+        if (this.watcher?.onLibraryChanged) {
+          this.watcher.onLibraryChanged({
+            type: 'update',
+            filePath,
+            tags
+          });
+        }
+
+        return { success: true, warning: 'ID3 tags only supported for MP3 files. Database updated.' };
+      }
+
+      // Build tag object for node-id3
+      const id3Tags = {};
+      if (tags.title) id3Tags.title = tags.title;
+      if (tags.artist) id3Tags.artist = tags.artist;
+      if (tags.album) id3Tags.album = tags.album;
+      if (tags.trackNumber) id3Tags.trackNumber = String(tags.trackNumber);
+      if (tags.year) id3Tags.year = String(tags.year);
+
+      // Handle album art if provided
+      if (tags.albumArtUrl) {
+        console.log(`[LocalFiles] Downloading album art from: ${tags.albumArtUrl}`);
+        try {
+          const imageBuffer = await this.downloadImage(tags.albumArtUrl);
+          if (imageBuffer) {
+            // Determine MIME type from URL or default to JPEG
+            let mime = 'image/jpeg';
+            if (tags.albumArtUrl.toLowerCase().includes('.png')) {
+              mime = 'image/png';
+            }
+
+            id3Tags.image = {
+              mime: mime,
+              type: { id: 3, name: 'Front cover' },
+              description: 'Album Art',
+              imageBuffer: imageBuffer
+            };
+            console.log(`[LocalFiles] Album art downloaded, size: ${imageBuffer.length} bytes`);
+          }
+        } catch (artError) {
+          console.error(`[LocalFiles] Failed to download album art:`, artError);
+          // Continue without album art - don't fail the entire save
+        }
+      }
+
+      console.log(`[LocalFiles] Writing ID3 tags:`, Object.keys(id3Tags));
+
+      // Use update to preserve existing tags (like album art if not replacing)
+      const result = NodeID3.update(id3Tags, filePath);
+
+      console.log(`[LocalFiles] NodeID3.update result:`, result);
+
+      // NodeID3.update returns true on success, or an error object on failure
+      if (result === true) {
+        // Update database record
+        this.db.updateTrackMetadata(filePath, tags);
+
+        // Update has_embedded_art flag if we added album art
+        if (tags.albumArtUrl) {
+          this.db.updateTrackHasEmbeddedArt(filePath, true);
+        }
+
+        // Notify of library change
+        if (this.watcher?.onLibraryChanged) {
+          this.watcher.onLibraryChanged({
+            type: 'update',
+            filePath,
+            tags
+          });
+        }
+
+        console.log(`[LocalFiles] ID3 tags saved successfully`);
+        return { success: true };
+      } else {
+        const errorMsg = result?.message || 'Failed to write tags to file';
+        console.error(`[LocalFiles] Failed to write ID3 tags:`, errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    } catch (error) {
+      console.error(`[LocalFiles] Error saving ID3 tags:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Helper to download image from URL
+  async downloadImage(url) {
+    return new Promise((resolve, reject) => {
+      const protocol = url.startsWith('https') ? require('https') : require('http');
+
+      const request = protocol.get(url, (response) => {
+        // Handle redirects
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          console.log(`[LocalFiles] Following redirect to: ${response.headers.location}`);
+          this.downloadImage(response.headers.location).then(resolve).catch(reject);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`HTTP ${response.statusCode}`));
+          return;
+        }
+
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          resolve(buffer);
+        });
+        response.on('error', reject);
+      });
+
+      request.on('error', reject);
+      request.setTimeout(30000, () => {
+        request.destroy();
+        reject(new Error('Download timeout'));
+      });
+    });
+  }
+
   async shutdown() {
     console.log('[LocalFiles] Shutting down...');
 

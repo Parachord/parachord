@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld('electron', {
     search: (query) => ipcRenderer.invoke('localFiles:search', query),
     resolve: (params) => ipcRenderer.invoke('localFiles:resolve', params),
     getStats: () => ipcRenderer.invoke('localFiles:getStats'),
+    saveId3Tags: (filePath, tags) => ipcRenderer.invoke('localFiles:saveId3Tags', filePath, tags),
 
     // Event listeners
     onScanProgress: (callback) => {
