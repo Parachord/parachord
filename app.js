@@ -7073,10 +7073,10 @@ useEffect(() => {
                   // Track info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
-                  // Resolver icons (small squares like track lists)
-                  track.sources && Object.keys(track.sources).length > 0 &&
-                    React.createElement('div', { className: 'flex gap-1 mt-1' },
-                      ...Object.keys(track.sources).slice(0, 3).map(source => {
+                  // Resolver icons (small squares like track lists) - always render container for consistent height
+                  React.createElement('div', { className: 'flex gap-1 mt-1', style: { minHeight: '18px' } },
+                    ...(track.sources && Object.keys(track.sources).length > 0 ?
+                      Object.keys(track.sources).slice(0, 3).map(source => {
                         const colors = {
                           spotify: '#1DB954',
                           youtube: '#FF0000',
@@ -7101,7 +7101,8 @@ useEffect(() => {
                           }
                         }, abbrevMap[source] || source.slice(0, 2).toUpperCase());
                       })
-                    )
+                    : [])
+                  )
                 )
               )
             )
