@@ -7756,7 +7756,7 @@ useEffect(() => {
                 },
                   // Album art with hover overlay
                   React.createElement('div', {
-                    className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-orange-500 to-pink-500 relative'
+                    className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
                   },
                     album.albumArt ?
                       React.createElement('img', {
@@ -7770,7 +7770,7 @@ useEffect(() => {
                       }, '💿'),
                     // Rank badge
                     React.createElement('div', {
-                      className: 'absolute top-2 left-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
+                      className: 'absolute top-2 right-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
                     }, `#${album.rank}`),
                     // Hover overlay with Add to Queue button
                     React.createElement('div', {
