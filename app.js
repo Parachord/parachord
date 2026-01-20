@@ -5058,19 +5058,41 @@ const Parachord = () => {
       // Create artist object
       const artist = {
         name: artistName,
-        mbid: album['artist-credit']?.[0]?.artist?.id || null
+        id: album['artist-credit']?.[0]?.artist?.id || null
       };
 
-      // Fetch release data using the release-group ID
-      // This reuses existing fetchReleaseData which handles the release-group -> release conversion
-      // Include primary-type if available (Album, EP, Single, etc.)
-      await fetchReleaseData({
+      // Mark that we're opening a release so header stays collapsed when artist changes
+      openingReleaseRef.current = true;
+
+      // Set artist context
+      setCurrentArtist(artist);
+
+      // Check for cached artist image first for instant display
+      const normalizedName = artistName.trim().toLowerCase();
+      const cachedImage = artistImageCache.current[normalizedName];
+      const now = Date.now();
+      const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
+      if (imageCacheValid) {
+        setArtistImage(cachedImage.url);
+        setArtistImagePosition(cachedImage.facePosition || 'center 25%');
+      } else {
+        // Fetch artist image (don't clear current image to avoid gray flash)
+        getArtistImage(artistName).then(result => {
+          if (result) {
+            setArtistImage(result.url);
+            setArtistImagePosition(result.facePosition || 'center 25%');
+          }
+        });
+      }
+
+      // Start loading release FIRST (sets loadingRelease=true), then navigate
+      // This prevents the header from flashing because loadingRelease=true hides it
+      fetchReleaseData({
         id: album.id,
         title: album.title,
         releaseType: album['primary-type']?.toLowerCase() || 'album'
       }, artist);
-
-      // Switch to artist view to show the release
       navigateTo('artist');
     } catch (error) {
       console.error('Error fetching album from search:', error);
@@ -5092,6 +5114,36 @@ const Parachord = () => {
     try {
       console.log('Loading collection album:', album.title, 'by', album.artist);
 
+      // Show loading state immediately - set artist and navigate before search
+      const artist = {
+        name: album.artist,
+        id: null
+      };
+
+      openingReleaseRef.current = true;
+      setCurrentArtist(artist);
+      setLoadingRelease(true);
+
+      // Load artist image from cache if available
+      const normalizedName = album.artist.trim().toLowerCase();
+      const cachedImage = artistImageCache.current[normalizedName];
+      const now = Date.now();
+      const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
+      if (imageCacheValid) {
+        setArtistImage(cachedImage.url);
+        setArtistImagePosition(cachedImage.facePosition || 'center 25%');
+      } else {
+        getArtistImage(album.artist).then(result => {
+          if (result) {
+            setArtistImage(result.url);
+            setArtistImagePosition(result.facePosition || 'center 25%');
+          }
+        });
+      }
+
+      navigateTo('artist');
+
       // Search MusicBrainz for the album
       const searchQuery = encodeURIComponent(`${album.artist} ${album.title}`);
       const response = await fetch(
@@ -5106,6 +5158,7 @@ const Parachord = () => {
 
       if (results.length === 0) {
         showToast('Album not found');
+        setLoadingRelease(false);
         return;
       }
 
@@ -5114,11 +5167,16 @@ const Parachord = () => {
         r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
       ) || results[0];
 
-      // Navigate to album using existing handleAlbumClick logic
-      await handleAlbumClick(match);
+      // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
+      fetchReleaseData({
+        id: match.id,
+        title: match.title,
+        releaseType: match['primary-type']?.toLowerCase() || 'album'
+      }, artist);
     } catch (error) {
       console.error('Error loading collection album:', error);
       showToast('Failed to load album');
+      setLoadingRelease(false);
     }
   };
 
@@ -9647,79 +9705,110 @@ useEffect(() => {
           )
         ),
         
-        // Loading state for release
+        // Loading state for release - show real header (already loaded), skeleton for content only
         loadingRelease && React.createElement('div', {
-          className: 'flex-1 bg-white'
+          className: 'flex-1 flex flex-col',
+          style: { backgroundColor: 'white' }
         },
-          // Skeleton header
+          // Real header with artist image (already loaded)
           React.createElement('div', {
-            className: 'relative h-36 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-            style: { backgroundSize: '200% 100%' }
-          }),
-          // Skeleton content
-          React.createElement('div', { className: 'p-6' },
-            // Skeleton section header
-            React.createElement('div', { className: 'flex items-center justify-between mb-6' },
+            className: 'relative',
+            style: { height: '80px', flexShrink: 0, overflow: 'hidden' }
+          },
+            // Background image
+            artistImage && React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                backgroundImage: `url(${artistImage})`,
+                backgroundSize: 'cover',
+                backgroundPosition: artistImagePosition
+              }
+            }),
+            // Gradient overlay
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                background: artistImage
+                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(17,17,17,0.95) 100%)'
+                  : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+              }
+            }),
+            // Artist info overlay (matching collapsed artist header)
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-16 z-10'
+            },
+              // Left side: Artist name
+              React.createElement('h1', {
+                className: 'text-2xl font-light mr-6 text-white flex-shrink-0',
+                style: {
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  maxWidth: '40%',
+                  lineHeight: '1.2'
+                }
+              }, currentArtist?.name || ''),
+              // Center: Navigation tabs
               React.createElement('div', {
-                className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-24 animate-shimmer',
-                style: { backgroundSize: '200% 100%' }
-              }),
-              React.createElement('div', {
-                className: 'h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-16 animate-shimmer',
-                style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
-              })
-            ),
-            // Skeleton two-column layout
+                className: 'flex items-center gap-1',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              },
+                ['music', 'biography', 'related'].map((tab, index) => [
+                  index > 0 && React.createElement('span', {
+                    key: `sep-loading-${tab}`,
+                    className: 'text-gray-400 mx-2'
+                  }, '|'),
+                  React.createElement('span', {
+                    key: `loading-${tab}`,
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider ${
+                      tab === 'music' ? 'text-white' : 'text-gray-400'
+                    }`
+                  }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+                ]).flat().filter(Boolean)
+              ),
+              // Right side: Start Album Station button
+              React.createElement('button', {
+                className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+                style: {
+                  backgroundColor: '#E91E63',
+                  boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+                }
+              }, 'Start Album Station')
+            )
+          ),
+          // Skeleton content with white background (matching release page)
+          React.createElement('div', { className: 'bg-white flex-1 p-6' },
             React.createElement('div', { className: 'flex gap-8' },
-              // Left column - album art + metadata
+              // Left column - album art skeleton
               React.createElement('div', { className: 'w-64 flex-shrink-0' },
                 React.createElement('div', {
-                  className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-shimmer',
-                  style: { backgroundSize: '200% 100%' }
+                  className: 'aspect-square rounded-lg mb-4 animate-pulse bg-gray-100'
                 }),
                 React.createElement('div', {
-                  className: 'h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
-                  style: { backgroundSize: '200% 100%', animationDelay: '50ms' }
+                  className: 'h-6 rounded w-3/4 mb-2 animate-pulse bg-gray-200'
                 }),
                 React.createElement('div', {
-                  className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 mb-4 animate-shimmer',
-                  style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
-                }),
-                React.createElement('div', { className: 'space-y-2' },
-                  React.createElement('div', {
-                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-full animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: '150ms' }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/3 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: '200ms' }
-                  })
-                )
+                  className: 'h-4 rounded w-1/2 mb-4 animate-pulse bg-gray-100'
+                })
               ),
-              // Right column - track list
-              React.createElement('div', { className: 'flex-1 space-y-3' },
+              // Right column - track list skeleton
+              React.createElement('div', { className: 'flex-1 space-y-1' },
                 Array.from({ length: 8 }).map((_, i) =>
                   React.createElement('div', {
                     key: `track-skeleton-${i}`,
-                    className: 'flex items-center gap-4 p-3 bg-gray-50 rounded'
+                    className: 'flex items-center gap-4 p-3 rounded',
+                    style: { backgroundColor: i % 2 === 0 ? '#fafafa' : 'transparent' }
                   },
                     React.createElement('div', {
-                      className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                      className: 'w-6 h-4 rounded animate-pulse bg-gray-100'
                     }),
                     React.createElement('div', { className: 'flex-1' },
                       React.createElement('div', {
-                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/3 mb-1 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/3 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                        className: 'h-4 rounded w-2/3 animate-pulse bg-gray-200'
                       })
                     ),
                     React.createElement('div', {
-                      className: 'w-12 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                      className: 'w-10 h-4 rounded animate-pulse bg-gray-100'
                     })
                   )
                 )
@@ -9732,7 +9821,7 @@ useEffect(() => {
         !loadingRelease && currentRelease && React.createElement('div', {
           className: 'relative',
           style: {
-            height: '140px',
+            height: '80px',
             flexShrink: 0,
             overflow: 'hidden'
           }
@@ -9756,16 +9845,16 @@ useEffect(() => {
                 : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
             }
           }),
-          // Artist info overlay (inline layout for release page)
+          // Artist info overlay (inline layout for release page - matches collapsed artist header)
           React.createElement('div', {
-            className: 'absolute inset-0 flex items-center px-8 z-10'
+            className: 'absolute inset-0 flex items-center px-16 z-10'
           },
             // Left side: Artist name
             React.createElement('h1', {
-              className: 'text-2xl font-bold mr-8 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag flex-shrink-0',
+              className: 'text-2xl font-light mr-6 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag flex-shrink-0',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                letterSpacing: '0.15em',
+                letterSpacing: '0.2em',
                 textTransform: 'uppercase',
                 maxWidth: '40%',
                 lineHeight: '1.2'
