@@ -105,6 +105,30 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Local Files operations
+  localFiles: {
+    addWatchFolder: () => ipcRenderer.invoke('localFiles:addWatchFolder'),
+    removeWatchFolder: (path) => ipcRenderer.invoke('localFiles:removeWatchFolder', path),
+    getWatchFolders: () => ipcRenderer.invoke('localFiles:getWatchFolders'),
+    rescanAll: () => ipcRenderer.invoke('localFiles:rescanAll'),
+    rescanFolder: (path) => ipcRenderer.invoke('localFiles:rescanFolder', path),
+    search: (query) => ipcRenderer.invoke('localFiles:search', query),
+    resolve: (params) => ipcRenderer.invoke('localFiles:resolve', params),
+    getStats: () => ipcRenderer.invoke('localFiles:getStats'),
+
+    // Event listeners
+    onScanProgress: (callback) => {
+      ipcRenderer.on('localFiles:scanProgress', (event, data) => {
+        callback(data);
+      });
+    },
+    onLibraryChanged: (callback) => {
+      ipcRenderer.on('localFiles:libraryChanged', (event, changes) => {
+        callback(changes);
+      });
+    }
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
