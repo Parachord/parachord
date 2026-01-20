@@ -31,6 +31,35 @@ let authServer;
 let wss; // WebSocket server for browser extension
 let extensionSocket = null; // Current connected extension
 let localFilesService = null;
+let localFilesServiceReady = null; // Promise that resolves when service is ready
+
+// Helper to wait for local files service to be ready
+async function waitForLocalFilesService() {
+  // If already initialized, return immediately
+  if (localFilesService?.initialized) return localFilesService;
+
+  // If init promise exists, wait for it
+  if (localFilesServiceReady) {
+    await localFilesServiceReady;
+    return localFilesService;
+  }
+
+  // Service not created yet, poll until it's ready
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const maxAttempts = 200; // 10 seconds max wait
+    const checkInterval = setInterval(() => {
+      attempts++;
+      if (localFilesService?.initialized) {
+        clearInterval(checkInterval);
+        resolve(localFilesService);
+      } else if (attempts >= maxAttempts) {
+        clearInterval(checkInterval);
+        reject(new Error('Timeout waiting for Local Files service'));
+      }
+    }, 50);
+  });
+}
 
 function createWindow() {
   console.log('Creating main window...');
@@ -325,15 +354,18 @@ app.whenReady().then(() => {
 
   // Initialize Local Files service
   localFilesService = new LocalFilesService(app.getPath('userData'));
-  localFilesService.init().then(() => {
+  localFilesServiceReady = localFilesService.init().then(() => {
     console.log('Local Files service ready');
 
     // Set up library change notifications
     localFilesService.setLibraryChangedCallback((changes) => {
       mainWindow?.webContents.send('localFiles:libraryChanged', changes);
     });
+
+    return localFilesService;
   }).catch(err => {
     console.error('Failed to initialize Local Files service:', err);
+    throw err;
   });
 
   // Register media key shortcuts
@@ -1297,7 +1329,8 @@ ipcMain.handle('localFiles:addWatchFolder', async () => {
   console.log('  Selected:', folderPath);
 
   try {
-    const scanResult = await localFilesService.addWatchFolder(folderPath);
+    const service = await waitForLocalFilesService();
+    const scanResult = await service.addWatchFolder(folderPath);
     return { success: true, folderPath, scanResult };
   } catch (error) {
     console.error('  Error:', error);
@@ -1310,7 +1343,8 @@ ipcMain.handle('localFiles:removeWatchFolder', async (event, folderPath) => {
   console.log('  Path:', folderPath);
 
   try {
-    await localFilesService.removeWatchFolder(folderPath);
+    const service = await waitForLocalFilesService();
+    await service.removeWatchFolder(folderPath);
     return { success: true };
   } catch (error) {
     console.error('  Error:', error);
@@ -1319,14 +1353,16 @@ ipcMain.handle('localFiles:removeWatchFolder', async (event, folderPath) => {
 });
 
 ipcMain.handle('localFiles:getWatchFolders', async () => {
-  return localFilesService.getWatchFolders();
+  const service = await waitForLocalFilesService();
+  return service.getWatchFolders();
 });
 
 ipcMain.handle('localFiles:rescanAll', async () => {
   console.log('=== Rescan All Folders ===');
 
   try {
-    const results = await localFilesService.rescanAll((current, total, file) => {
+    const service = await waitForLocalFilesService();
+    const results = await service.rescanAll((current, total, file) => {
       mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
     });
     return { success: true, results };
@@ -1341,7 +1377,8 @@ ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
   console.log('  Path:', folderPath);
 
   try {
-    const result = await localFilesService.scanFolder(folderPath, (current, total, file) => {
+    const service = await waitForLocalFilesService();
+    const result = await service.scanFolder(folderPath, (current, total, file) => {
       mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
     });
     return { success: true, result };
@@ -1352,15 +1389,18 @@ ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
 });
 
 ipcMain.handle('localFiles:search', async (event, query) => {
-  return localFilesService.search(query);
+  const service = await waitForLocalFilesService();
+  return service.search(query);
 });
 
 ipcMain.handle('localFiles:resolve', async (event, params) => {
-  return localFilesService.resolve(params);
+  const service = await waitForLocalFilesService();
+  return service.resolve(params);
 });
 
 ipcMain.handle('localFiles:getStats', async () => {
-  return localFilesService.getStats();
+  const service = await waitForLocalFilesService();
+  return service.getStats();
 });
 
 ipcMain.handle('localFiles:saveId3Tags', async (event, filePath, tags) => {
@@ -1369,7 +1409,8 @@ ipcMain.handle('localFiles:saveId3Tags', async (event, filePath, tags) => {
   console.log('  Tags:', tags);
 
   try {
-    const result = await localFilesService.saveId3Tags(filePath, tags);
+    const service = await waitForLocalFilesService();
+    const result = await service.saveId3Tags(filePath, tags);
     return result;
   } catch (error) {
     console.error('  Error:', error);

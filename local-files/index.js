@@ -12,33 +12,47 @@ class LocalFilesService {
     this.watcher = null;
     this.albumArt = null;
     this.initialized = false;
+    this.initPromise = null;
   }
 
   async init() {
     if (this.initialized) return this;
+    if (this.initPromise) return this.initPromise;
 
-    console.log('[LocalFiles] Initializing service...');
+    this.initPromise = (async () => {
+      console.log('[LocalFiles] Initializing service...');
 
-    // Initialize database
-    this.db.init();
+      // Initialize database
+      this.db.init();
 
-    // Initialize scanner
-    this.scanner = new FileScanner(this.db);
+      // Initialize scanner
+      this.scanner = new FileScanner(this.db);
 
-    // Initialize watcher
-    this.watcher = new FileWatcher(this.db, this.scanner);
+      // Initialize watcher
+      this.watcher = new FileWatcher(this.db, this.scanner);
 
-    // Initialize album art resolver
-    const artCacheDir = path.join(this.userDataPath, 'album-art-cache');
-    this.albumArt = new AlbumArtResolver(this.db, artCacheDir);
+      // Initialize album art resolver
+      const artCacheDir = path.join(this.userDataPath, 'album-art-cache');
+      this.albumArt = new AlbumArtResolver(this.db, artCacheDir);
 
-    // Start watching configured folders
-    await this.watcher.startWatching();
+      // Start watching configured folders
+      await this.watcher.startWatching();
 
-    this.initialized = true;
-    console.log('[LocalFiles] Service initialized');
+      this.initialized = true;
+      console.log('[LocalFiles] Service initialized');
 
-    return this;
+      return this;
+    })();
+
+    return this.initPromise;
+  }
+
+  // Wait for initialization to complete (for use in IPC handlers)
+  async waitForInit() {
+    if (this.initialized) return this;
+    if (this.initPromise) return this.initPromise;
+    // If init hasn't been called yet, call it
+    return this.init();
   }
 
   // Watch folder management
@@ -62,6 +76,12 @@ class LocalFilesService {
     // Remove from database (also removes tracks)
     this.db.removeWatchFolder(folderPath);
 
+    // Notify renderer that library has changed
+    if (this.watcher?.onLibraryChanged) {
+      console.log(`[LocalFiles] Watch folder removed, notifying renderer`);
+      this.watcher.onLibraryChanged([{ action: 'folder-removed', folder: folderPath }]);
+    }
+
     return { success: true };
   }
 
@@ -71,7 +91,15 @@ class LocalFilesService {
 
   // Scanning
   async scanFolder(folderPath, onProgress) {
-    return this.scanner.scanFolder(folderPath, onProgress);
+    const result = await this.scanner.scanFolder(folderPath, onProgress);
+
+    // Notify renderer that library has changed after scan completes
+    if (result && (result.added > 0 || result.updated > 0) && this.watcher?.onLibraryChanged) {
+      console.log(`[LocalFiles] Scan complete, notifying renderer of ${result.added} added, ${result.updated} updated tracks`);
+      this.watcher.onLibraryChanged([{ action: 'scan-complete', folder: folderPath, ...result }]);
+    }
+
+    return result;
   }
 
   async rescanAll(onProgress) {
@@ -83,6 +111,14 @@ class LocalFilesService {
         const result = await this.scanner.scanFolder(folder.path, onProgress);
         results.push({ folder: folder.path, ...result });
       }
+    }
+
+    // Notify renderer that library has changed after all scans complete
+    const totalAdded = results.reduce((sum, r) => sum + (r.added || 0), 0);
+    const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
+    if ((totalAdded > 0 || totalUpdated > 0) && this.watcher?.onLibraryChanged) {
+      console.log(`[LocalFiles] Rescan complete, notifying renderer of ${totalAdded} added, ${totalUpdated} updated tracks`);
+      this.watcher.onLibraryChanged([{ action: 'rescan-complete', results }]);
     }
 
     return results;

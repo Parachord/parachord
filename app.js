@@ -999,6 +999,8 @@ const Parachord = () => {
   const handleNextRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
+  const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
+  const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Keep refs in sync with state
@@ -1798,9 +1800,16 @@ const Parachord = () => {
 
     if (missingIds.length > 0) {
       console.log('📦 Adding new resolvers to order:', missingIds);
-      setResolverOrder(prev => [...prev, ...missingIds]);
+      // Use functional update to ensure we don't add duplicates
+      setResolverOrder(prev => {
+        const newIds = missingIds.filter(id => !prev.includes(id));
+        return newIds.length > 0 ? [...prev, ...newIds] : prev;
+      });
       // Also enable new resolvers by default
-      setActiveResolvers(prev => [...prev, ...missingIds.filter(id => !prev.includes(id))]);
+      setActiveResolvers(prev => {
+        const newIds = missingIds.filter(id => !prev.includes(id));
+        return newIds.length > 0 ? [...prev, ...newIds] : prev;
+      });
     }
   }, [loadedResolvers, cacheLoaded]);
 
@@ -1987,13 +1996,23 @@ const Parachord = () => {
     // Skip until we've loaded settings from storage to avoid overwriting saved settings
     if (!resolverSettingsLoaded.current) return;
 
+    // Skip until resolvers are loaded and synced - this prevents saving before
+    // new resolvers (like localfiles) are added to the settings
+    if (loadedResolvers.length === 0) return;
+    const loadedIds = loadedResolvers.map(r => r.id);
+    const allResolversInOrder = loadedIds.every(id => resolverOrder.includes(id));
+    if (!allResolversInOrder) {
+      console.log('⏳ Waiting for resolver sync before saving...');
+      return;
+    }
+
     // Debounce the save to avoid saving too frequently
     const timeoutId = setTimeout(() => {
       saveCacheToStore();
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [activeResolvers, resolverOrder]);
+  }, [activeResolvers, resolverOrder, loadedResolvers]);
 
   // Local Files handlers
   const handleAddWatchFolder = async () => {
@@ -2261,6 +2280,11 @@ const Parachord = () => {
         });
         audioRef.current.addEventListener('error', (e) => {
           console.error('🎵 Audio error:', e.target.error);
+          // Don't show error dialog if fallback is in progress (it will be handled by the catch block)
+          if (localFileFallbackInProgressRef.current) {
+            console.log('🔄 Audio error during fallback attempt, skipping dialog');
+            return;
+          }
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
@@ -2268,6 +2292,10 @@ const Parachord = () => {
           });
         });
       }
+
+      // Store the track for potential fallback handling
+      localFilePlaybackTrackRef.current = trackOrSource;
+      localFileFallbackInProgressRef.current = false;
 
       // Use custom local-audio:// protocol for secure local file playback
       const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl?.replace('file://', '');
@@ -2315,6 +2343,27 @@ const Parachord = () => {
         }
       } catch (error) {
         console.error('❌ Local file playback failed:', error);
+
+        // Try fallback to next available source if we have the original track with sources
+        if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles');
+          if (otherSources.length > 0) {
+            console.log('🔄 Falling back to next available source...');
+            // Set flag to prevent error event listener from showing duplicate dialog
+            localFileFallbackInProgressRef.current = true;
+            // Create a modified track without localfiles source to trigger fallback
+            const fallbackTrack = {
+              ...trackOrSource,
+              sources: Object.fromEntries(
+                Object.entries(trackOrSource.sources).filter(([id]) => id !== 'localfiles')
+              )
+            };
+            handlePlay(fallbackTrack);
+            return;
+          }
+        }
+
+        localFileFallbackInProgressRef.current = false;
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -2393,6 +2442,48 @@ const Parachord = () => {
 
       if (!success) {
         console.error(`❌ ${resolver.name} playback failed`);
+
+        // For Spotify, retry once after a short delay (device may need to wake up)
+        if (resolverId === 'spotify' && !sourceToPlay._spotifyRetried) {
+          console.log('🔄 Spotify playback failed, retrying in 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // Mark as retried to prevent infinite loop
+          const retrySource = { ...sourceToPlay, _spotifyRetried: true };
+          const retryTrack = trackOrSource.sources ? {
+            ...trackOrSource,
+            sources: { ...trackOrSource.sources, spotify: retrySource }
+          } : retrySource;
+
+          console.log('🔄 Retrying Spotify playback...');
+          const retrySuccess = await resolver.play(retrySource, config);
+
+          if (retrySuccess) {
+            console.log('✅ Spotify retry successful');
+            streamingPlaybackActiveRef.current = true;
+            setBrowserPlaybackActive(false);
+            setIsExternalPlayback(false);
+
+            const trackToSet = trackOrSource.sources ? {
+              ...sourceToPlay,
+              id: trackOrSource.id,
+              artist: trackOrSource.artist,
+              title: trackOrSource.title,
+              album: trackOrSource.album,
+              duration: sourceToPlay.duration || trackOrSource.duration,
+              sources: trackOrSource.sources
+            } : sourceToPlay;
+            setCurrentTrack(trackToSet);
+            setIsPlaying(true);
+            setProgress(0);
+            if (audioContext) {
+              setStartTime(audioContext.currentTime);
+            }
+            startAutoAdvancePolling(resolverId, sourceToPlay, config);
+            return; // Success on retry, don't fall through to re-resolve
+          }
+          console.error('❌ Spotify retry also failed');
+        }
 
         // Playback failed - cached source may be invalid
         // Try to re-resolve and find alternative sources
@@ -3367,13 +3458,17 @@ const Parachord = () => {
       const savedResolverOrder = await window.electron.store.get('resolver_order');
 
       if (savedActiveResolvers) {
-        setActiveResolvers(savedActiveResolvers);
-        console.log(`📦 Loaded ${savedActiveResolvers.length} active resolvers from storage`);
+        // Deduplicate in case of corrupted data
+        const dedupedActive = [...new Set(savedActiveResolvers)];
+        setActiveResolvers(dedupedActive);
+        console.log(`📦 Loaded ${dedupedActive.length} active resolvers from storage`);
       }
 
       if (savedResolverOrder) {
-        setResolverOrder(savedResolverOrder);
-        console.log(`📦 Loaded resolver order from storage (${savedResolverOrder.length} resolvers)`);
+        // Deduplicate in case of corrupted data (preserving order of first occurrence)
+        const dedupedOrder = [...new Set(savedResolverOrder)];
+        setResolverOrder(dedupedOrder);
+        console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
       // Mark settings as loaded so save useEffect knows it's safe to save
