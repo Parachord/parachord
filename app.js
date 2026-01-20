@@ -1006,6 +1006,114 @@ const Parachord = () => {
     return Array.from(albumMap.values());
   }, [library]);
 
+  // Collection page scroll handler for header collapse
+  const handleCollectionScroll = useCallback((e) => {
+    const { scrollTop } = e.target;
+    setCollectionHeaderCollapsed(scrollTop > 50);
+  }, []);
+
+  // Reset collection header collapse when leaving library view
+  useEffect(() => {
+    if (activeView !== 'library') {
+      setCollectionHeaderCollapsed(false);
+      setCollectionSearchOpen(false);
+      setCollectionSearch('');
+    }
+  }, [activeView]);
+
+  // Filter collection items by search query
+  const filterCollectionItems = useCallback((items, type) => {
+    if (!collectionSearch.trim()) return items;
+    const query = collectionSearch.toLowerCase();
+
+    if (type === 'artists') {
+      return items.filter(a => a.name.toLowerCase().includes(query));
+    }
+    if (type === 'albums') {
+      return items.filter(a =>
+        a.title.toLowerCase().includes(query) ||
+        a.artist.toLowerCase().includes(query)
+      );
+    }
+    if (type === 'tracks') {
+      return items.filter(t =>
+        (t.title || '').toLowerCase().includes(query) ||
+        (t.artist || '').toLowerCase().includes(query) ||
+        (t.album || '').toLowerCase().includes(query)
+      );
+    }
+    return items;
+  }, [collectionSearch]);
+
+  // Sort collection items
+  const sortCollectionItems = useCallback((items, type) => {
+    const sortKey = collectionSort[type];
+    const sorted = [...items];
+
+    if (type === 'artists') {
+      switch (sortKey) {
+        case 'alpha-asc': return sorted.sort((a, b) => a.name.localeCompare(b.name));
+        case 'alpha-desc': return sorted.sort((a, b) => b.name.localeCompare(a.name));
+        case 'tracks': return sorted.sort((a, b) => b.trackCount - a.trackCount);
+        case 'recent': return sorted; // Keep original order (most recently added)
+        default: return sorted;
+      }
+    }
+    if (type === 'albums') {
+      switch (sortKey) {
+        case 'alpha-asc': return sorted.sort((a, b) => a.title.localeCompare(b.title));
+        case 'alpha-desc': return sorted.sort((a, b) => b.title.localeCompare(a.title));
+        case 'artist': return sorted.sort((a, b) => a.artist.localeCompare(b.artist));
+        case 'year-new': return sorted.sort((a, b) => (b.year || 0) - (a.year || 0));
+        case 'year-old': return sorted.sort((a, b) => (a.year || 9999) - (b.year || 9999));
+        case 'recent': return sorted;
+        default: return sorted;
+      }
+    }
+    if (type === 'tracks') {
+      switch (sortKey) {
+        case 'title-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        case 'title-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+        case 'artist': return sorted.sort((a, b) => (a.artist || '').localeCompare(b.artist || ''));
+        case 'album': return sorted.sort((a, b) => (a.album || '').localeCompare(b.album || ''));
+        case 'duration': return sorted.sort((a, b) => (a.duration || 0) - (b.duration || 0));
+        case 'recent': return sorted;
+        default: return sorted;
+      }
+    }
+    return sorted;
+  }, [collectionSort]);
+
+  // Get sort options for current tab
+  const getCollectionSortOptions = (tab) => {
+    if (tab === 'artists') {
+      return [
+        { value: 'alpha-asc', label: 'A-Z' },
+        { value: 'alpha-desc', label: 'Z-A' },
+        { value: 'tracks', label: 'Most Tracks' },
+        { value: 'recent', label: 'Recently Added' }
+      ];
+    }
+    if (tab === 'albums') {
+      return [
+        { value: 'alpha-asc', label: 'A-Z' },
+        { value: 'alpha-desc', label: 'Z-A' },
+        { value: 'artist', label: 'Artist Name' },
+        { value: 'year-new', label: 'Year (Newest)' },
+        { value: 'year-old', label: 'Year (Oldest)' },
+        { value: 'recent', label: 'Recently Added' }
+      ];
+    }
+    return [
+      { value: 'title-asc', label: 'Title A-Z' },
+      { value: 'title-desc', label: 'Title Z-A' },
+      { value: 'artist', label: 'Artist Name' },
+      { value: 'album', label: 'Album Name' },
+      { value: 'duration', label: 'Duration' },
+      { value: 'recent', label: 'Recently Added' }
+    ];
+  };
+
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
 
