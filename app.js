@@ -1723,7 +1723,7 @@ const Parachord = () => {
     // Look up track metadata
     try {
       // Pass resolver config so Spotify has access to token
-      const config = getResolverConfig(resolverId);
+      const config = await getResolverConfig(resolverId);
       const result = await resolverLoaderRef.current.lookupUrl(url, config);
 
       if (!result || !result.track) {
@@ -1756,7 +1756,7 @@ const Parachord = () => {
 
       const resolvePromises = enabledResolvers.map(async (resolver) => {
         try {
-          const config = getResolverConfig(resolver.id);
+          const config = await getResolverConfig(resolver.id);
           const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config);
           if (result) {
             resolvedTrack.sources[resolver.id] = {
@@ -2400,25 +2400,42 @@ const Parachord = () => {
     .map(id => allResolvers.find(r => r.id === id))
     .filter(Boolean);
 
-  // Helper function to get resolver config
-  const getResolverConfig = (resolverId) => {
+  // Helper function to get resolver config (async for Spotify to ensure fresh token)
+  const getResolverConfig = async (resolverId) => {
+    // For Spotify, always get a fresh token from the IPC handler
+    // This ensures we use a valid token even if the React state is stale
+    if (resolverId === 'spotify') {
+      let token = spotifyToken;
+
+      // Always check with the IPC handler which will refresh if needed
+      if (window.electron?.spotify) {
+        const tokenData = await window.electron.spotify.checkToken();
+        if (tokenData && tokenData.token) {
+          token = tokenData.token;
+          // Update React state if token changed
+          if (token !== spotifyToken) {
+            console.log('🔄 Token was refreshed, updating state');
+            setSpotifyToken(token);
+          }
+        } else {
+          token = null;
+        }
+      }
+
+      console.log('🔑 Spotify token status:', {
+        hasToken: !!token,
+        tokenLength: token?.length,
+        tokenPreview: token ? token.substring(0, 20) + '...' : 'null'
+      });
+
+      return { token };
+    }
+
     const configs = {
-      spotify: { token: spotifyToken },
       qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
     };
-    const config = configs[resolverId] || {};
-    
-    // Debug: Log Spotify token status
-    if (resolverId === 'spotify') {
-      console.log('🔑 Spotify token status:', {
-        hasToken: !!spotifyToken,
-        tokenLength: spotifyToken?.length,
-        tokenPreview: spotifyToken ? spotifyToken.substring(0, 20) + '...' : 'null'
-      });
-    }
-    
-    return config;
+    return configs[resolverId] || {};
   };
 
   const SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
@@ -2753,7 +2770,7 @@ const Parachord = () => {
             if (!resolver || !resolver.capabilities.resolve) continue;
 
             try {
-              const config = getResolverConfig(resolverId);
+              const config = await getResolverConfig(resolverId);
               const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
 
               if (resolved) {
@@ -2944,7 +2961,7 @@ const Parachord = () => {
           if (!resolver.capabilities.resolve) return;
 
           try {
-            const config = getResolverConfig(resolver.id);
+            const config = await getResolverConfig(resolver.id);
             const result = await resolver.resolve(
               trackOrSource.artist,
               trackOrSource.title,
@@ -3189,7 +3206,7 @@ const Parachord = () => {
 
     // Use resolver's play method
     try {
-      const config = getResolverConfig(resolverId);
+      const config = await getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
 
       const success = await resolver.play(sourceToPlay, config);
@@ -3567,7 +3584,7 @@ const Parachord = () => {
 
     // Open in external browser FIRST
     try {
-      const config = getResolverConfig(resolverId);
+      const config = await getResolverConfig(resolverId);
       await resolver.play(track, config);
       console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
 
@@ -4011,7 +4028,7 @@ const Parachord = () => {
       if (!resolver.capabilities.resolve || !resolver.play) return;
 
       try {
-        const config = getResolverConfig(resolver.id);
+        const config = await getResolverConfig(resolver.id);
         const result = await resolver.resolve(track.artist, track.title, track.album, config);
 
         if (result) {
@@ -4886,7 +4903,7 @@ const Parachord = () => {
       if (!resolver.capabilities.resolve || !resolver.play) return;
 
       try {
-        const config = getResolverConfig(resolver.id);
+        const config = await getResolverConfig(resolver.id);
         const result = await resolver.resolve(artistName, track.title, null, config);
 
         if (result) {
@@ -5012,7 +5029,7 @@ const Parachord = () => {
         if (!resolver.capabilities.resolve || !resolver.play) return;
 
         try {
-          const config = getResolverConfig(resolver.id);
+          const config = await getResolverConfig(resolver.id);
           console.log(`  🔎 Trying ${resolver.id}...`);
           const result = await resolver.resolve(artistName, track.title, null, config);
 
@@ -5077,7 +5094,7 @@ const Parachord = () => {
       }
 
       try {
-        const config = getResolverConfig(resolver.id);
+        const config = await getResolverConfig(resolver.id);
         console.log(`  🔎 Trying ${resolver.id}...`);
         const result = await resolver.resolve(artistName, track.title, null, config);
 
@@ -5210,7 +5227,7 @@ const Parachord = () => {
           if (!resolver.capabilities?.resolve || !resolver.play) return;
 
           try {
-            const config = getResolverConfig(resolver.id);
+            const config = await getResolverConfig(resolver.id);
             const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
             if (result) {
@@ -5301,7 +5318,7 @@ const Parachord = () => {
         if (!resolver.capabilities?.resolve || !resolver.play) return;
 
         try {
-          const config = getResolverConfig(resolver.id);
+          const config = await getResolverConfig(resolver.id);
           const result = await resolver.resolve(artistName, track.title, null, config);
 
           if (result) {
@@ -7166,7 +7183,7 @@ ${tracks}
             if (!resolver || !resolver.capabilities.resolve) continue;
 
             try {
-              const config = getResolverConfig(resolverId);
+              const config = await getResolverConfig(resolverId);
               const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
 
               if (resolved) {
@@ -7243,7 +7260,7 @@ ${tracks}
           if (!resolver || !resolver.capabilities.resolve) continue;
 
           try {
-            const config = getResolverConfig(resolverId);
+            const config = await getResolverConfig(resolverId);
             const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
 
             if (resolved) {
@@ -7669,7 +7686,7 @@ ${tracks}
               if (!resolver || !resolver.capabilities.resolve) continue;
 
               try {
-                const config = getResolverConfig(resolverId);
+                const config = await getResolverConfig(resolverId);
                 const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
 
                 if (resolved) {
@@ -7813,6 +7830,30 @@ ${tracks}
   };
 
   // Add Spotify authentication functions
+
+  // Refresh the Spotify token and return the new token (or null if refresh failed)
+  // This is called when a 401 is detected to get a fresh token
+  const refreshSpotifyToken = async () => {
+    console.log('🔄 Refreshing Spotify token...');
+    if (!window.electron?.spotify) {
+      console.log('window.electron.spotify not available');
+      return null;
+    }
+
+    const tokenData = await window.electron.spotify.checkToken();
+    if (tokenData && tokenData.token) {
+      console.log('✅ Token refreshed successfully');
+      setSpotifyToken(tokenData.token);
+      setSpotifyConnected(true);
+      return tokenData.token;
+    } else {
+      console.log('❌ Token refresh failed - no valid token returned');
+      setSpotifyToken(null);
+      setSpotifyConnected(false);
+      return null;
+    }
+  };
+
   const checkSpotifyToken = async () => {
     console.log('Checking Spotify token...');
     if (window.electron?.spotify) {
