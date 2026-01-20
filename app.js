@@ -7719,16 +7719,102 @@ useEffect(() => {
                   'Trending Now'
                 ),
                 React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Charts'),
-                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Discover what\'s trending in music right now')
+                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Top 50 most played albums on Apple Music')
               )
             )
           ),
-          // Placeholder content
+          // Content area
           React.createElement('div', { className: 'p-6' },
-            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-              React.createElement('div', { className: 'text-5xl mb-4' }, '📊'),
-              React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Charts Coming Soon'),
-              React.createElement('div', { className: 'text-sm' }, 'We\'re working on bringing you the hottest charts')
+
+            // Loading state
+            chartsLoading && React.createElement('div', {
+              className: 'flex items-center justify-center py-12'
+            },
+              React.createElement('div', {
+                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
+              })
+            ),
+
+            // Albums grid
+            !chartsLoading && charts.length > 0 && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+            },
+              charts.map(album =>
+                React.createElement('div', {
+                  key: album.id,
+                  className: 'group cursor-pointer',
+                  onMouseEnter: () => prefetchChartsTracks(album),
+                  onClick: () => openChartsAlbum(album)
+                },
+                  // Album art with hover overlay
+                  React.createElement('div', {
+                    className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-orange-500 to-pink-500 relative'
+                  },
+                    album.albumArt ?
+                      React.createElement('img', {
+                        src: album.albumArt,
+                        alt: album.title,
+                        className: 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
+                      })
+                    :
+                      React.createElement('div', {
+                        className: 'w-full h-full flex items-center justify-center text-white/80 text-4xl'
+                      }, '💿'),
+                    // Rank badge
+                    React.createElement('div', {
+                      className: 'absolute top-2 left-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
+                    }, `#${album.rank}`),
+                    // Hover overlay with Add to Queue button
+                    React.createElement('div', {
+                      className: 'absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
+                    },
+                      React.createElement('button', {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          addChartsToQueue(album);
+                        },
+                        className: 'bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg'
+                      },
+                        React.createElement('svg', {
+                          className: 'w-4 h-4',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor'
+                        },
+                          React.createElement('path', {
+                            strokeLinecap: 'round',
+                            strokeLinejoin: 'round',
+                            strokeWidth: 2,
+                            d: 'M12 4v16m8-8H4'
+                          })
+                        ),
+                        'Add to Queue'
+                      )
+                    )
+                  ),
+                  // Album info
+                  React.createElement('div', { className: 'space-y-1' },
+                    React.createElement('div', {
+                      className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                    }, album.title),
+                    React.createElement('div', {
+                      className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        fetchArtistData(album.artist);
+                      }
+                    }, album.artist)
+                  )
+                )
+              )
+            ),
+
+            // Empty state
+            !chartsLoading && charts.length === 0 && React.createElement('div', {
+              className: 'text-center py-12 text-gray-400'
+            },
+              React.createElement('div', { className: 'text-4xl mb-4' }, '📊'),
+              React.createElement('div', null, 'No charts data found. Try refreshing.')
             )
           )
         ),
