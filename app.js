@@ -2255,119 +2255,6 @@ const Parachord = () => {
     }
   }, []);
 
-  // Listen for track/playlist context menu actions
-  useEffect(() => {
-    if (window.electron?.contextMenu?.onAction) {
-      window.electron.contextMenu.onAction(async (data) => {
-        console.log('Track context menu action received:', data);
-        if (data.action === 'add-to-queue' && data.tracks) {
-          addToQueue(data.tracks);
-        } else if (data.action === 'add-to-playlist' && data.tracks) {
-          // Open the Add to Playlist panel
-          console.log(`📋 Add to Playlist: ${data.tracks.length} track(s) - "${data.sourceName}" (type: ${data.sourceType})`);
-          if (data.tracks.length > 0) {
-            console.log(`   First track: ${data.tracks[0]?.artist} - ${data.tracks[0]?.title}`);
-          }
-          setAddToPlaylistPanel({
-            open: true,
-            tracks: data.tracks,
-            sourceName: data.sourceName || 'Selected tracks',
-            sourceType: data.sourceType || 'track'
-          });
-          setSelectedPlaylistsForAdd([]); // Reset selection
-        } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
-          // Remove track from playlist
-          const trackIndex = data.trackIndex;
-          console.log(`🗑️ Removing track at index ${trackIndex} from playlist ${data.playlistId}`);
-
-          // Update playlistTracks state (the displayed tracks)
-          setPlaylistTracks(prev => {
-            const newTracks = [...prev];
-            newTracks.splice(trackIndex, 1);
-            return newTracks;
-          });
-
-          // Update the playlist in playlists state and save to disk
-          setPlaylists(prev => {
-            const updatedPlaylists = prev.map(p => {
-              if (p.id === data.playlistId) {
-                const newTracks = [...(p.tracks || [])];
-                newTracks.splice(trackIndex, 1);
-                const updatedPlaylist = {
-                  ...p,
-                  tracks: newTracks,
-                  lastModified: Date.now()
-                };
-                // Save to disk (async, non-blocking)
-                savePlaylistToDisk(updatedPlaylist);
-                return updatedPlaylist;
-              }
-              return p;
-            });
-            return updatedPlaylists;
-          });
-
-          // Update selectedPlaylist if viewing this playlist
-          if (selectedPlaylist?.id === data.playlistId) {
-            setSelectedPlaylist(prev => ({
-              ...prev,
-              lastModified: Date.now()
-            }));
-          }
-        } else if (data.action === 'delete-playlist' && data.playlistId) {
-          // Show confirmation alert
-          const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
-          if (confirmed) {
-            const result = await window.electron.playlists.delete(data.playlistId);
-            if (result.success) {
-              // Remove from state
-              setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
-              // Clear cover cache for deleted playlist
-              setAllPlaylistCovers(prev => {
-                const updated = { ...prev };
-                delete updated[data.playlistId];
-                return updated;
-              });
-            } else {
-              alert(`Failed to delete playlist: ${result.error}`);
-            }
-          }
-        } else if (data.action === 'edit-id3-tags' && data.track) {
-          // Open ID3 tag editor modal
-          console.log('🏷️ Opening ID3 tag editor for:', data.track.title);
-          setId3EditorTrack(data.track);
-          // Filter out "Unknown Album" placeholder - treat as empty
-          const albumValue = data.track.album === 'Unknown Album' ? '' : (data.track.album || '');
-          const newValues = {
-            title: data.track.title || '',
-            artist: data.track.artist || '',
-            album: albumValue,
-            trackNumber: data.track.trackNumber ? String(data.track.trackNumber) : '',
-            year: data.track.year ? String(data.track.year) : ''
-          };
-          setId3EditorValues(newValues);
-          setId3ArtSuggestions([]);
-          setId3SelectedArt(null);
-          setId3EditorOpen(true);
-
-          // Auto-fetch album art if we have artist and album
-          if (newValues.artist && newValues.album) {
-            fetchAlbumArtSuggestions(newValues.artist, newValues.album);
-          }
-        } else if (data.action === 'add-to-collection') {
-          // Add to collection based on type
-          if (data.type === 'track' && data.track) {
-            addTrackToCollection(data.track);
-          } else if (data.type === 'album' && data.album) {
-            addAlbumToCollection(data.album);
-          } else if (data.type === 'artist' && data.artist) {
-            addArtistToCollection(data.artist);
-          }
-        }
-      });
-    }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection]);
-
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
@@ -2674,6 +2561,119 @@ const Parachord = () => {
       return newData;
     });
   }, [saveCollection, showToast]);
+
+  // Listen for track/playlist context menu actions
+  useEffect(() => {
+    if (window.electron?.contextMenu?.onAction) {
+      window.electron.contextMenu.onAction(async (data) => {
+        console.log('Track context menu action received:', data);
+        if (data.action === 'add-to-queue' && data.tracks) {
+          addToQueue(data.tracks);
+        } else if (data.action === 'add-to-playlist' && data.tracks) {
+          // Open the Add to Playlist panel
+          console.log(`📋 Add to Playlist: ${data.tracks.length} track(s) - "${data.sourceName}" (type: ${data.sourceType})`);
+          if (data.tracks.length > 0) {
+            console.log(`   First track: ${data.tracks[0]?.artist} - ${data.tracks[0]?.title}`);
+          }
+          setAddToPlaylistPanel({
+            open: true,
+            tracks: data.tracks,
+            sourceName: data.sourceName || 'Selected tracks',
+            sourceType: data.sourceType || 'track'
+          });
+          setSelectedPlaylistsForAdd([]); // Reset selection
+        } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
+          // Remove track from playlist
+          const trackIndex = data.trackIndex;
+          console.log(`🗑️ Removing track at index ${trackIndex} from playlist ${data.playlistId}`);
+
+          // Update playlistTracks state (the displayed tracks)
+          setPlaylistTracks(prev => {
+            const newTracks = [...prev];
+            newTracks.splice(trackIndex, 1);
+            return newTracks;
+          });
+
+          // Update the playlist in playlists state and save to disk
+          setPlaylists(prev => {
+            const updatedPlaylists = prev.map(p => {
+              if (p.id === data.playlistId) {
+                const newTracks = [...(p.tracks || [])];
+                newTracks.splice(trackIndex, 1);
+                const updatedPlaylist = {
+                  ...p,
+                  tracks: newTracks,
+                  lastModified: Date.now()
+                };
+                // Save to disk (async, non-blocking)
+                savePlaylistToDisk(updatedPlaylist);
+                return updatedPlaylist;
+              }
+              return p;
+            });
+            return updatedPlaylists;
+          });
+
+          // Update selectedPlaylist if viewing this playlist
+          if (selectedPlaylist?.id === data.playlistId) {
+            setSelectedPlaylist(prev => ({
+              ...prev,
+              lastModified: Date.now()
+            }));
+          }
+        } else if (data.action === 'delete-playlist' && data.playlistId) {
+          // Show confirmation alert
+          const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
+          if (confirmed) {
+            const result = await window.electron.playlists.delete(data.playlistId);
+            if (result.success) {
+              // Remove from state
+              setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
+              // Clear cover cache for deleted playlist
+              setAllPlaylistCovers(prev => {
+                const updated = { ...prev };
+                delete updated[data.playlistId];
+                return updated;
+              });
+            } else {
+              alert(`Failed to delete playlist: ${result.error}`);
+            }
+          }
+        } else if (data.action === 'edit-id3-tags' && data.track) {
+          // Open ID3 tag editor modal
+          console.log('🏷️ Opening ID3 tag editor for:', data.track.title);
+          setId3EditorTrack(data.track);
+          // Filter out "Unknown Album" placeholder - treat as empty
+          const albumValue = data.track.album === 'Unknown Album' ? '' : (data.track.album || '');
+          const newValues = {
+            title: data.track.title || '',
+            artist: data.track.artist || '',
+            album: albumValue,
+            trackNumber: data.track.trackNumber ? String(data.track.trackNumber) : '',
+            year: data.track.year ? String(data.track.year) : ''
+          };
+          setId3EditorValues(newValues);
+          setId3ArtSuggestions([]);
+          setId3SelectedArt(null);
+          setId3EditorOpen(true);
+
+          // Auto-fetch album art if we have artist and album
+          if (newValues.artist && newValues.album) {
+            fetchAlbumArtSuggestions(newValues.artist, newValues.album);
+          }
+        } else if (data.action === 'add-to-collection') {
+          // Add to collection based on type
+          if (data.type === 'track' && data.track) {
+            addTrackToCollection(data.track);
+          } else if (data.type === 'album' && data.album) {
+            addAlbumToCollection(data.album);
+          } else if (data.type === 'artist' && data.artist) {
+            addArtistToCollection(data.artist);
+          }
+        }
+      });
+    }
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
