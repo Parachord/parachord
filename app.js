@@ -6550,9 +6550,65 @@ useEffect(() => {
             ),
             // Two-pane layout
             React.createElement('div', { className: 'flex gap-6 flex-1' },
-              // Left: Preview pane (placeholder)
+              // Left: Preview pane
               React.createElement('div', { className: 'w-80 flex-shrink-0 bg-white rounded-lg border border-gray-200 p-6' },
-                React.createElement('div', { className: 'text-gray-400 text-center' }, 'Preview Pane')
+                searchPreviewItem ? (
+                  searchDetailCategory === 'artists' ?
+                    // Artist preview
+                    React.createElement('div', null,
+                      // Image placeholder
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-gray-400 text-4xl' }, '🎤'),
+                      React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.name),
+                      searchPreviewItem.disambiguation && React.createElement('p', { className: 'text-sm text-gray-500 mb-3' }, searchPreviewItem.disambiguation),
+                      React.createElement('p', { className: 'text-sm text-gray-600 line-clamp-4 mb-2' }, 'Artist biography will load here...'),
+                      React.createElement('button', {
+                        onClick: () => fetchArtistData(searchPreviewItem.name),
+                        className: 'text-sm text-purple-600 hover:text-purple-700'
+                      }, 'Read more')
+                    )
+                  : searchDetailCategory === 'tracks' ?
+                    // Track preview - show album info
+                    React.createElement('div', null,
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-gray-400 text-4xl' }, '💿'),
+                      React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.album || 'Unknown Album'),
+                      React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem.artist)
+                    )
+                  : searchDetailCategory === 'albums' ?
+                    // Album preview
+                    React.createElement('div', null,
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 overflow-hidden' },
+                        searchPreviewItem.albumArt ?
+                          React.createElement('img', {
+                            src: searchPreviewItem.albumArt,
+                            alt: searchPreviewItem.title,
+                            className: 'w-full h-full object-cover'
+                          })
+                        :
+                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-400 text-4xl' }, '💿')
+                      ),
+                      React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.title),
+                      React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem['artist-credit']?.[0]?.name || 'Unknown Artist'),
+                      React.createElement('p', { className: 'text-sm text-gray-500' },
+                        `${searchPreviewItem['first-release-date']?.split('-')[0] || ''} • ${searchPreviewItem['primary-type'] || 'Album'}`
+                      )
+                    )
+                  :
+                    // Playlists preview
+                    React.createElement('div', null,
+                      // 2x2 grid placeholder
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 grid grid-cols-2 gap-0.5 overflow-hidden' },
+                        React.createElement('div', { className: 'bg-gray-300' }),
+                        React.createElement('div', { className: 'bg-gray-300' }),
+                        React.createElement('div', { className: 'bg-gray-300' }),
+                        React.createElement('div', { className: 'bg-gray-300' })
+                      ),
+                      React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.title),
+                      searchPreviewItem.creator && React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem.creator),
+                      React.createElement('p', { className: 'text-sm text-gray-500' }, `${searchPreviewItem.tracks?.length || 0} tracks`)
+                    )
+                ) :
+                  // No item selected
+                  React.createElement('div', { className: 'text-gray-400 text-center py-12' }, 'No item selected')
               ),
               // Right: Results list (placeholder)
               React.createElement('div', { className: 'flex-1 bg-white rounded-lg border border-gray-200' },
