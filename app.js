@@ -955,6 +955,19 @@ const Parachord = () => {
   // Local Files state
   const [localFilesStats, setLocalFilesStats] = useState({ totalTracks: 0, totalFolders: 0, lastScan: null });
   const [watchFolders, setWatchFolders] = useState([]);
+
+  // Collection page state
+  const [collectionTab, setCollectionTab] = useState('tracks'); // 'artists' | 'albums' | 'tracks'
+  const [collectionHeaderCollapsed, setCollectionHeaderCollapsed] = useState(false);
+  const [collectionSearchOpen, setCollectionSearchOpen] = useState(false);
+  const [collectionSearch, setCollectionSearch] = useState('');
+  const [collectionSortDropdownOpen, setCollectionSortDropdownOpen] = useState(false);
+  const [collectionSort, setCollectionSort] = useState({
+    artists: 'alpha-asc',
+    albums: 'recent',
+    tracks: 'recent'
+  });
+
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
 
