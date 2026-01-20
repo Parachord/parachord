@@ -895,6 +895,21 @@ const Parachord = () => {
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
 
+  // Add to Playlist panel state
+  const [addToPlaylistPanel, setAddToPlaylistPanel] = useState({
+    open: false,
+    tracks: [], // Tracks to add
+    sourceName: '', // Name of source (track title, album name, or playlist name)
+    sourceType: '' // 'track', 'album', 'playlist'
+  });
+  const [selectedPlaylistsForAdd, setSelectedPlaylistsForAdd] = useState([]); // Selected playlist IDs for multi-select
+  const [newPlaylistFormOpen, setNewPlaylistFormOpen] = useState(false); // Accordion state for new playlist form
+  const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
+  const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
+  const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
+  const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
+  const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
+
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState({
     show: false,
@@ -1563,6 +1578,58 @@ const Parachord = () => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           addToQueue(data.tracks);
+        } else if (data.action === 'add-to-playlist' && data.tracks) {
+          // Open the Add to Playlist panel
+          console.log(`📋 Add to Playlist: ${data.tracks.length} track(s) - "${data.sourceName}" (type: ${data.sourceType})`);
+          if (data.tracks.length > 0) {
+            console.log(`   First track: ${data.tracks[0]?.artist} - ${data.tracks[0]?.title}`);
+          }
+          setAddToPlaylistPanel({
+            open: true,
+            tracks: data.tracks,
+            sourceName: data.sourceName || 'Selected tracks',
+            sourceType: data.sourceType || 'track'
+          });
+          setSelectedPlaylistsForAdd([]); // Reset selection
+        } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
+          // Remove track from playlist
+          const trackIndex = data.trackIndex;
+          console.log(`🗑️ Removing track at index ${trackIndex} from playlist ${data.playlistId}`);
+
+          // Update playlistTracks state (the displayed tracks)
+          setPlaylistTracks(prev => {
+            const newTracks = [...prev];
+            newTracks.splice(trackIndex, 1);
+            return newTracks;
+          });
+
+          // Update the playlist in playlists state and save to disk
+          setPlaylists(prev => {
+            const updatedPlaylists = prev.map(p => {
+              if (p.id === data.playlistId) {
+                const newTracks = [...(p.tracks || [])];
+                newTracks.splice(trackIndex, 1);
+                const updatedPlaylist = {
+                  ...p,
+                  tracks: newTracks,
+                  lastModified: Date.now()
+                };
+                // Save to disk (async, non-blocking)
+                savePlaylistToDisk(updatedPlaylist);
+                return updatedPlaylist;
+              }
+              return p;
+            });
+            return updatedPlaylists;
+          });
+
+          // Update selectedPlaylist if viewing this playlist
+          if (selectedPlaylist?.id === data.playlistId) {
+            setSelectedPlaylist(prev => ({
+              ...prev,
+              lastModified: Date.now()
+            }));
+          }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
           // Show confirmation alert
           const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
@@ -2508,6 +2575,8 @@ const Parachord = () => {
 
   const moveInPlaylist = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
+
+    // Update displayed tracks
     setPlaylistTracks(prev => {
       const newTracks = [...prev];
       const [removed] = newTracks.splice(fromIndex, 1);
@@ -2515,12 +2584,27 @@ const Parachord = () => {
       console.log(`🔀 Moved playlist track from index ${fromIndex} to ${toIndex}`);
       return newTracks;
     });
-    // Update lastModified on the selected playlist
+
+    // Update lastModified on the selected playlist and save to disk
     if (selectedPlaylist) {
       setSelectedPlaylist(prev => ({ ...prev, lastModified: Date.now() }));
-      setPlaylists(prev => prev.map(p =>
-        p.id === selectedPlaylist.id ? { ...p, lastModified: Date.now() } : p
-      ));
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === selectedPlaylist.id) {
+          // Reorder tracks in the playlist data
+          const newTracks = [...(p.tracks || [])];
+          const [removed] = newTracks.splice(fromIndex, 1);
+          newTracks.splice(toIndex, 0, removed);
+          const updatedPlaylist = {
+            ...p,
+            tracks: newTracks,
+            lastModified: Date.now()
+          };
+          // Save to disk
+          savePlaylistToDisk(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
     }
   };
 
@@ -4022,6 +4106,63 @@ const Parachord = () => {
     }
   };
 
+  // Generate XSPF content from playlist object
+  const generateXSPF = (playlist) => {
+    const escapeXml = (str) => {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    };
+
+    const tracks = (playlist.tracks || []).map(track => `    <track>
+      <title>${escapeXml(track.title)}</title>
+      <creator>${escapeXml(track.artist)}</creator>
+      <album>${escapeXml(track.album || '')}</album>
+      <duration>${Math.round((track.duration || 0) * 1000)}</duration>
+    </track>`).join('\n');
+
+    const date = playlist.createdAt ? new Date(playlist.createdAt).toISOString() : new Date().toISOString();
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>${escapeXml(playlist.title)}</title>
+  <creator>${escapeXml(playlist.creator || 'Parachord')}</creator>
+  <date>${date}</date>
+  <trackList>
+${tracks}
+  </trackList>
+</playlist>`;
+  };
+
+  // Save playlist to disk
+  const savePlaylistToDisk = async (playlist) => {
+    if (!playlist || !playlist.id) return;
+
+    // Don't save hosted playlists (they come from URLs)
+    if (playlist.sourceUrl) {
+      console.log(`⏭️ Skipping save for hosted playlist: ${playlist.title}`);
+      return;
+    }
+
+    try {
+      const xspfContent = generateXSPF(playlist);
+      const filename = playlist.filename || `${playlist.id}.xspf`;
+      const result = await window.electron.playlists.save(filename, xspfContent);
+
+      if (result.success) {
+        console.log(`💾 Saved playlist: ${playlist.title}`);
+      } else {
+        console.error(`❌ Failed to save playlist: ${result.error}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error saving playlist:`, error);
+    }
+  };
+
   // Parse Critic's Picks RSS feed
   const parseCriticsPicksRSS = (rssString) => {
     try {
@@ -4730,6 +4871,75 @@ const Parachord = () => {
 
         console.log(`✅ Finished resolving ${tracksWithIds.length} tracks`);
       }
+    } else if (playlist.tracks && playlist.tracks.length > 0) {
+      // Handle playlists with tracks array directly (e.g., newly created playlists)
+      console.log(`🎵 Loading ${playlist.tracks.length} tracks from playlist object`);
+
+      // Add IDs and sources to tracks if not present
+      const tracksWithIds = playlist.tracks.map(track => {
+        const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        return { ...track, id: trackId, sources: track.sources || {} };
+      });
+      setPlaylistTracks(tracksWithIds);
+
+      // Fetch playlist cover art
+      getPlaylistCovers(playlist.id, tracksWithIds).then(covers => {
+        setPlaylistCoverArt(covers);
+      });
+
+      // Fetch album art for tracks that don't have it
+      tracksWithIds.forEach(async (track) => {
+        if (!track.albumArt && track.album) {
+          const artUrl = await getAlbumArt(track.artist, track.album);
+          if (artUrl) {
+            setPlaylistTracks(prevTracks =>
+              prevTracks.map(t =>
+                t.id === track.id && !t.albumArt
+                  ? { ...t, albumArt: artUrl }
+                  : t
+              )
+            );
+          }
+        }
+      });
+
+      // Resolve sources in background
+      for (const track of tracksWithIds) {
+        console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+
+        for (const resolverId of activeResolvers) {
+          const resolver = allResolvers.find(r => r.id === resolverId);
+          if (!resolver || !resolver.capabilities.resolve) continue;
+
+          try {
+            const config = getResolverConfig(resolverId);
+            const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
+
+            if (resolved) {
+              console.log(`  ✅ ${resolver.name}: Found match`);
+              setPlaylistTracks(prevTracks =>
+                prevTracks.map(t =>
+                  t.id === track.id
+                    ? {
+                        ...t,
+                        sources: { ...t.sources, [resolverId]: resolved },
+                        duration: t.duration || resolved.duration || 0
+                      }
+                    : t
+                )
+              );
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name} resolve error:`, error);
+          }
+        }
+      }
+
+      console.log(`✅ Finished resolving ${tracksWithIds.length} tracks`);
+    } else {
+      // No tracks to display
+      console.log('⚠️ Playlist has no tracks');
+      setPlaylistTracks([]);
     }
   };
 
@@ -5593,7 +5803,20 @@ useEffect(() => {
     },
       // Sidebar
       React.createElement('div', {
-        className: 'w-64 bg-gray-50 border-r border-gray-200 flex flex-col no-drag'
+        className: 'w-64 bg-gray-50 border-r border-gray-200 flex flex-col no-drag',
+        onDragOver: (e) => {
+          // Show Add to Playlist panel when dragging a track over sidebar
+          if (draggingTrackForPlaylist && !addToPlaylistPanel.open) {
+            e.preventDefault();
+            setAddToPlaylistPanel({
+              open: true,
+              tracks: [draggingTrackForPlaylist],
+              sourceName: draggingTrackForPlaylist.title,
+              sourceType: 'track'
+            });
+            setSelectedPlaylistsForAdd([]);
+          }
+        }
       },
         // Draggable title bar area (space for macOS traffic lights)
         React.createElement('div', {
@@ -6705,11 +6928,20 @@ useEffect(() => {
                       draggable: true,
                       onDragStart: (e) => {
                         setDraggedPlaylistTrack(index);
+                        setDraggingTrackForPlaylist(track); // Track for potential playlist drop
                         e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                       },
                       onDragEnd: () => {
                         setDraggedPlaylistTrack(null);
                         setPlaylistDropTarget(null);
+                        setDraggingTrackForPlaylist(null);
+                        setDropTargetPlaylistId(null);
+                        setDropTargetNewPlaylist(false);
+                        // Close panel if it was opened by drag and nothing was dropped
+                        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                        }
                       },
                       onDragOver: (e) => {
                         e.preventDefault();
@@ -6743,7 +6975,11 @@ useEffect(() => {
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           window.electron.contextMenu.showTrackMenu({
                             type: 'track',
-                            track: track
+                            track: track,
+                            // Pass playlist context for "Remove from Playlist" option
+                            inPlaylist: true,
+                            playlistId: selectedPlaylist.id,
+                            trackIndex: index
                           });
                         }
                       }
@@ -7041,7 +7277,7 @@ useEffect(() => {
                         window.electron.contextMenu.showTrackMenu({
                           type: 'playlist',
                           playlistId: playlist.id,
-                          name: playlist.name,
+                          name: playlist.title,
                           tracks: tracksWithIds
                         });
                       }
@@ -8067,6 +8303,431 @@ useEffect(() => {
       )
     ),
 
+    // Add to Playlist Slide-out Panel
+    addToPlaylistPanel.open && React.createElement('div', {
+      className: 'fixed inset-0 z-50',
+      style: { pointerEvents: 'none' }
+    },
+      // Backdrop (only covers area outside sidebar)
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/30 transition-opacity',
+        style: { left: '256px', pointerEvents: 'auto' },
+        onClick: () => {
+          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+          setSelectedPlaylistsForAdd([]);
+          setNewPlaylistFormOpen(false);
+          setNewPlaylistName('');
+        },
+        onDragOver: (e) => {
+          e.preventDefault();
+        },
+        onDrop: (e) => {
+          e.preventDefault();
+        }
+      }),
+
+      // Panel - positioned at right edge of sidebar
+      React.createElement('div', {
+        className: 'absolute w-96 bg-white shadow-2xl flex flex-col',
+        style: { left: '256px', top: '28px', bottom: '72px', pointerEvents: 'auto' }, // Account for title bar and player
+        onDragOver: (e) => {
+          // Allow drag events to pass through to children
+          e.preventDefault();
+        },
+        onDrop: (e) => {
+          e.preventDefault();
+        }
+      },
+        // Dark header with title
+        React.createElement('div', {
+          className: 'bg-gray-700 px-5 py-4'
+        },
+          React.createElement('div', {
+            className: 'flex items-center gap-2 text-white'
+          },
+            React.createElement('span', { className: 'text-lg' }, '+'),
+            React.createElement('span', { className: 'w-4 h-4 rounded-full bg-gray-500' }),
+            React.createElement('span', {
+              className: 'text-sm font-medium tracking-wide'
+            }, 'ADD TO PLAYLIST')
+          )
+        ),
+
+        // Track info section with DONE button
+        React.createElement('div', {
+          className: 'px-5 py-4 bg-gray-100 border-b border-gray-200'
+        },
+          React.createElement('div', {
+            className: 'flex items-center gap-3'
+          },
+            // Album art thumbnail (gray placeholder or actual art)
+            React.createElement('div', {
+              className: 'w-12 h-12 rounded bg-gray-300 flex-shrink-0 flex items-center justify-center overflow-hidden'
+            },
+              addToPlaylistPanel.tracks[0]?.albumArt ?
+                React.createElement('img', {
+                  src: addToPlaylistPanel.tracks[0].albumArt,
+                  className: 'w-full h-full object-cover'
+                })
+              :
+                React.createElement(Music, { size: 20, className: 'text-gray-400' })
+            ),
+            // Track/source info
+            React.createElement('div', {
+              className: 'flex-1 min-w-0'
+            },
+              React.createElement('p', {
+                className: 'text-sm font-medium text-gray-900 truncate'
+              }, addToPlaylistPanel.sourceName),
+              React.createElement('p', {
+                className: 'text-xs text-gray-500'
+              }, addToPlaylistPanel.tracks[0]?.artist || `${addToPlaylistPanel.tracks.length} tracks`)
+            ),
+            // DONE button - just closes the panel (tracks are added on click)
+            React.createElement('button', {
+              onClick: () => {
+                setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                setSelectedPlaylistsForAdd([]);
+                setNewPlaylistFormOpen(false);
+                setNewPlaylistName('');
+              },
+              className: 'px-5 py-1.5 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-full transition-colors'
+            }, 'DONE')
+          )
+        ),
+
+        // PLAYLISTS section header
+        React.createElement('div', {
+          className: 'px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider'
+        }, 'PLAYLISTS'),
+
+        // Playlist list (scrollable) - includes New Playlist row at top
+        React.createElement('div', {
+          className: 'flex-1 overflow-y-auto'
+        },
+          // New Playlist row (always shown at top)
+          // TODO: Fix drag-and-drop to create new playlist - onDrop events not firing in Electron
+          // The visual highlight works (onDragEnter/onDragLeave) but onDrop never fires.
+          // Attempted: dataTransfer fallback, mouseUp fallback, pointerEvents:none on children.
+          // For now, users must click "New Playlist" row to open form, then drag to existing playlists works.
+          React.createElement('div', {
+            key: 'new-playlist-row',
+            onClick: () => {
+              if (!newPlaylistFormOpen) {
+                setNewPlaylistFormOpen(true);
+                setNewPlaylistName('');
+                setDroppedTrackForNewPlaylist(null);
+              }
+            },
+            onMouseUp: () => {
+              // Fallback for drop - if we're hovering while a track is being dragged
+              if (dropTargetNewPlaylist && draggingTrackForPlaylist) {
+                console.log('🖱️ MouseUp on New Playlist row while dragging:', draggingTrackForPlaylist.title);
+                setDroppedTrackForNewPlaylist(draggingTrackForPlaylist);
+                setNewPlaylistFormOpen(true);
+                setNewPlaylistName('');
+                setDropTargetNewPlaylist(false);
+              }
+            },
+            onDragEnter: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (draggingTrackForPlaylist) {
+                setDropTargetNewPlaylist(true);
+              }
+            },
+            onDragOver: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'copy';
+            },
+            onDragLeave: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                setDropTargetNewPlaylist(false);
+              }
+            },
+            onDrop: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🎯 Drop on New Playlist row');
+
+              // Try to get track from state or dataTransfer
+              let trackToUse = draggingTrackForPlaylist;
+              if (!trackToUse) {
+                try {
+                  const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                  if (data.type === 'track' && data.track) {
+                    trackToUse = data.track;
+                  }
+                } catch (err) {
+                  // ignore
+                }
+              }
+
+              if (trackToUse) {
+                setDroppedTrackForNewPlaylist(trackToUse);
+                setNewPlaylistFormOpen(true);
+                setNewPlaylistName('');
+                setDropTargetNewPlaylist(false);
+              }
+            },
+            className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-gray-100 ${
+              dropTargetNewPlaylist
+                ? 'bg-purple-100 border-l-4 border-l-purple-500 pl-4'
+                : newPlaylistFormOpen
+                  ? 'bg-gray-100'
+                  : 'hover:bg-gray-50'
+            }`
+          },
+            // Plus icon in square (like playlist thumbnail)
+            React.createElement('div', {
+              className: 'w-10 h-10 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center',
+              style: { pointerEvents: 'none' } // Let parent handle all events
+            },
+              React.createElement('span', { className: 'text-gray-500 text-xl font-light' }, '+')
+            ),
+            // "New Playlist" text or input form
+            newPlaylistFormOpen ?
+              React.createElement('div', {
+                className: 'flex-1 flex gap-2',
+                onClick: (e) => e.stopPropagation(), // Prevent row click when interacting with form
+                style: { pointerEvents: 'auto' } // Allow form interaction
+              },
+                React.createElement('input', {
+                  type: 'text',
+                  value: newPlaylistName,
+                  onChange: (e) => setNewPlaylistName(e.target.value),
+                  onKeyDown: (e) => {
+                    if (e.key === 'Enter' && newPlaylistName.trim()) {
+                      // Create new playlist with the tracks
+                      const playlistId = newPlaylistName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
+                      // Use dropped track if available, otherwise use panel tracks
+                      const sourceTracks = droppedTrackForNewPlaylist ? [droppedTrackForNewPlaylist] : addToPlaylistPanel.tracks;
+                      const tracksToAdd = sourceTracks.map(t => ({
+                        title: t.title,
+                        artist: t.artist,
+                        album: t.album,
+                        duration: t.duration,
+                        id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                      }));
+                      const newPlaylist = {
+                        id: playlistId,
+                        filename: `${playlistId}.xspf`,
+                        title: newPlaylistName.trim(),
+                        creator: 'Me',
+                        tracks: tracksToAdd,
+                        createdAt: Date.now(),
+                        lastModified: Date.now()
+                      };
+                      setPlaylists(prev => [newPlaylist, ...prev]);
+                      fetchPlaylistCovers(playlistId, newPlaylist.tracks);
+                      setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
+                      savePlaylistToDisk(newPlaylist); // Save to disk
+                      setNewPlaylistFormOpen(false);
+                      setNewPlaylistName('');
+                      setDroppedTrackForNewPlaylist(null); // Clear dropped track
+                    } else if (e.key === 'Escape') {
+                      setNewPlaylistFormOpen(false);
+                      setNewPlaylistName('');
+                      setDroppedTrackForNewPlaylist(null); // Clear dropped track
+                    }
+                  },
+                  placeholder: 'Playlist name...',
+                  autoFocus: true,
+                  className: 'flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+                }),
+                React.createElement('button', {
+                  onClick: () => {
+                    if (!newPlaylistName.trim()) return;
+                    // Create new playlist with the tracks
+                    const playlistId = newPlaylistName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
+                    // Use dropped track if available, otherwise use panel tracks
+                    const sourceTracks = droppedTrackForNewPlaylist ? [droppedTrackForNewPlaylist] : addToPlaylistPanel.tracks;
+                    const tracksToAdd = sourceTracks.map(t => ({
+                      title: t.title,
+                      artist: t.artist,
+                      album: t.album,
+                      duration: t.duration,
+                      id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                    }));
+                    const newPlaylist = {
+                      id: playlistId,
+                      filename: `${playlistId}.xspf`,
+                      title: newPlaylistName.trim(),
+                      creator: 'Me',
+                      tracks: tracksToAdd,
+                      createdAt: Date.now(),
+                      lastModified: Date.now()
+                    };
+                    setPlaylists(prev => [newPlaylist, ...prev]);
+                    fetchPlaylistCovers(playlistId, newPlaylist.tracks);
+                    setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
+                    savePlaylistToDisk(newPlaylist); // Save to disk
+                    setNewPlaylistFormOpen(false);
+                    setNewPlaylistName('');
+                    setDroppedTrackForNewPlaylist(null); // Clear dropped track
+                  },
+                  disabled: !newPlaylistName.trim(),
+                  className: `px-3 py-1.5 text-sm font-medium rounded transition-colors ${
+                    newPlaylistName.trim()
+                      ? 'bg-green-500 hover:bg-green-600 text-white'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`
+                }, 'Create')
+              )
+            :
+              React.createElement('span', {
+                className: 'flex-1 text-sm text-gray-600',
+                style: { pointerEvents: 'none' } // Let parent handle all events
+              }, 'New Playlist')
+          ),
+
+          // Existing playlists
+          playlists.length === 0 ?
+            React.createElement('div', {
+              className: 'px-5 py-8 text-center text-gray-400 text-sm'
+            }, 'No playlists yet')
+          :
+            playlists.map(playlist => {
+              const isAdded = selectedPlaylistsForAdd.includes(playlist.id);
+              const isDropTarget = dropTargetPlaylistId === playlist.id;
+
+              // Helper to add tracks to this playlist
+              const addTracksToPlaylistHelper = (tracks) => {
+                if (isAdded || !tracks || tracks.length === 0) return;
+
+                // Add tracks to this playlist immediately
+                const tracksToAdd = tracks.map(t => ({
+                  title: t.title,
+                  artist: t.artist,
+                  album: t.album,
+                  duration: t.duration,
+                  id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                }));
+
+                // Build updated playlist for saving
+                const updatedPlaylist = {
+                  ...playlist,
+                  tracks: [...(playlist.tracks || []), ...tracksToAdd],
+                  lastModified: Date.now()
+                };
+
+                setPlaylists(prev => prev.map(p => {
+                  if (p.id === playlist.id) {
+                    return updatedPlaylist;
+                  }
+                  return p;
+                }));
+
+                // Save to disk
+                savePlaylistToDisk(updatedPlaylist);
+
+                // Mark as added
+                setSelectedPlaylistsForAdd(prev => [...prev, playlist.id]);
+              };
+
+              return React.createElement('div', {
+                key: playlist.id,
+                onClick: () => addTracksToPlaylistHelper(addToPlaylistPanel.tracks),
+                onDragEnter: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!isAdded) {
+                    setDropTargetPlaylistId(playlist.id);
+                  }
+                },
+                onDragOver: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'copy';
+                  if (!isAdded && dropTargetPlaylistId !== playlist.id) {
+                    setDropTargetPlaylistId(playlist.id);
+                  }
+                },
+                onDragLeave: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // Only clear if we're actually leaving this element
+                  if (!e.currentTarget.contains(e.relatedTarget)) {
+                    setDropTargetPlaylistId(null);
+                  }
+                },
+                onDrop: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+
+                  // Try to get track from state first, then dataTransfer as fallback
+                  let trackFromDrag = draggingTrackForPlaylist;
+                  if (!trackFromDrag) {
+                    try {
+                      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                      if (data.type === 'track' && data.track) {
+                        trackFromDrag = data.track;
+                      }
+                    } catch (err) {
+                      // ignore parse errors
+                    }
+                  }
+
+                  const tracksToUse = trackFromDrag
+                    ? [trackFromDrag]
+                    : addToPlaylistPanel.tracks;
+                  addTracksToPlaylistHelper(tracksToUse);
+                  // Clear the dragging state
+                  setDraggingTrackForPlaylist(null);
+                  setDropTargetPlaylistId(null);
+                },
+                className: `flex items-center gap-3 px-5 py-2.5 cursor-pointer transition-all border-b border-gray-100 ${
+                  isAdded
+                    ? 'bg-green-50'
+                    : isDropTarget
+                      ? 'bg-purple-100 border-l-4 border-l-purple-500 pl-4'
+                      : 'hover:bg-gray-50'
+                }`
+              },
+                // Playlist thumbnail (gray square)
+                React.createElement('div', {
+                  className: 'w-10 h-10 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden'
+                },
+                  // Could show playlist cover here if available
+                  allPlaylistCovers[playlist.id]?.[0] ?
+                    React.createElement('img', {
+                      src: allPlaylistCovers[playlist.id][0],
+                      className: 'w-full h-full object-cover'
+                    })
+                  :
+                    React.createElement(Music, { size: 16, className: 'text-gray-400' })
+                ),
+                // Playlist name
+                React.createElement('span', {
+                  className: 'flex-1 text-sm text-gray-900 truncate'
+                }, playlist.title),
+                // Song count - shows updated count from playlists state
+                React.createElement('span', {
+                  className: `text-sm flex-shrink-0 ${isAdded ? 'text-green-600 font-medium' : 'text-gray-400'}`
+                }, `${playlist.tracks?.length || 0} songs`),
+                // Checkmark if added
+                isAdded && React.createElement('svg', {
+                  className: 'w-5 h-5 text-green-500 flex-shrink-0',
+                  fill: 'none',
+                  viewBox: '0 0 24 24',
+                  stroke: 'currentColor'
+                },
+                  React.createElement('path', {
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    strokeWidth: 2,
+                    d: 'M5 13l4 4L19 7'
+                  })
+                )
+              );
+            })
+        )
+      )
+    ),
+
     // Confirmation Dialog Modal
     confirmDialog.show && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]',
@@ -8226,12 +8887,21 @@ useEffect(() => {
                 onDragStart: (e) => {
                   if (!isLoading && !isError) {
                     setDraggedQueueTrack(index);
+                    setDraggingTrackForPlaylist(track); // Track for potential playlist drop
                     e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                   }
                 },
                 onDragEnd: () => {
                   setDraggedQueueTrack(null);
                   setQueueDropTarget(null);
+                  setDraggingTrackForPlaylist(null);
+                  setDropTargetPlaylistId(null);
+                  setDropTargetNewPlaylist(false);
+                  // Close panel if it was opened by drag and nothing was dropped
+                  if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                    setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                  }
                 },
                 onDragOver: (e) => {
                   e.preventDefault();

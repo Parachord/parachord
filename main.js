@@ -802,6 +802,24 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuLabel = 'Add to Queue';
   }
 
+  // Determine label for "Add to Playlist" option
+  let addToPlaylistLabel;
+  switch (data.type) {
+    case 'track':
+      addToPlaylistLabel = 'Add to Playlist...';
+      break;
+    case 'playlist':
+      addToPlaylistLabel = `Add All to Playlist... (${data.tracks?.length || 0} tracks)`;
+      break;
+    case 'release':
+      addToPlaylistLabel = data.tracks?.length > 0
+        ? `Add All to Playlist... (${data.tracks.length} tracks)`
+        : 'Add All to Playlist... (click album first)';
+      break;
+    default:
+      addToPlaylistLabel = 'Add to Playlist...';
+  }
+
   const menuItems = [
     {
       label: menuLabel,
@@ -814,8 +832,39 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           tracks: tracks
         });
       }
+    },
+    {
+      label: addToPlaylistLabel,
+      enabled: enabled,
+      click: () => {
+        // Send tracks back to renderer to open Add to Playlist panel
+        const tracks = data.type === 'track' ? [data.track] : data.tracks;
+        console.log(`  📋 Add to Playlist clicked: type=${data.type}, tracks=${tracks?.length || 0}`);
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'add-to-playlist',
+          tracks: tracks,
+          sourceName: data.type === 'track' ? data.track?.title : data.name,
+          sourceType: data.type
+        });
+      }
     }
   ];
+
+  // Add "Remove from Playlist" option for tracks within a playlist
+  if (data.type === 'track' && data.inPlaylist && data.playlistId !== undefined) {
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Remove from Playlist',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'remove-from-playlist',
+          playlistId: data.playlistId,
+          trackIndex: data.trackIndex,
+          trackTitle: data.track?.title
+        });
+      }
+    });
+  }
 
   // Add delete option for playlists
   if (data.type === 'playlist' && data.playlistId) {
