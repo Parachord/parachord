@@ -968,6 +968,15 @@ const Parachord = () => {
     tracks: 'recent'
   });
 
+  // Close collection sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setCollectionSortDropdownOpen(false);
+    if (collectionSortDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [collectionSortDropdownOpen]);
+
   // Derive unique artists from library
   const collectionArtists = useMemo(() => {
     const artistMap = new Map();
@@ -9440,7 +9449,8 @@ useEffect(() => {
 
         // Library view with hero
         activeView === 'library' && React.createElement('div', {
-          className: 'h-full overflow-y-auto scrollable-content'
+          className: 'h-full overflow-y-auto scrollable-content',
+          onScroll: handleCollectionScroll
         },
           // Collapsible header section
           React.createElement('div', {
