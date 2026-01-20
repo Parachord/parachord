@@ -476,8 +476,8 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     React.createElement('h3', {
       className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
     }, artist.name),
-    // Track count
-    React.createElement('p', {
+    // Track count (only show if > 0)
+    artist.trackCount > 0 && React.createElement('p', {
       className: 'text-sm text-gray-500'
     }, `${artist.trackCount} track${artist.trackCount !== 1 ? 's' : ''}`)
   );
