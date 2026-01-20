@@ -3180,6 +3180,9 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
 
+    // Clear any current release view when navigating to a new artist
+    setCurrentRelease(null);
+
     // Save current artist to history stack before loading new one (for back navigation)
     if (currentArtist && currentArtist.name !== artistName) {
       setArtistHistory(prev => [...prev, currentArtist.name]);
