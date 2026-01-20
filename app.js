@@ -10199,11 +10199,29 @@ useEffect(() => {
 
           // RELATED ARTISTS TAB
           artistPageTab === 'related' && React.createElement('div', { className: 'p-6' },
-            // Loading state
-            loadingRelated && React.createElement('div', { className: 'flex items-center justify-center py-12' },
-              React.createElement('div', {
-                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
-              })
+            // Loading state - skeleton grid
+            loadingRelated && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+            },
+              Array.from({ length: 10 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `skeleton-${i}`,
+                  className: 'flex flex-col items-center'
+                },
+                  // Circular image skeleton
+                  React.createElement('div', {
+                    className: 'w-32 h-32 rounded-full bg-gray-200 animate-pulse mb-3'
+                  }),
+                  // Name skeleton
+                  React.createElement('div', {
+                    className: 'h-4 w-20 bg-gray-200 rounded animate-pulse mb-1'
+                  }),
+                  // Match percentage skeleton
+                  React.createElement('div', {
+                    className: 'h-3 w-12 bg-gray-200 rounded animate-pulse'
+                  })
+                )
+              )
             ),
             // Related artists grid (sorted by match, highest first)
             !loadingRelated && relatedArtists.length > 0 && React.createElement('div', {
