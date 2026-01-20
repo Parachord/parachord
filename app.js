@@ -6581,7 +6581,10 @@ useEffect(() => {
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS'),
               displayLimits.artists < searchResults.artists.length &&
                 React.createElement('button', {
-                  onClick: () => handleLoadMore('artists'),
+                  onClick: () => {
+                    setSearchDetailCategory('artists');
+                    setSearchPreviewItem(searchResults.artists[0] || null);
+                  },
                   className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
                 }, 'Show more')
             ),
@@ -6605,7 +6608,10 @@ useEffect(() => {
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'TRACKS'),
               displayLimits.tracks < searchResults.tracks.length &&
                 React.createElement('button', {
-                  onClick: () => handleLoadMore('tracks'),
+                  onClick: () => {
+                    setSearchDetailCategory('tracks');
+                    setSearchPreviewItem(searchResults.tracks[0] || null);
+                  },
                   className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
                 }, 'Show more')
             ),
@@ -6650,7 +6656,10 @@ useEffect(() => {
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ALBUMS'),
               displayLimits.albums < searchResults.albums.length &&
                 React.createElement('button', {
-                  onClick: () => handleLoadMore('albums'),
+                  onClick: () => {
+                    setSearchDetailCategory('albums');
+                    setSearchPreviewItem(searchResults.albums[0] || null);
+                  },
                   className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
                 }, 'Show more')
             ),
@@ -6690,7 +6699,10 @@ useEffect(() => {
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'PLAYLISTS'),
               displayLimits.playlists < searchResults.playlists.length &&
                 React.createElement('button', {
-                  onClick: () => handleLoadMore('playlists'),
+                  onClick: () => {
+                    setSearchDetailCategory('playlists');
+                    setSearchPreviewItem(searchResults.playlists[0] || null);
+                  },
                   className: 'text-xs text-purple-600 hover:text-purple-700 font-medium'
                 }, 'Show more')
             ),
