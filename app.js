@@ -6274,23 +6274,18 @@ useEffect(() => {
           )
         ),
 
-        // Search
+        // Search - navigates to search page
         React.createElement('div', { className: 'px-4 py-2' },
-          React.createElement('div', {
-            className: 'flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer',
-            onClick: () => document.getElementById('sidebar-search')?.focus()
+          React.createElement('button', {
+            className: `w-full flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${
+              activeView === 'search' ? 'text-gray-900 font-medium' : ''
+            }`,
+            onClick: () => navigateTo('search')
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
             ),
-            React.createElement('input', {
-              id: 'sidebar-search',
-              type: 'text',
-              placeholder: 'Search',
-              value: searchQuery,
-              onChange: (e) => handleSearchInput(e.target.value),
-              className: 'flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder-gray-400'
-            })
+            React.createElement('span', { className: 'text-sm' }, 'SEARCH')
           )
         ),
 
