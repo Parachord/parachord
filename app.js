@@ -1,5 +1,5 @@
 // Parachord Desktop App - Electron Version
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // Use lucide-react icons if available, otherwise fallback to emoji
 const Icons = typeof lucideReact !== 'undefined' ? lucideReact : {
@@ -967,6 +967,44 @@ const Parachord = () => {
     albums: 'recent',
     tracks: 'recent'
   });
+
+  // Derive unique artists from library
+  const collectionArtists = useMemo(() => {
+    const artistMap = new Map();
+    library.forEach(track => {
+      const artistName = track.artist || 'Unknown Artist';
+      if (!artistMap.has(artistName)) {
+        artistMap.set(artistName, {
+          name: artistName,
+          trackCount: 0,
+          image: null // Will be fetched on demand
+        });
+      }
+      artistMap.get(artistName).trackCount++;
+    });
+    return Array.from(artistMap.values());
+  }, [library]);
+
+  // Derive unique albums from library
+  const collectionAlbums = useMemo(() => {
+    const albumMap = new Map();
+    library.forEach(track => {
+      const albumTitle = track.album || 'Unknown Album';
+      const artistName = track.artist || 'Unknown Artist';
+      const key = `${albumTitle}|||${artistName}`;
+      if (!albumMap.has(key)) {
+        albumMap.set(key, {
+          title: albumTitle,
+          artist: artistName,
+          year: track.year || null,
+          art: track.art || null,
+          trackCount: 0
+        });
+      }
+      albumMap.get(key).trackCount++;
+    });
+    return Array.from(albumMap.values());
+  }, [library]);
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
