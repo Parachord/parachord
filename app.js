@@ -5088,12 +5088,10 @@ ${tracks}
 
         const data = await response.json();
 
-        // Find the best matching artist (prefer exact name match)
+        // Find the artist with exact name match only (case-insensitive)
+        // Don't fall back to first result - this causes wrong images for similar artist names
         const artists = data.artists?.items || [];
-        let artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase());
-        if (!artist && artists.length > 0) {
-          artist = artists[0]; // Fall back to first result
-        }
+        const artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase());
 
         if (artist?.images?.length > 0) {
           // Spotify returns images sorted by size (largest first)
@@ -9005,10 +9003,43 @@ useEffect(() => {
                 )
             ),
 
-            // General Tab (placeholder)
+            // General Tab
             settingsTab === 'general' && React.createElement('div', {
-              className: 'flex items-center justify-center h-64 text-gray-400'
-            }, 'General settings coming soon'),
+              className: 'space-y-6'
+            },
+              // Cache Management Section
+              React.createElement('div', {
+                className: 'bg-white border border-gray-200 rounded-lg p-6'
+              },
+                React.createElement('h3', {
+                  className: 'text-lg font-semibold text-gray-900 mb-2'
+                }, 'Cache Management'),
+                React.createElement('p', {
+                  className: 'text-sm text-gray-500 mb-4'
+                }, 'Clear cached data including artist images, album art, and API responses. This may temporarily slow down loading while data is re-fetched.'),
+                React.createElement('button', {
+                  onClick: async () => {
+                    // Clear all caches
+                    artistImageCache.current = {};
+                    albumArtCache.current = {};
+                    artistDataCache.current = {};
+                    albumToReleaseIdCache.current = {};
+
+                    // Clear persisted caches
+                    if (window.electron?.store) {
+                      await window.electron.store.set('cache_artist_images', {});
+                      await window.electron.store.set('cache_album_art', {});
+                      await window.electron.store.set('cache_artist_data', {});
+                      await window.electron.store.set('cache_album_release_ids', {});
+                    }
+
+                    // Show confirmation (using a simple alert for now)
+                    alert('Cache cleared successfully!');
+                  },
+                  className: 'px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
+                }, 'Clear Cache')
+              )
+            ),
 
             // About Tab
             settingsTab === 'about' && React.createElement('div', {
