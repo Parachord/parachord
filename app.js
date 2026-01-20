@@ -6535,97 +6535,48 @@ useEffect(() => {
       searchDetailCategory ?
         // DETAIL VIEW - Similar structure to artist page with collapsible header
         React.createElement('div', {
-          className: 'flex-1 flex flex-col',
+          className: 'flex-1 flex flex-col bg-white',
           style: { overflow: 'hidden' }
         },
-          // Header section (outside scrollable area)
+          // Header section (outside scrollable area) - uses preview artist image as background
           React.createElement('div', {
             className: 'relative',
             style: {
-              height: searchHeaderCollapsed ? '80px' : '200px',
+              height: searchHeaderCollapsed ? '70px' : '120px',
               flexShrink: 0,
               transition: 'height 300ms ease',
               overflow: 'hidden'
             }
           },
-            // Gradient background
-            React.createElement('div', {
-              className: 'absolute inset-0 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600'
-            }),
-            // Background pattern
-            React.createElement('div', {
-              className: 'absolute inset-0 opacity-20',
-              style: {
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // Gradient overlay for readability
+            // Background image (blurred preview artist image or gray fallback)
+            searchPreviewArtistImage?.url ?
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  backgroundImage: `url(${searchPreviewArtistImage.url})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center 30%',
+                  filter: 'blur(20px)',
+                  transform: 'scale(1.1)'
+                }
+              })
+            :
+              React.createElement('div', {
+                className: 'absolute inset-0 bg-gray-400'
+              }),
+            // Dark overlay for readability
             React.createElement('div', {
               className: 'absolute inset-0',
               style: {
-                background: searchHeaderCollapsed
-                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, rgba(59,130,246,0.8) 100%)'
-                  : 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(99,102,241,0.4) 100%)'
+                background: 'rgba(0,0,0,0.4)'
               }
             }),
-            // EXPANDED STATE - Search input centered with tabs below
-            !searchHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center px-8 z-10',
-              style: {
-                opacity: searchHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease'
-              }
-            },
-              // Search input with icon
-              React.createElement('div', { className: 'flex items-center gap-3 w-full max-w-2xl' },
-                React.createElement('svg', { className: 'w-6 h-6 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                ),
-                React.createElement('input', {
-                  type: 'text',
-                  value: searchQuery,
-                  onChange: (e) => handleSearchInput(e.target.value),
-                  className: 'flex-1 text-3xl font-light text-white bg-transparent border-none outline-none placeholder-white/50',
-                  placeholder: 'Search...',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
-                })
-              ),
-              // Category tabs
-              React.createElement('div', {
-                className: 'flex items-center gap-6 mt-4',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
-              },
-                React.createElement('button', {
-                  onClick: () => { setSearchDetailCategory('artists'); setSearchPreviewItem(searchResults.artists[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.artists.length} Artists`),
-                React.createElement('span', { className: 'text-white/40' }, '|'),
-                React.createElement('button', {
-                  onClick: () => { setSearchDetailCategory('albums'); setSearchPreviewItem(searchResults.albums[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.albums.length} Albums`),
-                React.createElement('span', { className: 'text-white/40' }, '|'),
-                React.createElement('button', {
-                  onClick: () => { setSearchDetailCategory('tracks'); setSearchPreviewItem(searchResults.tracks[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.tracks.length} Tracks`),
-                React.createElement('span', { className: 'text-white/40' }, '|'),
-                React.createElement('button', {
-                  onClick: () => { setSearchDetailCategory('playlists'); setSearchPreviewItem(searchResults.playlists[0] || null); },
-                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'playlists' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.playlists.length} Playlists`)
-              )
-            ),
-            // COLLAPSED STATE - Inline layout
-            searchHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-8 z-10',
-              style: {
-                opacity: searchHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease'
-              }
+            // Header content - single row layout
+            React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-8 z-10'
             },
               // Left: Search icon + query
-              React.createElement('div', { className: 'flex items-center gap-3 flex-1' },
+              React.createElement('div', { className: 'flex items-center gap-3' },
                 React.createElement('svg', { className: 'w-5 h-5 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                 ),
@@ -6633,61 +6584,48 @@ useEffect(() => {
                   type: 'text',
                   value: searchQuery,
                   onChange: (e) => handleSearchInput(e.target.value),
-                  className: 'flex-1 text-xl font-light text-white bg-transparent border-none outline-none placeholder-white/50 max-w-md',
+                  className: 'text-2xl font-light text-white bg-transparent border-none outline-none placeholder-white/50 uppercase tracking-widest',
                   placeholder: 'Search...',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)', width: '200px' }
                 })
               ),
-              // Center: Category tabs
+              // Spacer
+              React.createElement('div', { className: 'flex-1' }),
+              // Center-right: Category tabs
               React.createElement('div', {
-                className: 'flex items-center gap-4',
+                className: 'flex items-center gap-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
               },
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('artists'); setSearchPreviewItem(searchResults.artists[0] || null); },
-                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'artists' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.artists.length} Artists`),
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('albums'); setSearchPreviewItem(searchResults.albums[0] || null); },
-                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'albums' ? 'text-white' : 'text-white/60 hover:text-white'}`
                 }, `${searchResults.albums.length} Albums`),
                 React.createElement('button', {
                   onClick: () => { setSearchDetailCategory('tracks'); setSearchPreviewItem(searchResults.tracks[0] || null); },
-                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.tracks.length} Tracks`),
-                React.createElement('button', {
-                  onClick: () => { setSearchDetailCategory('playlists'); setSearchPreviewItem(searchResults.playlists[0] || null); },
-                  className: `text-xs font-medium transition-colors ${searchDetailCategory === 'playlists' ? 'text-white' : 'text-white/60 hover:text-white'}`
-                }, `${searchResults.playlists.length} Playlists`)
-              )
-            ),
-            // Close button - top right (always visible)
-            React.createElement('button', {
-              onClick: () => { setSearchDetailCategory(null); setSearchPreviewItem(null); },
-              className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-20'
-            },
-              'CLOSE',
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                  className: `text-sm font-medium transition-colors ${searchDetailCategory === 'tracks' ? 'text-white' : 'text-white/60 hover:text-white'}`
+                }, `${searchResults.tracks.length} Songs`)
               )
             )
           ),
           // Scrollable content area with two-pane layout
           React.createElement('div', {
-            className: 'flex-1 overflow-y-auto bg-gray-50 scrollable-content',
-            onScroll: handleSearchDetailScroll,
-            style: { padding: '24px' }
+            className: 'flex-1 overflow-y-auto bg-white scrollable-content',
+            onScroll: handleSearchDetailScroll
           },
             // Two-pane layout
-            React.createElement('div', { className: 'flex gap-6 h-full' },
-              // Left: Preview pane
-              React.createElement('div', { className: 'w-80 flex-shrink-0 bg-white rounded-lg border border-gray-200 p-6' },
+            React.createElement('div', { className: 'flex h-full' },
+              // Left: Preview pane - no border, clean design
+              React.createElement('div', { className: 'w-80 flex-shrink-0 p-6 border-r border-gray-100' },
                 searchPreviewItem ? (
                   searchDetailCategory === 'artists' ?
                     // Artist preview
                     React.createElement('div', null,
-                      // Artist image (from Spotify via getArtistImage)
-                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 overflow-hidden' },
+                      // Artist image (from Spotify via getArtistImage) - no rounded corners
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-4 overflow-hidden' },
                         searchPreviewArtistImage?.url ?
                           React.createElement('img', {
                             src: searchPreviewArtistImage.url,
@@ -6700,15 +6638,14 @@ useEffect(() => {
                         :
                           React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-400 text-4xl' }, '🎤')
                       ),
-                      React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.name),
-                      searchPreviewItem.disambiguation && React.createElement('p', { className: 'text-sm text-gray-500 mb-3' }, searchPreviewItem.disambiguation),
-                      // Artist bio snippet (from Last.fm)
-                      React.createElement('p', { className: 'text-sm text-gray-600 line-clamp-4 mb-2' },
+                      React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-3' }, searchPreviewItem.name),
+                      // Artist bio snippet (from Last.fm) - more lines visible
+                      React.createElement('p', { className: 'text-sm text-gray-600 leading-relaxed mb-3' },
                         searchPreviewArtistBio || 'Loading biography...'
                       ),
                       React.createElement('button', {
                         onClick: () => fetchArtistData(searchPreviewItem.name),
-                        className: 'text-sm text-purple-600 hover:text-purple-700'
+                        className: 'text-sm text-gray-500 hover:text-gray-700 underline'
                       }, 'Read more')
                     )
                   : searchDetailCategory === 'tracks' ?
@@ -6756,9 +6693,20 @@ useEffect(() => {
                   React.createElement('div', { className: 'text-gray-400 text-center py-12' }, 'No item selected')
               ),
               // Right: Results list
-              React.createElement('div', { className: 'flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col' },
-                // Header
-                React.createElement('div', { className: 'px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100' }, 'SEARCH RESULTS'),
+              React.createElement('div', { className: 'flex-1 flex flex-col' },
+                // Header with SEARCH RESULTS and CLOSE button
+                React.createElement('div', { className: 'flex items-center justify-between px-6 py-4 border-b border-gray-100' },
+                  React.createElement('span', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SEARCH RESULTS'),
+                  React.createElement('button', {
+                    onClick: () => { setSearchDetailCategory(null); setSearchPreviewItem(null); },
+                    className: 'flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors border border-gray-200 rounded px-3 py-1'
+                  },
+                    'CLOSE',
+                    React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                ),
 
                 // Scrollable list
                 React.createElement('div', {
@@ -6767,7 +6715,7 @@ useEffect(() => {
                   searchDetailCategory === 'artists' && searchResults.artists.map((artist, index) =>
                     React.createElement('div', {
                       key: artist.id,
-                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === artist.id ? 'bg-gray-100' : ''}`,
+                      className: `group flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === artist.id ? 'bg-gray-100' : ''}`,
                       onMouseEnter: () => setSearchPreviewItem(artist),
                       onMouseLeave: () => setSearchPreviewItem(searchResults.artists[0] || null),
                       onClick: () => fetchArtistData(artist.name)
@@ -6776,13 +6724,43 @@ useEffect(() => {
                       React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
                       // Artist name
                       React.createElement('span', { className: 'flex-1 font-medium text-gray-900' }, artist.name),
-                      // Release count
-                      React.createElement('span', { className: 'w-32 text-sm text-gray-500 text-right' },
-                        `${artist['release-count'] || '-'} Releases`
+                      // Album count
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-500' },
+                        `${artist['release-count'] || '-'} Albums`
                       ),
-                      // Recording count
-                      React.createElement('span', { className: 'w-32 text-sm text-gray-500 text-right' },
+                      // Song count - hidden on hover, replaced by action icons
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-500 text-right group-hover:hidden' },
                         `${artist['recording-count'] || '-'} songs`
+                      ),
+                      // Action icons - shown on hover
+                      React.createElement('div', { className: 'w-28 hidden group-hover:flex items-center justify-end gap-3' },
+                        // Signal/wifi icon
+                        React.createElement('button', {
+                          onClick: (e) => { e.stopPropagation(); },
+                          className: 'text-gray-400 hover:text-gray-600'
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0' })
+                          )
+                        ),
+                        // Menu/list icon
+                        React.createElement('button', {
+                          onClick: (e) => { e.stopPropagation(); },
+                          className: 'text-gray-400 hover:text-gray-600'
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 12h16M4 18h16' })
+                          )
+                        ),
+                        // Play icon
+                        React.createElement('button', {
+                          onClick: (e) => { e.stopPropagation(); },
+                          className: 'text-gray-400 hover:text-gray-600'
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', fill: 'currentColor', viewBox: '0 0 24 24' },
+                            React.createElement('path', { d: 'M8 5v14l11-7z' })
+                          )
+                        )
                       )
                     )
                   ),
