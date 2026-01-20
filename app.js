@@ -709,11 +709,19 @@ const ReleasePage = ({
                   const availableResolverIds = Object.keys(sources);
 
                   if (availableResolverIds.length === 0) {
-                    // Show spinner while resolving (24px to match resolver icon size)
+                    // Show shimmer skeletons while resolving (match resolver icon size)
                     return React.createElement('div', {
-                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
-                      title: 'Resolving track...'
-                    });
+                      className: 'flex items-center gap-1'
+                    },
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        title: 'Resolving track...'
+                      }),
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { animationDelay: '0.1s' }
+                      })
+                    );
                   }
 
                   // Sort resolvers by priority order (left to right = highest to lowest priority)
@@ -8112,9 +8120,17 @@ useEffect(() => {
                       },
                         isResolving ?
                           React.createElement('div', {
-                            className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
-                            title: 'Resolving track...'
-                          })
+                            className: 'flex items-center gap-1'
+                          },
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              title: 'Resolving track...'
+                            }),
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              style: { animationDelay: '0.1s' }
+                            })
+                          )
                         : hasResolved ?
                           Object.entries(track.sources)
                             .sort(([aId], [bId]) => {
@@ -8160,11 +8176,19 @@ useEffect(() => {
                               })());
                             })
                         :
-                          // Show spinner while resolving (24px to match resolver icon size)
+                          // Show shimmer skeletons while resolving (match resolver icon size)
                           React.createElement('div', {
-                            className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
-                            title: 'Resolving track...'
-                          })
+                            className: 'flex items-center gap-1'
+                          },
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              title: 'Resolving track...'
+                            }),
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              style: { animationDelay: '0.1s' }
+                            })
+                          )
                       )
                     );
                   })
@@ -10295,8 +10319,16 @@ useEffect(() => {
                     }, '↻')
                   : isLoading ?
                     React.createElement('div', {
-                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin'
-                    })
+                      className: 'flex items-center gap-1'
+                    },
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer'
+                      }),
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { animationDelay: '0.1s' }
+                      })
+                    )
                   : availableSources.length > 0 ?
                     availableSources.map(resolverId => {
                       const resolver = allResolvers.find(r => r.id === resolverId);
@@ -10334,11 +10366,19 @@ useEffect(() => {
                       }, abbrev);
                     })
                   :
-                    // Show spinner when track is resolving (24px to match resolver icon size)
+                    // Show shimmer skeletons while resolving (match resolver icon size)
                     React.createElement('div', {
-                      className: 'w-6 h-6 border-2 border-gray-300 border-t-purple-500 rounded-full animate-spin',
-                      title: 'Resolving track...'
-                    })
+                      className: 'flex items-center gap-1'
+                    },
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        title: 'Resolving track...'
+                      }),
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { animationDelay: '0.1s' }
+                      })
+                    )
                 ),
 
                 // Remove button
