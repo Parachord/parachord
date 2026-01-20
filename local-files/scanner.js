@@ -28,7 +28,27 @@ class FileScanner {
     try {
       // First, collect all audio files
       const files = await this.collectAudioFiles(folderPath);
+      const fileSet = new Set(files);
       console.log(`[LocalFiles] Found ${files.length} audio files`);
+
+      // Remove stale entries (files that no longer exist at their paths)
+      let removed = 0;
+      const existingTracks = this.db.db.prepare(
+        `SELECT file_path FROM tracks WHERE file_path LIKE ?`
+      ).all(folderPath + '%');
+
+      for (const track of existingTracks) {
+        if (!fileSet.has(track.file_path)) {
+          // File no longer exists at this path - remove from database
+          this.db.removeTrack(track.file_path);
+          removed++;
+          console.log(`[LocalFiles] Removed stale entry: ${track.file_path}`);
+        }
+      }
+
+      if (removed > 0) {
+        console.log(`[LocalFiles] Removed ${removed} stale entries`);
+      }
 
       let processed = 0;
       let added = 0;
@@ -63,9 +83,9 @@ class FileScanner {
 
       this.db.updateWatchFolderStats(folderPath, trackCount);
 
-      console.log(`[LocalFiles] Scan complete: ${added} added, ${updated} updated, ${errors} errors`);
+      console.log(`[LocalFiles] Scan complete: ${added} added, ${updated} updated, ${removed} removed, ${errors} errors`);
 
-      return { processed, added, updated, errors, total: files.length };
+      return { processed, added, updated, removed, errors, total: files.length };
     } finally {
       this.scanning = false;
       this.onProgress = null;

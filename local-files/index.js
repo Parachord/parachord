@@ -94,8 +94,8 @@ class LocalFilesService {
     const result = await this.scanner.scanFolder(folderPath, onProgress);
 
     // Notify renderer that library has changed after scan completes
-    if (result && (result.added > 0 || result.updated > 0) && this.watcher?.onLibraryChanged) {
-      console.log(`[LocalFiles] Scan complete, notifying renderer of ${result.added} added, ${result.updated} updated tracks`);
+    if (result && (result.added > 0 || result.updated > 0 || result.removed > 0) && this.watcher?.onLibraryChanged) {
+      console.log(`[LocalFiles] Scan complete, notifying renderer of ${result.added} added, ${result.updated} updated, ${result.removed || 0} removed tracks`);
       this.watcher.onLibraryChanged([{ action: 'scan-complete', folder: folderPath, ...result }]);
     }
 
@@ -116,8 +116,9 @@ class LocalFilesService {
     // Notify renderer that library has changed after all scans complete
     const totalAdded = results.reduce((sum, r) => sum + (r.added || 0), 0);
     const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
-    if ((totalAdded > 0 || totalUpdated > 0) && this.watcher?.onLibraryChanged) {
-      console.log(`[LocalFiles] Rescan complete, notifying renderer of ${totalAdded} added, ${totalUpdated} updated tracks`);
+    const totalRemoved = results.reduce((sum, r) => sum + (r.removed || 0), 0);
+    if ((totalAdded > 0 || totalUpdated > 0 || totalRemoved > 0) && this.watcher?.onLibraryChanged) {
+      console.log(`[LocalFiles] Rescan complete, notifying renderer of ${totalAdded} added, ${totalUpdated} updated, ${totalRemoved} removed tracks`);
       this.watcher.onLibraryChanged([{ action: 'rescan-complete', results }]);
     }
 
