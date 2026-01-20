@@ -11401,11 +11401,18 @@ useEffect(() => {
                       }
                     }, track.artist || 'Unknown Artist'),
 
-                    // Album name - fixed width column (narrower)
-                    React.createElement('span', {
+                    // Album name - fixed width column (narrower), clickable
+                    track.album ? React.createElement('span', {
+                      className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      style: { width: '150px', flexShrink: 0 },
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        openChartsAlbum({ artist: track.artist, title: track.album, albumArt: track.albumArt });
+                      }
+                    }, track.album) : React.createElement('span', {
                       className: 'text-sm text-gray-500 truncate',
                       style: { pointerEvents: 'none', width: '150px', flexShrink: 0 }
-                    }, track.album || ''),
+                    }, ''),
 
                     // Spacer to push duration and resolvers to the right
                     React.createElement('div', { className: 'flex-1' }),
