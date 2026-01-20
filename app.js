@@ -6616,7 +6616,16 @@ useEffect(() => {
                 React.createElement('div', { className: 'px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100' }, 'SEARCH RESULTS'),
 
                 // Scrollable list
-                React.createElement('div', { className: 'flex-1 overflow-y-auto' },
+                React.createElement('div', {
+                  className: 'flex-1 overflow-y-auto',
+                  onScroll: (e) => {
+                    const { scrollTop, scrollHeight, clientHeight } = e.target;
+                    // Load more when within 200px of bottom
+                    if (scrollHeight - scrollTop - clientHeight < 200) {
+                      handleLoadMore(searchDetailCategory);
+                    }
+                  }
+                },
                   searchDetailCategory === 'artists' && searchResults.artists.map((artist, index) =>
                     React.createElement('div', {
                       key: artist.id,
