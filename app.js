@@ -1196,6 +1196,7 @@ const Parachord = () => {
 
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
+  const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
 
   // Sidebar badge state for visual feedback on additions
   const [sidebarBadges, setSidebarBadges] = useState({
@@ -1353,10 +1354,11 @@ const Parachord = () => {
     }
   }, [activeView]);
 
-  // Reset recommendations header collapse when leaving recommendations view
+  // Reset recommendations header collapse and tab when leaving recommendations view
   useEffect(() => {
     if (activeView !== 'recommendations') {
       setRecommendationsHeaderCollapsed(false);
+      setRecommendationsTab('artists');
     }
   }, [activeView]);
 
@@ -12570,13 +12572,29 @@ useEffect(() => {
                   textTransform: 'uppercase'
                 }
               }, 'RECOMMENDATIONS'),
+              // Tabs in expanded state
               React.createElement('div', {
                 className: 'flex items-center gap-1 mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               },
-                React.createElement('span', {
-                  className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                }, `${recommendations.tracks.length} Tracks`)
+                [
+                  { key: 'artists', label: `${recommendations.artists.length} Artists` },
+                  { key: 'songs', label: `${recommendations.tracks.length} Songs` }
+                ].map((tab, index) => [
+                  index > 0 && React.createElement('span', {
+                    key: `sep-${tab.key}`,
+                    className: 'text-gray-400 mx-2'
+                  }, '|'),
+                  React.createElement('button', {
+                    key: tab.key,
+                    onClick: () => setRecommendationsTab(tab.key),
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                      recommendationsTab === tab.key
+                        ? 'text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`
+                  }, tab.label)
+                ]).flat().filter(Boolean)
               ),
               React.createElement('p', {
                 className: 'mt-2 text-white/80 text-sm'
@@ -12599,9 +12617,30 @@ useEffect(() => {
                 }
               }, 'RECOMMENDATIONS'),
               React.createElement('div', { className: 'flex-1' }),
-              React.createElement('span', {
-                className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-              }, `${recommendations.tracks.length} Tracks`)
+              // Tabs in collapsed state
+              React.createElement('div', {
+                className: 'flex items-center gap-1',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              },
+                [
+                  { key: 'artists', label: `${recommendations.artists.length} Artists` },
+                  { key: 'songs', label: `${recommendations.tracks.length} Songs` }
+                ].map((tab, index) => [
+                  index > 0 && React.createElement('span', {
+                    key: `sep-${tab.key}`,
+                    className: 'text-gray-400 mx-2'
+                  }, '|'),
+                  React.createElement('button', {
+                    key: tab.key,
+                    onClick: () => setRecommendationsTab(tab.key),
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                      recommendationsTab === tab.key
+                        ? 'text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`
+                  }, tab.label)
+                ]).flat().filter(Boolean)
+              )
             )
           ),
           // Scrollable content area
@@ -12616,44 +12655,60 @@ useEffect(() => {
               }
             }
           },
-            // Loading state
+            // Loading state - show skeleton for active tab
             recommendations.loading ?
-              React.createElement('div', { className: 'space-y-10' },
-                // Artists skeleton
-                React.createElement('div', null,
-                  React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
-                  React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-                    ...Array(7).fill(null).map((_, i) =>
-                      React.createElement('div', { key: `rec-artist-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
-                        React.createElement('div', {
-                          className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                        })
-                      )
+              React.createElement('div', null,
+                // Artists skeleton (when artists tab active)
+                recommendationsTab === 'artists' && React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                },
+                  ...Array(10).fill(null).map((_, i) =>
+                    React.createElement('div', { key: `rec-artist-skeleton-${i}` },
+                      React.createElement('div', {
+                        className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                      })
                     )
                   )
                 ),
-                // Songs skeleton
-                React.createElement('div', null,
-                  React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
-                  React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-                    ...Array(7).fill(null).map((_, i) =>
-                      React.createElement('div', { key: `rec-track-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                // Songs skeleton (when songs tab active)
+                recommendationsTab === 'songs' && React.createElement('div', { className: 'space-y-0' },
+                  ...Array(15).fill(null).map((_, i) =>
+                    React.createElement('div', {
+                      key: `rec-track-skeleton-${i}`,
+                      className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
+                    },
+                      React.createElement('div', {
+                        className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { width: '280px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { width: '180px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'flex gap-1 ml-auto',
+                        style: { width: '100px' }
+                      },
                         React.createElement('div', {
-                          className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
                         }),
                         React.createElement('div', {
-                          className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 125}ms` }
                         })
                       )
                     )
@@ -12669,34 +12724,30 @@ useEffect(() => {
                   className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
                 }, 'Try Again')
               )
-            // Results
-            : React.createElement('div', { className: 'space-y-10' },
-                // Artists section - grid matching Related Artists
-                recommendations.artists.length > 0 && React.createElement('div', null,
-                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                    React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS')
-                  ),
-                  React.createElement('div', {
-                    className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-                  },
-                    ...recommendations.artists.map(artist =>
-                      React.createElement(RelatedArtistCard, {
-                        key: artist.id,
-                        artist: artist,
-                        getArtistImage: getArtistImage,
-                        onNavigate: () => fetchArtistData(artist.name)
-                      })
-                    )
+            // Results - show content based on active tab
+            : React.createElement('div', null,
+                // Artists tab content - grid matching Related Artists
+                recommendationsTab === 'artists' && recommendations.artists.length > 0 && React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                },
+                  ...recommendations.artists.map(artist =>
+                    React.createElement(RelatedArtistCard, {
+                      key: artist.id,
+                      artist: artist,
+                      getArtistImage: getArtistImage,
+                      onNavigate: () => fetchArtistData(artist.name)
+                    })
                   )
                 ),
 
-                // Songs section - track list table
-                recommendations.tracks.length > 0 && React.createElement('div', null,
-                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                    React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS')
-                  ),
-                  React.createElement('div', { className: 'space-y-0' },
-                    ...recommendations.tracks.map((track, index) => {
+                // Artists tab empty state
+                recommendationsTab === 'artists' && recommendations.artists.length === 0 && React.createElement('div', {
+                  className: 'text-center py-12 text-gray-400'
+                }, 'No recommended artists found.'),
+
+                // Songs tab content - track list table
+                recommendationsTab === 'songs' && recommendations.tracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
+                  ...recommendations.tracks.map((track, index) => {
                       const hasResolved = Object.keys(track.sources || {}).length > 0;
                       const isResolving = Object.keys(track.sources || {}).length === 0;
 
@@ -12842,8 +12893,12 @@ useEffect(() => {
                         )
                       );
                     })
-                  )
-                )
+                ),
+
+                // Songs tab empty state
+                recommendationsTab === 'songs' && recommendations.tracks.length === 0 && React.createElement('div', {
+                  className: 'text-center py-12 text-gray-400'
+                }, 'No recommended songs found.')
               )
           )
         ),
