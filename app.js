@@ -832,6 +832,8 @@ const Parachord = () => {
     tracks: 8,
     playlists: 5
   });
+  const [searchDetailCategory, setSearchDetailCategory] = useState(null); // null = main view, 'artists'|'tracks'|'albums'|'playlists' = detail view
+  const [searchPreviewItem, setSearchPreviewItem] = useState(null); // Currently previewed item in detail view
   const [activeView, setActiveView] = useState('library');
   const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -5436,6 +5438,8 @@ ${tracks}
         setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
         setIsSearching(false);
         setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
+        setSearchDetailCategory(null);
+        setSearchPreviewItem(null);
       }
       setViewHistory(prev => [...prev, view]);
       setActiveView(view);
