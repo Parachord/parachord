@@ -12625,8 +12625,39 @@ useEffect(() => {
           ] : React.createElement('div', { className: 'text-sm text-gray-500' }, 'No track playing')
         ),
 
-        // RIGHT: Progress bar + Shuffle + Repeat + Volume
+        // RIGHT: Heart + Progress bar + Shuffle + Repeat + Volume
         React.createElement('div', { className: 'flex items-center gap-3' },
+          // Heart/favorite button
+          (() => {
+            if (!currentTrack) return null;
+            const trackId = `${currentTrack.artist || 'unknown'}-${currentTrack.title || 'untitled'}-${currentTrack.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const isInCollection = collectionData.tracks.some(t => t.id === trackId);
+            return React.createElement('button', {
+              onClick: () => {
+                if (!isInCollection) {
+                  addTrackToCollection(currentTrack);
+                } else {
+                  showToast(`${currentTrack.title} is already in your collection`);
+                }
+              },
+              className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`,
+              title: isInCollection ? 'In your collection' : 'Add to collection'
+            },
+              React.createElement('svg', {
+                className: 'w-5 h-5',
+                viewBox: '0 0 24 24',
+                fill: isInCollection ? 'currentColor' : 'none',
+                stroke: 'currentColor',
+                strokeWidth: isInCollection ? 0 : 2
+              },
+                React.createElement('path', {
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                  d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z'
+                })
+              )
+            );
+          })(),
           // Progress section
           React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
             React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-right tabular-nums' },
