@@ -3187,9 +3187,13 @@ const Parachord = () => {
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
 
-    // Save current artist to history stack before loading new one (for back navigation)
-    if (currentArtist && currentArtist.name !== artistName) {
+    // Only add to artist history if we're already on the artist view
+    // This prevents search results from building up history
+    if (activeView === 'artist' && currentArtist && currentArtist.name !== artistName) {
       setArtistHistory(prev => [...prev, currentArtist.name]);
+    } else if (activeView !== 'artist') {
+      // Clear artist history when coming from a different view (like search)
+      setArtistHistory([]);
     }
 
     // Check cache first BEFORE clearing state
