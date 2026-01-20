@@ -9139,18 +9139,44 @@ useEffect(() => {
             isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
           }),
           currentTrack ? [
-            currentTrack.albumArt ?
-              React.createElement('img', {
-                key: 'album-art',
-                src: currentTrack.albumArt,
-                alt: currentTrack.album,
-                className: 'w-12 h-12 rounded object-cover flex-shrink-0'
-              })
-            :
-              React.createElement('div', {
-                key: 'album-placeholder',
-                className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center flex-shrink-0'
-              }, React.createElement(Music, { size: 20, className: 'text-gray-500' })),
+            React.createElement('button', {
+              key: 'album-art-button',
+              onClick: async () => {
+                // Search for the album and open its page
+                if (currentTrack.album && currentTrack.artist) {
+                  try {
+                    // Search MusicBrainz for the release
+                    const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
+                    const response = await fetch(
+                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=1`,
+                      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+                    );
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data['release-groups']?.length > 0) {
+                        const album = data['release-groups'][0];
+                        handleAlbumClick(album);
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error searching for album:', error);
+                  }
+                }
+              },
+              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
+              title: currentTrack.album ? `Open "${currentTrack.album}"` : 'Album'
+            },
+              currentTrack.albumArt ?
+                React.createElement('img', {
+                  src: currentTrack.albumArt,
+                  alt: currentTrack.album,
+                  className: 'w-12 h-12 rounded object-cover'
+                })
+              :
+                React.createElement('div', {
+                  className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center'
+                }, React.createElement(Music, { size: 20, className: 'text-gray-500' }))
+            ),
             React.createElement('div', { key: 'track-info', className: 'min-w-0 text-center' },
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
               React.createElement('div', { className: 'text-xs text-gray-400 truncate flex items-center justify-center gap-1' },
