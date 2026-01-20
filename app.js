@@ -1,6 +1,10 @@
 // Parachord Desktop App - Electron Version
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+// Global Set to track prefetch in-progress state (on window to survive any reloads)
+window._prefetchInProgress = window._prefetchInProgress || new Set();
+const prefetchInProgress = window._prefetchInProgress;
+
 // Use lucide-react icons if available, otherwise fallback to emoji
 const Icons = typeof lucideReact !== 'undefined' ? lucideReact : {
   Play: () => React.createElement('span', null, '▶'),
@@ -351,7 +355,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 };
 
 // SearchArtistCard component - for quick search results with artist image
-const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
+const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
 
@@ -386,6 +390,13 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
           image: null
         }
       }));
+    },
+    onContextMenu: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (onContextMenu) {
+        onContextMenu(artist);
+      }
     }
   },
     // Artist image square
@@ -1089,6 +1100,8 @@ const Parachord = () => {
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
+  const prefetchedReleasesRef = useRef(prefetchedReleases); // Ref to avoid stale closure in context menu handlers
+  const prefetchInProgressRef = useRef(new Set()); // Track which releases are currently being prefetched
 
   // Critic's Picks state
   const [criticsPicks, setCriticsPicks] = useState([]);
@@ -1176,6 +1189,27 @@ const Parachord = () => {
   const [criticsSearch, setCriticsSearch] = useState('');
   const [criticsSortDropdownOpen, setCriticsSortDropdownOpen] = useState(false);
   const [criticsSort, setCriticsSort] = useState('recent');
+
+  // Sidebar badge state for visual feedback on additions
+  const [sidebarBadges, setSidebarBadges] = useState({
+    collection: null,
+    playlists: null
+  });
+  const sidebarBadgeTimeouts = useRef({});
+
+  // Show a "+N" badge on a sidebar item that auto-clears after animation
+  const showSidebarBadge = useCallback((item, count = 1) => {
+    // Clear any existing timeout for this item
+    if (sidebarBadgeTimeouts.current[item]) {
+      clearTimeout(sidebarBadgeTimeouts.current[item]);
+    }
+    // Show the badge
+    setSidebarBadges(prev => ({ ...prev, [item]: count }));
+    // Clear after animation completes (2s)
+    sidebarBadgeTimeouts.current[item] = setTimeout(() => {
+      setSidebarBadges(prev => ({ ...prev, [item]: null }));
+    }, 2000);
+  }, []);
 
   // Close collection sort dropdown when clicking outside
   useEffect(() => {
@@ -2504,9 +2538,10 @@ const Parachord = () => {
       // Save async (don't block state update)
       saveCollection(newData);
       showToast(`Added ${track.title} to Collection`);
+      showSidebarBadge('collection');
       return newData;
     });
-  }, [saveCollection, showToast]);
+  }, [saveCollection, showToast, showSidebarBadge]);
 
   // Add album to collection
   const addAlbumToCollection = useCallback((album) => {
@@ -2532,9 +2567,10 @@ const Parachord = () => {
       // Save async (don't block state update)
       saveCollection(newData);
       showToast(`Added ${album.title} to Collection`);
+      showSidebarBadge('collection');
       return newData;
     });
-  }, [saveCollection, showToast]);
+  }, [saveCollection, showToast, showSidebarBadge]);
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
@@ -2558,9 +2594,10 @@ const Parachord = () => {
       // Save async (don't block state update)
       saveCollection(newData);
       showToast(`Added ${artist.name} to Collection`);
+      showSidebarBadge('collection');
       return newData;
     });
-  }, [saveCollection, showToast]);
+  }, [saveCollection, showToast, showSidebarBadge]);
 
   // Listen for track/playlist context menu actions
   useEffect(() => {
@@ -2820,6 +2857,11 @@ const Parachord = () => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
+
+  // Keep prefetchedReleasesRef in sync for context menu handlers
+  useEffect(() => {
+    prefetchedReleasesRef.current = prefetchedReleases;
+  }, [prefetchedReleases]);
 
   // Local Files handlers
   const handleAddWatchFolder = async () => {
@@ -4809,6 +4851,92 @@ const Parachord = () => {
     } catch (error) {
       console.error('Error prefetching release tracks:', error);
     }
+  };
+
+  // Prefetch search album tracks on hover (for context menu "Add All to Queue")
+  const prefetchSearchAlbumTracks = (album) => {
+    // Skip if already prefetched or in progress (use module-level Set to avoid stale closure)
+    if (prefetchedReleasesRef.current[album.id] || prefetchInProgress.has(album.id)) {
+      return;
+    }
+
+    // Mark as in progress SYNCHRONOUSLY before any async work
+    prefetchInProgress.add(album.id);
+
+    // Run the actual fetch asynchronously
+    (async () => {
+    try {
+      const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
+
+      // Search albums use release-group IDs, so fetch the first release from the group
+      const releaseGroupResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!releaseGroupResponse.ok) return;
+
+      const releaseGroupData = await releaseGroupResponse.json();
+      if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
+
+      const releaseId = releaseGroupData.releases[0].id;
+
+      // Fetch the release details with tracks
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!releaseDetailsResponse.ok) return;
+
+      const releaseData = await releaseDetailsResponse.json();
+
+      // Extract tracks
+      const tracks = [];
+      if (releaseData.media && releaseData.media.length > 0) {
+        releaseData.media.forEach((medium) => {
+          if (medium.tracks) {
+            medium.tracks.forEach(track => {
+              const trackId = `${artistName}-${track.title || 'untitled'}-${album.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
+              const albumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null;
+              tracks.push({
+                id: trackId,
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                length: track.length,
+                recordingId: track.recording?.id,
+                artist: artistName,
+                album: album.title,
+                albumArt: albumArt,
+                sources: {}
+              });
+            });
+          }
+        });
+      }
+
+      // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
+      const cachedAlbumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null;
+
+      // Cache the prefetched tracks using the release-group ID
+      setPrefetchedReleases(prev => ({
+        ...prev,
+        [album.id]: {
+          tracks,
+          title: album.title,
+          albumArt: cachedAlbumArt,
+          artist: artistName
+        }
+      }));
+
+    } catch (error) {
+      // Silently fail - prefetch is optional optimization
+    } finally {
+      // Remove from in-progress set
+      prefetchInProgress.delete(album.id);
+    }
+    })();
   };
 
   // Handle album click from search - fetch release data by release-group ID
@@ -8323,10 +8451,14 @@ useEffect(() => {
                 activeView === 'library' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' })
               ),
-              'Collection'
+              'Collection',
+              sidebarBadges.collection && React.createElement('span', {
+                key: `collection-badge-${Date.now()}`,
+                className: 'ml-auto text-xs bg-purple-500 text-white px-1.5 py-0.5 rounded-full sidebar-badge'
+              }, `+${sidebarBadges.collection}`)
             ),
             React.createElement('button', {
               onClick: () => navigateTo('playlists'),
@@ -8334,10 +8466,14 @@ useEffect(() => {
                 activeView === 'playlists' || activeView === 'playlist-view' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
               ),
-              'Playlists'
+              'Playlists',
+              sidebarBadges.playlists && React.createElement('span', {
+                key: `playlists-badge-${Date.now()}`,
+                className: 'ml-auto text-xs bg-purple-500 text-white px-1.5 py-0.5 rounded-full sidebar-badge'
+              }, `+${sidebarBadges.playlists}`)
             ),
             React.createElement('button', {
               onClick: () => {}, // Placeholder
@@ -8793,7 +8929,11 @@ useEffect(() => {
                     React.createElement('div', {
                       key: album.id,
                       className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors ${searchPreviewItem?.id === album.id ? 'bg-gray-100' : ''}`,
-                      onMouseEnter: () => setSearchPreviewItem(album),
+                      onMouseEnter: () => {
+                        setSearchPreviewItem(album);
+                        // Prefetch album tracks on hover for context menu
+                        prefetchSearchAlbumTracks(album);
+                      },
                       onMouseLeave: () => setSearchPreviewItem(searchResults.albums[0] || null),
                       onClick: () => handleAlbumClick(album),
                       draggable: true,
@@ -8806,22 +8946,29 @@ useEffect(() => {
                             title: album.title,
                             artist: album['artist-credit']?.[0]?.name || 'Unknown',
                             year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                            art: null
+                            art: searchAlbumArt[album.id] || null
                           }
                         }));
                       },
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        window.electronAPI.showContextMenu({
+                        const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                        const albumData = {
+                          title: album.title,
+                          artist: artistName,
+                          year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                          art: searchAlbumArt[album.id] || null
+                        };
+                        // Check prefetched cache (use ref) and loading state (use module-level Set)
+                        const prefetched = prefetchedReleasesRef.current[album.id];
+                        const isLoading = prefetchInProgress.has(album.id);
+                        window.electron.contextMenu.showTrackMenu({
                           type: 'release',
-                          album: {
-                            id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                            title: album.title,
-                            artist: album['artist-credit']?.[0]?.name || 'Unknown',
-                            year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                            art: null
-                          }
+                          name: album.title,
+                          album: albumData,
+                          tracks: prefetched?.tracks || [],
+                          loading: isLoading
                         });
                       }
                     },
@@ -8981,7 +9128,19 @@ useEffect(() => {
                   key: artist.id,
                   artist: artist,
                   onClick: () => fetchArtistData(artist.name),
-                  getArtistImage: getArtistImage
+                  getArtistImage: getArtistImage,
+                  onContextMenu: (artist) => {
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'artist',
+                        artist: {
+                          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                          name: artist.name,
+                          image: null
+                        }
+                      });
+                    }
+                  }
                 })
               )
             )
@@ -9021,6 +9180,24 @@ useEffect(() => {
                         sources: track.sources || {}
                       }
                     }));
+                  },
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'track',
+                        track: {
+                          id: track.id,
+                          title: track.title,
+                          artist: track.artist,
+                          album: track.album,
+                          duration: track.duration,
+                          albumArt: track.albumArt,
+                          sources: track.sources || {}
+                        }
+                      });
+                    }
                   }
                 },
                   // Album art square
@@ -9091,6 +9268,10 @@ useEffect(() => {
                 React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
+                  onMouseEnter: () => {
+                    // Prefetch album tracks on hover for context menu
+                    prefetchSearchAlbumTracks(album);
+                  },
                   className: 'flex-shrink-0 w-44 text-left group cursor-grab active:cursor-grabbing',
                   draggable: true,
                   onDragStart: (e) => {
@@ -9105,6 +9286,29 @@ useEffect(() => {
                         art: null
                       }
                     }));
+                  },
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      const artistName = album['artist-credit']?.[0]?.name || 'Unknown';
+                      const albumData = {
+                        title: album.title,
+                        artist: artistName,
+                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                        art: album.albumArt || null
+                      };
+                      // Check prefetched cache (use ref) and loading state (use module-level Set)
+                      const prefetched = prefetchedReleasesRef.current[album.id];
+                      const isLoading = prefetchInProgress.has(album.id);
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'release',
+                        name: album.title,
+                        album: albumData,
+                        tracks: prefetched?.tracks || [],
+                        loading: isLoading
+                      });
+                    }
                   }
                 },
                   // Album art square
@@ -9696,8 +9900,8 @@ useEffect(() => {
                         year: rel.date?.split('-')[0] ? parseInt(rel.date.split('-')[0]) : null,
                         art: rel.albumArt
                       };
-                      // Check prefetched cache first
-                      const prefetched = prefetchedReleases[rel.id];
+                      // Check prefetched cache first (use ref to avoid stale closure)
+                      const prefetched = prefetchedReleasesRef.current[rel.id];
                       if (prefetched?.tracks?.length > 0) {
                         window.electron.contextMenu.showTrackMenu({
                           type: 'release',
@@ -12855,6 +13059,7 @@ useEffect(() => {
                       fetchPlaylistCovers(playlistId, newPlaylist.tracks);
                       setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
                       savePlaylistToDisk(newPlaylist); // Save to disk
+                      showSidebarBadge('playlists', tracksToAdd.length);
                       setNewPlaylistFormOpen(false);
                       setNewPlaylistName('');
                       setDroppedTrackForNewPlaylist(null); // Clear dropped track
@@ -12895,6 +13100,7 @@ useEffect(() => {
                     fetchPlaylistCovers(playlistId, newPlaylist.tracks);
                     setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
                     savePlaylistToDisk(newPlaylist); // Save to disk
+                    showSidebarBadge('playlists', tracksToAdd.length);
                     setNewPlaylistFormOpen(false);
                     setNewPlaylistName('');
                     setDroppedTrackForNewPlaylist(null); // Clear dropped track
@@ -12956,6 +13162,9 @@ useEffect(() => {
 
                 // Mark as added
                 setSelectedPlaylistsForAdd(prev => [...prev, playlist.id]);
+
+                // Show sidebar badge
+                showSidebarBadge('playlists', tracks.length);
               };
 
               return React.createElement('div', {

@@ -943,6 +943,9 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     case 'release':
       if (data.tracks?.length > 0) {
         menuLabel = `Add All to Queue (${data.tracks.length} tracks)`;
+      } else if (data.loading) {
+        menuLabel = 'Add All to Queue (loading...)';
+        enabled = false;
       } else {
         menuLabel = 'Add All to Queue (click album first)';
         enabled = false;
@@ -962,16 +965,23 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       addToPlaylistLabel = `Add All to Playlist... (${data.tracks?.length || 0} tracks)`;
       break;
     case 'release':
-      addToPlaylistLabel = data.tracks?.length > 0
-        ? `Add All to Playlist... (${data.tracks.length} tracks)`
-        : 'Add All to Playlist... (click album first)';
+      if (data.tracks?.length > 0) {
+        addToPlaylistLabel = `Add All to Playlist... (${data.tracks.length} tracks)`;
+      } else if (data.loading) {
+        addToPlaylistLabel = 'Add All to Playlist... (loading...)';
+      } else {
+        addToPlaylistLabel = 'Add All to Playlist... (click album first)';
+      }
       break;
     default:
       addToPlaylistLabel = 'Add to Playlist...';
   }
 
-  const menuItems = [
-    {
+  const menuItems = [];
+
+  // Only add queue/playlist options for non-artist types
+  if (data.type !== 'artist') {
+    menuItems.push({
       label: menuLabel,
       enabled: enabled,
       click: () => {
@@ -982,8 +992,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           tracks: tracks
         });
       }
-    },
-    {
+    });
+    menuItems.push({
       label: addToPlaylistLabel,
       enabled: enabled,
       click: () => {
@@ -997,8 +1007,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           sourceType: data.type
         });
       }
-    }
-  ];
+    });
+  }
 
   // Add "Remove from Playlist" option for tracks within a playlist
   if (data.type === 'track' && data.inPlaylist && data.playlistId !== undefined) {
@@ -1047,7 +1057,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   // Add "Add to Collection" option for tracks, albums, and artists
   if (data.type === 'track' || data.type === 'release' || data.type === 'artist') {
-    menuItems.push({ type: 'separator' });
+    // Only add separator if there are items before (not for artist-only menus)
+    if (menuItems.length > 0) {
+      menuItems.push({ type: 'separator' });
+    }
 
     if (data.type === 'track') {
       menuItems.push({
