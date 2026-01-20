@@ -9829,36 +9829,62 @@ useEffect(() => {
             )
           ),
           // Skeleton content with white background (matching release page)
-          React.createElement('div', { className: 'bg-white flex-1 p-6' },
-            React.createElement('div', { className: 'flex gap-8' },
-              // Left column - album art skeleton
-              React.createElement('div', { className: 'w-64 flex-shrink-0' },
+          React.createElement('div', { className: 'bg-white flex-1' },
+            // ALBUM DETAILS header skeleton
+            React.createElement('div', {
+              className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+            },
+              React.createElement('div', {
+                className: 'h-3 rounded w-24 animate-pulse bg-gray-200'
+              }),
+              React.createElement('div', {
+                className: 'h-6 rounded w-16 animate-pulse bg-gray-100'
+              })
+            ),
+            // Two-column layout matching ReleasePage
+            React.createElement('div', { className: 'flex gap-0 p-6' },
+              // Left column - album art skeleton (matches ReleasePage: width 240px, pr-8)
+              React.createElement('div', {
+                className: 'flex-shrink-0 pr-8',
+                style: { width: '240px' }
+              },
+                // Album art (w-48 h-48 = 192px)
                 React.createElement('div', {
-                  className: 'aspect-square rounded-lg mb-4 animate-pulse bg-gray-100'
+                  className: 'w-48 h-48 rounded bg-gray-100 animate-pulse'
                 }),
-                React.createElement('div', {
-                  className: 'h-6 rounded w-3/4 mb-2 animate-pulse bg-gray-200'
-                }),
-                React.createElement('div', {
-                  className: 'h-4 rounded w-1/2 mb-4 animate-pulse bg-gray-100'
-                })
+                // Metadata below art
+                React.createElement('div', { className: 'mt-4 space-y-1' },
+                  React.createElement('div', {
+                    className: 'h-5 rounded w-3/4 animate-pulse bg-gray-200'
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 rounded w-1/2 mt-1 animate-pulse bg-gray-100'
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 rounded w-1/3 mt-1 animate-pulse bg-gray-100'
+                  })
+                )
               ),
               // Right column - track list skeleton
-              React.createElement('div', { className: 'flex-1 space-y-1' },
-                Array.from({ length: 8 }).map((_, i) =>
+              React.createElement('div', { className: 'flex-1 min-w-0 space-y-0' },
+                Array.from({ length: 10 }).map((_, i) =>
                   React.createElement('div', {
                     key: `track-skeleton-${i}`,
-                    className: 'flex items-center gap-4 p-3 rounded',
+                    className: 'flex items-center gap-4 py-3 px-2',
                     style: { backgroundColor: i % 2 === 0 ? '#fafafa' : 'transparent' }
                   },
+                    // Track number
                     React.createElement('div', {
                       className: 'w-6 h-4 rounded animate-pulse bg-gray-100'
                     }),
+                    // Track title
                     React.createElement('div', { className: 'flex-1' },
                       React.createElement('div', {
-                        className: 'h-4 rounded w-2/3 animate-pulse bg-gray-200'
+                        className: 'h-4 rounded animate-pulse bg-gray-200',
+                        style: { width: `${50 + Math.random() * 30}%` }
                       })
                     ),
+                    // Duration
                     React.createElement('div', {
                       className: 'w-10 h-4 rounded animate-pulse bg-gray-100'
                     })
