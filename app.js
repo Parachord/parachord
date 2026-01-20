@@ -1498,6 +1498,7 @@ const Parachord = () => {
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const [collectionLoading, setCollectionLoading] = useState(true);
+  const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
   const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
@@ -2678,6 +2679,31 @@ const Parachord = () => {
       return newData;
     });
   }, [saveCollection, showToast]);
+
+  // Handle drop on collection sidebar
+  const handleCollectionDrop = useCallback((e) => {
+    e.preventDefault();
+    setCollectionDropHighlight(false);
+
+    try {
+      const data = e.dataTransfer.getData('text/plain');
+      if (!data) return;
+
+      const parsed = JSON.parse(data);
+
+      if (parsed.type === 'track') {
+        addTrackToCollection(parsed.track);
+      } else if (parsed.type === 'album') {
+        addAlbumToCollection(parsed.album);
+      } else if (parsed.type === 'artist') {
+        addArtistToCollection(parsed.artist);
+      } else if (parsed.type === 'tracks') {
+        addTracksToCollection(parsed.tracks);
+      }
+    } catch (error) {
+      console.error('Failed to parse drop data:', error);
+    }
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, addTracksToCollection]);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
   useEffect(() => {
@@ -8196,7 +8222,12 @@ useEffect(() => {
             React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Your Music'),
             React.createElement('button', {
               onClick: () => navigateTo('library'),
+              onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+              onDragEnter: (e) => { e.preventDefault(); setCollectionDropHighlight(true); },
+              onDragLeave: (e) => { e.preventDefault(); setCollectionDropHighlight(false); },
+              onDrop: handleCollectionDrop,
               className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                collectionDropHighlight ? 'bg-purple-100 border-2 border-purple-400 text-purple-700' :
                 activeView === 'library' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
             },
