@@ -6187,7 +6187,10 @@ useEffect(() => {
           React.createElement('div', { className: 'mb-4' },
             React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Discover'),
             React.createElement('button', {
-              onClick: () => navigateTo('discover'),
+              onClick: () => {
+                navigateTo('discover');
+                loadCharts();
+              },
               className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
                 activeView === 'discover' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
