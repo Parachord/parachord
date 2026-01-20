@@ -10169,22 +10169,37 @@ useEffect(() => {
           artistPageTab === 'biography' && React.createElement('div', {
             className: 'max-w-3xl mx-auto p-6'
           },
-            // Loading state
-            loadingBio && React.createElement('div', { className: 'flex items-center justify-center py-12' },
-              React.createElement('div', {
-                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
-              })
+            // Loading state - skeleton paragraphs
+            loadingBio && React.createElement('div', { className: 'space-y-4' },
+              // First paragraph skeleton (longer)
+              React.createElement('div', { className: 'space-y-2' },
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-11/12' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-4/5' })
+              ),
+              // Second paragraph skeleton
+              React.createElement('div', { className: 'space-y-2' },
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4' })
+              ),
+              // Third paragraph skeleton (shorter)
+              React.createElement('div', { className: 'space-y-2' },
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-2/3' })
+              )
             ),
             // Bio content
             !loadingBio && artistBio && React.createElement('div', { className: 'space-y-4' },
               React.createElement('div', {
-                className: 'text-black leading-relaxed whitespace-pre-wrap'
+                className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
               }, artistBio.bio),
               artistBio.url && React.createElement('a', {
                 href: artistBio.url,
                 target: '_blank',
                 rel: 'noopener noreferrer',
-                className: 'inline-block mt-4 text-purple-400 hover:text-purple-300 text-sm'
+                className: 'inline-block mt-4 text-purple-600 hover:text-purple-700 text-sm'
               }, 'Read more on Last.fm →')
             ),
             // No bio found
