@@ -862,6 +862,12 @@ const Parachord = () => {
   const [criticsPicks, setCriticsPicks] = useState([]);
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
   const criticsPicksLoaded = useRef(false);
+
+  // Charts state
+  const [charts, setCharts] = useState([]);
+  const [chartsLoading, setChartsLoading] = useState(false);
+  const chartsLoaded = useRef(false);
+
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
   const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
