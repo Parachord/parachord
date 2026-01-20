@@ -9662,6 +9662,89 @@ useEffect(() => {
               );
             })(),
 
+            // Albums tab
+            collectionTab === 'albums' && (() => {
+              const filtered = filterCollectionItems(collectionAlbums, 'albums');
+              const sorted = sortCollectionItems(filtered, 'albums');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
+                );
+              }
+
+              if (sorted.length === 0) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'No albums in your collection')
+                );
+              }
+
+              return React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+              },
+                sorted.map((album, index) =>
+                  React.createElement('button', {
+                    key: `${album.title}-${album.artist}-${index}`,
+                    onClick: () => {
+                      // Navigate to album - search for it to get full release data
+                      handleSearch(`${album.artist} ${album.title}`);
+                    },
+                    className: 'group text-left'
+                  },
+                    // Album card (similar to ReleaseCard styling)
+                    React.createElement('div', {
+                      className: 'p-4 rounded-xl bg-white border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all'
+                    },
+                      // Album art
+                      React.createElement('div', {
+                        className: 'w-full aspect-square rounded-lg mb-3 overflow-hidden',
+                        style: {
+                          background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'
+                        }
+                      },
+                        album.art ?
+                          React.createElement('img', {
+                            src: album.art,
+                            alt: album.title,
+                            className: 'w-full h-full object-cover',
+                            onError: (e) => { e.target.style.display = 'none'; }
+                          })
+                        :
+                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center' },
+                            React.createElement('svg', { className: 'w-12 h-12 text-white/50', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                            )
+                          )
+                      ),
+                      // Album title
+                      React.createElement('h3', {
+                        className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors text-sm'
+                      }, album.title),
+                      // Artist name
+                      React.createElement('p', {
+                        className: 'text-sm text-gray-500 truncate'
+                      }, album.artist),
+                      // Year and track count
+                      React.createElement('div', { className: 'flex items-center gap-2 mt-1' },
+                        album.year && React.createElement('span', {
+                          className: 'text-xs text-gray-400'
+                        }, album.year),
+                        React.createElement('span', {
+                          className: 'text-xs text-gray-400'
+                        }, `${album.trackCount} track${album.trackCount !== 1 ? 's' : ''}`)
+                      )
+                    )
+                  )
+                )
+              );
+            })(),
+
             libraryLoading ?
               // Skeleton loaders while loading
               React.createElement('div', { className: 'space-y-0' },
