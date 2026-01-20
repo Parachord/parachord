@@ -1662,10 +1662,27 @@ const Parachord = () => {
   }, [queueDrawerOpen]);
 
   // Artist page scroll handler for header collapse
+  const artistCollapseLockedRef = useRef(false);
   const handleArtistPageScroll = useCallback((e) => {
     const scrollTop = e.target.scrollTop;
-    setIsHeaderCollapsed(scrollTop > 100);
-  }, []);
+
+    // If locked (during transition), ignore scroll events
+    if (artistCollapseLockedRef.current) return;
+
+    // Only collapse when scrolled down past threshold
+    if (scrollTop > 50 && !isHeaderCollapsed) {
+      artistCollapseLockedRef.current = true;
+      setIsHeaderCollapsed(true);
+      // Unlock after transition completes
+      setTimeout(() => { artistCollapseLockedRef.current = false; }, 350);
+    }
+    // Only expand when scrolled to very top
+    else if (scrollTop === 0 && isHeaderCollapsed) {
+      artistCollapseLockedRef.current = true;
+      setIsHeaderCollapsed(false);
+      setTimeout(() => { artistCollapseLockedRef.current = false; }, 350);
+    }
+  }, [isHeaderCollapsed]);
 
   // Search detail page scroll handler for header collapse and infinite scroll
   const handleSearchDetailScroll = useCallback((e) => {
