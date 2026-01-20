@@ -2354,10 +2354,19 @@ const Parachord = () => {
           if (newValues.artist && newValues.album) {
             fetchAlbumArtSuggestions(newValues.artist, newValues.album);
           }
+        } else if (data.action === 'add-to-collection') {
+          // Add to collection based on type
+          if (data.type === 'track' && data.track) {
+            addTrackToCollection(data.track);
+          } else if (data.type === 'album' && data.album) {
+            addAlbumToCollection(data.album);
+          } else if (data.type === 'artist' && data.artist) {
+            addArtistToCollection(data.artist);
+          }
         }
       });
     }
-  }, []);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection]);
 
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
@@ -8612,6 +8621,18 @@ useEffect(() => {
                             image: null
                           }
                         }));
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.electronAPI.showContextMenu({
+                          type: 'artist',
+                          artist: {
+                            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            name: artist.name,
+                            image: null
+                          }
+                        });
                       }
                     },
                       // Row number
@@ -8681,6 +8702,22 @@ useEffect(() => {
                             sources: track.sources || {}
                           }
                         }));
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.electronAPI.showContextMenu({
+                          type: 'track',
+                          track: {
+                            id: track.id,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.album,
+                            duration: track.duration,
+                            albumArt: track.albumArt,
+                            sources: track.sources || {}
+                          }
+                        });
                       }
                     },
                       // Row number
@@ -8731,6 +8768,20 @@ useEffect(() => {
                             art: null
                           }
                         }));
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.electronAPI.showContextMenu({
+                          type: 'release',
+                          album: {
+                            id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            title: album.title,
+                            artist: album['artist-credit']?.[0]?.name || 'Unknown',
+                            year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                            art: null
+                          }
+                        });
                       }
                     },
                       // Row number
@@ -9598,12 +9649,19 @@ useEffect(() => {
                   onContextMenu: async (rel) => {
                     // For releases, show context menu with tracks
                     if (window.electron?.contextMenu?.showTrackMenu) {
+                      const albumData = {
+                        title: rel.title,
+                        artist: currentArtist?.name,
+                        year: rel.date?.split('-')[0] ? parseInt(rel.date.split('-')[0]) : null,
+                        art: rel.albumArt
+                      };
                       // Check prefetched cache first
                       const prefetched = prefetchedReleases[rel.id];
                       if (prefetched?.tracks?.length > 0) {
                         window.electron.contextMenu.showTrackMenu({
                           type: 'release',
-                          title: rel.title,
+                          name: rel.title,
+                          album: albumData,
                           tracks: prefetched.tracks
                         });
                       } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
@@ -9621,14 +9679,16 @@ useEffect(() => {
                         });
                         window.electron.contextMenu.showTrackMenu({
                           type: 'release',
-                          title: rel.title,
+                          name: rel.title,
+                          album: albumData,
                           tracks: tracks
                         });
                       } else {
                         // No tracks available yet - show with 0 tracks
                         window.electron.contextMenu.showTrackMenu({
                           type: 'release',
-                          title: rel.title,
+                          name: rel.title,
+                          album: albumData,
                           releaseId: rel.id,
                           artist: currentArtist?.name,
                           albumArt: rel.albumArt,

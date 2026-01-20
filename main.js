@@ -1045,6 +1045,51 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
+  // Add "Add to Collection" option for tracks, albums, and artists
+  if (data.type === 'track' || data.type === 'release' || data.type === 'artist') {
+    menuItems.push({ type: 'separator' });
+
+    if (data.type === 'track') {
+      menuItems.push({
+        label: 'Add to Collection',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'add-to-collection',
+            type: 'track',
+            track: data.track
+          });
+        }
+      });
+    } else if (data.type === 'release') {
+      menuItems.push({
+        label: 'Add Album to Collection',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'add-to-collection',
+            type: 'album',
+            album: data.album || {
+              title: data.name,
+              artist: data.artist,
+              year: data.year,
+              art: data.albumArt
+            }
+          });
+        }
+      });
+    } else if (data.type === 'artist') {
+      menuItems.push({
+        label: 'Add Artist to Collection',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'add-to-collection',
+            type: 'artist',
+            artist: data.artist
+          });
+        }
+      });
+    }
+  }
+
   const menu = Menu.buildFromTemplate(menuItems);
 
   menu.popup({ window: mainWindow });
