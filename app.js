@@ -326,7 +326,8 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     // Artist image square (matches SearchArtistCard)
     React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-2 relative overflow-hidden' },
       imageLoading && React.createElement('div', {
-        className: 'w-full h-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+        className: 'w-full h-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+        style: { backgroundSize: '200% 100%' }
       }),
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
@@ -10169,21 +10170,21 @@ useEffect(() => {
             loadingBio && React.createElement('div', { className: 'space-y-4' },
               // First paragraph skeleton (longer)
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-11/12' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-4/5' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '50ms' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-11/12', style: { backgroundSize: '200% 100%', animationDelay: '100ms' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-4/5', style: { backgroundSize: '200% 100%', animationDelay: '150ms' } })
               ),
               // Second paragraph skeleton
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-3/4' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '200ms' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '250ms' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-3/4', style: { backgroundSize: '200% 100%', animationDelay: '300ms' } })
               ),
               // Third paragraph skeleton (shorter)
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '350ms' } }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3', style: { backgroundSize: '200% 100%', animationDelay: '400ms' } })
               )
             ),
             // Bio content
@@ -10217,11 +10218,13 @@ useEffect(() => {
                 },
                   // Square image skeleton
                   React.createElement('div', {
-                    className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer mb-2'
+                    className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer mb-2',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
                   }),
                   // Name skeleton
                   React.createElement('div', {
-                    className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer'
+                    className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
                   })
                 )
               )
