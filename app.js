@@ -4577,8 +4577,9 @@ const Parachord = () => {
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
       
-      // Step 2: Fetch artist's releases (albums, EPs, singles) with staggered requests
-      // MusicBrainz rate limits to ~1 req/sec, so we stagger by 350ms to stay under limit
+      // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
+      // Using release-groups instead of releases to avoid duplicates (each album appears once)
+      // MusicBrainz rate limits to ~1 req/sec, so we stagger by 500ms to stay under limit
       const releaseTypes = ['album', 'ep', 'single'];
 
       const releasePromises = releaseTypes.map(async (type, index) => {
@@ -4588,46 +4589,52 @@ const Parachord = () => {
         }
         try {
           const releasesResponse = await fetchWithRetry(
-            `https://musicbrainz.org/ws/2/release?artist=${artist.id}&type=${type}&status=official&fmt=json&limit=100`
+            `https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`
           );
 
           if (releasesResponse.ok) {
             const releasesData = await releasesResponse.json();
-            if (releasesData.releases) {
-              return releasesData.releases.map(release => ({
-                ...release,
-                releaseType: type
-              }));
+            if (releasesData['release-groups']) {
+              return releasesData['release-groups'].map(rg => {
+                // Determine release type based on primary-type and secondary-types
+                const primaryType = (rg['primary-type'] || '').toLowerCase();
+                const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
+
+                // Categorize: studio album, live, compilation, or the primary type (ep/single)
+                let releaseType = primaryType || type;
+                if (secondaryTypes.includes('live')) {
+                  releaseType = 'live';
+                } else if (secondaryTypes.includes('compilation')) {
+                  releaseType = 'compilation';
+                } else if (primaryType === 'album' && secondaryTypes.length === 0) {
+                  releaseType = 'album'; // Studio album (no secondary types)
+                }
+
+                return {
+                  id: rg.id,
+                  title: rg.title,
+                  date: rg['first-release-date'] || null,
+                  releaseType: releaseType,
+                  secondaryTypes: secondaryTypes,
+                  disambiguation: rg.disambiguation
+                };
+              });
             }
           }
           return [];
         } catch (error) {
-          console.error(`Error fetching ${type} releases:`, error);
+          console.error(`Error fetching ${type} release-groups:`, error);
           return [];
         }
       });
 
       const releaseResults = await Promise.all(releasePromises);
       const allReleases = releaseResults.flat();
-      
-      console.log(`Found ${allReleases.length} releases for ${artist.name}`);
 
-      // De-duplicate releases (same title + date can appear multiple times)
-      const seenReleases = new Map();
-      const uniqueReleases = [];
-
-      for (const release of allReleases) {
-        const key = `${release.title.toLowerCase()}|${release.date || 'unknown'}`;
-        if (!seenReleases.has(key)) {
-          seenReleases.set(key, true);
-          uniqueReleases.push(release);
-        }
-      }
-
-      console.log(`After de-duplication: ${uniqueReleases.length} unique releases`);
+      console.log(`Found ${allReleases.length} release-groups for ${artist.name}`);
 
       // Sort by date (newest first)
-      uniqueReleases.sort((a, b) => {
+      const uniqueReleases = [...allReleases].sort((a, b) => {
         const dateA = a.date || '0000';
         const dateB = b.date || '0000';
         return dateB.localeCompare(dateA);
@@ -5700,9 +5707,10 @@ const Parachord = () => {
       }
       
       try {
+        // Use release-group endpoint since we fetch release-groups, not individual releases
         const artResponse = await fetch(
-          `https://coverartarchive.org/release/${release.id}`,
-          { 
+          `https://coverartarchive.org/release-group/${release.id}`,
+          {
             headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
           }
         );
@@ -9901,22 +9909,32 @@ useEffect(() => {
             className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
           },
             // Release type filter pills
-            React.createElement('div', { className: 'flex gap-2' },
-              ['all', 'album', 'ep', 'single'].map(type => {
+            React.createElement('div', { className: 'flex gap-2 flex-wrap' },
+              [
+                { value: 'all', label: 'All' },
+                { value: 'album', label: 'Studio Albums' },
+                { value: 'live', label: 'Live' },
+                { value: 'compilation', label: 'Compilations' },
+                { value: 'ep', label: 'EPs' },
+                { value: 'single', label: 'Singles' }
+              ].map(({ value, label }) => {
                 const searchFiltered = filterArtistReleases(artistReleases);
-                const count = type === 'all'
+                const count = value === 'all'
                   ? searchFiltered.length
-                  : searchFiltered.filter(r => r.releaseType === type).length;
+                  : searchFiltered.filter(r => r.releaseType === value).length;
+
+                // Don't show filter pills with 0 count (except 'all')
+                if (count === 0 && value !== 'all') return null;
 
                 return React.createElement('button', {
-                  key: type,
-                  onClick: () => setReleaseTypeFilter(type),
+                  key: value,
+                  onClick: () => setReleaseTypeFilter(value),
                   className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    releaseTypeFilter === type
+                    releaseTypeFilter === value
                       ? 'bg-purple-600 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`,
-                }, `${type.charAt(0).toUpperCase() + type.slice(1)}${type !== 'all' ? 's' : ''} (${count})`);
+                }, `${label} (${count})`);
               })
             ),
             // Spacer
@@ -10082,10 +10100,18 @@ useEffect(() => {
               const filtered = sortArtistReleases(filterArtistReleases(artistReleases));
               const typeFiltered = filtered.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter);
               if (typeFiltered.length === 0) {
+                const typeLabels = {
+                  all: '',
+                  album: 'studio albums',
+                  live: 'live albums',
+                  compilation: 'compilations',
+                  ep: 'EPs',
+                  single: 'singles'
+                };
                 return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
                   artistSearch.trim()
                     ? `No releases matching "${artistSearch}"`
-                    : `No ${releaseTypeFilter === 'all' ? '' : releaseTypeFilter + ' '}releases found`
+                    : `No ${typeLabels[releaseTypeFilter] || releaseTypeFilter} found`
                 );
               }
               return null;
