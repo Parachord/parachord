@@ -936,6 +936,7 @@ const Parachord = () => {
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
   const [queueDropTarget, setQueueDropTarget] = useState(null); // Index where track will be dropped in queue
+  const [droppingTrackId, setDroppingTrackId] = useState(null); // Track ID that's animating "drop" into player
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
@@ -1009,6 +1010,7 @@ const Parachord = () => {
   const [dropZoneTarget, setDropZoneTarget] = useState(null); // 'now-playing' | 'queue' | null
   const queueAnimationRef = useRef(null);
   const [queueAnimating, setQueueAnimating] = useState(false);
+  const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
 
   // Browser extension state
@@ -1026,12 +1028,26 @@ const Parachord = () => {
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
+  const queueResolutionActiveRef = useRef(false); // When true, queue resolution takes priority over page resolution
+  const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
+
+  // Scroll queue to bottom when opened (so track 1 is visible at the bottom)
+  useEffect(() => {
+    if (queueDrawerOpen && queueContentRef.current) {
+      // Small delay to ensure the drawer has animated open
+      setTimeout(() => {
+        if (queueContentRef.current) {
+          queueContentRef.current.scrollTop = queueContentRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [queueDrawerOpen]);
 
   // Artist page scroll handler for header collapse
   const handleArtistPageScroll = useCallback((e) => {
@@ -3189,6 +3205,15 @@ const Parachord = () => {
     setQueueAnimating(true);
     setTimeout(() => setQueueAnimating(false), 600);
     console.log(`➕ Added ${tracksArray.length} track(s) to queue`);
+
+    // Resolve queue tracks with priority over page resolution
+    // Filter to only tracks that need resolution
+    const tracksNeedingResolution = tracksArray.filter(track =>
+      !track.sources || Object.keys(track.sources).length === 0
+    );
+    if (tracksNeedingResolution.length > 0) {
+      resolveQueueTracks(tracksNeedingResolution);
+    }
   };
 
   const handleSearchInput = (value) => {
@@ -4145,10 +4170,17 @@ const Parachord = () => {
   };
 
   // Resolve a single track across all active resolvers
-  const resolveTrack = async (track, artistName, forceRefresh = false) => {
+  // isQueueResolution: when true, this is a priority queue resolution that won't yield
+  const resolveTrack = async (track, artistName, forceRefresh = false, isQueueResolution = false) => {
     const trackKey = `${track.position}-${track.title}`;
     const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
     const currentResolverHash = getResolverSettingsHash();
+
+    // If this is a page resolution and queue resolution is active, skip to let queue take priority
+    if (!isQueueResolution && queueResolutionActiveRef.current) {
+      console.log(`⏸️ Yielding page resolution for "${track.title}" - queue resolution has priority`);
+      return;
+    }
 
     // Check cache first (unless force refresh)
     const cachedData = trackSourcesCache.current[cacheKey];
@@ -4345,12 +4377,106 @@ const Parachord = () => {
 
     // Resolve tracks one at a time with small delay
     for (const track of release.tracks) {
+      // Check if queue resolution has priority - if so, pause page resolution
+      if (queueResolutionActiveRef.current) {
+        console.log(`⏸️ Pausing page resolution - queue resolution has priority`);
+        // Wait for queue resolution to complete before continuing
+        while (queueResolutionActiveRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`▶️ Resuming page resolution`);
+      }
+
       await resolveTrack(track, artistName, forceRefresh);
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     console.log('✅ Track resolution complete');
+  };
+
+  // Resolve queue tracks with priority over page resolution
+  // This ensures queue tracks get resolved first when user adds tracks to queue
+  const resolveQueueTracks = async (queueTracks) => {
+    if (!queueTracks || queueTracks.length === 0) return;
+
+    // Filter to tracks that need resolution (no sources or empty sources)
+    const tracksNeedingResolution = queueTracks.filter(track =>
+      !track.sources || Object.keys(track.sources).length === 0
+    );
+
+    if (tracksNeedingResolution.length === 0) {
+      console.log('✅ All queue tracks already have sources');
+      return;
+    }
+
+    console.log(`🎯 Queue resolution: ${tracksNeedingResolution.length} tracks need sources (priority mode)`);
+
+    // Set priority flag to pause page resolution
+    queueResolutionActiveRef.current = true;
+
+    try {
+      // Get enabled resolvers
+      const enabledResolvers = resolverOrder
+        .filter(id => activeResolvers.includes(id))
+        .map(id => allResolvers.find(r => r.id === id))
+        .filter(Boolean);
+
+      if (enabledResolvers.length === 0) {
+        console.log('⚠️ No active resolvers for queue resolution');
+        return;
+      }
+
+      // Resolve each queue track
+      for (const track of tracksNeedingResolution) {
+        const artistName = track.artist || 'Unknown Artist';
+        const sources = {};
+
+        console.log(`🎯 Queue resolving: ${artistName} - ${track.title}`);
+
+        // Query all resolvers in parallel
+        const resolverPromises = enabledResolvers.map(async (resolver) => {
+          if (!resolver.capabilities?.resolve || !resolver.play) return;
+
+          try {
+            const config = getResolverConfig(resolver.id);
+            const result = await resolver.resolve(artistName, track.title, track.album || null, config);
+
+            if (result) {
+              sources[resolver.id] = {
+                ...result,
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0.85
+              };
+              console.log(`  ✅ ${resolver.name}: Found match for queue track`);
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name} queue resolve error:`, error);
+          }
+        });
+
+        await Promise.all(resolverPromises);
+
+        // Update the queue track with resolved sources
+        if (Object.keys(sources).length > 0) {
+          setCurrentQueue(prevQueue =>
+            prevQueue.map(queueTrack =>
+              queueTrack.id === track.id
+                ? { ...queueTrack, sources: { ...queueTrack.sources, ...sources } }
+                : queueTrack
+            )
+          );
+          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources)`);
+        }
+
+        // Small delay between tracks to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      console.log('✅ Queue resolution complete');
+    } finally {
+      // Always clear priority flag
+      queueResolutionActiveRef.current = false;
+    }
   };
 
   // Resolve library tracks against active resolvers (for local files)
@@ -6179,6 +6305,15 @@ ${tracks}
 
         // Step 2: Resolve sources in the background for each track
         for (const track of tracksWithIds) {
+          // Check if queue resolution has priority - if so, pause page resolution
+          if (queueResolutionActiveRef.current) {
+            console.log(`⏸️ Pausing playlist resolution - queue resolution has priority`);
+            while (queueResolutionActiveRef.current) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            console.log(`▶️ Resuming playlist resolution`);
+          }
+
           console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
           // Resolve all sources for this track
@@ -6248,6 +6383,15 @@ ${tracks}
 
       // Resolve sources in background
       for (const track of tracksWithIds) {
+        // Check if queue resolution has priority - if so, pause page resolution
+        if (queueResolutionActiveRef.current) {
+          console.log(`⏸️ Pausing playlist resolution - queue resolution has priority`);
+          while (queueResolutionActiveRef.current) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          console.log(`▶️ Resuming playlist resolution`);
+        }
+
         console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
         for (const resolverId of activeResolvers) {
@@ -6348,6 +6492,23 @@ ${tracks}
       setCurrentQueue(updatedQueue);
     }
   }, [trackSources]);
+
+  // Watch for queue changes and resolve any unresolved tracks with priority
+  // This handles cases where setCurrentQueue is called directly (e.g., clicking a track to play)
+  useEffect(() => {
+    if (currentQueue.length === 0) return;
+    if (queueResolutionActiveRef.current) return; // Already resolving
+
+    // Find tracks that need resolution
+    const unresolvedTracks = currentQueue.filter(track =>
+      !track.sources || Object.keys(track.sources).length === 0
+    );
+
+    if (unresolvedTracks.length > 0) {
+      console.log(`🎯 Queue has ${unresolvedTracks.length} unresolved tracks, starting priority resolution`);
+      resolveQueueTracks(unresolvedTracks);
+    }
+  }, [currentQueue]);
 
   // Navigation helpers
   const navigateTo = (view) => {
@@ -10169,8 +10330,9 @@ useEffect(() => {
 
     // Player bar (always visible) - New Tomahawk-inspired layout
     // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
+    // z-50 to stay above queue drawer
     React.createElement('div', {
-      className: 'bg-gray-800/90 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0',
+      className: 'bg-gray-800/95 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0 relative z-50',
       style: { minHeight: '72px' }
     },
       React.createElement('div', { className: 'flex items-center justify-between gap-4' },
@@ -11459,17 +11621,18 @@ useEffect(() => {
       )
     ),
 
-    // Queue Drawer
+    // Queue Drawer - slides up above the playbar with matching dark theme
+    // Semi-translucent so page content is visible behind
     React.createElement('div', {
-      className: 'fixed left-0 right-0 bg-white border-t border-gray-200 shadow-2xl transition-all duration-300 ease-in-out z-40',
+      className: 'fixed left-0 right-0 bg-gray-900/80 backdrop-blur-md border-t border-gray-700/50 shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
-        bottom: queueDrawerOpen ? 0 : -queueDrawerHeight,
+        bottom: queueDrawerOpen ? '72px' : -queueDrawerHeight, // Position above the playbar (72px height)
         height: queueDrawerHeight + 'px'
       }
     },
-      // Drawer header with drag handle
+      // Drawer header with drag handle - dark translucent theme
       React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 cursor-ns-resize',
+        className: 'flex items-center justify-between px-4 py-2 bg-gray-900/60 border-b border-gray-700/50 cursor-ns-resize',
         onMouseDown: (e) => {
           const startY = e.clientY;
           const startHeight = queueDrawerHeight;
@@ -11493,13 +11656,13 @@ useEffect(() => {
           className: 'flex items-center gap-3'
         },
           React.createElement('div', {
-            className: 'w-8 h-1 bg-gray-300 rounded-full'
+            className: 'w-8 h-1 bg-gray-600 rounded-full'
           }),
           React.createElement('span', {
-            className: 'text-sm font-medium text-gray-900'
+            className: 'text-sm font-medium text-gray-200'
           }, 'Queue'),
           React.createElement('span', {
-            className: 'text-xs text-gray-500'
+            className: 'text-xs text-gray-400'
           }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`)
         ),
         React.createElement('div', {
@@ -11507,17 +11670,18 @@ useEffect(() => {
         },
           currentQueue.length > 0 && React.createElement('button', {
             onClick: clearQueue,
-            className: 'text-xs text-gray-500 hover:text-gray-900 px-2 py-1 hover:bg-gray-200 rounded transition-colors'
+            className: 'text-xs text-gray-400 hover:text-white px-2 py-1 hover:bg-white/10 rounded transition-colors'
           }, 'Clear'),
           React.createElement('button', {
             onClick: () => setQueueDrawerOpen(false),
-            className: 'p-1 hover:bg-gray-200 rounded transition-colors text-gray-500 hover:text-gray-700'
+            className: 'p-1 hover:bg-white/10 rounded transition-colors text-gray-400 hover:text-white'
           }, React.createElement(X))
         )
       ),
 
-      // Queue content
+      // Queue content - dark theme
       React.createElement('div', {
+        ref: queueContentRef,
         className: 'overflow-y-auto relative',
         style: { height: (queueDrawerHeight - 44) + 'px' },
         onDragEnter: (e) => handleDragEnter(e, 'queue'),
@@ -11532,14 +11696,15 @@ useEffect(() => {
         }),
         currentQueue.length === 0 ?
           React.createElement('div', {
-            className: 'flex flex-col items-center justify-center h-full text-gray-400'
+            className: 'flex flex-col items-center justify-center h-full text-gray-500'
           },
             React.createElement('span', { className: 'text-4xl mb-2' }, '🎵'),
-            React.createElement('span', { className: 'text-gray-600' }, 'Queue is empty'),
-            React.createElement('span', { className: 'text-sm text-gray-400 mt-1' }, 'Play a playlist to add tracks')
+            React.createElement('span', { className: 'text-gray-400' }, 'Queue is empty'),
+            React.createElement('span', { className: 'text-sm text-gray-500 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          React.createElement('div', { className: 'space-y-0' },
+          // flex-col-reverse so first track (next up) appears at bottom, closest to playbar
+          React.createElement('div', { className: 'flex flex-col-reverse justify-end h-full' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -11553,6 +11718,7 @@ useEffect(() => {
 
               const isDraggedOver = queueDropTarget === index;
               const isDragging = draggedQueueTrack === index;
+              const isDropping = droppingTrackId === track.id;
 
               return React.createElement('div', {
                 key: track.id,
@@ -11603,16 +11769,17 @@ useEffect(() => {
                     });
                   }
                 },
-                className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                  isCurrentTrack ? 'bg-purple-50' : ''
-                } ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${
+                className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-600/30 hover:bg-white/10 transition-all duration-300 ${
+                  isCurrentTrack ? 'bg-purple-900/40' : ''
+                } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
                   isError ? 'opacity-50' : ''
-                } ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${
-                  isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'}`
+                } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
+                  isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
+                  isDropping ? 'queue-track-drop' : ''}`
               },
                 // Track number / status indicator - fixed width
                 React.createElement('span', {
-                  className: 'text-sm text-gray-400 text-right',
+                  className: 'text-sm text-gray-500 text-right',
                   style: { width: '28px', flexShrink: 0 }
                 },
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
@@ -11624,14 +11791,20 @@ useEffect(() => {
                 React.createElement('span', {
                   className: `text-sm truncate cursor-pointer ${
                     isLoading ? 'text-gray-500' :
-                    isError ? 'text-red-500' :
-                    isCurrentTrack ? 'text-purple-600' : 'text-gray-700 group-hover:text-gray-900'
+                    isError ? 'text-red-400' :
+                    isCurrentTrack ? 'text-purple-400' : 'text-gray-200 group-hover:text-white'
                   }`,
                   style: { flex: '1 1 0', minWidth: 0 },
                   onClick: () => {
                     if (isLoading || isError) return;
-                    setCurrentQueue(prev => prev.slice(index + 1));
-                    handlePlay(track);
+                    // Trigger drop animation for this track
+                    setDroppingTrackId(track.id);
+                    // After animation, play the track
+                    setTimeout(() => {
+                      setCurrentQueue(prev => prev.slice(index + 1));
+                      handlePlay(track);
+                      setDroppingTrackId(null);
+                    }, 300);
                   }
                 },
                   isLoading ? 'Loading...' :
@@ -11641,7 +11814,7 @@ useEffect(() => {
 
                 // Artist name - flexible column, clickable
                 React.createElement('span', {
-                  className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                  className: 'text-sm text-gray-400 truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
                   style: { flex: '0.7 1 0', minWidth: 0 },
                   onClick: (e) => {
                     e.stopPropagation();
@@ -11657,7 +11830,7 @@ useEffect(() => {
 
                 // Duration - fixed width column (before resolver icons)
                 React.createElement('span', {
-                  className: 'text-sm text-gray-400 text-right tabular-nums',
+                  className: 'text-sm text-gray-500 text-right tabular-nums',
                   style: { width: '50px', flexShrink: 0 }
                 }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
 
@@ -11675,7 +11848,7 @@ useEffect(() => {
                           handleUrlDrop(track.sourceUrl, 'queue');
                         }
                       },
-                      className: 'px-2 py-0.5 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors',
+                      className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
                       title: 'Retry'
                     }, '↻')
                   : isLoading ?
@@ -11683,10 +11856,10 @@ useEffect(() => {
                       className: 'flex items-center gap-1'
                     },
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer'
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer'
                       }),
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
                         style: { animationDelay: '0.1s' }
                       })
                     )
@@ -11732,11 +11905,11 @@ useEffect(() => {
                       className: 'flex items-center gap-1'
                     },
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
                         title: 'Resolving track...'
                       }),
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
                         style: { animationDelay: '0.1s' }
                       })
                     )
@@ -11748,7 +11921,7 @@ useEffect(() => {
                     e.stopPropagation();
                     removeFromQueue(track.id);
                   },
-                  className: 'flex-shrink-0 p-1 text-gray-400 hover:text-red-500 hover:bg-gray-200 rounded transition-colors opacity-0 group-hover:opacity-100',
+                  className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
                   title: isLoading ? 'Cancel' : 'Remove from queue'
                 }, React.createElement(X, { size: 14 }))
               );
