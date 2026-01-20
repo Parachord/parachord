@@ -12583,7 +12583,7 @@ useEffect(() => {
                 ].map((tab, index) => [
                   index > 0 && React.createElement('span', {
                     key: `sep-expanded-${tab.key}`,
-                    className: 'text-gray-400 mx-2'
+                    className: 'text-white/40 mx-2'
                   }, '|'),
                   React.createElement('button', {
                     key: `expanded-${tab.key}`,
@@ -12591,13 +12591,13 @@ useEffect(() => {
                     className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                       recommendationsTab === tab.key
                         ? 'text-white'
-                        : 'text-gray-400 hover:text-white'
+                        : 'text-white/60 hover:text-white'
                     }`
                   }, tab.label)
                 ]).flat().filter(Boolean)
               ),
               React.createElement('p', {
-                className: 'mt-2 text-white/80 text-sm'
+                className: 'mt-2 text-white/70 text-sm'
               }, 'Personalized picks from Last.fm')
             ),
             // COLLAPSED STATE - Inline layout matching artist page
@@ -12628,7 +12628,7 @@ useEffect(() => {
                 ].map((tab, index) => [
                   index > 0 && React.createElement('span', {
                     key: `sep-collapsed-${tab.key}`,
-                    className: 'text-gray-400 mx-2'
+                    className: 'text-white/40 mx-2'
                   }, '|'),
                   React.createElement('button', {
                     key: `collapsed-${tab.key}`,
@@ -12636,7 +12636,7 @@ useEffect(() => {
                     className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                       recommendationsTab === tab.key
                         ? 'text-white'
-                        : 'text-gray-400 hover:text-white'
+                        : 'text-white/60 hover:text-white'
                     }`
                   }, tab.label)
                 ]).flat().filter(Boolean)
