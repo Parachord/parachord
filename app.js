@@ -6610,9 +6610,36 @@ useEffect(() => {
                   // No item selected
                   React.createElement('div', { className: 'text-gray-400 text-center py-12' }, 'No item selected')
               ),
-              // Right: Results list (placeholder)
-              React.createElement('div', { className: 'flex-1 bg-white rounded-lg border border-gray-200' },
-                React.createElement('div', { className: 'p-6 text-gray-400 text-center' }, `Showing ${searchDetailCategory} results`)
+              // Right: Results list
+              React.createElement('div', { className: 'flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col' },
+                // Header
+                React.createElement('div', { className: 'px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-100' }, 'SEARCH RESULTS'),
+
+                // Scrollable list
+                React.createElement('div', { className: 'flex-1 overflow-y-auto' },
+                  searchDetailCategory === 'artists' && searchResults.artists.map((artist, index) =>
+                    React.createElement('div', {
+                      key: artist.id,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === artist.id ? 'bg-gray-100' : ''}`,
+                      onMouseEnter: () => setSearchPreviewItem(artist),
+                      onMouseLeave: () => setSearchPreviewItem(searchResults.artists[0] || null),
+                      onClick: () => fetchArtistData(artist.name)
+                    },
+                      // Row number
+                      React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
+                      // Artist name
+                      React.createElement('span', { className: 'flex-1 font-medium text-gray-900' }, artist.name),
+                      // Release count
+                      React.createElement('span', { className: 'w-32 text-sm text-gray-500 text-right' },
+                        `${artist['release-count'] || '-'} Releases`
+                      ),
+                      // Recording count
+                      React.createElement('span', { className: 'w-32 text-sm text-gray-500 text-right' },
+                        `${artist['recording-count'] || '-'} songs`
+                      )
+                    )
+                  )
+                )
               )
             )
           )
