@@ -7073,20 +7073,33 @@ useEffect(() => {
                   // Track info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
-                  // Resolver badges
+                  // Resolver icons (small squares like track lists)
                   track.sources && Object.keys(track.sources).length > 0 &&
                     React.createElement('div', { className: 'flex gap-1 mt-1' },
-                      ...Object.keys(track.sources).slice(0, 2).map(source => {
+                      ...Object.keys(track.sources).slice(0, 3).map(source => {
                         const colors = {
-                          spotify: 'border-green-400 text-green-600',
-                          youtube: 'border-red-400 text-red-600',
-                          bandcamp: 'border-cyan-400 text-cyan-600',
-                          qobuz: 'border-blue-400 text-blue-600'
+                          spotify: '#1DB954',
+                          youtube: '#FF0000',
+                          bandcamp: '#1DA0C3',
+                          qobuz: '#0070CC',
+                          applemusic: '#FA243C'
                         };
-                        return React.createElement('span', {
+                        const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM' };
+                        return React.createElement('div', {
                           key: source,
-                          className: `text-xs px-1.5 py-0.5 border rounded ${colors[source] || 'border-gray-300 text-gray-500'}`
-                        }, source);
+                          style: {
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '3px',
+                            backgroundColor: colors[source] || '#9CA3AF',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '8px',
+                            fontWeight: 'bold',
+                            color: 'white'
+                          }
+                        }, abbrevMap[source] || source.slice(0, 2).toUpperCase());
                       })
                     )
                 )
