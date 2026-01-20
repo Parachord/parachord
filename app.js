@@ -6674,6 +6674,27 @@ useEffect(() => {
                         : null
                       )
                     )
+                  ),
+                  // Albums list
+                  searchDetailCategory === 'albums' && searchResults.albums.map((album, index) =>
+                    React.createElement('div', {
+                      key: album.id,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === album.id ? 'bg-gray-100' : ''}`,
+                      onMouseEnter: () => setSearchPreviewItem(album),
+                      onMouseLeave: () => setSearchPreviewItem(searchResults.albums[0] || null),
+                      onClick: () => handleAlbumClick(album)
+                    },
+                      // Row number
+                      React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
+                      // Album title
+                      React.createElement('span', { className: 'flex-1 font-medium text-gray-900 truncate' }, album.title),
+                      // Artist
+                      React.createElement('span', { className: 'w-40 text-sm text-gray-600 truncate' }, album['artist-credit']?.[0]?.name || 'Unknown'),
+                      // Year
+                      React.createElement('span', { className: 'w-20 text-sm text-gray-500 text-center' }, album['first-release-date']?.split('-')[0] || '-'),
+                      // Release type
+                      React.createElement('span', { className: 'w-24 text-sm text-gray-500 text-right capitalize' }, album['primary-type'] || 'Album')
+                    )
                   )
                 )
               )
