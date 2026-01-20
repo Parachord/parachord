@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-18
+> Last updated: 2026-01-19
 
 ---
 
@@ -27,10 +27,10 @@
 ## 📋 Playlist Features
 
 ### High Priority
-- [ ] **Create playlists in-app** - UI for creating new playlists
-- [ ] **Edit playlists** - Add/remove/reorder tracks
-- [ ] **Delete tracks from playlists** - Remove individual tracks
-- [ ] **Drag & drop tracks** - Reorder by dragging
+- [x] **Create playlists in-app** - UI for creating new playlists ✅
+- [x] **Edit playlists** - Add/remove/reorder tracks ✅
+- [x] **Delete tracks from playlists** - Remove individual tracks ✅
+- [x] **Drag & drop tracks** - Reorder by dragging ✅
 - [ ] **Import from Spotify/Apple Music** - Convert external playlists to XSPF
 
 ### Medium Priority
@@ -55,13 +55,13 @@
 
 ### Visual Enhancements
 - [ ] **Implement Jordi's designs** - Update aesthetic to match new design specs
-- [ ] **Album art throughout app** - Fetch from Cover Art Archive
+- [x] **Album art throughout app** - Fetch from Cover Art Archive ✅
 - [ ] **Hi-Res quality badges** - Show "Hi-Res" indicator for Qobuz tracks
-- [ ] **Loading skeletons** - Better loading states
+- [x] **Loading skeletons** - Better loading states with shimmer animations ✅
 - [ ] **Animations & transitions** - Smooth page transitions
 - [ ] **Themes** - Light/dark mode toggle
 - [ ] **Custom themes** - User-created color schemes
-- [ ] **Consistent resolver icons** - Use same resolver icons from album page on playlist page and player
+- [x] **Consistent resolver icons** - Use same resolver icons from album page on playlist page and player ✅
 
 ### Navigation
 - [ ] **Breadcrumb navigation** - Show path in artist → album flow
@@ -82,16 +82,16 @@
 ## 🎤 Artist & Album Pages
 
 ### Artist Pages
-- [ ] **Track listings on albums** - Click album to see all tracks
-- [ ] **Full album playback** - Play entire albums
-- [ ] **Album art caching** - Remember loaded images
+- [x] **Track listings on albums** - Click album to see all tracks ✅
+- [x] **Full album playback** - Play entire albums ✅
+- [x] **Album art caching** - Remember loaded images ✅
 - [ ] **Preview on hover** - 30-second previews
 - [ ] **Better single matching** - Smarter search for singles
-- [ ] **Stay on page playback** - Play without leaving artist view
+- [x] **Stay on page playback** - Play without leaving artist view ✅
 - [ ] **More metadata** - Record labels, genres, bio
-- [ ] **Artist bio** - Fetch from MusicBrainz/Last.fm
-- [ ] **Similar artists** - Show related artists
-- [ ] **Fix "Alls" typo on Discography** - Should be "All"
+- [x] **Artist bio** - Fetch from Last.fm (requires API key) ✅
+- [x] **Similar artists** - Show related artists from Last.fm ✅
+- [x] **Fix "Alls" typo on Discography** - Should be "All" ✅
 
 ### Album Pages
 - [ ] **Liner notes** - Show album credits, producers
@@ -200,8 +200,8 @@
 
 ### Performance
 - [ ] **Virtual scrolling** - For large lists (1000+ items)
-- [ ] **Image lazy loading** - Load images on demand
-- [ ] **Request caching** - Cache API responses
+- [x] **Image lazy loading** - Load images on demand ✅
+- [x] **Request caching** - Cache API responses (artist data, images, album art) ✅
 - [ ] **Offline mode** - Work without internet (cached content)
 - [ ] **Service worker** - PWA capabilities
 
@@ -315,6 +315,13 @@
 - ✅ Smart queue loading (only tracks after clicked position)
 - ✅ Skip non-playable resolvers during resolution
 - ✅ Resolver marketplace
+- ✅ Create/edit/delete playlists in-app
+- ✅ Drag and drop tracks to reorder playlists
+- ✅ Drag and drop from album pages to playlists
+- ✅ Artist bio and related artists (via Last.fm)
+- ✅ Request caching (artist data, images, album art with TTL)
+- ✅ Shimmer skeleton loading animations
+- ✅ Consistent resolver icons throughout app
 
 ---
 
@@ -379,7 +386,7 @@ Want to tackle any of these? Great!
 ---
 
 **Total Features: 150+**
-**Completed: 20+**
-**Remaining: 130+**
+**Completed: 30+**
+**Remaining: 120+**
 
 *This TODO is a living document. Add, remove, or reprioritize as needed!* 🎵
