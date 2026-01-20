@@ -5788,6 +5788,11 @@ const Parachord = () => {
     }
     
     console.log(`Album art: ${loadedCount} loaded, ${skippedCount} from cache, ${releases.length - loadedCount - skippedCount} not found`);
+
+    // Save cache immediately after loading album art so it persists on navigation
+    if (loadedCount > 0) {
+      saveCacheToStore();
+    }
   };
 
   // Remove a resolver's sources from all track data (trackSources, playlistTracks, queue, library)
