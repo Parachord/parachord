@@ -9442,32 +9442,158 @@ useEffect(() => {
         activeView === 'library' && React.createElement('div', {
           className: 'h-full overflow-y-auto scrollable-content'
         },
-          // Hero section
+          // Collapsible header section
           React.createElement('div', {
-            className: 'relative h-64 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 overflow-hidden'
+            className: 'sticky top-0 z-20',
+            style: {
+              height: collectionHeaderCollapsed ? '70px' : '120px',
+              transition: 'height 300ms ease',
+              overflow: 'hidden'
+            }
           },
-            // Background pattern - vinyl/music notes
+            // Gradient background
             React.createElement('div', {
-              className: 'absolute inset-0 opacity-20',
+              className: 'absolute inset-0 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700'
+            }),
+            // Vinyl pattern overlay
+            React.createElement('div', {
+              className: 'absolute inset-0',
               style: {
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'8\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'3\' fill=\'%23000\'/%3E%3C/g%3E%3C/svg%3E")'
+                opacity: 0.08,
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'4\'/%3E%3C/g%3E%3C/svg%3E")'
               }
             }),
-            // Hero content
-            React.createElement('div', {
-              className: 'absolute inset-0 flex items-end p-8'
+            // Header content - expanded state
+            !collectionHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center',
+              style: {
+                opacity: collectionHeaderCollapsed ? 0 : 1,
+                transition: 'opacity 200ms ease'
+              }
             },
-              React.createElement('div', null,
-                React.createElement('div', {
-                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+              React.createElement('h1', {
+                className: 'text-3xl font-bold text-white mb-1 tracking-widest uppercase'
+              }, 'COLLECTION'),
+              React.createElement('p', {
+                className: 'text-white/70 text-sm mb-4'
+              }, `${collectionArtists.length} Artists  |  ${collectionAlbums.length} Albums  |  ${library.length} Tracks`)
+            ),
+            // Header content - collapsed state (inline)
+            collectionHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-6',
+              style: {
+                opacity: collectionHeaderCollapsed ? 1 : 0,
+                transition: 'opacity 200ms ease'
+              }
+            },
+              React.createElement('h1', {
+                className: 'text-xl font-bold text-white tracking-wider uppercase'
+              }, 'COLLECTION')
+            ),
+            // Filter bar (always visible at bottom of header)
+            React.createElement('div', {
+              className: 'absolute bottom-0 left-0 right-0 flex items-center px-6 pb-3',
+              style: { height: '44px' }
+            },
+              // Tabs
+              React.createElement('div', { className: 'flex items-center gap-1' },
+                ['artists', 'albums', 'tracks'].map((tab, index) => [
+                  index > 0 && React.createElement('span', {
+                    key: `sep-${tab}`,
+                    className: 'text-white/40 mx-2'
+                  }, '|'),
+                  React.createElement('button', {
+                    key: tab,
+                    onClick: () => setCollectionTab(tab),
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                      collectionTab === tab
+                        ? 'text-white'
+                        : 'text-white/50 hover:text-white/80'
+                    }`
+                  }, tab.charAt(0).toUpperCase() + tab.slice(1))
+                ]).flat().filter(Boolean)
+              ),
+              // Spacer
+              React.createElement('div', { className: 'flex-1' }),
+              // Sort dropdown
+              React.createElement('div', { className: 'relative mr-3' },
+                React.createElement('button', {
+                  onClick: (e) => { e.stopPropagation(); setCollectionSortDropdownOpen(!collectionSortDropdownOpen); },
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-white/80 hover:text-white bg-white/10 rounded-full transition-colors'
                 },
+                  React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' })
-                  ),
-                  `${library.length} Tracks`
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                  )
                 ),
-                React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'My Collection'),
-                React.createElement('p', { className: 'text-white/80 text-lg' }, 'Your personal music library')
+                // Dropdown menu
+                collectionSortDropdownOpen && React.createElement('div', {
+                  className: 'absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30'
+                },
+                  getCollectionSortOptions(collectionTab).map(option =>
+                    React.createElement('button', {
+                      key: option.value,
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        setCollectionSort(prev => ({ ...prev, [collectionTab]: option.value }));
+                        setCollectionSortDropdownOpen(false);
+                      },
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                        collectionSort[collectionTab] === option.value ? 'text-purple-600 font-medium' : 'text-gray-700'
+                      }`
+                    },
+                      option.label,
+                      collectionSort[collectionTab] === option.value && React.createElement('svg', {
+                        className: 'w-4 h-4',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor'
+                      },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                      )
+                    )
+                  )
+                )
+              ),
+              // Search toggle/field
+              React.createElement('div', { className: 'flex items-center' },
+                collectionSearchOpen ?
+                  React.createElement('div', { className: 'flex items-center bg-white/10 rounded-full px-3 py-1.5' },
+                    React.createElement('input', {
+                      type: 'text',
+                      value: collectionSearch,
+                      onChange: (e) => setCollectionSearch(e.target.value),
+                      onBlur: () => {
+                        if (!collectionSearch.trim()) {
+                          setCollectionSearchOpen(false);
+                        }
+                      },
+                      autoFocus: true,
+                      placeholder: 'Filter...',
+                      className: 'bg-transparent text-white text-sm placeholder-white/50 outline-none',
+                      style: { width: '150px' }
+                    }),
+                    collectionSearch && React.createElement('button', {
+                      onClick: () => {
+                        setCollectionSearch('');
+                        setCollectionSearchOpen(false);
+                      },
+                      className: 'ml-2 text-white/60 hover:text-white'
+                    },
+                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                      )
+                    )
+                  )
+                :
+                  React.createElement('button', {
+                    onClick: () => setCollectionSearchOpen(true),
+                    className: 'p-1.5 text-white/60 hover:text-white transition-colors'
+                  },
+                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                    )
+                  )
               )
             )
           ),
