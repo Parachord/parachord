@@ -1,0 +1,45 @@
+{
+  "tracks": [
+    {
+      "id": "pearljam-darkmatter-darkmatter",
+      "title": "Dark Matter",
+      "artist": "Pearl Jam",
+      "album": "Dark Matter",
+      "albumArt": "https://coverartarchive.org/release/a2584308-d183-441c-9f6a-54cc9128e72b/38031110916-500.jpg",
+      "sources": {
+        "spotify": {
+          "id": "spotify-0S4VR8n0KBkE6DxrjArswJ",
+          "title": "Dark Matter",
+          "artist": "Pearl Jam",
+          "album": "Dark Matter",
+          "duration": 211,
+          "sources": [
+            "spotify"
+          ],
+          "spotifyUri": "spotify:track:0S4VR8n0KBkE6DxrjArswJ",
+          "spotifyId": "0S4VR8n0KBkE6DxrjArswJ",
+          "albumArt": "https://i.scdn.co/image/ab67616d0000b2736fcdcbbd9cae9001ca5b20d5",
+          "confidence": 0.95
+        },
+        "youtube": {
+          "id": "youtube-6Fx8LprPMIU",
+          "title": "Pearl Jam - Dark Matter (Official Visualizer)",
+          "artist": "Pearl Jam",
+          "album": "YouTube",
+          "duration": 180,
+          "sources": [
+            "youtube"
+          ],
+          "youtubeId": "6Fx8LprPMIU",
+          "youtubeUrl": "https://www.youtube.com/watch?v=6Fx8LprPMIU",
+          "thumbnail": "https://i.ytimg.com/vi/6Fx8LprPMIU/default.jpg",
+          "albumArt": "https://i.ytimg.com/vi/6Fx8LprPMIU/mqdefault.jpg",
+          "confidence": 0.5
+        }
+      },
+      "addedAt": 1768945988125
+    }
+  ],
+  "albums": [],
+  "artists": []
+}

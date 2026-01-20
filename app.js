@@ -8992,16 +8992,14 @@ useEffect(() => {
               // Right: Results list
               React.createElement('div', { className: 'flex-1 flex flex-col' },
                 // Header with SEARCH RESULTS and CLOSE button
-                React.createElement('div', { className: 'flex items-center justify-between px-6 py-4 border-b border-gray-100' },
-                  React.createElement('span', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SEARCH RESULTS'),
+                React.createElement('div', { className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200' },
+                  React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Search Results'),
                   React.createElement('button', {
                     onClick: () => { setSearchDetailCategory(null); setSearchPreviewItem(null); },
-                    className: 'flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors border border-gray-200 rounded px-3 py-1'
+                    className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
                   },
                     'CLOSE',
-                    React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                    React.createElement('span', { className: 'text-gray-400' }, '×')
                   )
                 ),
 
@@ -9243,16 +9241,14 @@ useEffect(() => {
           className: 'h-full overflow-y-auto bg-white'
         },
           // Header bar with SEARCH title and CLOSE button
-          React.createElement('div', { className: 'flex items-center gap-4 px-8 py-4 border-b border-gray-100' },
-            React.createElement('span', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SEARCH'),
+          React.createElement('div', { className: 'flex items-center justify-between px-8 py-4 border-b border-gray-200' },
+            React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Search'),
             React.createElement('button', {
               onClick: () => navigateBack(),
-              className: 'flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors border border-gray-200 rounded px-3 py-1'
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
             },
               'CLOSE',
-              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-              )
+              React.createElement('span', { className: 'text-gray-400' }, '×')
             )
           ),
 
@@ -10818,8 +10814,8 @@ useEffect(() => {
 
       // Main content area - Playlists Page (separate layout like Artist page)
       : activeView === 'playlists' ? React.createElement('div', {
-        className: 'flex-1 flex flex-col',
-        style: { overflow: 'hidden' }
+        className: 'flex-1 flex flex-col h-full',
+        style: { overflow: 'hidden', minHeight: 0 }
       },
         // Header section (outside scrollable area)
         React.createElement('div', {
@@ -10987,7 +10983,8 @@ useEffect(() => {
           className: 'scrollable-content',
           style: {
             flex: 1,
-            overflowY: 'auto',
+            overflowY: 'scroll',
+            pointerEvents: 'auto',
             padding: '24px'
           },
           onScroll: handlePlaylistsScroll
@@ -11753,8 +11750,8 @@ useEffect(() => {
 
         // Charts view with collapsible hero header (matching Artist page pattern)
         activeView === 'discover' && React.createElement('div', {
-          className: 'flex-1 flex flex-col',
-          style: { overflow: 'hidden' }
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
           React.createElement('div', {
@@ -11912,7 +11909,8 @@ useEffect(() => {
             className: 'scrollable-content',
             style: {
               flex: 1,
-              overflowY: 'auto',
+              overflowY: 'scroll',
+              pointerEvents: 'auto',
               padding: '24px'
             },
             onScroll: handleChartsScroll
@@ -12090,8 +12088,8 @@ useEffect(() => {
 
         // Critic's Picks view with collapsible hero header (matching Artist page pattern)
         activeView === 'critics-picks' && React.createElement('div', {
-          className: 'flex-1 flex flex-col',
-          style: { overflow: 'hidden' }
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
         },
           // Header section (outside scrollable area)
           React.createElement('div', {
@@ -12249,7 +12247,8 @@ useEffect(() => {
             className: 'scrollable-content',
             style: {
               flex: 1,
-              overflowY: 'auto',
+              overflowY: 'scroll',
+              pointerEvents: 'auto',
               padding: '24px'
             },
             onScroll: handleCriticsScroll
