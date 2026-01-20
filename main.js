@@ -16,8 +16,9 @@ if (!process.env.SPOTIFY_CLIENT_ID) {
 console.log('====================================');
 console.log('');
 
-const { app, BrowserWindow, ipcMain, globalShortcut, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const Store = require('electron-store');
 const express = require('express');
 const WebSocket = require('ws');
@@ -225,8 +226,98 @@ async function exchangeCodeForToken(code) {
   }
 }
 
+// Register custom protocol scheme for local audio playback
+// Must be called before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-audio',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+]);
+
 app.whenReady().then(() => {
   console.log('=== Electron App Starting ===');
+
+  // Register protocol handler for local audio files
+  protocol.handle('local-audio', async (request) => {
+    try {
+      // URL format: local-audio:///path/to/file.mp3
+      const filePath = decodeURIComponent(request.url.replace('local-audio://', ''));
+      console.log('[LocalAudio] Requested file:', filePath);
+
+      // Verify file exists and get stats
+      const stats = await fs.promises.stat(filePath);
+      if (!stats.isFile()) {
+        console.error('[LocalAudio] Not a file:', filePath);
+        return new Response('Not a file', { status: 404 });
+      }
+
+      // Get file extension for MIME type
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes = {
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.aac': 'audio/aac',
+        '.wav': 'audio/wav',
+        '.flac': 'audio/flac',
+        '.ogg': 'audio/ogg',
+        '.opus': 'audio/opus',
+        '.wma': 'audio/x-ms-wma',
+        '.aiff': 'audio/aiff',
+        '.alac': 'audio/mp4'
+      };
+      const mimeType = mimeTypes[ext] || 'audio/mpeg';
+
+      // Handle range requests for seeking
+      const rangeHeader = request.headers.get('range');
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (match) {
+          const start = parseInt(match[1], 10);
+          const end = match[2] ? parseInt(match[2], 10) : stats.size - 1;
+          const chunkSize = end - start + 1;
+
+          console.log(`[LocalAudio] Range request: ${start}-${end}/${stats.size}`);
+
+          const fileHandle = await fs.promises.open(filePath, 'r');
+          const buffer = Buffer.alloc(chunkSize);
+          await fileHandle.read(buffer, 0, chunkSize, start);
+          await fileHandle.close();
+
+          return new Response(buffer, {
+            status: 206,
+            headers: {
+              'Content-Type': mimeType,
+              'Content-Length': chunkSize.toString(),
+              'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+              'Accept-Ranges': 'bytes'
+            }
+          });
+        }
+      }
+
+      // Full file request
+      const buffer = await fs.promises.readFile(filePath);
+      console.log(`[LocalAudio] Serving full file: ${buffer.length} bytes`);
+
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': stats.size.toString(),
+          'Accept-Ranges': 'bytes'
+        }
+      });
+    } catch (error) {
+      console.error('[LocalAudio] Error serving file:', error);
+      return new Response('File not found', { status: 404 });
+    }
+  });
 
   createWindow();
   startAuthServer();

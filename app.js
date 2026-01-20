@@ -2212,6 +2212,7 @@ const Parachord = () => {
     // Handle local file playback directly with HTML5 Audio
     if (resolverId === 'localfiles') {
       console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
+      console.log('🎵 Source details:', JSON.stringify(sourceToPlay, null, 2));
 
       // Create audio element if needed
       if (!audioRef.current) {
@@ -2219,6 +2220,22 @@ const Parachord = () => {
         audioRef.current.addEventListener('timeupdate', () => {
           if (audioRef.current) {
             setProgress(audioRef.current.currentTime);
+          }
+        });
+        audioRef.current.addEventListener('loadedmetadata', () => {
+          // Update current track duration from audio element once metadata loads
+          const audioDuration = audioRef.current?.duration;
+          if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+            console.log('🎵 Audio metadata loaded, duration:', audioDuration);
+            setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+          }
+        });
+        audioRef.current.addEventListener('durationchange', () => {
+          // Also listen for duration changes (some formats report duration later)
+          const audioDuration = audioRef.current?.duration;
+          if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+            console.log('🎵 Audio duration changed:', audioDuration);
+            setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
           }
         });
         audioRef.current.addEventListener('ended', () => {
@@ -2235,21 +2252,30 @@ const Parachord = () => {
         });
       }
 
-      const fileUrl = sourceToPlay.fileUrl || `file://${sourceToPlay.filePath}`;
-      audioRef.current.src = fileUrl;
+      // Use custom local-audio:// protocol for secure local file playback
+      const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl?.replace('file://', '');
+      const audioUrl = `local-audio://${filePath}`;
+      console.log('🎵 Audio URL:', audioUrl);
+      audioRef.current.src = audioUrl;
       audioRef.current.volume = volume / 100;
+
+      // Explicitly load to trigger metadata events
+      audioRef.current.load();
 
       try {
         await audioRef.current.play();
 
         // Set current track state
+        // Duration from local files is already in seconds
+        const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+        console.log('🎵 Track duration from source:', duration, 'sourceToPlay.duration:', sourceToPlay.duration, 'trackOrSource.duration:', trackOrSource.duration);
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
           id: trackOrSource.id,
           artist: trackOrSource.artist,
           title: trackOrSource.title,
           album: trackOrSource.album,
-          duration: sourceToPlay.duration || trackOrSource.duration,
+          duration: duration,
           albumArt: sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources
         } : sourceToPlay;
@@ -2262,6 +2288,14 @@ const Parachord = () => {
         setIsExternalPlayback(false);
 
         console.log('✅ Local file playing');
+        console.log('🎵 Audio element duration after play:', audioRef.current?.duration);
+
+        // If audio element has duration now, update the track
+        const audioDuration = audioRef.current?.duration;
+        if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration) && audioDuration > 0) {
+          console.log('🎵 Setting duration from audio element:', audioDuration);
+          setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+        }
       } catch (error) {
         console.error('❌ Local file playback failed:', error);
         showConfirmDialog({
@@ -3970,9 +4004,20 @@ const Parachord = () => {
                       (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
                       cachedData.resolverHash === currentResolverHash;
 
-    if (cacheValid) {
+    // Check if there are active resolvers that weren't queried in the cached data
+    const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
+    const missingResolvers = activeResolvers.filter(id =>
+      !cachedResolverIds.includes(id) &&
+      allResolvers.find(r => r.id === id)?.capabilities?.resolve
+    );
+
+    if (cachedData) {
+      console.log(`  🔍 Cache check for "${track.title}": hash match=${cachedData.resolverHash === currentResolverHash}, missing resolvers: ${missingResolvers.join(', ') || 'none'}`);
+    }
+
+    if (cacheValid && missingResolvers.length === 0) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
-      console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h)`);
+      console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
 
       // Use cached sources immediately for fast UI
       setTrackSources(prev => ({
@@ -3985,6 +4030,61 @@ const Parachord = () => {
         console.log(`🔄 Cache > 24h old, validating in background...`);
         setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
       }
+
+      return;
+    }
+
+    // If cache is valid but missing resolvers, query only the missing ones
+    if (cacheValid && missingResolvers.length > 0) {
+      console.log(`🔍 Cache valid but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
+
+      // Start with cached sources
+      const sources = { ...cachedData.sources };
+
+      // Query only missing resolvers
+      const missingResolverInstances = missingResolvers
+        .map(id => allResolvers.find(r => r.id === id))
+        .filter(Boolean);
+
+      const resolverPromises = missingResolverInstances.map(async (resolver) => {
+        if (!resolver.capabilities.resolve || !resolver.play) return;
+
+        try {
+          const config = getResolverConfig(resolver.id);
+          console.log(`  🔎 Trying ${resolver.id}...`);
+          const result = await resolver.resolve(artistName, track.title, null, config);
+
+          if (result) {
+            sources[resolver.id] = {
+              ...result,
+              confidence: calculateConfidence(track, result)
+            };
+            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+            if (resolver.id === 'localfiles') {
+              console.log(`  📁 LocalFiles source structure:`, JSON.stringify(sources[resolver.id], null, 2));
+            }
+          } else {
+            console.log(`  ⚪ ${resolver.name}: No match found`);
+          }
+        } catch (error) {
+          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        }
+      });
+
+      await Promise.all(resolverPromises);
+
+      // Update state with combined sources
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: sources
+      }));
+
+      // Update cache with new sources
+      trackSourcesCache.current[cacheKey] = {
+        sources: sources,
+        timestamp: Date.now(),
+        resolverHash: getResolverSettingsHash()
+      };
 
       return;
     }
@@ -4003,12 +4103,20 @@ const Parachord = () => {
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
+    console.log(`  📋 Active resolvers: ${activeResolvers.join(', ')}`);
+    console.log(`  📋 Resolver order: ${resolverOrder.join(', ')}`);
+    console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
+
     const resolverPromises = enabledResolvers.map(async (resolver) => {
       // Skip resolvers that can't resolve or can't play (no point resolving if we can't play)
-      if (!resolver.capabilities.resolve || !resolver.play) return;
+      if (!resolver.capabilities.resolve || !resolver.play) {
+        console.log(`  ⏭️ Skipping ${resolver.id}: resolve=${resolver.capabilities.resolve}, play=${!!resolver.play}`);
+        return;
+      }
 
       try {
         const config = getResolverConfig(resolver.id);
+        console.log(`  🔎 Trying ${resolver.id}...`);
         const result = await resolver.resolve(artistName, track.title, null, config);
 
         if (result) {
@@ -4017,6 +4125,8 @@ const Parachord = () => {
             confidence: calculateConfidence(track, result)
           };
           console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+        } else {
+          console.log(`  ⚪ ${resolver.name}: No match found`);
         }
       } catch (error) {
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
@@ -4046,11 +4156,19 @@ const Parachord = () => {
   
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
-    const titleMatch = originalTrack.title.toLowerCase() === foundTrack.title.toLowerCase();
-    const durationMatch = originalTrack.length && foundTrack.duration 
+    // If the resolver already provided a confidence score, use it
+    if (foundTrack.confidence && typeof foundTrack.confidence === 'number') {
+      return foundTrack.confidence;
+    }
+
+    // Otherwise calculate based on title and duration match
+    const originalTitle = originalTrack.title?.toLowerCase() || '';
+    const foundTitle = foundTrack.title?.toLowerCase() || '';
+    const titleMatch = originalTitle && foundTitle && originalTitle === foundTitle;
+    const durationMatch = originalTrack.length && foundTrack.duration
       ? Math.abs(originalTrack.length / 1000 - foundTrack.duration) < 10 // Within 10 seconds
       : false;
-    
+
     if (titleMatch && durationMatch) return 0.95;
     if (titleMatch) return 0.85;
     if (durationMatch) return 0.70;
@@ -6824,6 +6942,7 @@ useEffect(() => {
 }, [spotifyToken, isPlaying, currentTrack]);
 
   const formatTime = (seconds) => {
+    if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
