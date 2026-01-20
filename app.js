@@ -11302,7 +11302,7 @@ useEffect(() => {
             React.createElement('div', {
               className: 'relative overflow-hidden',
               style: {
-                height: collectionHeaderCollapsed ? '50px' : '280px',
+                height: collectionHeaderCollapsed ? '80px' : '320px',
                 transition: 'height 300ms ease'
               }
             },
