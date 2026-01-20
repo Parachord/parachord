@@ -1213,43 +1213,6 @@ const Parachord = () => {
     }
   }, [criticsSortDropdownOpen]);
 
-  // Derive unique artists from library
-  const collectionArtists = useMemo(() => {
-    const artistMap = new Map();
-    library.forEach(track => {
-      const artistName = track.artist || 'Unknown Artist';
-      if (!artistMap.has(artistName)) {
-        artistMap.set(artistName, {
-          name: artistName,
-          trackCount: 0,
-          image: null // Will be fetched on demand
-        });
-      }
-      artistMap.get(artistName).trackCount++;
-    });
-    return Array.from(artistMap.values());
-  }, [library]);
-
-  // Derive unique albums from library
-  const collectionAlbums = useMemo(() => {
-    const albumMap = new Map();
-    library.forEach(track => {
-      const albumTitle = track.album || 'Unknown Album';
-      const artistName = track.artist || 'Unknown Artist';
-      const key = `${albumTitle}|||${artistName}`;
-      if (!albumMap.has(key)) {
-        albumMap.set(key, {
-          title: albumTitle,
-          artist: artistName,
-          year: track.year || null,
-          art: track.art || null,
-          trackCount: 0
-        });
-      }
-      albumMap.get(key).trackCount++;
-    });
-    return Array.from(albumMap.values());
-  }, [library]);
 
   // Collection page scroll handler for header collapse
   const handleCollectionScroll = useCallback((e) => {
@@ -10474,9 +10437,9 @@ useEffect(() => {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   [
-                    { key: 'artists', label: `${collectionArtists.length} Artists` },
-                    { key: 'albums', label: `${collectionAlbums.length} Albums` },
-                    { key: 'tracks', label: `${library.length} Songs` }
+                    { key: 'artists', label: `${collectionData.artists.length} Artists` },
+                    { key: 'albums', label: `${collectionData.albums.length} Albums` },
+                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-${tab.key}`,
@@ -10526,9 +10489,9 @@ useEffect(() => {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   [
-                    { key: 'artists', label: `${collectionArtists.length} Artists` },
-                    { key: 'albums', label: `${collectionAlbums.length} Albums` },
-                    { key: 'tracks', label: `${library.length} Songs` }
+                    { key: 'artists', label: `${collectionData.artists.length} Artists` },
+                    { key: 'albums', label: `${collectionData.albums.length} Albums` },
+                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-${tab.key}`,
@@ -10647,24 +10610,16 @@ useEffect(() => {
           React.createElement('div', { className: 'p-6' },
             // Artists tab
             collectionTab === 'artists' && (() => {
-              const filtered = filterCollectionItems(collectionArtists, 'artists');
+              const filtered = filterCollectionItems(collectionData.artists, 'artists');
               const sorted = sortCollectionItems(filtered, 'artists');
 
-              if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
-                  React.createElement('div', { className: 'text-sm' }, 'No artists match your search')
-                );
-              }
-
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
                   ),
-                  React.createElement('div', { className: 'text-sm' }, 'No artists in your collection')
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No artists yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag artists here to add them to your collection')
                 );
               }
 
@@ -10674,7 +10629,7 @@ useEffect(() => {
                 sorted.map(artist =>
                   React.createElement(CollectionArtistCard, {
                     key: artist.name,
-                    artist: artist,
+                    artist: { ...artist, trackCount: 0 },
                     getArtistImage: getArtistImage,
                     onNavigate: () => fetchArtistData(artist.name)
                   })
@@ -10684,34 +10639,24 @@ useEffect(() => {
 
             // Albums tab
             collectionTab === 'albums' && (() => {
-              const filtered = filterCollectionItems(collectionAlbums, 'albums');
+              const filtered = filterCollectionItems(collectionData.albums, 'albums');
               const sorted = sortCollectionItems(filtered, 'albums');
 
-              if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  ),
-                  React.createElement('div', { className: 'text-sm' }, 'No albums match your search')
-                );
-              }
-
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                   ),
-                  React.createElement('div', { className: 'text-sm' }, 'No albums in your collection')
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No albums yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag albums here to add them to your collection')
                 );
               }
 
-              return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-              },
+              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
                     key: `${album.title}-${album.artist}-${index}`,
-                    album: album,
+                    album: { ...album, trackCount: 0 },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleSearch(`${album.artist} ${album.title}`)
                   })
@@ -10775,7 +10720,21 @@ useEffect(() => {
                 );
               }
 
-              const filtered = filterCollectionItems(library, 'tracks');
+              // Merge local files with collection tracks
+              const allTracks = [...library, ...collectionData.tracks];
+
+              // Deduplicate by id
+              const trackMap = new Map();
+              allTracks.forEach(track => {
+                const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                if (!trackMap.has(trackId)) {
+                  trackMap.set(trackId, { ...track, id: trackId });
+                }
+              });
+
+              const mergedTracks = Array.from(trackMap.values());
+
+              const filtered = filterCollectionItems(mergedTracks, 'tracks');
               const sorted = sortCollectionItems(filtered, 'tracks');
 
               if (sorted.length === 0 && collectionSearch) {
@@ -10788,12 +10747,12 @@ useEffect(() => {
               }
 
               if (sorted.length === 0) {
-                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                   ),
-                  React.createElement('div', { className: 'text-sm' }, 'Your collection is empty'),
-                  React.createElement('div', { className: 'text-xs text-gray-400 mt-1' }, 'Add local music folders in Settings')
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No tracks yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag tracks here or add local music folders in Settings')
                 );
               }
 
