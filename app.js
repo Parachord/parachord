@@ -8752,6 +8752,21 @@ useEffect(() => {
             React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Discover'),
             React.createElement('button', {
               onClick: () => {
+                navigateTo('recommendations');
+                loadRecommendations();
+              },
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'recommendations' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            },
+              // Star icon for Recommendations
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+              ),
+              "Recommendations"
+            ),
+            React.createElement('button', {
+              onClick: () => {
                 navigateTo('discover');
                 loadCharts();
               },
@@ -8765,19 +8780,6 @@ useEffect(() => {
               ),
               'Pop of the Tops'
             ),
-            // TODO: New Releases - commented out for now, may come back to it later
-            // React.createElement('button', {
-            //   onClick: () => navigateTo('new-releases'),
-            //   className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-            //     activeView === 'new-releases' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
-            //   }`
-            // },
-            //   // Sparkles icon for New Releases
-            //   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-            //     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
-            //   ),
-            //   'New Releases'
-            // ),
             React.createElement('button', {
               onClick: () => {
                 navigateTo('critics-picks');
@@ -8792,21 +8794,6 @@ useEffect(() => {
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
               ),
               "Critical Darlings"
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('recommendations');
-                loadRecommendations();
-              },
-              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-                activeView === 'recommendations' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
-              }`
-            },
-              // Star icon for Recommendations
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-              ),
-              "Recommendations"
             )
           ),
 
