@@ -1734,8 +1734,10 @@ const Parachord = () => {
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
   // Sync loaded resolvers with resolverOrder - add any new resolvers not yet in the order
+  // This runs after both resolvers are loaded AND cache/settings are loaded from storage
   useEffect(() => {
     if (loadedResolvers.length === 0) return;
+    if (!cacheLoaded) return; // Wait until storage settings are loaded
 
     const loadedIds = loadedResolvers.map(r => r.id);
     const missingIds = loadedIds.filter(id => !resolverOrder.includes(id));
@@ -1746,7 +1748,7 @@ const Parachord = () => {
       // Also enable new resolvers by default
       setActiveResolvers(prev => [...prev, ...missingIds.filter(id => !prev.includes(id))]);
     }
-  }, [loadedResolvers]);
+  }, [loadedResolvers, cacheLoaded]);
 
   // Get resolvers in priority order
   const resolvers = resolverOrder
