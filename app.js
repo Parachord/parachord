@@ -326,12 +326,8 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     // Artist image square (matches SearchArtistCard)
     React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-2 relative overflow-hidden' },
       imageLoading && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center'
-      },
-        React.createElement('div', {
-          className: 'w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
-        })
-      ),
+        className: 'w-full h-full bg-gray-200 animate-pulse'
+      }),
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
