@@ -9661,7 +9661,7 @@ useEffect(() => {
           }, '✕')
         ),
         // Modal body
-        React.createElement('div', { className: 'p-6 space-y-6' },
+        React.createElement('div', { className: 'p-6 space-y-6 max-h-[60vh] overflow-y-auto' },
           // Description
           React.createElement('p', { className: 'text-gray-600 text-sm' }, selectedResolver.description),
 
