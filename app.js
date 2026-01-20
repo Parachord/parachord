@@ -7031,15 +7031,7 @@ useEffect(() => {
                   onClick: () => fetchArtistData(artist.name),
                   getArtistImage: getArtistImage
                 })
-              ),
-              // Show more link at end if more results
-              searchResults.artists.length > 7 && React.createElement('button', {
-                onClick: () => {
-                  setSearchDetailCategory('artists');
-                  setSearchPreviewItem(searchResults.artists[0] || null);
-                },
-                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
-              }, 'Show more')
+              )
             )
           ),
 
@@ -7098,15 +7090,7 @@ useEffect(() => {
                       })
                     )
                 )
-              ),
-              // Show more link
-              searchResults.tracks.length > 7 && React.createElement('button', {
-                onClick: () => {
-                  setSearchDetailCategory('tracks');
-                  setSearchPreviewItem(searchResults.tracks[0] || null);
-                },
-                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
-              }, 'Show more')
+              )
             )
           ),
 
@@ -7153,15 +7137,7 @@ useEffect(() => {
                     `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
                   )
                 )
-              ),
-              // Show more link
-              searchResults.albums.length > 5 && React.createElement('button', {
-                onClick: () => {
-                  setSearchDetailCategory('albums');
-                  setSearchPreviewItem(searchResults.albums[0] || null);
-                },
-                className: 'flex-shrink-0 w-28 flex flex-col items-start justify-end text-xs text-gray-500 hover:text-gray-700 pb-1'
-              }, 'Show more')
+              )
             )
           ),
 
