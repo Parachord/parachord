@@ -1496,6 +1496,8 @@ const Parachord = () => {
   const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+  const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
+  const [collectionLoading, setCollectionLoading] = useState(true);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
   const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
@@ -2491,6 +2493,22 @@ const Parachord = () => {
     };
   }, []);
 
+  // Load collection data on startup
+  useEffect(() => {
+    const loadCollection = async () => {
+      if (window.electron?.collection?.load) {
+        try {
+          const data = await window.electron.collection.load();
+          setCollectionData(data);
+        } catch (error) {
+          console.error('Failed to load collection:', error);
+        }
+      }
+      setCollectionLoading(false);
+    };
+    loadCollection();
+  }, []);
+
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
@@ -2524,6 +2542,142 @@ const Parachord = () => {
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
   }, []);
+
+  // Save collection to disk
+  const saveCollection = useCallback(async (newData) => {
+    if (window.electron?.collection?.save) {
+      try {
+        const result = await window.electron.collection.save(newData);
+        if (!result?.success) {
+          console.error('Collection save failed:', result?.error);
+        }
+      } catch (error) {
+        console.error('Collection save error:', error);
+      }
+    }
+  }, []);
+
+  // Add track to collection
+  const addTrackToCollection = useCallback((track) => {
+    const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+    setCollectionData(prev => {
+      // Check for duplicate
+      if (prev.tracks.some(t => t.id === trackId)) {
+        showToast(`${track.title} is already in your collection`);
+        return prev;
+      }
+
+      const newTrack = {
+        id: trackId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration,
+        albumArt: track.albumArt,
+        sources: track.sources || {},
+        addedAt: Date.now()
+      };
+
+      const newData = { ...prev, tracks: [...prev.tracks, newTrack] };
+      // Save async (don't block state update)
+      saveCollection(newData);
+      showToast(`Added ${track.title} to Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
+  // Add album to collection
+  const addAlbumToCollection = useCallback((album) => {
+    const albumId = `${album.artist || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+    setCollectionData(prev => {
+      // Check for duplicate
+      if (prev.albums.some(a => a.id === albumId)) {
+        showToast(`${album.title} is already in your collection`);
+        return prev;
+      }
+
+      const newAlbum = {
+        id: albumId,
+        title: album.title,
+        artist: album.artist,
+        year: album.year || null,
+        art: album.art || album.albumArt || null,
+        addedAt: Date.now()
+      };
+
+      const newData = { ...prev, albums: [...prev.albums, newAlbum] };
+      // Save async (don't block state update)
+      saveCollection(newData);
+      showToast(`Added ${album.title} to Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
+  // Add artist to collection
+  const addArtistToCollection = useCallback((artist) => {
+    const artistId = (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+    setCollectionData(prev => {
+      // Check for duplicate
+      if (prev.artists.some(a => a.id === artistId)) {
+        showToast(`${artist.name} is already in your collection`);
+        return prev;
+      }
+
+      const newArtist = {
+        id: artistId,
+        name: artist.name,
+        image: artist.image || null,
+        addedAt: Date.now()
+      };
+
+      const newData = { ...prev, artists: [...prev.artists, newArtist] };
+      // Save async (don't block state update)
+      saveCollection(newData);
+      showToast(`Added ${artist.name} to Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
+  // Add multiple tracks to collection
+  const addTracksToCollection = useCallback((tracks) => {
+    let addedCount = 0;
+
+    setCollectionData(prev => {
+      const newTracks = [...prev.tracks];
+
+      tracks.forEach(track => {
+        const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+        if (!newTracks.some(t => t.id === trackId)) {
+          newTracks.push({
+            id: trackId,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            albumArt: track.albumArt,
+            sources: track.sources || {},
+            addedAt: Date.now()
+          });
+          addedCount++;
+        }
+      });
+
+      if (addedCount === 0) {
+        showToast('Tracks are already in your collection');
+        return prev;
+      }
+
+      const newData = { ...prev, tracks: newTracks };
+      // Save async (don't block state update)
+      saveCollection(newData);
+      showToast(`Added ${addedCount} track${addedCount !== 1 ? 's' : ''} to Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
   useEffect(() => {
