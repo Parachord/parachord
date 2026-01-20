@@ -1089,7 +1089,7 @@ const Parachord = () => {
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
   const [artistReleases, setArtistReleases] = useState([]); // Discography
-  const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single
+  const [releaseTypeFilter, setReleaseTypeFilter] = useState('album'); // album, ep, single, live, compilation
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false); // Artist page header collapse state
   const [artistPageTab, setArtistPageTab] = useState('music'); // music | biography | related
   const [artistSearchOpen, setArtistSearchOpen] = useState(false);
@@ -1499,6 +1499,25 @@ const Parachord = () => {
     { value: 'alpha-asc', label: 'A-Z' },
     { value: 'alpha-desc', label: 'Z-A' }
   ];
+
+  // Set smart default release type filter based on available releases
+  const setSmartReleaseTypeFilter = useCallback((releases) => {
+    const hasAlbums = releases.some(r => r.releaseType === 'album');
+    const hasEPs = releases.some(r => r.releaseType === 'ep');
+    const hasSingles = releases.some(r => r.releaseType === 'single');
+
+    if (hasAlbums) {
+      setReleaseTypeFilter('album');
+    } else if (hasEPs) {
+      setReleaseTypeFilter('ep');
+    } else if (hasSingles) {
+      setReleaseTypeFilter('single');
+    } else {
+      // Fallback to first available type
+      const firstType = releases[0]?.releaseType;
+      if (firstType) setReleaseTypeFilter(firstType);
+    }
+  }, []);
 
   // Filter and sort charts
   const filterCharts = useCallback((items) => {
@@ -4517,6 +4536,7 @@ const Parachord = () => {
       }));
 
       setArtistReleases(releasesWithCache);
+      setSmartReleaseTypeFilter(releasesWithCache);
       setLoadingArtist(false);
       navigateTo('artist');
 
@@ -4703,6 +4723,7 @@ const Parachord = () => {
 
       // Show page immediately (with cached album art if available)
       setArtistReleases(releasesWithCache);
+      setSmartReleaseTypeFilter(releasesWithCache);
       setLoadingArtist(false);
 
       // Fetch album art in background (lazy loading) - only for releases without cache
@@ -7648,6 +7669,7 @@ ${tracks}
             albumArt: albumArtCache.current[release.id]?.url || null
           }));
           setArtistReleases(releasesWithCache);
+          setSmartReleaseTypeFilter(releasesWithCache);
           setLoadingArtist(false);
           fetchAlbumArtLazy(cachedData.releases);
         } else {
@@ -9940,12 +9962,12 @@ useEffect(() => {
             // Release type filter pills
             React.createElement('div', { className: 'flex gap-2 flex-wrap' },
               [
-                { value: 'all', label: 'All' },
                 { value: 'album', label: 'Studio Albums' },
+                { value: 'ep', label: 'EPs' },
+                { value: 'single', label: 'Singles' },
                 { value: 'live', label: 'Live' },
                 { value: 'compilation', label: 'Compilations' },
-                { value: 'ep', label: 'EPs' },
-                { value: 'single', label: 'Singles' }
+                { value: 'all', label: 'All' }
               ].map(({ value, label }) => {
                 const searchFiltered = filterArtistReleases(artistReleases);
                 const count = value === 'all'
