@@ -882,6 +882,7 @@ const Parachord = () => {
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
   const externalTrackTimeoutRef = useRef(null);
   const playbackPollerRef = useRef(null);
+  const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace' | 'general' | 'about'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -1289,6 +1290,10 @@ const Parachord = () => {
       if (playbackPollerRef.current) {
         clearInterval(playbackPollerRef.current);
         playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
       }
       if (externalTrackTimeoutRef.current) {
         clearTimeout(externalTrackTimeoutRef.current);
@@ -2103,6 +2108,11 @@ const Parachord = () => {
       clearInterval(playbackPollerRef.current);
       playbackPollerRef.current = null;
     }
+    // Clear recovery interval if we're starting fresh polling
+    if (pollingRecoveryRef.current) {
+      clearInterval(pollingRecoveryRef.current);
+      pollingRecoveryRef.current = null;
+    }
 
     if (resolverId === 'spotify' && config.token) {
       const trackUri = track.spotifyUri || track.uri;
@@ -2174,10 +2184,12 @@ const Parachord = () => {
           errorCount = (errorCount || 0) + 1;
 
           if (errorCount >= 3) {
-            // After 3 consecutive errors, stop polling
+            // After 3 consecutive errors, stop polling but start recovery
             console.error('❌ Too many Spotify polling errors, stopping auto-advance');
             clearInterval(pollInterval);
             playbackPollerRef.current = null;
+            // Start recovery interval to retry when API becomes available
+            startPollingRecovery(config);
           }
         }
       }, 5000); // Poll every 5 seconds (consistent with existing playback polling)
@@ -2185,6 +2197,77 @@ const Parachord = () => {
       playbackPollerRef.current = pollInterval;
     }
     // For future HTML5 audio resolvers, add event listener logic here
+  };
+
+  // Start recovery polling when Spotify auto-advance fails
+  // Periodically checks if we should restart polling (queue has tracks, nothing playing)
+  const startPollingRecovery = (config) => {
+    // Clear any existing recovery interval
+    if (pollingRecoveryRef.current) {
+      clearInterval(pollingRecoveryRef.current);
+      pollingRecoveryRef.current = null;
+    }
+
+    console.log('🔄 Starting polling recovery interval (20s)...');
+
+    const recoveryInterval = setInterval(async () => {
+      const queue = currentQueueRef.current;
+      const track = currentTrackRef.current;
+
+      // Stop recovery if queue is empty
+      if (!queue || queue.length === 0) {
+        console.log('🔄 Recovery: Queue empty, stopping recovery');
+        clearInterval(recoveryInterval);
+        pollingRecoveryRef.current = null;
+        return;
+      }
+
+      // Stop recovery if no current track (nothing to monitor)
+      if (!track) {
+        console.log('🔄 Recovery: No current track, stopping recovery');
+        clearInterval(recoveryInterval);
+        pollingRecoveryRef.current = null;
+        return;
+      }
+
+      // Try to check Spotify playback state
+      try {
+        const response = await fetch('https://api.spotify.com/v1/me/player', {
+          headers: {
+            'Authorization': `Bearer ${config.token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+
+          // If Spotify is playing, restart proper polling
+          if (data.is_playing && data.item) {
+            console.log('🔄 Recovery: Spotify responding, restarting auto-advance polling');
+            clearInterval(recoveryInterval);
+            pollingRecoveryRef.current = null;
+            startAutoAdvancePolling('spotify', track, config);
+          } else if (!data.is_playing && queue.length > 0) {
+            // Spotify not playing but we have queue - advance to next track
+            console.log('🔄 Recovery: Spotify not playing, queue has tracks - advancing');
+            clearInterval(recoveryInterval);
+            pollingRecoveryRef.current = null;
+            if (handleNextRef.current) handleNextRef.current();
+          }
+        } else if (response.status === 401) {
+          // Token expired - stop recovery, user needs to re-auth
+          console.log('🔄 Recovery: Token expired, stopping recovery');
+          clearInterval(recoveryInterval);
+          pollingRecoveryRef.current = null;
+        }
+        // Other errors: keep trying
+      } catch (error) {
+        console.log('🔄 Recovery: API still unavailable, will retry...', error.message);
+        // Keep recovery interval running
+      }
+    }, 20000); // Check every 20 seconds
+
+    pollingRecoveryRef.current = recoveryInterval;
   };
 
   // Stop Spotify playback (used when switching to external browser track)
@@ -2482,6 +2565,10 @@ const Parachord = () => {
       clearInterval(playbackPollerRef.current);
       playbackPollerRef.current = null;
     }
+    if (pollingRecoveryRef.current) {
+      clearInterval(pollingRecoveryRef.current);
+      pollingRecoveryRef.current = null;
+    }
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
@@ -2547,6 +2634,10 @@ const Parachord = () => {
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
       playbackPollerRef.current = null;
+    }
+    if (pollingRecoveryRef.current) {
+      clearInterval(pollingRecoveryRef.current);
+      pollingRecoveryRef.current = null;
     }
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
