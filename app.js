@@ -1857,17 +1857,17 @@ const Parachord = () => {
     fetchMissingCovers();
   }, [activeView, playlists]);
 
-  // Keyboard shortcuts - Escape closes search drawer
+  // Keyboard shortcuts - Escape navigates back from search view
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && searchDrawerOpen) {
-        setSearchDrawerOpen(false);
+      if (e.key === 'Escape' && activeView === 'search') {
+        navigateBack();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchDrawerOpen]);
+  }, [activeView]);
 
   const playDemoAudio = (track) => {
     if (!audioContext) return;
