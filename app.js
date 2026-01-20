@@ -12671,30 +12671,20 @@ useEffect(() => {
               )
             // Results
             : React.createElement('div', { className: 'space-y-10' },
-                // Artists section
+                // Artists section - grid matching Related Artists
                 recommendations.artists.length > 0 && React.createElement('div', null,
                   React.createElement('div', { className: 'flex items-center justify-between mb-4' },
                     React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS')
                   ),
-                  React.createElement('div', { className: 'flex gap-4 flex-wrap' },
-                    ...recommendations.artists.slice(0, 14).map(artist =>
-                      React.createElement(SearchArtistCard, {
+                  React.createElement('div', {
+                    className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  },
+                    ...recommendations.artists.map(artist =>
+                      React.createElement(RelatedArtistCard, {
                         key: artist.id,
                         artist: artist,
-                        onClick: () => fetchArtistData(artist.name),
                         getArtistImage: getArtistImage,
-                        onContextMenu: (artist) => {
-                          if (window.electron?.contextMenu?.showTrackMenu) {
-                            window.electron.contextMenu.showTrackMenu({
-                              type: 'artist',
-                              artist: {
-                                id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                name: artist.name,
-                                image: null
-                              }
-                            });
-                          }
-                        }
+                        onNavigate: () => fetchArtistData(artist.name)
                       })
                     )
                   )
