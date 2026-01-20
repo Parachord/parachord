@@ -22,11 +22,14 @@ const Store = require('electron-store');
 const express = require('express');
 const WebSocket = require('ws');
 
+const LocalFilesService = require('./local-files');
+
 const store = new Store();
 let mainWindow;
 let authServer;
 let wss; // WebSocket server for browser extension
 let extensionSocket = null; // Current connected extension
+let localFilesService = null;
 
 function createWindow() {
   console.log('Creating main window...');
@@ -63,6 +66,14 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.on('focus', () => {
+    localFilesService?.onAppForeground();
+  });
+
+  mainWindow.on('blur', () => {
+    localFilesService?.onAppBackground();
   });
 }
 
@@ -221,6 +232,19 @@ app.whenReady().then(() => {
   startAuthServer();
   startExtensionServer();
 
+  // Initialize Local Files service
+  localFilesService = new LocalFilesService(app.getPath('userData'));
+  localFilesService.init().then(() => {
+    console.log('Local Files service ready');
+
+    // Set up library change notifications
+    localFilesService.setLibraryChangedCallback((changes) => {
+      mainWindow?.webContents.send('localFiles:libraryChanged', changes);
+    });
+  }).catch(err => {
+    console.error('Failed to initialize Local Files service:', err);
+  });
+
   // Register media key shortcuts
   globalShortcut.register('MediaPlayPause', () => {
     mainWindow?.webContents.send('media-key', 'playpause');
@@ -248,6 +272,9 @@ app.on('window-all-closed', () => {
   }
   if (wss) {
     wss.close();
+  }
+  if (localFilesService) {
+    localFilesService.shutdown();
   }
   if (process.platform !== 'darwin') {
     app.quit();
@@ -1144,4 +1171,89 @@ ipcMain.handle('extension-get-status', () => {
   return {
     connected: extensionSocket !== null && extensionSocket.readyState === WebSocket.OPEN
   };
+});
+
+// Local Files IPC handlers
+ipcMain.handle('localFiles:addWatchFolder', async () => {
+  console.log('=== Add Watch Folder ===');
+  const { dialog } = require('electron');
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Watch Folder',
+    properties: ['openDirectory']
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    console.log('  User cancelled');
+    return null;
+  }
+
+  const folderPath = result.filePaths[0];
+  console.log('  Selected:', folderPath);
+
+  try {
+    const scanResult = await localFilesService.addWatchFolder(folderPath);
+    return { success: true, folderPath, scanResult };
+  } catch (error) {
+    console.error('  Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('localFiles:removeWatchFolder', async (event, folderPath) => {
+  console.log('=== Remove Watch Folder ===');
+  console.log('  Path:', folderPath);
+
+  try {
+    await localFilesService.removeWatchFolder(folderPath);
+    return { success: true };
+  } catch (error) {
+    console.error('  Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('localFiles:getWatchFolders', async () => {
+  return localFilesService.getWatchFolders();
+});
+
+ipcMain.handle('localFiles:rescanAll', async () => {
+  console.log('=== Rescan All Folders ===');
+
+  try {
+    const results = await localFilesService.rescanAll((current, total, file) => {
+      mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
+    });
+    return { success: true, results };
+  } catch (error) {
+    console.error('  Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
+  console.log('=== Rescan Folder ===');
+  console.log('  Path:', folderPath);
+
+  try {
+    const result = await localFilesService.scanFolder(folderPath, (current, total, file) => {
+      mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
+    });
+    return { success: true, result };
+  } catch (error) {
+    console.error('  Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('localFiles:search', async (event, query) => {
+  return localFilesService.search(query);
+});
+
+ipcMain.handle('localFiles:resolve', async (event, params) => {
+  return localFilesService.resolve(params);
+});
+
+ipcMain.handle('localFiles:getStats', async () => {
+  return localFilesService.getStats();
 });
