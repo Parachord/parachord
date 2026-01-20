@@ -6452,43 +6452,64 @@ useEffect(() => {
 
     // Search Page - Full page search view
     activeView === 'search' ? React.createElement('div', {
-      className: 'flex-1 flex flex-col overflow-hidden bg-gray-50'
+      className: 'h-full overflow-y-auto scrollable-content bg-gray-50'
     },
-      // Header with SEARCH title and Close button
+      // Hero section
       React.createElement('div', {
-        className: 'flex items-center justify-between px-8 pt-6 pb-4'
+        className: 'relative h-64 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 overflow-hidden'
       },
-        React.createElement('span', {
-          className: 'text-sm font-semibold text-gray-400 uppercase tracking-wider'
-        }, 'SEARCH'),
+        // Background pattern - search/magnifying glass themed
+        React.createElement('div', {
+          className: 'absolute inset-0 opacity-20',
+          style: {
+            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'3\'/%3E%3Cline x1=\'38\' y1=\'38\' x2=\'50\' y2=\'50\' stroke=\'%23ffffff\' stroke-width=\'3\' stroke-linecap=\'round\'/%3E%3C/g%3E%3C/svg%3E")'
+          }
+        }),
+        // Close button - top right
         React.createElement('button', {
           onClick: () => navigateBack(),
-          className: 'flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors'
+          className: 'absolute top-4 right-4 flex items-center gap-1 text-sm text-white/80 hover:text-white transition-colors z-10'
         },
           'CLOSE',
           React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
           )
+        ),
+        // Hero content
+        React.createElement('div', {
+          className: 'absolute inset-0 flex items-end p-8'
+        },
+          React.createElement('div', null,
+            React.createElement('div', {
+              className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+              ),
+              'Explore'
+            ),
+            React.createElement('h1', { className: 'text-4xl font-bold text-white mb-2' }, 'Search'),
+            React.createElement('p', { className: 'text-white/80 text-lg' }, 'Find artists, albums, tracks, and playlists')
+          )
         )
       ),
 
-      // Large search input
-      React.createElement('div', { className: 'px-8 pb-6' },
-        React.createElement('input', {
-          ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
-          type: 'text',
-          value: searchQuery,
-          onChange: (e) => handleSearchInput(e.target.value),
-          placeholder: 'Search artists, tracks, albums...',
-          className: 'w-full text-5xl font-light text-gray-900 bg-transparent border-none outline-none placeholder-gray-300',
-          style: { caretColor: '#6b7280' }
-        })
-      ),
+      // Content area
+      React.createElement('div', { className: 'p-6' },
+        // Large search input
+        React.createElement('div', { className: 'pb-6' },
+          React.createElement('input', {
+            ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
+            type: 'text',
+            value: searchQuery,
+            onChange: (e) => handleSearchInput(e.target.value),
+            placeholder: 'Search artists, tracks, albums...',
+            className: 'w-full text-5xl font-light text-gray-900 bg-transparent border-none outline-none placeholder-gray-300',
+            style: { caretColor: '#6b7280' }
+          })
+        ),
 
-      // Scrollable results area
-      React.createElement('div', {
-        className: 'flex-1 overflow-y-auto px-8 pb-8 scrollable-content'
-      },
+        // Results area
         // Show skeletons when no query or loading
         !searchQuery || isSearching ? React.createElement('div', { className: 'space-y-8' },
           // Artists skeleton section
