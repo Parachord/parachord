@@ -9815,9 +9815,11 @@ useEffect(() => {
 
               if (sorted.length === 0) {
                 return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  React.createElement('div', { className: 'text-5xl mb-4' }, '📚'),
-                  React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Your Collection is Empty'),
-                  React.createElement('div', { className: 'text-sm' }, 'Search for music to add tracks!')
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'Your collection is empty'),
+                  React.createElement('div', { className: 'text-xs text-gray-400 mt-1' }, 'Add local music folders in Settings')
                 );
               }
 
