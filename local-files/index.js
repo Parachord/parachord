@@ -95,7 +95,9 @@ class LocalFilesService {
   }
 
   async resolve({ artist, track, album }) {
+    console.log(`[LocalFiles] Resolving: artist="${artist}", track="${track}", album="${album}"`);
     const dbResults = this.db.resolve(artist, track, album);
+    console.log(`[LocalFiles] Found ${dbResults.length} result(s)`);
 
     if (dbResults.length === 0) return null;
 
