@@ -4825,6 +4825,41 @@ const Parachord = () => {
     loadPlaylist(playlist);
   };
 
+  // Handle collection album click - search and navigate to album page
+  const handleCollectionAlbumClick = async (album) => {
+    try {
+      console.log('Loading collection album:', album.title, 'by', album.artist);
+
+      // Search MusicBrainz for the album
+      const searchQuery = encodeURIComponent(`${album.artist} ${album.title}`);
+      const response = await fetch(
+        `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&limit=5&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' } }
+      );
+
+      if (!response.ok) throw new Error('Search failed');
+
+      const data = await response.json();
+      const results = data['release-groups'] || [];
+
+      if (results.length === 0) {
+        showToast('Album not found');
+        return;
+      }
+
+      // Find best match (prefer exact artist match)
+      const match = results.find(r =>
+        r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
+      ) || results[0];
+
+      // Navigate to album using existing handleAlbumClick logic
+      await handleAlbumClick(match);
+    } catch (error) {
+      console.error('Error loading collection album:', error);
+      showToast('Failed to load album');
+    }
+  };
+
   // Validate cached sources in background and update if changed
   const validateCachedSources = async (track, artistName, cachedSources, cacheKey, trackKey) => {
     console.log(`🔍 Validating cached sources for: ${track.title}`);
@@ -10670,7 +10705,7 @@ useEffect(() => {
                     key: `${album.title}-${album.artist}-${index}`,
                     album: { ...album, trackCount: 0 },
                     getAlbumArt: getAlbumArt,
-                    onNavigate: () => handleSearch(`${album.artist} ${album.title}`)
+                    onNavigate: () => handleCollectionAlbumClick(album)
                   })
                 )
               );
