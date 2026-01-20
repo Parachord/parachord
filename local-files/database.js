@@ -158,6 +158,46 @@ class LocalFilesDatabase {
     return stmt.get(filePath);
   }
 
+  updateTrackMetadata(filePath, tags) {
+    const setClauses = [];
+    const values = [];
+
+    if (tags.title !== undefined) {
+      setClauses.push('title = ?');
+      setClauses.push('title_normalized = ?');
+      values.push(tags.title);
+      values.push(this.normalize(tags.title));
+    }
+    if (tags.artist !== undefined) {
+      setClauses.push('artist = ?');
+      setClauses.push('artist_normalized = ?');
+      values.push(tags.artist);
+      values.push(this.normalize(tags.artist));
+    }
+    if (tags.album !== undefined) {
+      setClauses.push('album = ?');
+      setClauses.push('album_normalized = ?');
+      values.push(tags.album);
+      values.push(this.normalize(tags.album));
+    }
+    if (tags.trackNumber !== undefined) {
+      setClauses.push('track_number = ?');
+      values.push(tags.trackNumber);
+    }
+    if (tags.year !== undefined) {
+      setClauses.push('year = ?');
+      values.push(tags.year);
+    }
+
+    if (setClauses.length === 0) return;
+
+    values.push(filePath);
+    const stmt = this.db.prepare(`
+      UPDATE tracks SET ${setClauses.join(', ')} WHERE file_path = ?
+    `);
+    return stmt.run(...values);
+  }
+
   getAllTracks() {
     const stmt = this.db.prepare(`SELECT * FROM tracks ORDER BY artist, album, track_number`);
     return stmt.all();
@@ -299,6 +339,11 @@ class LocalFilesDatabase {
     values.push(trackId);
     const stmt = this.db.prepare(`UPDATE tracks SET ${updates.join(', ')} WHERE id = ?`);
     return stmt.run(...values);
+  }
+
+  updateTrackHasEmbeddedArt(filePath, hasArt) {
+    const stmt = this.db.prepare(`UPDATE tracks SET has_embedded_art = ? WHERE file_path = ?`);
+    return stmt.run(hasArt ? 1 : 0, filePath);
   }
 
   close() {
