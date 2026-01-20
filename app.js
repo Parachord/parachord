@@ -9609,6 +9609,59 @@ useEffect(() => {
           ),
           // Content area
           React.createElement('div', { className: 'p-6' },
+            // Artists tab
+            collectionTab === 'artists' && (() => {
+              const filtered = filterCollectionItems(collectionArtists, 'artists');
+              const sorted = sortCollectionItems(filtered, 'artists');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'No artists match your search')
+                );
+              }
+
+              if (sorted.length === 0) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'No artists in your collection')
+                );
+              }
+
+              return React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+              },
+                sorted.map(artist =>
+                  React.createElement('button', {
+                    key: artist.name,
+                    onClick: () => fetchArtistData(artist.name),
+                    className: 'group text-left p-4 rounded-xl bg-white border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all'
+                  },
+                    // Artist image placeholder (circular)
+                    React.createElement('div', {
+                      className: 'w-full aspect-square rounded-full bg-gradient-to-br from-purple-500 to-pink-500 mb-3 flex items-center justify-center overflow-hidden'
+                    },
+                      React.createElement('svg', { className: 'w-12 h-12 text-white/70', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                      )
+                    ),
+                    // Artist name
+                    React.createElement('h3', {
+                      className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                    }, artist.name),
+                    // Track count
+                    React.createElement('p', {
+                      className: 'text-sm text-gray-500'
+                    }, `${artist.trackCount} track${artist.trackCount !== 1 ? 's' : ''}`)
+                  )
+                )
+              );
+            })(),
+
             libraryLoading ?
               // Skeleton loaders while loading
               React.createElement('div', { className: 'space-y-0' },
