@@ -4305,15 +4305,19 @@ const Parachord = () => {
       }
 
       // Load artist data cache
+      // Cache version 2: Added release-group categorization (live, compilation)
+      const ARTIST_CACHE_VERSION = 2;
       const artistData = await window.electron.store.get('cache_artist_data');
       if (artistData) {
-        // Filter out expired entries
+        // Filter out expired entries and entries from old cache versions
         const now = Date.now();
         const validEntries = Object.entries(artistData).filter(
-          ([_, entry]) => now - entry.timestamp < CACHE_TTL.artistData
+          ([_, entry]) => entry.cacheVersion === ARTIST_CACHE_VERSION &&
+                         now - entry.timestamp < CACHE_TTL.artistData
         );
         artistDataCache.current = Object.fromEntries(validEntries);
-        console.log(`📦 Loaded ${validEntries.length} artist data entries from cache`);
+        const invalidated = Object.keys(artistData).length - validEntries.length;
+        console.log(`📦 Loaded ${validEntries.length} artist data entries from cache${invalidated > 0 ? ` (${invalidated} invalidated due to version change)` : ''}`);
       }
 
       // Load track sources cache
@@ -4658,11 +4662,12 @@ const Parachord = () => {
         }
       });
 
-      // Cache the artist data
+      // Cache the artist data (version 2: release-group categorization)
       artistDataCache.current[cacheKey] = {
         artist: artistData,
         releases: uniqueReleases,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        cacheVersion: 2
       };
       console.log('💾 Cached artist data for:', artistName);
 
