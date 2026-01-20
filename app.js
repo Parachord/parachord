@@ -834,6 +834,8 @@ const Parachord = () => {
   });
   const [searchDetailCategory, setSearchDetailCategory] = useState(null); // null = main view, 'artists'|'tracks'|'albums'|'playlists' = detail view
   const [searchPreviewItem, setSearchPreviewItem] = useState(null); // Currently previewed item in detail view
+  const [searchPreviewArtistImage, setSearchPreviewArtistImage] = useState(null); // Artist image for preview pane
+  const [searchPreviewArtistBio, setSearchPreviewArtistBio] = useState(null); // Artist bio snippet for preview pane
   const [activeView, setActiveView] = useState('library');
   const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -5058,6 +5060,65 @@ ${tracks}
     return fetchPromise;
   };
 
+  // Fetch artist image and bio for search preview pane
+  useEffect(() => {
+    // Only fetch for artist previews when we have a preview item
+    if (searchDetailCategory !== 'artists' || !searchPreviewItem) {
+      setSearchPreviewArtistImage(null);
+      setSearchPreviewArtistBio(null);
+      return;
+    }
+
+    const artistName = searchPreviewItem.name;
+    if (!artistName) return;
+
+    // Fetch artist image from Spotify (uses existing cache)
+    const fetchArtistImage = async () => {
+      const result = await getArtistImage(artistName);
+      if (result?.url) {
+        setSearchPreviewArtistImage(result);
+      } else {
+        setSearchPreviewArtistImage(null);
+      }
+    };
+
+    // Fetch artist bio snippet from Last.fm (lightweight version, no loading state)
+    const fetchArtistBioSnippet = async () => {
+      const apiKey = lastfmApiKey.current;
+      if (!apiKey) {
+        setSearchPreviewArtistBio(null);
+        return;
+      }
+
+      try {
+        const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          setSearchPreviewArtistBio(null);
+          return;
+        }
+
+        const data = await response.json();
+        if (data.artist?.bio) {
+          // Use summary for preview (shorter than content)
+          const bioSummary = data.artist.bio.summary || data.artist.bio.content || '';
+          // Strip HTML tags and limit to ~200 chars for preview
+          const cleanBio = bioSummary.replace(/<[^>]*>/g, '').trim();
+          const truncatedBio = cleanBio.length > 200 ? cleanBio.substring(0, 200) + '...' : cleanBio;
+          setSearchPreviewArtistBio(truncatedBio);
+        } else {
+          setSearchPreviewArtistBio(null);
+        }
+      } catch (error) {
+        console.error('Failed to fetch artist bio snippet:', error);
+        setSearchPreviewArtistBio(null);
+      }
+    };
+
+    fetchArtistImage();
+    fetchArtistBioSnippet();
+  }, [searchDetailCategory, searchPreviewItem?.id]);
+
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
   const getArtistBio = async (artistName) => {
     if (!artistName) return null;
@@ -6556,11 +6617,26 @@ useEffect(() => {
                   searchDetailCategory === 'artists' ?
                     // Artist preview
                     React.createElement('div', null,
-                      // Image placeholder
-                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-gray-400 text-4xl' }, '🎤'),
+                      // Artist image (from Spotify via getArtistImage)
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 overflow-hidden' },
+                        searchPreviewArtistImage?.url ?
+                          React.createElement('img', {
+                            src: searchPreviewArtistImage.url,
+                            alt: searchPreviewItem.name,
+                            className: 'w-full h-full object-cover',
+                            style: searchPreviewArtistImage.facePosition ? {
+                              objectPosition: `${searchPreviewArtistImage.facePosition.x}% ${searchPreviewArtistImage.facePosition.y}%`
+                            } : {}
+                          })
+                        :
+                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-400 text-4xl' }, '🎤')
+                      ),
                       React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.name),
                       searchPreviewItem.disambiguation && React.createElement('p', { className: 'text-sm text-gray-500 mb-3' }, searchPreviewItem.disambiguation),
-                      React.createElement('p', { className: 'text-sm text-gray-600 line-clamp-4 mb-2' }, 'Artist biography will load here...'),
+                      // Artist bio snippet (from Last.fm)
+                      React.createElement('p', { className: 'text-sm text-gray-600 line-clamp-4 mb-2' },
+                        searchPreviewArtistBio || 'Loading biography...'
+                      ),
                       React.createElement('button', {
                         onClick: () => fetchArtistData(searchPreviewItem.name),
                         className: 'text-sm text-purple-600 hover:text-purple-700'
