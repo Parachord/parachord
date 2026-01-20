@@ -12600,24 +12600,24 @@ useEffect(() => {
                 className: 'mt-2 text-white/80 text-sm'
               }, 'Personalized picks from Last.fm')
             ),
-            // COLLAPSED STATE - Inline layout
+            // COLLAPSED STATE - Inline layout matching artist page
             recommendationsHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'absolute inset-0 flex items-center justify-between px-6 z-10',
               style: {
                 opacity: recommendationsHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease'
               }
             },
+              // Left: Title
               React.createElement('h1', {
-                className: 'text-2xl font-light text-white',
+                className: 'text-lg font-light text-white',
                 style: {
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase'
                 }
               }, 'RECOMMENDATIONS'),
-              React.createElement('div', { className: 'flex-1' }),
-              // Tabs in collapsed state
+              // Center: Tabs
               React.createElement('div', {
                 className: 'flex items-center gap-1',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
@@ -12627,20 +12627,22 @@ useEffect(() => {
                   { key: 'songs', label: `${recommendations.tracks.length} Songs` }
                 ].map((tab, index) => [
                   index > 0 && React.createElement('span', {
-                    key: `sep-${tab.key}`,
+                    key: `sep-collapsed-${tab.key}`,
                     className: 'text-gray-400 mx-2'
                   }, '|'),
                   React.createElement('button', {
-                    key: tab.key,
+                    key: `collapsed-${tab.key}`,
                     onClick: () => setRecommendationsTab(tab.key),
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors ${
+                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
                       recommendationsTab === tab.key
                         ? 'text-white'
                         : 'text-gray-400 hover:text-white'
                     }`
                   }, tab.label)
                 ]).flat().filter(Boolean)
-              )
+              ),
+              // Right: Placeholder for balance (or could add a button later)
+              React.createElement('div', { style: { width: '150px' } })
             )
           ),
           // Scrollable content area
