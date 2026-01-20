@@ -1495,6 +1495,7 @@ const Parachord = () => {
   const [newPlaylistFormOpen, setNewPlaylistFormOpen] = useState(false); // Accordion state for new playlist form
   const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
+  const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
   const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
@@ -2511,6 +2512,18 @@ const Parachord = () => {
       return () => clearInterval(interval);
     }
   }, [isPlaying, audioContext, currentTrack, startTime]);
+
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+  }, []);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
   useEffect(() => {
@@ -8086,6 +8099,13 @@ useEffect(() => {
           )
         )
       ),
+
+      // Toast notification
+      toast && React.createElement('div', {
+        className: `fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg transition-all ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
+        }`
+      }, toast.message),
 
       // Main content area
       React.createElement('div', {
