@@ -326,7 +326,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     // Artist image square (matches SearchArtistCard)
     React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-2 relative overflow-hidden' },
       imageLoading && React.createElement('div', {
-        className: 'w-full h-full bg-gray-200 animate-pulse'
+        className: 'w-full h-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
       }),
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
@@ -10169,21 +10169,21 @@ useEffect(() => {
             loadingBio && React.createElement('div', { className: 'space-y-4' },
               // First paragraph skeleton (longer)
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-11/12' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-4/5' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-11/12' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-4/5' })
               ),
               // Second paragraph skeleton
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-3/4' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-3/4' })
               ),
               // Third paragraph skeleton (shorter)
               React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-full' }),
-                React.createElement('div', { className: 'h-4 bg-gray-200 rounded animate-pulse w-2/3' })
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full' }),
+                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3' })
               )
             ),
             // Bio content
@@ -10213,15 +10213,15 @@ useEffect(() => {
               Array.from({ length: 10 }).map((_, i) =>
                 React.createElement('div', {
                   key: `skeleton-${i}`,
-                  className: 'flex flex-col items-center'
+                  className: 'flex flex-col'
                 },
                   // Square image skeleton
                   React.createElement('div', {
-                    className: 'w-full aspect-square bg-gray-200 animate-pulse mb-2'
+                    className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer mb-2'
                   }),
                   // Name skeleton
                   React.createElement('div', {
-                    className: 'h-4 w-20 bg-gray-200 rounded animate-pulse'
+                    className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer'
                   })
                 )
               )
