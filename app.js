@@ -6912,13 +6912,13 @@ ${tracks}
 
       console.log(`⭐ Received ${playlist.length} recommended tracks`);
 
-      // Transform tracks to app format
-      const tracks = playlist.map(track => ({
-        id: track.spelling_id || `${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
+      // Transform tracks to app format with empty sources (will be resolved)
+      const tracks = playlist.map((track, index) => ({
+        id: track.spelling_id || `rec-${index}-${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
         title: track.name || track._name,
         artist: track.artists?.[0]?.name || track.artists?.[0]?._name || 'Unknown Artist',
         duration: track.duration || null,
-        playlinks: track.playlinks || track._playlinks || []
+        sources: {} // Will be populated by resolver pipeline
       }));
 
       // Extract unique artists
@@ -6935,12 +6935,16 @@ ${tracks}
 
       console.log(`⭐ Extracted ${artists.length} unique artists`);
 
+      // Set initial state with tracks (sources empty, will resolve in background)
       setRecommendations({
         artists,
         tracks,
         loading: false,
         error: null
       });
+
+      // Resolve tracks in background using the resolver pipeline
+      resolveRecommendationTracks(tracks);
 
     } catch (error) {
       console.error('Failed to load Recommendations:', error);
@@ -6950,6 +6954,56 @@ ${tracks}
         error: 'Failed to load recommendations. Please try again.'
       }));
     }
+  };
+
+  // Resolve recommendation tracks using the resolver pipeline
+  const resolveRecommendationTracks = async (tracks) => {
+    console.log(`⭐ Resolving ${tracks.length} recommendation tracks...`);
+
+    for (const track of tracks) {
+      // Check if queue resolution has priority - if so, pause
+      if (queueResolutionActiveRef.current) {
+        console.log(`⏸️ Pausing recommendations resolution - queue resolution has priority`);
+        while (queueResolutionActiveRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`▶️ Resuming recommendations resolution`);
+      }
+
+      console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+
+      // Resolve all sources for this track
+      for (const resolverId of activeResolvers) {
+        const resolver = allResolvers.find(r => r.id === resolverId);
+        if (!resolver || !resolver.capabilities.resolve) continue;
+
+        try {
+          const config = await getResolverConfig(resolverId);
+          const resolved = await resolver.resolve(track.artist, track.title, null, config);
+
+          if (resolved) {
+            console.log(`  ✅ ${resolver.name}: Found match for "${track.title}"`);
+            // Update the track's sources and trigger re-render
+            setRecommendations(prev => ({
+              ...prev,
+              tracks: prev.tracks.map(t =>
+                t.id === track.id
+                  ? {
+                      ...t,
+                      sources: { ...t.sources, [resolverId]: resolved },
+                      duration: t.duration || resolved.duration || null
+                    }
+                  : t
+              )
+            }));
+          }
+        } catch (error) {
+          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        }
+      }
+    }
+
+    console.log(`⭐ Finished resolving recommendation tracks`);
   };
 
   // Fetch album art for Critic's Picks in background
@@ -12646,37 +12700,18 @@ useEffect(() => {
                   )
                 ),
 
-                // Songs section
+                // Songs section - track list table
                 recommendations.tracks.length > 0 && React.createElement('div', null,
                   React.createElement('div', { className: 'flex items-center justify-between mb-4' },
                     React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS')
                   ),
-                  React.createElement('div', { className: 'flex gap-4 flex-wrap' },
-                    ...recommendations.tracks.map(track =>
-                      React.createElement('button', {
+                  React.createElement('div', { className: 'space-y-0' },
+                    ...recommendations.tracks.map((track, index) => {
+                      const hasResolved = Object.keys(track.sources || {}).length > 0;
+                      const isResolving = Object.keys(track.sources || {}).length === 0;
+
+                      return React.createElement('div', {
                         key: track.id,
-                        onClick: () => {
-                          // Play using YouTube playlink if available
-                          const youtubeLink = track.playlinks?.find(p => p.affiliate === 'youtube');
-                          if (youtubeLink) {
-                            handlePlay({
-                              id: track.id,
-                              title: track.title,
-                              artist: track.artist,
-                              duration: track.duration,
-                              sources: { youtube: youtubeLink.url }
-                            });
-                          } else {
-                            // Fallback to regular play which will resolve
-                            handlePlay({
-                              id: track.id,
-                              title: track.title,
-                              artist: track.artist,
-                              duration: track.duration
-                            });
-                          }
-                        },
-                        className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
                         draggable: true,
                         onDragStart: (e) => {
                           e.dataTransfer.effectAllowed = 'copy';
@@ -12686,55 +12721,137 @@ useEffect(() => {
                               id: track.id,
                               title: track.title,
                               artist: track.artist,
-                              duration: track.duration
+                              duration: track.duration,
+                              sources: track.sources || {}
                             }
                           }));
                         },
+                        className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${
+                          isResolving ? 'opacity-60' : ''
+                        }`,
+                        onClick: () => {
+                          // Set remaining tracks as queue and play this track
+                          const tracksAfter = recommendations.tracks.slice(index + 1);
+                          setCurrentQueue(tracksAfter);
+                          handlePlay(track);
+                        },
                         onContextMenu: (e) => {
                           e.preventDefault();
-                          e.stopPropagation();
                           if (window.electron?.contextMenu?.showTrackMenu) {
                             window.electron.contextMenu.showTrackMenu({
                               type: 'track',
-                              track: {
-                                id: track.id,
-                                title: track.title,
-                                artist: track.artist,
-                                duration: track.duration
-                              }
+                              track: track
                             });
                           }
                         }
                       },
-                        // Album art placeholder (no album art available from Last.fm)
-                        React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden flex items-center justify-center' },
-                          React.createElement('svg', { className: 'w-10 h-10 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                          )
-                        ),
-                        // Track info
-                        React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
-                        React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
-                        // YouTube indicator if available
-                        track.playlinks?.some(p => p.affiliate === 'youtube') &&
-                          React.createElement('div', { className: 'flex gap-1 mt-1', style: { minHeight: '18px' } },
+                        // Track number
+                        React.createElement('span', {
+                          className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                          style: { pointerEvents: 'none', width: '32px' }
+                        }, String(index + 1).padStart(2, '0')),
+
+                        // Track title - fixed width column
+                        React.createElement('span', {
+                          className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
+                          style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                        }, track.title),
+
+                        // Artist name - fixed width column, clickable
+                        React.createElement('span', {
+                          className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                          style: { width: '180px', flexShrink: 0 },
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            fetchArtistData(track.artist);
+                          }
+                        }, track.artist),
+
+                        // Duration - fixed width column
+                        React.createElement('span', {
+                          className: 'text-sm text-gray-400 text-right tabular-nums',
+                          style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                        }, formatTime(track.duration)),
+
+                        // Resolver icons - fixed width column
+                        React.createElement('div', {
+                          className: 'flex items-center gap-1 justify-end ml-auto',
+                          style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                        },
+                          isResolving ?
                             React.createElement('div', {
-                              style: {
-                                width: '18px',
-                                height: '18px',
-                                borderRadius: '3px',
-                                backgroundColor: '#FF0000',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '8px',
-                                fontWeight: 'bold',
-                                color: 'white'
-                              }
-                            }, 'YT')
-                          )
-                      )
-                    )
+                              className: 'flex items-center gap-1'
+                            },
+                              React.createElement('div', {
+                                className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                                title: 'Resolving track...'
+                              }),
+                              React.createElement('div', {
+                                className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                                style: { animationDelay: '0.1s' }
+                              })
+                            )
+                          : hasResolved ?
+                            Object.entries(track.sources)
+                              .sort(([aId], [bId]) => {
+                                const aIndex = resolverOrder.indexOf(aId);
+                                const bIndex = resolverOrder.indexOf(bId);
+                                return aIndex - bIndex;
+                              })
+                              .map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    const tracksAfter = recommendations.tracks.slice(index + 1);
+                                    setCurrentQueue(tracksAfter);
+                                    handlePlay({ ...track, preferredResolver: resolverId });
+                                  },
+                                  style: {
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '4px',
+                                    backgroundColor: resolver.color,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 'bold',
+                                    color: 'white',
+                                    pointerEvents: 'auto',
+                                    opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                                    transition: 'transform 0.1s'
+                                  },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                }, (() => {
+                                  const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
+                                  return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                                })());
+                              })
+                          :
+                            // Show shimmer skeletons while resolving
+                            React.createElement('div', {
+                              className: 'flex items-center gap-1'
+                            },
+                              React.createElement('div', {
+                                className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                                title: 'Resolving track...'
+                              }),
+                              React.createElement('div', {
+                                className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                                style: { animationDelay: '0.1s' }
+                              })
+                            )
+                        )
+                      );
+                    })
                   )
                 )
               )
