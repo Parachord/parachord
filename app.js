@@ -199,6 +199,12 @@ const SERVICE_LOGOS = {
   soundcloud: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z' })
   ),
+  applemusic: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+  ),
+  localfiles: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z' })
+  ),
   musicbrainz: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
   )
@@ -215,28 +221,42 @@ const ResolverCard = React.memo(({
   onClick,
   onDragStart,
   onDragOver,
+  onDragEnter,
+  onDragLeave,
   onDrop,
   onDragEnd,
   onContextMenu,
-  draggable = false
+  draggable = false,
+  isDragOver = false,
+  isDragging = false
 }) => {
   // Get the logo SVG or fall back to emoji icon
   const logo = SERVICE_LOGOS[resolver.id];
 
   return React.createElement('div', {
-    className: 'flex flex-col items-center',
+    className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
     draggable: draggable,
     onDragStart: draggable ? onDragStart : undefined,
     onDragOver: draggable ? onDragOver : undefined,
+    onDragEnter: draggable ? onDragEnter : undefined,
+    onDragLeave: draggable ? onDragLeave : undefined,
     onDrop: draggable ? onDrop : undefined,
     onDragEnd: draggable ? onDragEnd : undefined,
     onContextMenu: onContextMenu
   },
+    // Drop indicator - shown when dragging over this card
+    isDragOver && React.createElement('div', {
+      className: 'absolute -left-3 top-0 bottom-6 w-1 bg-purple-500 rounded-full',
+      style: {
+        boxShadow: '0 0 8px rgba(147, 51, 234, 0.6)',
+        zIndex: 10
+      }
+    }),
     // Card with colored background
     React.createElement('div', {
       className: `relative w-32 h-32 rounded-xl flex items-center justify-center cursor-pointer transition-all hover:scale-105 hover:shadow-lg ${
         isActive === false ? 'opacity-50 grayscale' : ''
-      }`,
+      } ${isDragOver ? 'ring-2 ring-purple-500 ring-offset-2' : ''}`,
       style: { backgroundColor: resolver.color || '#6B7280' },
       onClick: onClick
     },
@@ -887,7 +907,10 @@ const Parachord = () => {
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
   const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
+  const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
+  const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
   const [draggedResolver, setDraggedResolver] = useState(null);
+  const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [resolvingLibraryTracks, setResolvingLibraryTracks] = useState(new Set()); // Track filePaths currently being resolved
@@ -2030,6 +2053,12 @@ const Parachord = () => {
 
     return () => clearTimeout(timeoutId);
   }, [activeResolvers, resolverOrder, loadedResolvers]);
+
+  // Keep refs updated for unmount save
+  useEffect(() => {
+    activeResolversRef.current = activeResolvers;
+    resolverOrderRef.current = resolverOrder;
+  }, [activeResolvers, resolverOrder]);
 
   // Local Files handlers
   const handleAddWatchFolder = async () => {
@@ -3522,11 +3551,12 @@ const Parachord = () => {
       // Save playlist cover cache
       await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
 
-      // Save resolver settings
-      await window.electron.store.set('active_resolvers', activeResolvers);
-      await window.electron.store.set('resolver_order', resolverOrder);
+      // Save resolver settings (use refs to ensure we have current values, not stale closure)
+      await window.electron.store.set('active_resolvers', activeResolversRef.current);
+      await window.electron.store.set('resolver_order', resolverOrderRef.current);
 
       console.log('💾 Cache and resolver settings saved to persistent storage');
+      console.log('   Saved resolver order:', resolverOrderRef.current);
     } catch (error) {
       console.error('Failed to save cache to store:', error);
     }
@@ -4642,6 +4672,22 @@ const Parachord = () => {
     return false;
   };
 
+  const handleResolverDragEnter = (e, resolverId) => {
+    e.preventDefault();
+    if (draggedResolver && draggedResolver !== resolverId) {
+      setDragOverResolver(resolverId);
+    }
+  };
+
+  const handleResolverDragLeave = (e) => {
+    e.preventDefault();
+    // Only clear if we're leaving the card entirely (not entering a child)
+    const relatedTarget = e.relatedTarget;
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setDragOverResolver(null);
+    }
+  };
+
   const handleResolverDrop = (e, targetResolverId) => {
     if (e.stopPropagation) {
       e.stopPropagation();
@@ -4661,11 +4707,13 @@ const Parachord = () => {
     }
 
     setDraggedResolver(null);
+    setDragOverResolver(null);
     return false;
   };
 
   const handleResolverDragEnd = () => {
     setDraggedResolver(null);
+    setDragOverResolver(null);
   };
 
   // Install new resolver from .axe file (hot-reload, no restart)
@@ -9902,9 +9950,13 @@ useEffect(() => {
                     hasUpdate: hasUpdate,
                     priorityNumber: index + 1,
                     draggable: true,
+                    isDragging: draggedResolver === resolver.id,
+                    isDragOver: dragOverResolver === resolver.id,
                     onClick: () => setSelectedResolver(resolver),
                     onDragStart: (e) => handleResolverDragStart(e, resolver.id),
                     onDragOver: handleResolverDragOver,
+                    onDragEnter: (e) => handleResolverDragEnter(e, resolver.id),
+                    onDragLeave: handleResolverDragLeave,
                     onDrop: (e) => handleResolverDrop(e, resolver.id),
                     onDragEnd: handleResolverDragEnd,
                     onContextMenu: (e) => {
