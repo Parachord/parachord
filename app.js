@@ -6695,6 +6695,25 @@ useEffect(() => {
                       // Release type
                       React.createElement('span', { className: 'w-24 text-sm text-gray-500 text-right capitalize' }, album['primary-type'] || 'Album')
                     )
+                  ),
+                  // Playlists list
+                  searchDetailCategory === 'playlists' && searchResults.playlists.map((playlist, index) =>
+                    React.createElement('div', {
+                      key: playlist.title,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.title === playlist.title ? 'bg-gray-100' : ''}`,
+                      onMouseEnter: () => setSearchPreviewItem(playlist),
+                      onMouseLeave: () => setSearchPreviewItem(searchResults.playlists[0] || null),
+                      onClick: () => handlePlaylistClick(playlist)
+                    },
+                      // Row number
+                      React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
+                      // Playlist title
+                      React.createElement('span', { className: 'flex-1 font-medium text-gray-900 truncate' }, playlist.title),
+                      // Creator/Author
+                      React.createElement('span', { className: 'w-40 text-sm text-gray-600 truncate' }, playlist.creator || '-'),
+                      // Track count
+                      React.createElement('span', { className: 'w-24 text-sm text-gray-500 text-right' }, `${playlist.tracks?.length || 0} tracks`)
+                    )
                   )
                 )
               )
