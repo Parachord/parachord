@@ -346,11 +346,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       )
     ),
     // Artist name
-    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name),
-    // Match percentage
-    artist.match && React.createElement('div', { className: 'text-xs text-gray-500' },
-      `${artist.match}% match`
-    )
+    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name)
   );
 };
 
@@ -10208,17 +10204,13 @@ useEffect(() => {
                   key: `skeleton-${i}`,
                   className: 'flex flex-col items-center'
                 },
-                  // Circular image skeleton
+                  // Square image skeleton
                   React.createElement('div', {
-                    className: 'w-32 h-32 rounded-full bg-gray-200 animate-pulse mb-3'
+                    className: 'w-full aspect-square bg-gray-200 animate-pulse mb-2'
                   }),
                   // Name skeleton
                   React.createElement('div', {
-                    className: 'h-4 w-20 bg-gray-200 rounded animate-pulse mb-1'
-                  }),
-                  // Match percentage skeleton
-                  React.createElement('div', {
-                    className: 'h-3 w-12 bg-gray-200 rounded animate-pulse'
+                    className: 'h-4 w-20 bg-gray-200 rounded animate-pulse'
                   })
                 )
               )
