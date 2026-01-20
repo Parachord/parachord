@@ -4833,17 +4833,36 @@ const Parachord = () => {
       
       // Try to fetch album art
       let albumArt = null;
+      // Keep track of the original ID (release-group ID from artist page) for caching
+      const originalReleaseGroupId = release.id;
       try {
         const artResponse = await fetch(
           `https://coverartarchive.org/release/${releaseId}`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
-        
+
         if (artResponse.ok) {
           const artData = await artResponse.json();
           const frontCover = artData.images.find(img => img.front);
           if (frontCover) {
             albumArt = frontCover.thumbnails?.['500'] || frontCover.image;
+
+            // Cache the album art using the release-group ID so artist page can use it
+            // Use a smaller thumbnail (250) for the cache like fetchAlbumArtLazy does
+            const cacheUrl = frontCover.thumbnails?.['250'] || albumArt;
+            albumArtCache.current[originalReleaseGroupId] = { url: cacheUrl, timestamp: Date.now() };
+
+            // Update artistReleases so the art shows immediately when returning to artist page
+            setArtistReleases(prev =>
+              prev.map(r =>
+                r.id === originalReleaseGroupId
+                  ? { ...r, albumArt: cacheUrl }
+                  : r
+              )
+            );
+
+            // Save cache to persist
+            saveCacheToStore();
           }
         }
       } catch (error) {
@@ -5818,34 +5837,67 @@ const Parachord = () => {
       }
       
       try {
-        // Use release-group endpoint since we fetch release-groups, not individual releases
+        let albumArtUrl = null;
+
+        // First try release-group endpoint
         const artResponse = await fetch(
           `https://coverartarchive.org/release-group/${release.id}`,
           {
             headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
           }
         );
-        
+
         if (artResponse.ok) {
           const artData = await artResponse.json();
           const frontCover = artData.images.find(img => img.front);
-          
           if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
-            const albumArtUrl = frontCover.thumbnails['250'];
-
-            // Store in cache with timestamp
-            albumArtCache.current[release.id] = { url: albumArtUrl, timestamp: Date.now() };
-            
-            // Update just this release with album art
-            setArtistReleases(prev => 
-              prev.map(r => 
-                r.id === release.id 
-                  ? { ...r, albumArt: albumArtUrl }
-                  : r
-              )
-            );
-            loadedCount++;
+            albumArtUrl = frontCover.thumbnails['250'];
           }
+        }
+
+        // If release-group has no art, try getting a specific release and its art
+        if (!albumArtUrl) {
+          // Get the first release in this release-group
+          const releaseResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+          );
+
+          if (releaseResponse.ok) {
+            const releaseData = await releaseResponse.json();
+            if (releaseData.releases && releaseData.releases.length > 0) {
+              const specificReleaseId = releaseData.releases[0].id;
+
+              // Try fetching art from the specific release
+              const releaseArtResponse = await fetch(
+                `https://coverartarchive.org/release/${specificReleaseId}`,
+                { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+              );
+
+              if (releaseArtResponse.ok) {
+                const releaseArtData = await releaseArtResponse.json();
+                const frontCover = releaseArtData.images.find(img => img.front);
+                if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
+                  albumArtUrl = frontCover.thumbnails['250'];
+                }
+              }
+            }
+          }
+        }
+
+        if (albumArtUrl) {
+          // Store in cache with timestamp
+          albumArtCache.current[release.id] = { url: albumArtUrl, timestamp: Date.now() };
+
+          // Update just this release with album art
+          setArtistReleases(prev =>
+            prev.map(r =>
+              r.id === release.id
+                ? { ...r, albumArt: albumArtUrl }
+                : r
+            )
+          );
+          loadedCount++;
         }
       } catch (error) {
         // Silently continue to next release
