@@ -7290,12 +7290,13 @@ useEffect(() => {
           },
             // Left side: Artist name
             React.createElement('h1', {
-              className: 'text-2xl font-bold mr-6 text-white',
+              className: 'text-2xl font-bold mr-6 text-white flex-shrink-0',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                whiteSpace: 'nowrap'
+                maxWidth: '40%',
+                lineHeight: '1.2'
               }
             }, currentArtist.name),
             // Center: Navigation tabs
@@ -7456,12 +7457,13 @@ useEffect(() => {
           },
             // Left side: Artist name
             React.createElement('h1', {
-              className: 'text-2xl font-bold mr-8 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag',
+              className: 'text-2xl font-bold mr-8 text-white cursor-pointer hover:text-purple-300 transition-colors no-drag flex-shrink-0',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.15em',
                 textTransform: 'uppercase',
-                whiteSpace: 'nowrap'
+                maxWidth: '40%',
+                lineHeight: '1.2'
               },
               onClick: () => {
                 const artistName = currentRelease?.artist?.name || currentArtist?.name;
