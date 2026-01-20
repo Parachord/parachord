@@ -7745,13 +7745,23 @@ useEffect(() => {
           // Content area
           React.createElement('div', { className: 'p-6' },
 
-            // Loading state
+            // Skeleton loading state
             chartsLoading && React.createElement('div', {
-              className: 'flex items-center justify-center py-12'
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
-              React.createElement('div', {
-                className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
-              })
+              Array.from({ length: 15 }).map((_, i) =>
+                React.createElement('div', { key: `skeleton-${i}`, className: 'animate-pulse' },
+                  // Skeleton album art
+                  React.createElement('div', {
+                    className: 'aspect-square rounded-lg mb-3 bg-gray-200'
+                  }),
+                  // Skeleton title
+                  React.createElement('div', { className: 'space-y-2' },
+                    React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4' }),
+                    React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                  )
+                )
+              )
             ),
 
             // Albums grid
@@ -7917,13 +7927,23 @@ useEffect(() => {
           // Content area
           React.createElement('div', { className: 'p-6' },
 
-          // Loading state
+          // Skeleton loading state
           criticsPicksLoading && React.createElement('div', {
-            className: 'flex items-center justify-center py-12'
+            className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
           },
-            React.createElement('div', {
-              className: 'w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin'
-            })
+            Array.from({ length: 15 }).map((_, i) =>
+              React.createElement('div', { key: `skeleton-${i}`, className: 'animate-pulse' },
+                // Skeleton album art
+                React.createElement('div', {
+                  className: 'aspect-square rounded-lg mb-3 bg-gray-200'
+                }),
+                // Skeleton title
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4' }),
+                  React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                )
+              )
+            )
           ),
 
           // Albums grid
