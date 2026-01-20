@@ -4323,6 +4323,42 @@ ${tracks}
     }
   };
 
+  // Load Charts from Apple Music RSS feed
+  const loadCharts = async () => {
+    if (chartsLoading || chartsLoaded.current) return;
+
+    setChartsLoading(true);
+    console.log('📊 Loading Charts...');
+
+    try {
+      const response = await fetch('https://rss.marketingtools.apple.com/api/v2/us/music/most-played/50/albums.rss');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch RSS: ${response.status}`);
+      }
+
+      const rssText = await response.text();
+      const albums = parseChartsRSS(rssText);
+
+      console.log(`📊 Parsed ${albums.length} albums from Charts`);
+
+      setCharts(albums);
+      chartsLoaded.current = true;
+
+      // Fetch album art in background
+      fetchChartsAlbumArt(albums);
+
+    } catch (error) {
+      console.error('Failed to load Charts:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load Charts. Please try again.'
+      });
+    } finally {
+      setChartsLoading(false);
+    }
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
