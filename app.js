@@ -10613,6 +10613,12 @@ useEffect(() => {
               const filtered = filterCollectionItems(collectionData.artists, 'artists');
               const sorted = sortCollectionItems(filtered, 'artists');
 
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No artists match your search')
+                );
+              }
+
               if (sorted.length === 0) {
                 return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
                   React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -10641,6 +10647,12 @@ useEffect(() => {
             collectionTab === 'albums' && (() => {
               const filtered = filterCollectionItems(collectionData.albums, 'albums');
               const sorted = sortCollectionItems(filtered, 'albums');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No albums match your search')
+                );
+              }
 
               if (sorted.length === 0) {
                 return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
