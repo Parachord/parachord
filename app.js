@@ -5431,6 +5431,13 @@ ${tracks}
   // Navigation helpers
   const navigateTo = (view) => {
     if (view !== activeView) {
+      // Clear search state when leaving search view
+      if (activeView === 'search') {
+        setSearchQuery('');
+        setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
+        setIsSearching(false);
+        setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
+      }
       setViewHistory(prev => [...prev, view]);
       setActiveView(view);
       if (view === 'settings') {
