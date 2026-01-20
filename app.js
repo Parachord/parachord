@@ -4221,6 +4221,71 @@ ${tracks}
     }
   };
 
+  // Parse Apple Music Charts RSS feed
+  const parseChartsRSS = (rssString) => {
+    try {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(rssString, 'text/xml');
+
+      const items = xml.querySelectorAll('item');
+      const albums = [];
+
+      items.forEach((item, index) => {
+        const titleText = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '';
+        const description = item.querySelector('description')?.textContent || '';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+
+        // Get artist from category with domain attribute
+        const categories = item.querySelectorAll('category');
+        let artist = '';
+        let genres = [];
+
+        categories.forEach(cat => {
+          if (cat.getAttribute('domain')) {
+            // Category with domain is the artist link
+            artist = cat.textContent || '';
+          } else {
+            // Categories without domain are genres
+            genres.push(cat.textContent);
+          }
+        });
+
+        // Title format is "Album Name - Artist Name"
+        // But we already have artist from category, so extract album from title
+        let album = titleText;
+        if (titleText.includes(' - ') && artist) {
+          album = titleText.replace(` - ${artist}`, '').trim();
+        }
+
+        // Fallback: if no artist from category, try parsing from title
+        if (!artist && titleText.includes(' - ')) {
+          const parts = titleText.split(' - ');
+          album = parts[0].trim();
+          artist = parts.slice(1).join(' - ').trim();
+        }
+
+        if (album && artist) {
+          albums.push({
+            id: `charts-${index}-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+            artist: artist,
+            title: album,
+            rank: index + 1,
+            link: link,
+            genres: genres.filter(g => g !== 'Music'),
+            pubDate: pubDate ? new Date(pubDate) : null,
+            albumArt: null
+          });
+        }
+      });
+
+      return albums;
+    } catch (error) {
+      console.error('Error parsing Charts RSS:', error);
+      return [];
+    }
+  };
+
   // Load Critic's Picks from RSS feed
   const loadCriticsPicks = async () => {
     if (criticsPicksLoading || criticsPicksLoaded.current) return;
