@@ -4398,6 +4398,176 @@ ${tracks}
     }
   };
 
+  // Navigate to a Charts album release page
+  const openChartsAlbum = async (album) => {
+    console.log(`🎵 Opening Chart Album: ${album.artist} - ${album.title}`);
+
+    try {
+      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) {
+        throw new Error('MusicBrainz search failed');
+      }
+
+      const mbData = await mbResponse.json();
+
+      if (mbData.releases && mbData.releases.length > 0) {
+        const release = mbData.releases[0];
+        setSelectedRelease({
+          id: release.id,
+          title: release.title,
+          artist: album.artist,
+          albumArt: album.albumArt,
+          date: release.date || album.pubDate?.toISOString().split('T')[0],
+          label: release['label-info']?.[0]?.label?.name || 'Unknown Label',
+          country: release.country || 'Unknown',
+          tracks: []
+        });
+        navigateTo('release');
+      } else {
+        showConfirmDialog({
+          type: 'error',
+          title: 'Album Not Found',
+          message: `Could not find "${album.title}" by ${album.artist} in MusicBrainz.`
+        });
+      }
+    } catch (error) {
+      console.error('Error opening chart album:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to load album details. Please try again.'
+      });
+    }
+  };
+
+  // Prefetch tracks for a Charts album on hover
+  const prefetchChartsTracks = async (album) => {
+    // Skip if already prefetched
+    if (prefetchedReleases[album.id]) {
+      return;
+    }
+
+    try {
+      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) return;
+
+      const mbData = await mbResponse.json();
+      if (!mbData.releases || mbData.releases.length === 0) return;
+
+      const releaseId = mbData.releases[0].id;
+
+      // Fetch release details with tracks
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!releaseDetailsResponse.ok) return;
+
+      const releaseData = await releaseDetailsResponse.json();
+      const tracks = [];
+
+      releaseData.media?.forEach(medium => {
+        medium.tracks?.forEach(track => {
+          tracks.push({
+            id: track.recording?.id || track.id,
+            title: track.title,
+            artist: album.artist,
+            duration: track.length ? Math.round(track.length / 1000) : null,
+            albumArt: album.albumArt
+          });
+        });
+      });
+
+      if (tracks.length > 0) {
+        setPrefetchedReleases(prev => ({
+          ...prev,
+          [album.id]: {
+            tracks,
+            title: album.title,
+            albumArt: album.albumArt
+          }
+        }));
+      }
+    } catch (error) {
+      // Silent fail for prefetch
+    }
+  };
+
+  // Add all tracks from a Charts album to the queue
+  const addChartsToQueue = async (album) => {
+    console.log(`➕ Adding chart album to queue: ${album.artist} - ${album.title}`);
+
+    try {
+      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) throw new Error('MusicBrainz search failed');
+
+      const mbData = await mbResponse.json();
+      if (!mbData.releases?.[0]) {
+        showConfirmDialog({
+          type: 'error',
+          title: 'Album Not Found',
+          message: `Could not find tracks for "${album.title}"`
+        });
+        return;
+      }
+
+      const releaseId = mbData.releases[0].id;
+      const tracksResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!tracksResponse.ok) throw new Error('Failed to fetch tracks');
+
+      const releaseData = await tracksResponse.json();
+      const tracks = [];
+
+      releaseData.media?.forEach(medium => {
+        medium.tracks?.forEach(track => {
+          tracks.push({
+            id: track.recording?.id || track.id,
+            title: track.title,
+            artist: album.artist,
+            duration: track.length ? Math.round(track.length / 1000) : null,
+            albumArt: album.albumArt
+          });
+        });
+      });
+
+      if (tracks.length > 0) {
+        setQueue(prev => [...prev, ...tracks]);
+        showConfirmDialog({
+          type: 'success',
+          title: 'Added to Queue',
+          message: `Added ${tracks.length} tracks from "${album.title}"`
+        });
+      }
+    } catch (error) {
+      console.error('Error adding chart album to queue:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to add album to queue. Please try again.'
+      });
+    }
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
