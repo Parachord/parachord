@@ -6943,10 +6943,8 @@ useEffect(() => {
           ),
 
         // Results area
-        // Show nothing when no query (clean state)
-        !searchQuery ? null
-        :
-        isSearching ?
+        // Show skeletons when no query or when searching
+        (!searchQuery || isSearching) ?
           // Loading skeletons
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton
