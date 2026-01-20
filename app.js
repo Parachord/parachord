@@ -1057,6 +1057,13 @@ const Parachord = () => {
   });
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef(null);
+  // Recommendations state
+  const [recommendations, setRecommendations] = useState({
+    artists: [],
+    tracks: [],
+    loading: true,
+    error: null
+  });
   // Pagination state - how many items to show per column
   const [displayLimits, setDisplayLimits] = useState({
     artists: 5,
@@ -1186,6 +1193,9 @@ const Parachord = () => {
   const [criticsSearch, setCriticsSearch] = useState('');
   const [criticsSortDropdownOpen, setCriticsSortDropdownOpen] = useState(false);
   const [criticsSort, setCriticsSort] = useState('recent');
+
+  // Recommendations page state
+  const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
 
   // Sidebar badge state for visual feedback on additions
   const [sidebarBadges, setSidebarBadges] = useState({
@@ -1340,6 +1350,13 @@ const Parachord = () => {
       setCriticsHeaderCollapsed(false);
       setCriticsSearchOpen(false);
       setCriticsSearch('');
+    }
+  }, [activeView]);
+
+  // Reset recommendations header collapse when leaving recommendations view
+  useEffect(() => {
+    if (activeView !== 'recommendations') {
+      setRecommendationsHeaderCollapsed(false);
     }
   }, [activeView]);
 
@@ -6879,6 +6896,62 @@ ${tracks}
     }
   };
 
+  // Load Recommendations from Last.fm
+  const loadRecommendations = async () => {
+    setRecommendations(prev => ({ ...prev, loading: true, error: null }));
+    console.log('⭐ Loading Recommendations...');
+
+    try {
+      const response = await fetch('https://www.last.fm/player/station/user/jherskowitz/recommended');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch recommendations: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const playlist = data.playlist || [];
+
+      console.log(`⭐ Received ${playlist.length} recommended tracks`);
+
+      // Transform tracks to app format
+      const tracks = playlist.map(track => ({
+        id: track.spelling_id || `${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
+        title: track.name || track._name,
+        artist: track.artists?.[0]?.name || track.artists?.[0]?._name || 'Unknown Artist',
+        duration: track.duration || null,
+        playlinks: track.playlinks || track._playlinks || []
+      }));
+
+      // Extract unique artists
+      const artistMap = new Map();
+      tracks.forEach(track => {
+        if (track.artist && !artistMap.has(track.artist)) {
+          artistMap.set(track.artist, {
+            id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            name: track.artist
+          });
+        }
+      });
+      const artists = Array.from(artistMap.values());
+
+      console.log(`⭐ Extracted ${artists.length} unique artists`);
+
+      setRecommendations({
+        artists,
+        tracks,
+        loading: false,
+        error: null
+      });
+
+    } catch (error) {
+      console.error('Failed to load Recommendations:', error);
+      setRecommendations(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load recommendations. Please try again.'
+      }));
+    }
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
@@ -8663,6 +8736,21 @@ useEffect(() => {
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
               ),
               "Critical Darlings"
+            ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('recommendations');
+                loadRecommendations();
+              },
+              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+                activeView === 'recommendations' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+              }`
+            },
+              // Star icon for Recommendations
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+              ),
+              "Recommendations"
             )
           ),
 
@@ -11122,12 +11210,12 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['library', 'discover', 'critics-picks'].includes(activeView)
+          ['library', 'discover', 'critics-picks', 'recommendations'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['library', 'discover', 'new-releases', 'critics-picks'].includes(activeView) ? '' : 'p-6'
+          ['library', 'discover', 'new-releases', 'critics-picks', 'recommendations'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -11136,7 +11224,7 @@ useEffect(() => {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['library', 'discover', 'new-releases', 'critics-picks', 'settings'].includes(activeView) &&
+        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'settings'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'playlist-view' && selectedPlaylist ? selectedPlaylist.title :
@@ -12382,6 +12470,274 @@ useEffect(() => {
             )
             );
           })()
+          )
+        ),
+
+        // Recommendations view with collapsible hero header
+        activeView === 'recommendations' && React.createElement('div', {
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
+        },
+          // Header section (outside scrollable area)
+          React.createElement('div', {
+            className: 'relative',
+            style: {
+              height: recommendationsHeaderCollapsed ? '80px' : '320px',
+              flexShrink: 0,
+              transition: 'height 300ms ease',
+              overflow: 'hidden'
+            }
+          },
+            // Gradient background - purple/indigo theme for recommendations
+            React.createElement('div', {
+              className: 'absolute inset-0 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500'
+            }),
+            // Background pattern - stars for recommendations
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                opacity: 0.15,
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Cpath d=\'M40 5l4.5 13.8h14.5l-11.7 8.5 4.5 13.8L40 32.6l-11.8 8.5 4.5-13.8-11.7-8.5h14.5z\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // EXPANDED STATE - Centered content
+            !recommendationsHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+              style: {
+                opacity: recommendationsHeaderCollapsed ? 0 : 1,
+                transition: 'opacity 300ms ease'
+              }
+            },
+              React.createElement('h1', {
+                className: 'text-5xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase'
+                }
+              }, 'RECOMMENDATIONS'),
+              React.createElement('div', {
+                className: 'flex items-center gap-1 mt-6',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+              },
+                React.createElement('span', {
+                  className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                }, `${recommendations.tracks.length} Tracks`)
+              ),
+              React.createElement('p', {
+                className: 'mt-2 text-white/80 text-sm'
+              }, 'Personalized picks from Last.fm')
+            ),
+            // COLLAPSED STATE - Inline layout
+            recommendationsHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-6 z-10',
+              style: {
+                opacity: recommendationsHeaderCollapsed ? 1 : 0,
+                transition: 'opacity 300ms ease'
+              }
+            },
+              React.createElement('h1', {
+                className: 'text-2xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase'
+                }
+              }, 'RECOMMENDATIONS'),
+              React.createElement('div', { className: 'flex-1' }),
+              React.createElement('span', {
+                className: 'text-sm font-medium uppercase tracking-wider text-white/80'
+              }, `${recommendations.tracks.length} Tracks`)
+            )
+          ),
+          // Scrollable content area
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto scrollable-content p-6',
+            onScroll: (e) => {
+              const scrollTop = e.target.scrollTop;
+              if (scrollTop > 50 && !recommendationsHeaderCollapsed) {
+                setRecommendationsHeaderCollapsed(true);
+              } else if (scrollTop <= 50 && recommendationsHeaderCollapsed) {
+                setRecommendationsHeaderCollapsed(false);
+              }
+            }
+          },
+            // Loading state
+            recommendations.loading ?
+              React.createElement('div', { className: 'space-y-10' },
+                // Artists skeleton
+                React.createElement('div', null,
+                  React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
+                  React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+                    ...Array(7).fill(null).map((_, i) =>
+                      React.createElement('div', { key: `rec-artist-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                        React.createElement('div', {
+                          className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                        })
+                      )
+                    )
+                  )
+                ),
+                // Songs skeleton
+                React.createElement('div', null,
+                  React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
+                  React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+                    ...Array(7).fill(null).map((_, i) =>
+                      React.createElement('div', { key: `rec-track-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                        React.createElement('div', {
+                          className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
+                        })
+                      )
+                    )
+                  )
+                )
+              )
+            // Error state
+            : recommendations.error ?
+              React.createElement('div', { className: 'text-center py-12' },
+                React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
+                React.createElement('button', {
+                  onClick: loadRecommendations,
+                  className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                }, 'Try Again')
+              )
+            // Results
+            : React.createElement('div', { className: 'space-y-10' },
+                // Artists section
+                recommendations.artists.length > 0 && React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                    React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS')
+                  ),
+                  React.createElement('div', { className: 'flex gap-4 flex-wrap' },
+                    ...recommendations.artists.slice(0, 14).map(artist =>
+                      React.createElement(SearchArtistCard, {
+                        key: artist.id,
+                        artist: artist,
+                        onClick: () => fetchArtistData(artist.name),
+                        getArtistImage: getArtistImage,
+                        onContextMenu: (artist) => {
+                          if (window.electron?.contextMenu?.showTrackMenu) {
+                            window.electron.contextMenu.showTrackMenu({
+                              type: 'artist',
+                              artist: {
+                                id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                name: artist.name,
+                                image: null
+                              }
+                            });
+                          }
+                        }
+                      })
+                    )
+                  )
+                ),
+
+                // Songs section
+                recommendations.tracks.length > 0 && React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                    React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS')
+                  ),
+                  React.createElement('div', { className: 'flex gap-4 flex-wrap' },
+                    ...recommendations.tracks.map(track =>
+                      React.createElement('button', {
+                        key: track.id,
+                        onClick: () => {
+                          // Play using YouTube playlink if available
+                          const youtubeLink = track.playlinks?.find(p => p.affiliate === 'youtube');
+                          if (youtubeLink) {
+                            handlePlay({
+                              id: track.id,
+                              title: track.title,
+                              artist: track.artist,
+                              duration: track.duration,
+                              sources: { youtube: youtubeLink.url }
+                            });
+                          } else {
+                            // Fallback to regular play which will resolve
+                            handlePlay({
+                              id: track.id,
+                              title: track.title,
+                              artist: track.artist,
+                              duration: track.duration
+                            });
+                          }
+                        },
+                        className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
+                        draggable: true,
+                        onDragStart: (e) => {
+                          e.dataTransfer.effectAllowed = 'copy';
+                          e.dataTransfer.setData('text/plain', JSON.stringify({
+                            type: 'track',
+                            track: {
+                              id: track.id,
+                              title: track.title,
+                              artist: track.artist,
+                              duration: track.duration
+                            }
+                          }));
+                        },
+                        onContextMenu: (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (window.electron?.contextMenu?.showTrackMenu) {
+                            window.electron.contextMenu.showTrackMenu({
+                              type: 'track',
+                              track: {
+                                id: track.id,
+                                title: track.title,
+                                artist: track.artist,
+                                duration: track.duration
+                              }
+                            });
+                          }
+                        }
+                      },
+                        // Album art placeholder (no album art available from Last.fm)
+                        React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden flex items-center justify-center' },
+                          React.createElement('svg', { className: 'w-10 h-10 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                          )
+                        ),
+                        // Track info
+                        React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
+                        React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
+                        // YouTube indicator if available
+                        track.playlinks?.some(p => p.affiliate === 'youtube') &&
+                          React.createElement('div', { className: 'flex gap-1 mt-1', style: { minHeight: '18px' } },
+                            React.createElement('div', {
+                              style: {
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '3px',
+                                backgroundColor: '#FF0000',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '8px',
+                                fontWeight: 'bold',
+                                color: 'white'
+                              }
+                            }, 'YT')
+                          )
+                      )
+                    )
+                  )
+                )
+              )
           )
         ),
 
