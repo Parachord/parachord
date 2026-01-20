@@ -4403,6 +4403,7 @@ ${tracks}
     console.log(`🎵 Opening Chart Album: ${album.artist} - ${album.title}`);
 
     try {
+      // Search MusicBrainz for the release
       const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
       const mbResponse = await fetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
@@ -4415,33 +4416,40 @@ ${tracks}
 
       const mbData = await mbResponse.json();
 
-      if (mbData.releases && mbData.releases.length > 0) {
-        const release = mbData.releases[0];
-        setSelectedRelease({
-          id: release.id,
-          title: release.title,
-          artist: album.artist,
-          albumArt: album.albumArt,
-          date: release.date || album.pubDate?.toISOString().split('T')[0],
-          label: release['label-info']?.[0]?.label?.name || 'Unknown Label',
-          country: release.country || 'Unknown',
-          tracks: []
-        });
-        navigateTo('release');
-      } else {
-        showConfirmDialog({
-          type: 'error',
-          title: 'Album Not Found',
-          message: `Could not find "${album.title}" by ${album.artist} in MusicBrainz.`
-        });
+      if (!mbData.releases || mbData.releases.length === 0) {
+        // Fallback: just navigate to artist page
+        console.log('Release not found in MusicBrainz, navigating to artist page');
+        fetchArtistData(album.artist);
+        return;
       }
+
+      const release = mbData.releases[0];
+      const artistCredit = release['artist-credit']?.[0];
+
+      // Create artist object for the release page
+      const artist = {
+        id: artistCredit?.artist?.id,
+        name: artistCredit?.artist?.name || album.artist
+      };
+
+      // Create release object matching the expected format
+      const releaseObj = {
+        id: release.id,
+        title: release.title,
+        date: release.date,
+        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
+        albumArt: album.albumArt
+      };
+
+      // Set artist context and fetch release data
+      setCurrentArtist(artist);
+      navigateTo('artist');
+      fetchReleaseData(releaseObj, artist);
+
     } catch (error) {
       console.error('Error opening chart album:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to load album details. Please try again.'
-      });
+      // Fallback: navigate to artist page
+      fetchArtistData(album.artist);
     }
   };
 
