@@ -9745,164 +9745,220 @@ useEffect(() => {
               );
             })(),
 
-            libraryLoading ?
-              // Skeleton loaders while loading
-              React.createElement('div', { className: 'space-y-0' },
-                Array.from({ length: 8 }).map((_, index) =>
-                  React.createElement('div', {
-                    key: `skeleton-${index}`,
-                    className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
-                  },
-                    // Track number skeleton
+            // Tracks tab (existing implementation with filter/sort applied)
+            collectionTab === 'tracks' && (() => {
+              if (libraryLoading) {
+                // Skeleton loaders while loading
+                return React.createElement('div', { className: 'space-y-0' },
+                  Array.from({ length: 8 }).map((_, index) =>
                     React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '32px', flexShrink: 0 }
-                    }),
-                    // Title skeleton
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '280px', flexShrink: 0, animationDelay: '0.1s' }
-                    }),
-                    // Artist skeleton (wider)
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '220px', flexShrink: 0, animationDelay: '0.2s' }
-                    }),
-                    // Album skeleton (narrower)
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '150px', flexShrink: 0, animationDelay: '0.3s' }
-                    }),
-                    // Spacer
-                    React.createElement('div', { className: 'flex-1' }),
-                    // Duration skeleton
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer mr-4',
-                      style: { width: '50px', flexShrink: 0, animationDelay: '0.4s' }
-                    }),
-                    // Resolver icons skeleton
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1',
-                      style: { width: '120px', flexShrink: 0 }
+                      key: `skeleton-${index}`,
+                      className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
                     },
+                      // Track number skeleton
                       React.createElement('div', {
-                        className: 'w-6 h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { animationDelay: '0.5s' }
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                        style: { width: '32px', flexShrink: 0 }
                       }),
+                      // Title skeleton
                       React.createElement('div', {
-                        className: 'w-6 h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { animationDelay: '0.6s' }
-                      })
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                        style: { width: '280px', flexShrink: 0, animationDelay: '0.1s' }
+                      }),
+                      // Artist skeleton (wider)
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                        style: { width: '220px', flexShrink: 0, animationDelay: '0.2s' }
+                      }),
+                      // Album skeleton (narrower)
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                        style: { width: '150px', flexShrink: 0, animationDelay: '0.3s' }
+                      }),
+                      // Spacer
+                      React.createElement('div', { className: 'flex-1' }),
+                      // Duration skeleton
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer mr-4',
+                        style: { width: '50px', flexShrink: 0, animationDelay: '0.4s' }
+                      }),
+                      // Resolver icons skeleton
+                      React.createElement('div', {
+                        className: 'flex items-center gap-1',
+                        style: { width: '120px', flexShrink: 0 }
+                      },
+                        React.createElement('div', {
+                          className: 'w-6 h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                          style: { animationDelay: '0.5s' }
+                        }),
+                        React.createElement('div', {
+                          className: 'w-6 h-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                          style: { animationDelay: '0.6s' }
+                        })
+                      )
                     )
                   )
-                )
-              )
-            : library.length === 0 ?
-              React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                React.createElement('div', { className: 'text-5xl mb-4' }, '📚'),
-                React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Your Collection is Empty'),
-                React.createElement('div', { className: 'text-sm' }, 'Search for music to add tracks!')
-              )
-            :
-            React.createElement('div', { className: 'space-y-0' },
-              library.map((track, index) => {
-                const hasResolved = Object.keys(track.sources || {}).length > 0;
-                const isCurrentTrack = currentTrack?.id === track.id || currentTrack?.filePath === track.filePath;
-                const trackKey = track.filePath || track.id;
-                const isResolving = resolvingLibraryTracks.has(trackKey);
+                );
+              }
 
-                return React.createElement('div', {
-                  key: track.id || track.filePath || index,
-                  className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
-                    isCurrentTrack && isPlaying ? 'bg-purple-50' : ''
-                  }`,
-                  onClick: () => {
-                    const tracksAfter = library.slice(index + 1);
-                    setCurrentQueue(tracksAfter);
-                    handlePlay(track);
-                  },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
-                        type: 'track',
-                        track: track
-                      });
+              const filtered = filterCollectionItems(library, 'tracks');
+              const sorted = sortCollectionItems(filtered, 'tracks');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  ),
+                  React.createElement('div', { className: 'text-sm' }, 'No tracks match your search')
+                );
+              }
+
+              if (sorted.length === 0) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('div', { className: 'text-5xl mb-4' }, '📚'),
+                  React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'Your Collection is Empty'),
+                  React.createElement('div', { className: 'text-sm' }, 'Search for music to add tracks!')
+                );
+              }
+
+              return React.createElement('div', { className: 'space-y-0' },
+                sorted.map((track, index) => {
+                  const hasResolved = Object.keys(track.sources || {}).length > 0;
+                  const isCurrentTrack = currentTrack?.id === track.id || currentTrack?.filePath === track.filePath;
+                  const trackKey = track.filePath || track.id;
+                  const isResolving = resolvingLibraryTracks.has(trackKey);
+
+                  return React.createElement('div', {
+                    key: track.id || track.filePath || index,
+                    className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
+                      isCurrentTrack && isPlaying ? 'bg-purple-50' : ''
+                    }`,
+                    onClick: () => {
+                      const tracksAfter = sorted.slice(index + 1);
+                      setCurrentQueue(tracksAfter);
+                      handlePlay(track);
+                    },
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      if (window.electron?.contextMenu?.showTrackMenu) {
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'track',
+                          track: track
+                        });
+                      }
                     }
-                  }
-                },
-                  // Track number
-                  React.createElement('span', {
-                    className: 'text-sm text-gray-400 flex-shrink-0 text-right',
-                    style: { pointerEvents: 'none', width: '32px' }
-                  }, String(index + 1).padStart(2, '0')),
-
-                  // Track title - fixed width column
-                  React.createElement('span', {
-                    className: `text-sm truncate transition-colors ${isCurrentTrack && isPlaying ? 'text-purple-600 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`,
-                    style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
-                  }, track.title),
-
-                  // Artist name - fixed width column, clickable (wider)
-                  React.createElement('span', {
-                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                    style: { width: '220px', flexShrink: 0 },
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      fetchArtistData(track.artist);
-                    }
-                  }, track.artist || 'Unknown Artist'),
-
-                  // Album name - fixed width column (narrower)
-                  React.createElement('span', {
-                    className: 'text-sm text-gray-500 truncate',
-                    style: { pointerEvents: 'none', width: '150px', flexShrink: 0 }
-                  }, track.album || ''),
-
-                  // Spacer to push duration and resolvers to the right
-                  React.createElement('div', { className: 'flex-1' }),
-
-                  // Duration - right-justified before resolver icons
-                  React.createElement('span', {
-                    className: 'text-sm text-gray-400 text-right tabular-nums mr-4',
-                    style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
-                  }, formatTime(track.duration)),
-
-                  // Resolver icons - fixed width column (last column)
-                  React.createElement('div', {
-                    className: 'flex items-center gap-1 justify-end',
-                    style: { width: '120px', flexShrink: 0, minHeight: '24px' }
                   },
-                    (() => {
-                      const sources = track.sources || {};
-                      const sourceIds = Object.keys(sources);
-                      const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
+                    // Track number
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                      style: { pointerEvents: 'none', width: '32px' }
+                    }, String(index + 1).padStart(2, '0')),
 
-                      if (hasExternalSources) {
-                        // Show all resolver icons (including LO)
-                        return Object.entries(sources)
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
-                            const resolver = allResolvers.find(r => r.id === resolverId);
-                            if (!resolver) return null;
-                            return React.createElement('button', {
-                              key: resolverId,
+                    // Track title - fixed width column
+                    React.createElement('span', {
+                      className: `text-sm truncate transition-colors ${isCurrentTrack && isPlaying ? 'text-purple-600 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`,
+                      style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                    }, track.title),
+
+                    // Artist name - fixed width column, clickable (wider)
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                      style: { width: '220px', flexShrink: 0 },
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        fetchArtistData(track.artist);
+                      }
+                    }, track.artist || 'Unknown Artist'),
+
+                    // Album name - fixed width column (narrower)
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-500 truncate',
+                      style: { pointerEvents: 'none', width: '150px', flexShrink: 0 }
+                    }, track.album || ''),
+
+                    // Spacer to push duration and resolvers to the right
+                    React.createElement('div', { className: 'flex-1' }),
+
+                    // Duration - right-justified before resolver icons
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-400 text-right tabular-nums mr-4',
+                      style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                    }, formatTime(track.duration)),
+
+                    // Resolver icons - fixed width column (last column)
+                    React.createElement('div', {
+                      className: 'flex items-center gap-1 justify-end',
+                      style: { width: '120px', flexShrink: 0, minHeight: '24px' }
+                    },
+                      (() => {
+                        const sources = track.sources || {};
+                        const sourceIds = Object.keys(sources);
+                        const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
+
+                        if (hasExternalSources) {
+                          // Show all resolver icons (including LO)
+                          return Object.entries(sources)
+                            .sort(([aId], [bId]) => {
+                              const aIndex = resolverOrder.indexOf(aId);
+                              const bIndex = resolverOrder.indexOf(bId);
+                              return aIndex - bIndex;
+                            })
+                            .map(([resolverId, source]) => {
+                              const resolver = allResolvers.find(r => r.id === resolverId);
+                              if (!resolver) return null;
+                              return React.createElement('button', {
+                                key: resolverId,
+                                className: 'no-drag',
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  const tracksAfter = sorted.slice(index + 1);
+                                  setCurrentQueue(tracksAfter);
+                                  handlePlay({ ...track, preferredResolver: resolverId });
+                                },
+                                style: {
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '4px',
+                                  backgroundColor: resolver.color,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '10px',
+                                  fontWeight: 'bold',
+                                  color: 'white',
+                                  pointerEvents: 'auto',
+                                  opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
+                                  transition: 'transform 0.1s'
+                                },
+                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              }, (() => {
+                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
+                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
+                              })());
+                            });
+                        } else if (isResolving && track.filePath) {
+                          // Show LO icon + shimmer skeletons while resolving
+                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
+                          return React.createElement('div', { className: 'flex items-center gap-1' },
+                            // LO icon
+                            localFilesResolver && React.createElement('button', {
+                              key: 'localfiles',
                               className: 'no-drag',
                               onClick: (e) => {
                                 e.stopPropagation();
-                                const tracksAfter = library.slice(index + 1);
+                                const tracksAfter = sorted.slice(index + 1);
                                 setCurrentQueue(tracksAfter);
-                                handlePlay({ ...track, preferredResolver: resolverId });
+                                handlePlay({ ...track, preferredResolver: 'localfiles' });
                               },
                               style: {
                                 width: '24px',
                                 height: '24px',
                                 borderRadius: '4px',
-                                backgroundColor: resolver.color,
+                                backgroundColor: localFilesResolver.color,
                                 border: 'none',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -9912,28 +9968,32 @@ useEffect(() => {
                                 fontWeight: 'bold',
                                 color: 'white',
                                 pointerEvents: 'auto',
-                                opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
                                 transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                            }, (() => {
-                              const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                              return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                            })());
-                          });
-                      } else if (isResolving && track.filePath) {
-                        // Show LO icon + shimmer skeletons while resolving
-                        const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                        return React.createElement('div', { className: 'flex items-center gap-1' },
-                          // LO icon
-                          localFilesResolver && React.createElement('button', {
+                              title: 'Play from Local Files'
+                            }, 'LO'),
+                            // Shimmer skeletons
+                            React.createElement('div', {
+                              className: 'w-6 h-6 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              title: 'Resolving...'
+                            }),
+                            React.createElement('div', {
+                              className: 'w-6 h-6 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              style: { animationDelay: '0.1s' }
+                            })
+                          );
+                        } else if (track.filePath) {
+                          // Show just the LO icon for local tracks that finished resolving without finding external sources
+                          const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
+                          if (!localFilesResolver) return null;
+                          return React.createElement('button', {
                             key: 'localfiles',
                             className: 'no-drag',
                             onClick: (e) => {
                               e.stopPropagation();
-                              const tracksAfter = library.slice(index + 1);
+                              const tracksAfter = sorted.slice(index + 1);
                               setCurrentQueue(tracksAfter);
                               handlePlay({ ...track, preferredResolver: 'localfiles' });
                             },
@@ -9956,57 +10016,15 @@ useEffect(() => {
                             onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                             onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                             title: 'Play from Local Files'
-                          }, 'LO'),
-                          // Shimmer skeletons
-                          React.createElement('div', {
-                            className: 'w-6 h-6 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                            title: 'Resolving...'
-                          }),
-                          React.createElement('div', {
-                            className: 'w-6 h-6 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                            style: { animationDelay: '0.1s' }
-                          })
-                        );
-                      } else if (track.filePath) {
-                        // Show just the LO icon for local tracks that finished resolving without finding external sources
-                        const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
-                        if (!localFilesResolver) return null;
-                        return React.createElement('button', {
-                          key: 'localfiles',
-                          className: 'no-drag',
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            const tracksAfter = library.slice(index + 1);
-                            setCurrentQueue(tracksAfter);
-                            handlePlay({ ...track, preferredResolver: 'localfiles' });
-                          },
-                          style: {
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '4px',
-                            backgroundColor: localFilesResolver.color,
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '10px',
-                            fontWeight: 'bold',
-                            color: 'white',
-                            pointerEvents: 'auto',
-                            transition: 'transform 0.1s'
-                          },
-                          onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                          onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                          title: 'Play from Local Files'
-                        }, 'LO');
-                      }
-                      return null;
-                    })()
-                  )
-                );
-              })
-            )
+                          }, 'LO');
+                        }
+                        return null;
+                      })()
+                    )
+                  );
+                })
+              );
+            })()
           )
         ),
 
