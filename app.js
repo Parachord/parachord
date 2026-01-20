@@ -1092,6 +1092,10 @@ const Parachord = () => {
   const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false); // Artist page header collapse state
   const [artistPageTab, setArtistPageTab] = useState('music'); // music | biography | related
+  const [artistSearchOpen, setArtistSearchOpen] = useState(false);
+  const [artistSearch, setArtistSearch] = useState('');
+  const [artistSortDropdownOpen, setArtistSortDropdownOpen] = useState(false);
+  const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
   const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm
   const [loadingBio, setLoadingBio] = useState(false);
@@ -1247,6 +1251,15 @@ const Parachord = () => {
     }
   }, [criticsSortDropdownOpen]);
 
+  // Close artist sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setArtistSortDropdownOpen(false);
+    if (artistSortDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [artistSortDropdownOpen]);
+
 
   // Collection page scroll handler for header collapse
   const handleCollectionScroll = useCallback((e) => {
@@ -1331,6 +1344,15 @@ const Parachord = () => {
       setCriticsHeaderCollapsed(false);
       setCriticsSearchOpen(false);
       setCriticsSearch('');
+    }
+  }, [activeView]);
+
+  // Reset artist page filter bar when leaving artist view
+  useEffect(() => {
+    if (activeView !== 'artist') {
+      setArtistSearchOpen(false);
+      setArtistSearch('');
+      setArtistSortDropdownOpen(false);
     }
   }, [activeView]);
 
@@ -1450,6 +1472,32 @@ const Parachord = () => {
     { value: 'alpha-asc', label: 'A-Z' },
     { value: 'alpha-desc', label: 'Z-A' },
     { value: 'tracks', label: 'Most Tracks' }
+  ];
+
+  // Filter artist releases by search query
+  const filterArtistReleases = useCallback((releases) => {
+    if (!artistSearch.trim()) return releases;
+    const query = artistSearch.toLowerCase();
+    return releases.filter(r => r.title.toLowerCase().includes(query));
+  }, [artistSearch]);
+
+  // Sort artist releases
+  const sortArtistReleases = useCallback((releases) => {
+    const sorted = [...releases];
+    switch (artistSort) {
+      case 'date-desc': return sorted.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      case 'date-asc': return sorted.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      case 'alpha-asc': return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      case 'alpha-desc': return sorted.sort((a, b) => b.title.localeCompare(a.title));
+      default: return sorted;
+    }
+  }, [artistSort]);
+
+  const artistSortOptions = [
+    { value: 'date-desc', label: 'Newest First' },
+    { value: 'date-asc', label: 'Oldest First' },
+    { value: 'alpha-asc', label: 'A-Z' },
+    { value: 'alpha-desc', label: 'Z-A' }
   ];
 
   // Filter and sort charts
@@ -9844,44 +9892,125 @@ useEffect(() => {
           style: {
             flex: 1,
             overflowY: 'scroll',
-            padding: '24px',
             pointerEvents: 'auto'
           },
           onScroll: handleArtistPageScroll
         },
-          // MUSIC TAB - Discography
+          // Sticky filter bar (Music tab only)
           artistPageTab === 'music' && React.createElement('div', {
-            className: 'space-y-6'
+            className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
           },
-            // Release type filters
+            // Release type filter pills
             React.createElement('div', { className: 'flex gap-2' },
               ['all', 'album', 'ep', 'single'].map(type => {
+                const searchFiltered = filterArtistReleases(artistReleases);
                 const count = type === 'all'
-                  ? artistReleases.length
-                  : artistReleases.filter(r => r.releaseType === type).length;
+                  ? searchFiltered.length
+                  : searchFiltered.filter(r => r.releaseType === type).length;
 
                 return React.createElement('button', {
                   key: type,
                   onClick: () => setReleaseTypeFilter(type),
-                  className: `px-4 py-2 rounded-full transition-all no-drag ${
+                  className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
                     releaseTypeFilter === type
                       ? 'bg-purple-600 text-white'
-                      : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`,
                 }, `${type.charAt(0).toUpperCase() + type.slice(1)}${type !== 'all' ? 's' : ''} (${count})`);
               })
             ),
-
-            // Releases count
-            React.createElement('p', { className: 'text-sm text-gray-400' },
-              `${artistReleases.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter).length} releases`
+            // Spacer
+            React.createElement('div', { className: 'flex-1' }),
+            // Sort dropdown
+            React.createElement('div', { className: 'relative mr-3' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setArtistSortDropdownOpen(!artistSortDropdownOpen); },
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              },
+                React.createElement('span', null, artistSortOptions.find(o => o.value === artistSort)?.label || 'Sort'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              // Dropdown menu
+              artistSortDropdownOpen && React.createElement('div', {
+                className: 'absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+              },
+                artistSortOptions.map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setArtistSort(option.value);
+                      setArtistSortDropdownOpen(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      artistSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    artistSort === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
             ),
-
+            // Search toggle/field
+            React.createElement('div', { className: 'flex items-center' },
+              artistSearchOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: artistSearch,
+                    onChange: (e) => setArtistSearch(e.target.value),
+                    onBlur: () => {
+                      if (!artistSearch.trim()) {
+                        setArtistSearchOpen(false);
+                      }
+                    },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '150px' }
+                  }),
+                  artistSearch && React.createElement('button', {
+                    onClick: () => {
+                      setArtistSearch('');
+                      setArtistSearchOpen(false);
+                    },
+                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setArtistSearchOpen(true),
+                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
+            )
+          ),
+          // MUSIC TAB - Discography
+          artistPageTab === 'music' && React.createElement('div', {
+            className: 'space-y-6 p-6'
+          },
             // Discography grid
             React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
-              artistReleases.map(release =>
+              sortArtistReleases(filterArtistReleases(artistReleases)).map(release =>
                 React.createElement(ReleaseCard, {
                   key: release.id,
                   release: release,
@@ -9942,21 +10071,30 @@ useEffect(() => {
                       }
                     }
                   },
-                  isVisible: releaseTypeFilter === 'all' || release.releaseType === releaseTypeFilter
+                  isVisible: (releaseTypeFilter === 'all' || release.releaseType === releaseTypeFilter) &&
+                    (!artistSearch.trim() || release.title.toLowerCase().includes(artistSearch.toLowerCase()))
                 })
               )
             ),
 
             // Empty state
-            artistReleases.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter).length === 0 &&
-              React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                `No ${releaseTypeFilter === 'all' ? '' : releaseTypeFilter + ' '}releases found`
-              )
+            (() => {
+              const filtered = sortArtistReleases(filterArtistReleases(artistReleases));
+              const typeFiltered = filtered.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter);
+              if (typeFiltered.length === 0) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  artistSearch.trim()
+                    ? `No releases matching "${artistSearch}"`
+                    : `No ${releaseTypeFilter === 'all' ? '' : releaseTypeFilter + ' '}releases found`
+                );
+              }
+              return null;
+            })()
           ),
 
           // BIOGRAPHY TAB
           artistPageTab === 'biography' && React.createElement('div', {
-            className: 'max-w-3xl mx-auto'
+            className: 'max-w-3xl mx-auto p-6'
           },
             // Loading state
             loadingBio && React.createElement('div', { className: 'flex items-center justify-center py-12' },
@@ -9983,7 +10121,7 @@ useEffect(() => {
           ),
 
           // RELATED ARTISTS TAB
-          artistPageTab === 'related' && React.createElement('div', null,
+          artistPageTab === 'related' && React.createElement('div', { className: 'p-6' },
             // Loading state
             loadingRelated && React.createElement('div', { className: 'flex items-center justify-center py-12' },
               React.createElement('div', {
