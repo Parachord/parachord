@@ -1261,6 +1261,9 @@ const Parachord = () => {
     setCollectionHeaderCollapsed(prev => prev !== shouldCollapse ? shouldCollapse : prev);
   }, []);
 
+  // Track if we're opening a release (to prevent header reset during artist change)
+  const openingReleaseRef = useRef(false);
+
   // Playlists page scroll handler for header collapse
   const playlistsCollapseLockedRef = useRef(false);
   const handlePlaylistsScroll = useCallback((e) => {
@@ -1714,9 +1717,14 @@ const Parachord = () => {
     }
   }, [searchDetailCategory]);
 
-  // Reset header collapse and tab when navigating away from artist page or to new artist
+  // Reset header collapse and tab when navigating to a new artist (but not when opening a release)
   useEffect(() => {
-    setIsHeaderCollapsed(false);
+    // Don't reset header if we're opening a release - it should stay collapsed
+    if (openingReleaseRef.current) {
+      openingReleaseRef.current = false;
+    } else {
+      setIsHeaderCollapsed(false);
+    }
     setArtistPageTab('music');
     setArtistBio(null);
     setRelatedArtists([]);
@@ -4737,6 +4745,8 @@ const Parachord = () => {
   const fetchReleaseData = async (release, artist) => {
     setLoadingRelease(true);
     setCurrentRelease(null);
+    // Collapse header smoothly when opening a release
+    setIsHeaderCollapsed(true);
 
     // Helper to fetch with retry on rate limiting
     const fetchWithRetry = async (url, options, maxRetries = 3) => {
@@ -6623,6 +6633,8 @@ ${tracks}
       };
 
       // Set artist context and fetch release data
+      // Mark that we're opening a release so header stays collapsed
+      openingReleaseRef.current = true;
       setCurrentArtist(artist);
       navigateTo('artist');
       fetchReleaseData(releaseObj, artist);
@@ -6847,6 +6859,8 @@ ${tracks}
       };
 
       // Set artist context and fetch release data
+      // Mark that we're opening a release so header stays collapsed
+      openingReleaseRef.current = true;
       setCurrentArtist(artist);
       navigateTo('artist');
       fetchReleaseData(releaseObj, artist);
