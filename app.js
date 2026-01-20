@@ -6638,6 +6638,42 @@ useEffect(() => {
                         `${artist['recording-count'] || '-'} songs`
                       )
                     )
+                  ),
+                  // Tracks list
+                  searchDetailCategory === 'tracks' && searchResults.tracks.map((track, index) =>
+                    React.createElement('div', {
+                      key: track.id,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === track.id ? 'bg-gray-100' : ''}`,
+                      onMouseEnter: () => setSearchPreviewItem(track),
+                      onMouseLeave: () => setSearchPreviewItem(searchResults.tracks[0] || null),
+                      onClick: () => handlePlay(track)
+                    },
+                      // Row number
+                      React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
+                      // Track title
+                      React.createElement('span', { className: 'flex-1 font-medium text-gray-900 truncate' }, track.title),
+                      // Artist
+                      React.createElement('span', { className: 'w-40 text-sm text-gray-600 truncate' }, track.artist),
+                      // Album
+                      React.createElement('span', { className: 'w-40 text-sm text-gray-500 truncate' }, track.album || '-'),
+                      // Resolver badges
+                      React.createElement('div', { className: 'w-32 flex gap-1 justify-end' },
+                        track.sources && Object.keys(track.sources).length > 0 ?
+                          Object.keys(track.sources).map(source => {
+                            const colors = {
+                              spotify: 'bg-green-100 text-green-700',
+                              youtube: 'bg-red-100 text-red-700',
+                              bandcamp: 'bg-cyan-100 text-cyan-700',
+                              qobuz: 'bg-blue-100 text-blue-700'
+                            };
+                            return React.createElement('span', {
+                              key: source,
+                              className: `text-xs px-1.5 py-0.5 rounded ${colors[source] || 'bg-gray-100 text-gray-600'}`
+                            }, source);
+                          })
+                        : null
+                      )
+                    )
                   )
                 )
               )
