@@ -6496,8 +6496,55 @@ useEffect(() => {
 
       // Content area
       React.createElement('div', { className: 'p-6' },
-        // Large search input
-        React.createElement('div', { className: 'pb-6' },
+        searchDetailCategory ?
+          // Detail view - two-pane layout with preview and results list
+          React.createElement('div', { className: 'flex flex-col h-full' },
+            // Header with search input, tabs, and close button
+            React.createElement('div', { className: 'flex items-center gap-4 mb-6' },
+              // Search input
+              React.createElement('div', { className: 'flex-1' },
+                React.createElement('input', {
+                  type: 'text',
+                  value: searchQuery,
+                  onChange: (e) => handleSearchInput(e.target.value),
+                  placeholder: 'Search...',
+                  className: 'w-full text-2xl font-light text-gray-900 bg-transparent border-none outline-none placeholder-gray-300'
+                })
+              ),
+              // Tabs placeholder
+              React.createElement('div', { className: 'flex gap-2 text-sm text-gray-400' },
+                'Tabs placeholder'
+              ),
+              // Close button
+              React.createElement('button', {
+                onClick: () => {
+                  setSearchDetailCategory(null);
+                  setSearchPreviewItem(null);
+                },
+                className: 'p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+              },
+                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                )
+              )
+            ),
+            // Two-pane layout
+            React.createElement('div', { className: 'flex gap-6 flex-1' },
+              // Left: Preview pane (placeholder)
+              React.createElement('div', { className: 'w-80 flex-shrink-0 bg-white rounded-lg border border-gray-200 p-6' },
+                React.createElement('div', { className: 'text-gray-400 text-center' }, 'Preview Pane')
+              ),
+              // Right: Results list (placeholder)
+              React.createElement('div', { className: 'flex-1 bg-white rounded-lg border border-gray-200' },
+                React.createElement('div', { className: 'p-6 text-gray-400 text-center' }, `Showing ${searchDetailCategory} results`)
+              )
+            )
+          )
+        :
+        // Main view - existing horizontal scroll layout
+        React.createElement('div', null,
+          // Large search input
+          React.createElement('div', { className: 'pb-6' },
           React.createElement('input', {
             ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
             type: 'text',
@@ -6721,6 +6768,7 @@ useEffect(() => {
               )
             )
           )
+        )
         )
       )
     ) :
