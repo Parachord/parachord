@@ -432,8 +432,12 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
         className: 'w-full h-full object-cover'
       }),
       !imageLoading && !imageUrl && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center text-gray-300 text-2xl'
-      }, '👤')
+        className: 'w-full h-full flex items-center justify-center text-gray-300'
+      },
+        React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+        )
+      )
     ),
     // Artist name
     React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name),
@@ -6694,7 +6698,11 @@ useEffect(() => {
                             } : {}
                           })
                         :
-                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-400 text-4xl' }, '🎤')
+                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
+                            React.createElement('svg', { className: 'w-20 h-20', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                            )
+                          )
                       ),
                       React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-3' }, searchPreviewItem.name),
                       // Artist bio snippet (from Last.fm) - more lines visible
@@ -6709,7 +6717,13 @@ useEffect(() => {
                   : searchDetailCategory === 'tracks' ?
                     // Track preview - show album info
                     React.createElement('div', null,
-                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-gray-400 text-4xl' }, '💿'),
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-gray-300' },
+                        React.createElement('svg', { className: 'w-20 h-20', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                        )
+                      ),
                       React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.album || 'Unknown Album'),
                       React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem.artist)
                     )
@@ -6724,7 +6738,13 @@ useEffect(() => {
                             className: 'w-full h-full object-cover'
                           })
                         :
-                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-400 text-4xl' }, '💿')
+                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
+                            React.createElement('svg', { className: 'w-20 h-20', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                              React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                              React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                              React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                            )
+                          )
                       ),
                       React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.title),
                       React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem['artist-credit']?.[0]?.name || 'Unknown Artist'),
@@ -7048,7 +7068,11 @@ useEffect(() => {
                         className: 'w-full h-full object-cover'
                       })
                     :
-                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300 text-2xl' }, '♪')
+                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
+                        React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        )
+                      )
                   ),
                   // Track info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
@@ -7111,7 +7135,13 @@ useEffect(() => {
                         className: 'w-full h-full object-cover'
                       })
                     :
-                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300 text-3xl' }, '💿')
+                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
+                        React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                        )
+                      )
                   ),
                   // Album info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, album.title),
@@ -8461,8 +8491,14 @@ useEffect(() => {
                       })
                     :
                       React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-white/80 text-4xl'
-                      }, '💿'),
+                        className: 'w-full h-full flex items-center justify-center text-white/60'
+                      },
+                        React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                          React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                        )
+                      ),
                     // Rank badge
                     React.createElement('div', {
                       className: 'absolute top-2 right-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
@@ -8643,8 +8679,14 @@ useEffect(() => {
                     })
                   :
                     React.createElement('div', {
-                      className: 'w-full h-full flex items-center justify-center text-white/80 text-4xl'
-                    }, '💿'),
+                      className: 'w-full h-full flex items-center justify-center text-white/60'
+                    },
+                      React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                      )
+                    ),
                   // Metacritic score badge
                   album.score && React.createElement('div', {
                     className: `absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold ${
