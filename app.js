@@ -374,7 +374,19 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick }) => {
 
   return React.createElement('button', {
     onClick: onClick,
-    className: 'flex-shrink-0 w-28 text-left group'
+    className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'artist',
+        artist: {
+          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          name: artist.name,
+          image: null
+        }
+      }));
+    }
   },
     // Artist image square
     React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden' },
@@ -8587,10 +8599,22 @@ useEffect(() => {
                   searchDetailCategory === 'artists' && searchResults.artists.map((artist, index) =>
                     React.createElement('div', {
                       key: artist.id,
-                      className: `group flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === artist.id ? 'bg-gray-100' : ''}`,
+                      className: `group flex items-center px-6 py-3 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors ${searchPreviewItem?.id === artist.id ? 'bg-gray-100' : ''}`,
                       onMouseEnter: () => setSearchPreviewItem(artist),
                       onMouseLeave: () => setSearchPreviewItem(searchResults.artists[0] || null),
-                      onClick: () => fetchArtistData(artist.name)
+                      onClick: () => fetchArtistData(artist.name),
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'artist',
+                          artist: {
+                            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            name: artist.name,
+                            image: null
+                          }
+                        }));
+                      }
                     },
                       // Row number
                       React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
@@ -8640,10 +8664,26 @@ useEffect(() => {
                   searchDetailCategory === 'tracks' && searchResults.tracks.map((track, index) =>
                     React.createElement('div', {
                       key: track.id,
-                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === track.id ? 'bg-gray-100' : ''}`,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors ${searchPreviewItem?.id === track.id ? 'bg-gray-100' : ''}`,
                       onMouseEnter: () => setSearchPreviewItem(track),
                       onMouseLeave: () => setSearchPreviewItem(searchResults.tracks[0] || null),
-                      onClick: () => handlePlay(track)
+                      onClick: () => handlePlay(track),
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'track',
+                          track: {
+                            id: track.id,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.album,
+                            duration: track.duration,
+                            albumArt: track.albumArt,
+                            sources: track.sources || {}
+                          }
+                        }));
+                      }
                     },
                       // Row number
                       React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
@@ -8676,10 +8716,24 @@ useEffect(() => {
                   searchDetailCategory === 'albums' && searchResults.albums.map((album, index) =>
                     React.createElement('div', {
                       key: album.id,
-                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${searchPreviewItem?.id === album.id ? 'bg-gray-100' : ''}`,
+                      className: `flex items-center px-6 py-3 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors ${searchPreviewItem?.id === album.id ? 'bg-gray-100' : ''}`,
                       onMouseEnter: () => setSearchPreviewItem(album),
                       onMouseLeave: () => setSearchPreviewItem(searchResults.albums[0] || null),
-                      onClick: () => handleAlbumClick(album)
+                      onClick: () => handleAlbumClick(album),
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'album',
+                          album: {
+                            id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            title: album.title,
+                            artist: album['artist-credit']?.[0]?.name || 'Unknown',
+                            year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                            art: null
+                          }
+                        }));
+                      }
                     },
                       // Row number
                       React.createElement('span', { className: 'w-10 text-sm text-gray-400' }, String(index + 1).padStart(2, '0')),
@@ -8861,7 +8915,23 @@ useEffect(() => {
                 React.createElement('button', {
                   key: track.id,
                   onClick: () => handlePlay(track),
-                  className: 'flex-shrink-0 w-28 text-left group'
+                  className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
+                  draggable: true,
+                  onDragStart: (e) => {
+                    e.dataTransfer.effectAllowed = 'copy';
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'track',
+                      track: {
+                        id: track.id,
+                        title: track.title,
+                        artist: track.artist,
+                        album: track.album,
+                        duration: track.duration,
+                        albumArt: track.albumArt,
+                        sources: track.sources || {}
+                      }
+                    }));
+                  }
                 },
                   // Album art square
                   React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden flex items-center justify-center' },
@@ -8931,7 +9001,21 @@ useEffect(() => {
                 React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
-                  className: 'flex-shrink-0 w-44 text-left group'
+                  className: 'flex-shrink-0 w-44 text-left group cursor-grab active:cursor-grabbing',
+                  draggable: true,
+                  onDragStart: (e) => {
+                    e.dataTransfer.effectAllowed = 'copy';
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'album',
+                      album: {
+                        id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                        title: album.title,
+                        artist: album['artist-credit']?.[0]?.name || 'Unknown',
+                        year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
+                        art: null
+                      }
+                    }));
+                  }
                 },
                   // Album art square
                   React.createElement('div', { className: 'w-44 h-44 bg-gray-100 mb-2 relative overflow-hidden' },
