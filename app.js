@@ -124,16 +124,17 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
   },
     // Album art or play button
     React.createElement('div', { className: 'relative w-12 h-12 flex-shrink-0' },
-      track.albumArt ?
-        React.createElement('img', {
+      React.createElement('div', {
+        className: 'w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded flex items-center justify-center overflow-hidden'
+      },
+        track.albumArt && React.createElement('img', {
           src: track.albumArt,
           alt: track.album,
-          className: 'w-12 h-12 rounded object-cover'
-        })
-      :
-        React.createElement('div', {
-          className: 'w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded flex items-center justify-center'
-        }, React.createElement(Music)),
+          className: 'absolute inset-0 w-full h-full object-cover',
+          onError: (e) => { e.target.style.display = 'none'; }
+        }),
+        React.createElement(Music)
+      ),
       React.createElement('button', {
         onClick: () => handlePlay(track),
         className: 'absolute inset-0 flex items-center justify-center rounded bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity'
@@ -461,7 +462,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         width: '100%',
         aspectRatio: '1',
         borderRadius: '8px',
-        background: release.albumArt ? 'none' : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+        background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -471,7 +472,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         position: 'relative'
       }
     },
-      // Album art image (if loaded)
+      // Album art image (if loaded) - onError hides broken image to show gradient behind
       release.albumArt && React.createElement('img', {
         src: release.albumArt,
         alt: release.title,
@@ -479,12 +480,19 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          position: 'absolute',
+          top: 0,
+          left: 0
+        },
+        onError: (e) => {
+          // Hide broken image to reveal gradient placeholder behind
+          e.target.style.display = 'none';
         }
       }),
-      
-      // Music icon placeholder (only when no album art)
-      !release.albumArt && React.createElement('svg', {
+
+      // Music icon placeholder (always rendered, behind the image)
+      React.createElement('svg', {
         style: { 
           width: '48px', 
           height: '48px', 
@@ -586,25 +594,26 @@ const ReleasePage = ({
       className: 'flex-shrink-0 pr-8',
       style: { width: '240px' }
     },
-      // Album art
-      release.albumArt ?
-        React.createElement('img', {
+      // Album art with fallback
+      React.createElement('div', {
+        className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg relative overflow-hidden'
+      },
+        // Image (absolute positioned, hides on error)
+        release.albumArt && React.createElement('img', {
           src: release.albumArt,
           alt: release.title,
-          className: 'w-48 h-48 rounded object-cover shadow-lg'
-        })
-      :
-        React.createElement('div', {
-          className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg'
+          className: 'absolute inset-0 w-full h-full object-cover',
+          onError: (e) => { e.target.style.display = 'none'; }
+        }),
+        // Placeholder icon (always behind)
+        React.createElement('svg', {
+          className: 'w-16 h-16 text-white/50',
+          fill: 'none',
+          viewBox: '0 0 24 24',
+          stroke: 'currentColor'
         },
-          React.createElement('svg', {
-            className: 'w-16 h-16 text-white/50',
-            fill: 'none',
-            viewBox: '0 0 24 24',
-            stroke: 'currentColor'
-          },
-            React.createElement('path', {
-              strokeLinecap: 'round',
+          React.createElement('path', {
+            strokeLinecap: 'round',
               strokeLinejoin: 'round',
               strokeWidth: 2,
               d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
@@ -7768,21 +7777,21 @@ useEffect(() => {
                   : searchDetailCategory === 'albums' ?
                     // Album preview
                     React.createElement('div', null,
-                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 overflow-hidden' },
-                        searchPreviewItem.albumArt ?
-                          React.createElement('img', {
-                            src: searchPreviewItem.albumArt,
-                            alt: searchPreviewItem.title,
-                            className: 'w-full h-full object-cover'
-                          })
-                        :
-                          React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
-                            React.createElement('svg', { className: 'w-20 h-20', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                              React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                              React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                              React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                            )
+                      React.createElement('div', { className: 'w-full aspect-square bg-gray-200 rounded-lg mb-4 overflow-hidden relative' },
+                        // Placeholder always rendered behind
+                        React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-gray-300' },
+                          React.createElement('svg', { className: 'w-20 h-20', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                            React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                            React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                            React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                           )
+                        ),
+                        searchPreviewItem.albumArt && React.createElement('img', {
+                          src: searchPreviewItem.albumArt,
+                          alt: searchPreviewItem.title,
+                          className: 'absolute inset-0 w-full h-full object-cover',
+                          onError: (e) => { e.target.style.display = 'none'; }
+                        })
                       ),
                       React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-1' }, searchPreviewItem.title),
                       React.createElement('p', { className: 'text-sm text-gray-600' }, searchPreviewItem['artist-credit']?.[0]?.name || 'Unknown Artist'),
@@ -8108,19 +8117,16 @@ useEffect(() => {
                   className: 'flex-shrink-0 w-28 text-left group'
                 },
                   // Album art square
-                  React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden' },
-                    track.albumArt ?
-                      React.createElement('img', {
-                        src: track.albumArt,
-                        alt: track.album,
-                        className: 'w-full h-full object-cover'
-                      })
-                    :
-                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
-                        React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                        )
-                      )
+                  React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden flex items-center justify-center' },
+                    track.albumArt && React.createElement('img', {
+                      src: track.albumArt,
+                      alt: track.album,
+                      className: 'absolute inset-0 w-full h-full object-cover',
+                      onError: (e) => { e.target.style.display = 'none'; }
+                    }),
+                    React.createElement('svg', { className: 'w-10 h-10 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                    )
                   ),
                   // Track info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
@@ -8182,20 +8188,20 @@ useEffect(() => {
                 },
                   // Album art square
                   React.createElement('div', { className: 'w-44 h-44 bg-gray-100 mb-2 relative overflow-hidden' },
-                    album.albumArt ?
-                      React.createElement('img', {
-                        src: album.albumArt,
-                        alt: album.title,
-                        className: 'w-full h-full object-cover'
-                      })
-                    :
-                      React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-gray-300' },
-                        React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                          React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                        )
+                    // Placeholder always rendered behind
+                    React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-gray-300' },
+                      React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                       )
+                    ),
+                    album.albumArt && React.createElement('img', {
+                      src: album.albumArt,
+                      alt: album.title,
+                      className: 'absolute inset-0 w-full h-full object-cover',
+                      onError: (e) => { e.target.style.display = 'none'; }
+                    })
                   ),
                   // Album info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, album.title),
@@ -9842,22 +9848,22 @@ useEffect(() => {
                   React.createElement('div', {
                     className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
                   },
-                    album.albumArt ?
-                      React.createElement('img', {
-                        src: album.albumArt,
-                        alt: album.title,
-                        className: 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
-                      })
-                    :
-                      React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-white/60'
-                      },
-                        React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                          React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                        )
-                      ),
+                    // Placeholder always rendered behind
+                    React.createElement('div', {
+                      className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                    },
+                      React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                        React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                      )
+                    ),
+                    album.albumArt && React.createElement('img', {
+                      src: album.albumArt,
+                      alt: album.title,
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                      onError: (e) => { e.target.style.display = 'none'; }
+                    }),
                     // Rank badge
                     React.createElement('div', {
                       className: 'absolute top-2 right-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
@@ -10037,22 +10043,22 @@ useEffect(() => {
                 React.createElement('div', {
                   className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
                 },
-                  album.albumArt ?
-                    React.createElement('img', {
-                      src: album.albumArt,
-                      alt: album.title,
-                      className: 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
-                    })
-                  :
-                    React.createElement('div', {
-                      className: 'w-full h-full flex items-center justify-center text-white/60'
-                    },
-                      React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                        React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                        React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
-                      )
-                    ),
+                  // Placeholder always rendered behind
+                  React.createElement('div', {
+                    className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                  },
+                    React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                      React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                      React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                      React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
+                    )
+                  ),
+                  album.albumArt && React.createElement('img', {
+                    src: album.albumArt,
+                    alt: album.title,
+                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                    onError: (e) => { e.target.style.display = 'none'; }
+                  }),
                   // Metacritic score badge
                   album.score && React.createElement('div', {
                     className: `absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold ${
@@ -10505,16 +10511,17 @@ useEffect(() => {
               className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
               title: currentTrack.album ? `Open "${currentTrack.album}"` : 'Album'
             },
-              currentTrack.albumArt ?
-                React.createElement('img', {
+              React.createElement('div', {
+                className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center overflow-hidden relative'
+              },
+                currentTrack.albumArt && React.createElement('img', {
                   src: currentTrack.albumArt,
                   alt: currentTrack.album,
-                  className: 'w-12 h-12 rounded object-cover'
-                })
-              :
-                React.createElement('div', {
-                  className: 'w-12 h-12 bg-gray-700 rounded flex items-center justify-center'
-                }, React.createElement(Music, { size: 20, className: 'text-gray-500' }))
+                  className: 'absolute inset-0 w-full h-full object-cover',
+                  onError: (e) => { e.target.style.display = 'none'; }
+                }),
+                React.createElement(Music, { size: 20, className: 'text-gray-500' })
+              )
             ),
             React.createElement('div', { key: 'track-info', className: 'min-w-0 text-center' },
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
@@ -11057,15 +11064,15 @@ useEffect(() => {
           },
             // Album art thumbnail (gray placeholder or actual art)
             React.createElement('div', {
-              className: 'w-12 h-12 rounded bg-gray-300 flex-shrink-0 flex items-center justify-center overflow-hidden'
+              className: 'w-12 h-12 rounded bg-gray-300 flex-shrink-0 flex items-center justify-center overflow-hidden relative'
             },
-              addToPlaylistPanel.tracks[0]?.albumArt ?
-                React.createElement('img', {
-                  src: addToPlaylistPanel.tracks[0].albumArt,
-                  className: 'w-full h-full object-cover'
-                })
-              :
-                React.createElement(Music, { size: 20, className: 'text-gray-400' })
+              // Placeholder always rendered behind
+              React.createElement(Music, { size: 20, className: 'text-gray-400' }),
+              addToPlaylistPanel.tracks[0]?.albumArt && React.createElement('img', {
+                src: addToPlaylistPanel.tracks[0].albumArt,
+                className: 'absolute inset-0 w-full h-full object-cover',
+                onError: (e) => { e.target.style.display = 'none'; }
+              })
             ),
             // Track/source info
             React.createElement('div', {
