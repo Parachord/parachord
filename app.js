@@ -1733,6 +1733,21 @@ const Parachord = () => {
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
+  // Sync loaded resolvers with resolverOrder - add any new resolvers not yet in the order
+  useEffect(() => {
+    if (loadedResolvers.length === 0) return;
+
+    const loadedIds = loadedResolvers.map(r => r.id);
+    const missingIds = loadedIds.filter(id => !resolverOrder.includes(id));
+
+    if (missingIds.length > 0) {
+      console.log('📦 Adding new resolvers to order:', missingIds);
+      setResolverOrder(prev => [...prev, ...missingIds]);
+      // Also enable new resolvers by default
+      setActiveResolvers(prev => [...prev, ...missingIds.filter(id => !prev.includes(id))]);
+    }
+  }, [loadedResolvers]);
+
   // Get resolvers in priority order
   const resolvers = resolverOrder
     .map(id => allResolvers.find(r => r.id === id))
