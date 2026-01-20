@@ -917,6 +917,12 @@ const Parachord = () => {
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
 
+  // Local Files state
+  const [localFilesStats, setLocalFilesStats] = useState({ totalTracks: 0, totalFolders: 0, lastScan: null });
+  const [watchFolders, setWatchFolders] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
+
   // Add to Playlist panel state
   const [addToPlaylistPanel, setAddToPlaylistPanel] = useState({
     open: false,
@@ -1015,6 +1021,32 @@ const Parachord = () => {
     setArtistBio(null);
     setRelatedArtists([]);
   }, [currentArtist]);
+
+  // Load local files data when resolver modal is opened
+  useEffect(() => {
+    if (selectedResolver?.id === 'localfiles' && window.electron?.localFiles) {
+      window.electron.localFiles.getStats().then(setLocalFilesStats);
+      window.electron.localFiles.getWatchFolders().then(setWatchFolders);
+    }
+  }, [selectedResolver]);
+
+  // Listen for local files scan progress and library changes
+  useEffect(() => {
+    if (window.electron?.localFiles?.onScanProgress) {
+      window.electron.localFiles.onScanProgress((data) => {
+        setScanProgress(data);
+      });
+    }
+    if (window.electron?.localFiles?.onLibraryChanged) {
+      window.electron.localFiles.onLibraryChanged((changes) => {
+        // Refresh stats when library changes
+        if (window.electron?.localFiles) {
+          window.electron.localFiles.getStats().then(setLocalFilesStats);
+          window.electron.localFiles.getWatchFolders().then(setWatchFolders);
+        }
+      });
+    }
+  }, []);
 
   // URL drag & drop helpers
   const isValidUrl = (string) => {
@@ -1854,6 +1886,56 @@ const Parachord = () => {
 
     return () => clearTimeout(timeoutId);
   }, [activeResolvers, resolverOrder]);
+
+  // Local Files handlers
+  const handleAddWatchFolder = async () => {
+    if (!window.electron?.localFiles) return;
+
+    setIsScanning(true);
+    try {
+      const result = await window.electron.localFiles.addWatchFolder();
+      if (result?.success) {
+        setWatchFolders(await window.electron.localFiles.getWatchFolders());
+        setLocalFilesStats(await window.electron.localFiles.getStats());
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleRemoveWatchFolder = async (folderPath) => {
+    if (!window.electron?.localFiles) return;
+
+    await window.electron.localFiles.removeWatchFolder(folderPath);
+    setWatchFolders(await window.electron.localFiles.getWatchFolders());
+    setLocalFilesStats(await window.electron.localFiles.getStats());
+  };
+
+  const handleRescanFolder = async (folderPath) => {
+    if (!window.electron?.localFiles) return;
+
+    setIsScanning(true);
+    try {
+      await window.electron.localFiles.rescanFolder(folderPath);
+      setWatchFolders(await window.electron.localFiles.getWatchFolders());
+      setLocalFilesStats(await window.electron.localFiles.getStats());
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleRescanAll = async () => {
+    if (!window.electron?.localFiles) return;
+
+    setIsScanning(true);
+    try {
+      await window.electron.localFiles.rescanAll();
+      setWatchFolders(await window.electron.localFiles.getWatchFolders());
+      setLocalFilesStats(await window.electron.localFiles.getStats());
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   // Fetch playlist covers when viewing playlists page
   useEffect(() => {
@@ -9650,6 +9732,99 @@ useEffect(() => {
               React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
                 'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
               )
+            )
+          ),
+
+          // Local Files settings section
+          selectedResolver.id === 'localfiles' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('h3', { className: 'font-medium text-gray-900 mb-3' }, 'Watch Folders'),
+            React.createElement('p', { className: 'text-xs text-gray-500 mb-4' },
+              'Add folders containing your music files. Parachord will automatically index and watch them for changes.'
+            ),
+
+            // Watch folders list
+            React.createElement('div', { className: 'space-y-2 mb-4' },
+              watchFolders.length === 0
+                ? React.createElement('p', { className: 'text-sm text-gray-400 italic' }, 'No watch folders configured')
+                : watchFolders.map(folder =>
+                    React.createElement('div', {
+                      key: folder.path,
+                      className: 'flex items-center justify-between p-3 bg-gray-50 rounded-lg'
+                    },
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-sm font-medium text-gray-900 truncate' }, folder.path),
+                        React.createElement('p', { className: 'text-xs text-gray-500' },
+                          `${folder.track_count || 0} tracks`
+                        )
+                      ),
+                      React.createElement('div', { className: 'flex items-center gap-2 ml-4' },
+                        React.createElement('button', {
+                          onClick: () => handleRescanFolder(folder.path),
+                          disabled: isScanning,
+                          className: 'p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors disabled:opacity-50',
+                          title: 'Rescan folder'
+                        }, '\u21BB'),
+                        React.createElement('button', {
+                          onClick: () => handleRemoveWatchFolder(folder.path),
+                          className: 'p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors',
+                          title: 'Remove folder'
+                        }, '\u2715')
+                      )
+                    )
+                  )
+            ),
+
+            // Add folder button
+            React.createElement('button', {
+              onClick: handleAddWatchFolder,
+              disabled: isScanning,
+              className: 'w-full px-4 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2'
+            },
+              React.createElement('span', null, '+'),
+              'Add Watch Folder'
+            ),
+
+            // Scan progress
+            isScanning && React.createElement('div', { className: 'mt-4' },
+              React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
+                React.createElement('div', { className: 'animate-spin w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full' }),
+                React.createElement('span', { className: 'text-sm text-gray-600' }, 'Scanning...')
+              ),
+              React.createElement('div', { className: 'w-full bg-gray-200 rounded-full h-2' },
+                React.createElement('div', {
+                  className: 'bg-purple-600 h-2 rounded-full transition-all',
+                  style: { width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%` }
+                })
+              ),
+              React.createElement('p', { className: 'text-xs text-gray-500 mt-1 truncate' },
+                scanProgress.file || 'Preparing...'
+              )
+            ),
+
+            // Stats
+            React.createElement('div', { className: 'mt-6 pt-4 border-t border-gray-200' },
+              React.createElement('h4', { className: 'text-sm font-medium text-gray-900 mb-2' }, 'Library Stats'),
+              React.createElement('div', { className: 'grid grid-cols-2 gap-4 text-sm' },
+                React.createElement('div', null,
+                  React.createElement('p', { className: 'text-gray-500' }, 'Total Tracks'),
+                  React.createElement('p', { className: 'font-medium text-gray-900' }, localFilesStats.totalTracks.toLocaleString())
+                ),
+                React.createElement('div', null,
+                  React.createElement('p', { className: 'text-gray-500' }, 'Last Scan'),
+                  React.createElement('p', { className: 'font-medium text-gray-900' },
+                    localFilesStats.lastScan
+                      ? new Date(localFilesStats.lastScan).toLocaleDateString()
+                      : 'Never'
+                  )
+                )
+              ),
+              React.createElement('button', {
+                onClick: handleRescanAll,
+                disabled: isScanning || watchFolders.length === 0,
+                className: 'mt-4 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+              }, 'Rescan All Folders')
             )
           )
         ),
