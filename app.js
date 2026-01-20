@@ -6220,18 +6220,19 @@ useEffect(() => {
               ),
               'Pop of the Tops'
             ),
-            React.createElement('button', {
-              onClick: () => navigateTo('new-releases'),
-              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-                activeView === 'new-releases' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
-              }`
-            },
-              // Sparkles icon for New Releases
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
-              ),
-              'New Releases'
-            ),
+            // TODO: New Releases - commented out for now, may come back to it later
+            // React.createElement('button', {
+            //   onClick: () => navigateTo('new-releases'),
+            //   className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+            //     activeView === 'new-releases' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
+            //   }`
+            // },
+            //   // Sparkles icon for New Releases
+            //   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+            //     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+            //   ),
+            //   'New Releases'
+            // ),
             React.createElement('button', {
               onClick: () => {
                 navigateTo('critics-picks');
