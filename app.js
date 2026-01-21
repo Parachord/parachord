@@ -2178,11 +2178,31 @@ const Parachord = () => {
 
   // Helper to determine resolver ID from track properties
   const determineResolverIdFromTrack = (track) => {
+    if (!track) return null;
     if (track.spotifyUri || track.spotifyId) return 'spotify';
     if (track.bandcampUrl) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId) return 'youtube';
     if (track.qobuzId) return 'qobuz';
+    if (track.filePath || track.fileUrl) return 'localfiles';
     return null;
+  };
+
+  // Set Spotify playback volume via API
+  const setSpotifyVolume = async (volumePercent) => {
+    if (!spotifyTokenRef.current) return;
+    try {
+      const response = await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round(volumePercent)}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${spotifyTokenRef.current}`
+        }
+      });
+      if (!response.ok && response.status !== 204) {
+        console.error('Failed to set Spotify volume:', response.status);
+      }
+    } catch (error) {
+      console.error('Error setting Spotify volume:', error);
+    }
   };
 
   // Cache for album art URLs (releaseId -> { url, timestamp })
@@ -14399,28 +14419,42 @@ useEffect(() => {
               React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
             )
           ),
-          // Volume
-          React.createElement('div', { className: 'flex items-center gap-1' },
-            React.createElement('span', { className: 'text-gray-400' },
-              React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
-                React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
-              )
-            ),
-            React.createElement('input', {
-              type: 'range',
-              min: '0',
-              max: '100',
-              value: volume,
-              onChange: (e) => {
-                  const newVolume = Number(e.target.value);
-                  setVolume(newVolume);
-                  if (audioRef.current) {
-                    audioRef.current.volume = newVolume / 100;
-                  }
-                },
-              className: 'w-20 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer'
-            })
-          )
+          // Volume - only enabled for local files and Spotify
+          (() => {
+            const currentResolverId = determineResolverIdFromTrack(currentTrack);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'spotify';
+            const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
+            return React.createElement('div', {
+              className: 'flex items-center gap-1',
+              title: isDisabled ? 'Volume control not available for browser playback' : 'Volume'
+            },
+              React.createElement('span', { className: isDisabled ? 'text-gray-600' : 'text-gray-400' },
+                React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
+                  React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
+                )
+              ),
+              React.createElement('input', {
+                type: 'range',
+                min: '0',
+                max: '100',
+                value: volume,
+                disabled: isDisabled,
+                onChange: (e) => {
+                    const newVolume = Number(e.target.value);
+                    setVolume(newVolume);
+                    // Local files: set HTML5 audio volume
+                    if (audioRef.current) {
+                      audioRef.current.volume = newVolume / 100;
+                    }
+                    // Spotify: set volume via API
+                    if (currentResolverId === 'spotify') {
+                      setSpotifyVolume(newVolume);
+                    }
+                  },
+                className: `w-20 h-1 rounded-full appearance-none ${isDisabled ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-gray-600 cursor-pointer'}`
+              })
+            );
+          })()
         )
       ),
 
