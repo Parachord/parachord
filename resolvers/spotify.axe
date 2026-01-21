@@ -22,8 +22,14 @@
   "urlPatterns": [
     "open.spotify.com/track/*",
     "open.spotify.com/intl-*/track/*",
+    "open.spotify.com/album/*",
+    "open.spotify.com/intl-*/album/*",
+    "open.spotify.com/playlist/*",
+    "open.spotify.com/intl-*/playlist/*",
     "spotify.link/*",
-    "spotify:track:*"
+    "spotify:track:*",
+    "spotify:album:*",
+    "spotify:playlist:*"
   ],
 
   "settings": {
@@ -51,6 +57,10 @@
     
     "cleanup": "async function() { console.log('Spotify resolver cleanup'); }",
 
-    "lookupUrl": "async function(url, config) { try { let trackId = null; if (url.startsWith('spotify:track:')) { trackId = url.replace('spotify:track:', ''); } else if (url.includes('spotify.link/')) { const response = await fetch(url, { redirect: 'follow' }); const finalUrl = response.url; const match = finalUrl.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } else { const match = url.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } if (!trackId) return null; if (!config.token) { console.error('Spotify token required for URL lookup'); return null; } const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const track = await response.json(); return { title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), albumArt: track.album.images[0]?.url, sourceUrl: url, spotifyId: track.id, spotifyUri: track.uri }; } catch (error) { console.error('Spotify URL lookup error:', error); return null; } }"
+    "lookupUrl": "async function(url, config) { try { let trackId = null; if (url.startsWith('spotify:track:')) { trackId = url.replace('spotify:track:', ''); } else if (url.includes('spotify.link/')) { const response = await fetch(url, { redirect: 'follow' }); const finalUrl = response.url; const match = finalUrl.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } else { const match = url.match(/track\\/([a-zA-Z0-9]+)/); if (match) trackId = match[1]; } if (!trackId) return null; if (!config.token) { console.error('Spotify token required for URL lookup'); return null; } const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const track = await response.json(); return { title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), albumArt: track.album.images[0]?.url, sourceUrl: url, spotifyId: track.id, spotifyUri: track.uri }; } catch (error) { console.error('Spotify URL lookup error:', error); return null; } }",
+
+    "lookupAlbum": "async function(url, config) { try { let albumId = null; if (url.startsWith('spotify:album:')) { albumId = url.replace('spotify:album:', ''); } else if (url.includes('spotify.link/')) { const response = await fetch(url, { redirect: 'follow' }); const finalUrl = response.url; const match = finalUrl.match(/album\\/([a-zA-Z0-9]+)/); if (match) albumId = match[1]; } else { const match = url.match(/album\\/([a-zA-Z0-9]+)/); if (match) albumId = match[1]; } if (!albumId) return null; if (!config.token) { console.error('Spotify token required for album lookup'); return null; } const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const album = await response.json(); const tracks = album.tracks.items.map(track => ({ title: track.name, artist: track.artists.map(a => a.name).join(', '), album: album.name, duration: Math.floor(track.duration_ms / 1000), albumArt: album.images[0]?.url, spotifyId: track.id, spotifyUri: track.uri })); return { type: 'album', name: album.name, artist: album.artists.map(a => a.name).join(', '), albumArt: album.images[0]?.url, tracks: tracks }; } catch (error) { console.error('Spotify album lookup error:', error); return null; } }",
+
+    "lookupPlaylist": "async function(url, config) { try { let playlistId = null; if (url.startsWith('spotify:playlist:')) { playlistId = url.replace('spotify:playlist:', ''); } else if (url.includes('spotify.link/')) { const response = await fetch(url, { redirect: 'follow' }); const finalUrl = response.url; const match = finalUrl.match(/playlist\\/([a-zA-Z0-9]+)/); if (match) playlistId = match[1]; } else { const match = url.match(/playlist\\/([a-zA-Z0-9]+)/); if (match) playlistId = match[1]; } if (!playlistId) return null; if (!config.token) { console.error('Spotify token required for playlist lookup'); return null; } const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const playlist = await response.json(); const tracks = playlist.tracks.items.filter(item => item.track).map(item => ({ title: item.track.name, artist: item.track.artists.map(a => a.name).join(', '), album: item.track.album.name, duration: Math.floor(item.track.duration_ms / 1000), albumArt: item.track.album.images[0]?.url, spotifyId: item.track.id, spotifyUri: item.track.uri })); return { type: 'playlist', name: playlist.name, owner: playlist.owner.display_name, albumArt: playlist.images[0]?.url, tracks: tracks }; } catch (error) { console.error('Spotify playlist lookup error:', error); return null; } }"
   }
 }

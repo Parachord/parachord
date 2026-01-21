@@ -24,7 +24,10 @@
     "www.youtube.com/watch?v=*",
     "youtu.be/*",
     "music.youtube.com/watch?v=*",
-    "m.youtube.com/watch?v=*"
+    "m.youtube.com/watch?v=*",
+    "youtube.com/playlist?list=*",
+    "www.youtube.com/playlist?list=*",
+    "music.youtube.com/playlist?list=*"
   ],
 
   "settings": {
@@ -44,6 +47,8 @@
 
     "cleanup": "async function() { console.log('YouTube resolver cleanup'); }",
 
-    "lookupUrl": "async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }"
+    "lookupUrl": "async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }",
+
+    "lookupPlaylist": "async function(url, config) { try { const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/); if (!listMatch) return null; const playlistId = listMatch[1]; const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const tracks = []; let playlistName = 'YouTube Playlist'; const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/); if (titleMatch) { playlistName = titleMatch[1]; } const videoMatches = html.matchAll(/\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoMatches) { if (count >= 100) break; const [, videoId, title, channel] = match; if (videoId && title) { let trackTitle = title; let artist = channel || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); trackTitle = dashMatch[2].trim(); } tracks.push({ title: trackTitle, artist: artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }); count++; } } if (tracks.length === 0) return null; return { type: 'playlist', name: playlistName, albumArt: tracks[0]?.albumArt, tracks: tracks }; } catch (error) { console.error('YouTube playlist lookup error:', error); return null; } }"
   }
 }

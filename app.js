@@ -2127,6 +2127,40 @@ const Parachord = () => {
     }
   };
 
+  // Convert raw track metadata to a proper track object with sources
+  const createTrackFromMeta = (trackMeta, resolverId, sourceUrl = null) => {
+    const trackId = `${trackMeta.artist}-${trackMeta.title}-${trackMeta.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const track = {
+      id: trackId,
+      status: 'ready',
+      title: trackMeta.title,
+      artist: trackMeta.artist,
+      album: trackMeta.album || 'Single',
+      duration: trackMeta.duration || 180,
+      albumArt: trackMeta.albumArt,
+      sourceUrl: sourceUrl,
+      sources: {}
+    };
+
+    // Add source-specific data
+    const sourceData = {};
+    if (trackMeta.spotifyId) sourceData.spotifyId = trackMeta.spotifyId;
+    if (trackMeta.spotifyUri) sourceData.spotifyUri = trackMeta.spotifyUri;
+    if (trackMeta.youtubeId) sourceData.youtubeId = trackMeta.youtubeId;
+    if (trackMeta.bandcampUrl) sourceData.bandcampUrl = trackMeta.bandcampUrl;
+    if (trackMeta.appleMusicId) sourceData.appleMusicId = trackMeta.appleMusicId;
+    if (trackMeta.previewUrl) sourceData.previewUrl = trackMeta.previewUrl;
+
+    if (Object.keys(sourceData).length > 0) {
+      track.sources[resolverId] = {
+        ...sourceData,
+        confidence: 1.0
+      };
+    }
+
+    return track;
+  };
+
   // Handle URL drop - main entry point
   const handleUrlDrop = async (url, zone) => {
     console.log(`🔗 URL dropped on ${zone}:`, url);
@@ -2140,6 +2174,86 @@ const Parachord = () => {
 
     console.log(`📎 Matched resolver: ${resolverId}`);
 
+    // Detect URL type (track, album, or playlist)
+    const urlType = resolverLoaderRef.current.getUrlType(url);
+    console.log(`📎 URL type: ${urlType}`);
+
+    // Handle album/playlist URLs
+    if (urlType === 'album' || urlType === 'playlist') {
+      await handleCollectionUrlDrop(url, resolverId, urlType);
+      return;
+    }
+
+    // Handle single track URL (existing logic)
+    await handleSingleTrackUrlDrop(url, zone, resolverId);
+  };
+
+  // Handle album or playlist URL drop
+  const handleCollectionUrlDrop = async (url, resolverId, urlType) => {
+    console.log(`📀 Loading ${urlType} from URL:`, url);
+
+    try {
+      const config = await getResolverConfig(resolverId);
+      let result;
+
+      if (urlType === 'album') {
+        result = await resolverLoaderRef.current.lookupAlbum(url, config);
+        if (!result || !result.album) {
+          throw new Error('Could not load album');
+        }
+      } else {
+        result = await resolverLoaderRef.current.lookupPlaylist(url, config);
+        if (!result || !result.playlist) {
+          throw new Error('Could not load playlist');
+        }
+      }
+
+      const collection = result.album || result.playlist;
+      const collectionResolverId = result.resolverId;
+      const tracks = collection.tracks || [];
+
+      if (tracks.length === 0) {
+        console.error(`❌ ${urlType} has no tracks`);
+        return;
+      }
+
+      console.log(`✅ ${urlType} "${collection.name}" loaded with ${tracks.length} tracks`);
+
+      // Show toast notification
+      showToast(`Added ${tracks.length} tracks from "${collection.name}" to queue`);
+
+      // Convert all tracks to proper track objects
+      const resolvedTracks = tracks.map(trackMeta =>
+        createTrackFromMeta(trackMeta, collectionResolverId, url)
+      );
+
+      // Add all tracks to queue
+      setCurrentQueue(prev => {
+        const newQueue = [...prev, ...resolvedTracks];
+        return newQueue;
+      });
+
+      // Trigger queue animation
+      triggerQueueAnimation();
+
+      // If nothing is playing, start the first track
+      const hasCurrentTrack = currentTrackRef.current !== null;
+      if (!hasCurrentTrack && resolvedTracks.length > 0) {
+        const firstTrack = resolvedTracks[0];
+        // Remove from queue and set as current
+        setCurrentQueue(prev => prev.slice(1));
+        setCurrentTrack(firstTrack);
+        handlePlay(firstTrack);
+      }
+
+    } catch (error) {
+      console.error(`❌ ${urlType} lookup failed:`, error);
+      showToast(`Could not load ${urlType}: ${error.message}`, 'error');
+    }
+  };
+
+  // Handle single track URL drop (original handleUrlDrop logic)
+  const handleSingleTrackUrlDrop = async (url, zone, resolverId) => {
     // Create placeholder track
     const placeholderId = `pending-${Date.now()}`;
     const placeholder = {
@@ -2156,18 +2270,23 @@ const Parachord = () => {
       errorMessage: null
     };
 
-    // Determine where to insert
-    const hasQueue = currentQueue.length > 0;
-    const shouldPlayImmediately = zone === 'now-playing' || !hasQueue;
+    // Determine where to insert - use refs to avoid stale closure issues
+    // (especially when called from extension message handler in useEffect)
+    const hasQueue = currentQueueRef.current.length > 0;
+    const hasCurrentTrack = currentTrackRef.current !== null;
+    // Play immediately only if explicitly requested OR if nothing is playing/queued
+    const shouldPlayImmediately = zone === 'now-playing' || (!hasQueue && !hasCurrentTrack);
+    console.log(`📍 handleUrlDrop: hasQueue=${hasQueue}, hasCurrentTrack=${hasCurrentTrack}, shouldPlayImmediately=${shouldPlayImmediately}`);
 
     if (shouldPlayImmediately) {
       // Set as current track (loading state)
       setCurrentTrack(placeholder);
     } else {
-      // Insert at position 1 (next up)
+      // Add to queue - insert at position 1 if queue has items, otherwise at position 0
       setCurrentQueue(prev => {
         const newQueue = [...prev];
-        newQueue.splice(1, 0, placeholder);
+        const insertPosition = prev.length > 0 ? 1 : 0;
+        newQueue.splice(insertPosition, 0, placeholder);
         return newQueue;
       });
       // Trigger queue icon animation
@@ -2184,22 +2303,11 @@ const Parachord = () => {
         throw new Error('Could not load track metadata');
       }
 
-      const { track: trackMeta } = result;
+      const { track: trackMeta, resolverId: lookupResolverId } = result;
       console.log(`✅ URL lookup success:`, trackMeta.title, '-', trackMeta.artist);
 
       // Create proper track object
-      const trackId = `${trackMeta.artist}-${trackMeta.title}-${trackMeta.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      const resolvedTrack = {
-        id: trackId,
-        status: 'ready',
-        title: trackMeta.title,
-        artist: trackMeta.artist,
-        album: trackMeta.album || 'Single',
-        duration: trackMeta.duration || 180,
-        albumArt: trackMeta.albumArt,
-        sourceUrl: url,
-        sources: {}
-      };
+      const resolvedTrack = createTrackFromMeta(trackMeta, lookupResolverId, url);
 
       // Now resolve across all enabled resolvers for playable sources
       console.log(`🔍 Resolving playable sources...`);
@@ -2571,6 +2679,10 @@ const Parachord = () => {
         const metaServiceAxes = resolversToLoad.filter(axe =>
           axe.manifest.type === 'meta-service'
         );
+        // Meta services that have URL lookup capabilities need to be loaded for URL pattern matching
+        const metaServicesWithUrlLookup = metaServiceAxes.filter(axe =>
+          axe.capabilities?.urlLookup && axe.urlPatterns?.length > 0
+        );
 
         console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services`);
 
@@ -2580,7 +2692,13 @@ const Parachord = () => {
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
 
-        // Set meta services directly (they don't need the resolver pipeline)
+        // Also load meta services with URL lookup into the resolver loader (for URL pattern matching)
+        if (metaServicesWithUrlLookup.length > 0) {
+          await resolverLoader.current.loadResolvers(metaServicesWithUrlLookup);
+          console.log(`📎 Loaded ${metaServicesWithUrlLookup.length} meta service(s) with URL lookup:`, metaServicesWithUrlLookup.map(s => s.manifest.name).join(', '));
+        }
+
+        // Set meta services directly (they don't need the resolver pipeline for playback)
         if (metaServiceAxes.length > 0) {
           const metaServicesData = metaServiceAxes.map(axe => ({
             id: axe.manifest.id,
@@ -2640,6 +2758,25 @@ const Parachord = () => {
     }
   }, [loadedResolvers, cacheLoaded, resolverOrder]);
 
+  // Handle "Send to Parachord" from browser extension
+  const handleSendToParachord = async (url) => {
+    console.log('🌐 Processing URL from browser:', url);
+
+    // Get friendly domain name for display
+    const domain = getUrlDomain(url);
+    const serviceName = domain.includes('spotify') ? 'Spotify' :
+                       domain.includes('apple') ? 'Apple Music' :
+                       domain.includes('youtube') ? 'YouTube' :
+                       domain.includes('bandcamp') ? 'Bandcamp' : domain;
+
+    // Show toast notification
+    showToast(`Adding ${serviceName} to queue...`, 'info');
+
+    // Always add to queue - handleUrlDrop will insert at position 1 (next up)
+    // If queue is empty, it will play immediately
+    await handleUrlDrop(url, 'queue');
+  };
+
   // Browser extension event handlers
   useEffect(() => {
     console.log('🔌 Setting up browser extension event handlers...');
@@ -2659,6 +2796,7 @@ const Parachord = () => {
 
     // Message handler for extension events
     window.electron.extension.onMessage((message) => {
+      console.log('📨 Extension message received:', message.type, message.event || message.url || '');
       if (message.type === 'event') {
         switch (message.event) {
           case 'connected':
@@ -2763,16 +2901,18 @@ const Parachord = () => {
             break;
 
           case 'heartbeat':
-            // Keep-alive from extension - silently maintain active state
-            // Ignore when streaming playback (Spotify) is active or local file is playing
-            const isLocalFilePlaying = audioRef.current && !audioRef.current.paused;
-            if (message.tabId && !streamingPlaybackActiveRef.current && !isLocalFilePlaying) {
+            // Keep-alive from extension - only update tab ID, don't set playback state
+            // The 'connected' and 'playing' events are responsible for setting browserPlaybackActive
+            // Heartbeats just maintain the tab reference when browser playback is already active
+            if (message.tabId && browserPlaybackActive) {
               setActiveExtensionTabId(message.tabId);
-              setBrowserPlaybackActive(true);
-              setIsExternalPlayback(true);
             }
             break;
         }
+      } else if (message.type === 'sendToParachord') {
+        // Handle URL sent from browser extension context menu
+        console.log('🌐 Received URL from browser extension:', message.url);
+        handleSendToParachord(message.url);
       }
     });
 
@@ -19126,10 +19266,10 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-500 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          // flex-col-reverse with justify-start pins tracks to the bottom (playbar)
-          // In reverse column, justify-start aligns to the visual bottom
-          // pb-2 adds padding so the first track row isn't cut off
-          React.createElement('div', { className: 'flex flex-col-reverse justify-start h-full pb-2' },
+          // flex-col-reverse with justify-end pins tracks to the bottom when content is short
+          // min-h-full ensures it fills the container when there's little content
+          // Without h-full, the container can grow and the parent will scroll
+          React.createElement('div', { className: 'flex flex-col-reverse justify-end min-h-full pb-2' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';

@@ -1,18 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Parachord",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Connect your browser to Parachord desktop for playback control and content discovery",
   "permissions": [
     "activeTab",
     "scripting",
     "alarms",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://youtube.com/*",
-    "https://*.bandcamp.com/*"
+    "https://*.bandcamp.com/*",
+    "https://open.spotify.com/*",
+    "https://music.apple.com/*"
   ],
   "action": {
     "default_popup": "popup.html",

@@ -137,6 +137,7 @@
 - [x] **YouTube resolver** - Add YouTube search/playback ✅
 - [ ] **SoundCloud resolver** - Add SoundCloud support
 - [x] **Apple Music resolver** - Search/lookup (no playback without MusicKit) ✅
+- [ ] **Apple Music playlist URL extraction** - WIP: The HTML is fetched successfully via proxyFetch but track extraction from `serialized-server-data` (base64-encoded JSON) isn't working. Need to investigate the actual data structure in the decoded JSON. See `resolvers/applemusic.axe` lookupPlaylist function.
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Another streaming option
 - [ ] **Local files resolver** - Scan user's music folder

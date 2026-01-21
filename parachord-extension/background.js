@@ -89,11 +89,15 @@ function clearReconnectTimer() {
 
 // Send message to desktop
 function sendToDesktop(message) {
+  console.log('[Parachord] sendToDesktop called:', message.type, message.url || message.event || '');
+  console.log('[Parachord] Socket state:', socket ? socket.readyState : 'null', '(OPEN=1)');
   if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log('[Parachord] Sending via WebSocket:', JSON.stringify(message));
     socket.send(JSON.stringify(message));
     return true;
   }
   // Queue the message if not connected yet
+  console.log('[Parachord] WebSocket not open, queuing message');
   pendingMessages.push(message);
   connect();
   return false;
@@ -155,7 +159,7 @@ async function injectBrowserControlCode(tabId, code) {
   }
 }
 
-// Handle messages from content scripts
+// Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'event') {
     // Track active tab for playback events
@@ -175,6 +179,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   } else if (message.type === 'getStatus') {
     sendResponse({ connected: isConnected });
+    return true;
+  } else if (message.type === 'sendToParachord') {
+    // Forward URL to desktop from popup
+    console.log('[Parachord] Sending URL to desktop from popup:', message.url);
+    const sent = sendToDesktop(message);
+    console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
+    sendResponse({ received: true, sent: sent });
     return true;
   }
 
@@ -215,9 +226,103 @@ chrome.runtime.onStartup.addListener(() => {
   connect();
 });
 
-// Reconnect on install/update
+// Reconnect on install/update and create context menus
 chrome.runtime.onInstalled.addListener(() => {
   connect();
+  createContextMenus();
+});
+
+// Also create context menus on service worker startup (they persist but this ensures they exist)
+createContextMenus();
+
+// Create context menus for supported sites
+function createContextMenus() {
+  // Remove existing menus first
+  chrome.contextMenus.removeAll(() => {
+    // Context menu for page (when right-clicking on the page)
+    chrome.contextMenus.create({
+      id: 'send-page-to-parachord',
+      title: 'Send to Parachord',
+      contexts: ['page'],
+      documentUrlPatterns: [
+        'https://open.spotify.com/track/*',
+        'https://open.spotify.com/album/*',
+        'https://open.spotify.com/playlist/*',
+        'https://open.spotify.com/intl-*/track/*',
+        'https://open.spotify.com/intl-*/album/*',
+        'https://open.spotify.com/intl-*/playlist/*',
+        'https://music.apple.com/*/album/*',
+        'https://music.apple.com/*/playlist/*',
+        'https://www.youtube.com/watch*',
+        'https://youtube.com/watch*',
+        'https://www.youtube.com/playlist*',
+        'https://youtube.com/playlist*',
+        'https://*.bandcamp.com/track/*',
+        'https://*.bandcamp.com/album/*'
+      ]
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Parachord] Failed to create page context menu:', chrome.runtime.lastError);
+      } else {
+        console.log('[Parachord] Page context menu created');
+      }
+    });
+
+    // Context menu for links (when right-clicking on a link)
+    chrome.contextMenus.create({
+      id: 'send-link-to-parachord',
+      title: 'Send Link to Parachord',
+      contexts: ['link'],
+      targetUrlPatterns: [
+        'https://open.spotify.com/track/*',
+        'https://open.spotify.com/album/*',
+        'https://open.spotify.com/playlist/*',
+        'https://open.spotify.com/intl-*/track/*',
+        'https://open.spotify.com/intl-*/album/*',
+        'https://open.spotify.com/intl-*/playlist/*',
+        'https://music.apple.com/*/album/*',
+        'https://music.apple.com/*/playlist/*',
+        'https://www.youtube.com/watch*',
+        'https://youtube.com/watch*',
+        'https://www.youtube.com/playlist*',
+        'https://youtube.com/playlist*',
+        'https://*.bandcamp.com/track/*',
+        'https://*.bandcamp.com/album/*'
+      ]
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Parachord] Failed to create link context menu:', chrome.runtime.lastError);
+      } else {
+        console.log('[Parachord] Link context menu created');
+      }
+    });
+  });
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  console.log('[Parachord] Context menu clicked:', info.menuItemId);
+  let url = null;
+
+  if (info.menuItemId === 'send-page-to-parachord') {
+    url = tab?.url || info.pageUrl;
+    console.log('[Parachord] Page URL:', url);
+  } else if (info.menuItemId === 'send-link-to-parachord') {
+    url = info.linkUrl;
+    console.log('[Parachord] Link URL:', url);
+  }
+
+  if (url) {
+    console.log('[Parachord] Sending URL to desktop:', url);
+    const sent = sendToDesktop({
+      type: 'sendToParachord',
+      url: url,
+      source: info.menuItemId === 'send-link-to-parachord' ? 'link' : 'page'
+    });
+    console.log('[Parachord] Message sent to desktop:', sent ? 'immediately' : 'queued');
+  } else {
+    console.log('[Parachord] No URL to send');
+  }
 });
 
 // Keep-alive mechanism using Chrome alarms API

@@ -169,10 +169,11 @@ function startExtensionServer() {
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log('Extension message:', message.type, message.event || message.action || '');
+        console.log('Extension message:', message.type, message.event || message.action || message.url || '');
 
         // Forward all messages to renderer
         mainWindow?.webContents.send('extension-message', message);
+        console.log('Forwarded to renderer');
       } catch (error) {
         console.error('Failed to parse extension message:', error);
       }

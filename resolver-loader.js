@@ -276,6 +276,102 @@ class ResolverLoader {
 
     return null;
   }
+
+  /**
+   * Look up album tracks from a URL
+   * @param {string} url - The album URL to look up
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<{album: object, resolverId: string}|null>}
+   */
+  async lookupAlbum(url, configOverride = null) {
+    const resolverId = this.findResolverForUrl(url);
+    if (!resolverId) {
+      return null;
+    }
+
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.lookupAlbum) {
+      console.error(`Resolver ${resolverId} does not support album lookup`);
+      return null;
+    }
+
+    try {
+      const config = configOverride || resolver.config || {};
+      const album = await resolver.lookupAlbum(url, config);
+      if (album) {
+        return { album, resolverId };
+      }
+    } catch (error) {
+      console.error(`Album lookup error for ${resolverId}:`, error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Look up playlist tracks from a URL
+   * @param {string} url - The playlist URL to look up
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<{playlist: object, resolverId: string}|null>}
+   */
+  async lookupPlaylist(url, configOverride = null) {
+    const resolverId = this.findResolverForUrl(url);
+    if (!resolverId) {
+      return null;
+    }
+
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.lookupPlaylist) {
+      console.error(`Resolver ${resolverId} does not support playlist lookup`);
+      return null;
+    }
+
+    try {
+      const config = configOverride || resolver.config || {};
+      const playlist = await resolver.lookupPlaylist(url, config);
+      if (playlist) {
+        return { playlist, resolverId };
+      }
+    } catch (error) {
+      console.error(`Playlist lookup error for ${resolverId}:`, error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Detect URL type (track, album, or playlist)
+   * @param {string} url - The URL to analyze
+   * @returns {string} - 'track', 'album', 'playlist', or 'unknown'
+   */
+  getUrlType(url) {
+    // Spotify
+    if (url.includes('spotify')) {
+      if (url.includes('/album/') || url.includes('spotify:album:')) return 'album';
+      if (url.includes('/playlist/') || url.includes('spotify:playlist:')) return 'playlist';
+      if (url.includes('/track/') || url.includes('spotify:track:')) return 'track';
+    }
+    // Apple Music
+    if (url.includes('music.apple.com') || url.includes('itunes.apple.com')) {
+      if (url.includes('/playlist/')) return 'playlist';
+      // Album URLs have ?i= param for specific track, without it's an album
+      if (url.includes('/album/')) {
+        return url.includes('?i=') ? 'track' : 'album';
+      }
+      if (url.includes('/song/')) return 'track';
+    }
+    // YouTube
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      if (url.includes('/playlist?list=') || url.includes('&list=')) return 'playlist';
+      return 'track';
+    }
+    // Bandcamp
+    if (url.includes('bandcamp.com')) {
+      if (url.includes('/album/')) return 'album';
+      if (url.includes('/track/')) return 'track';
+    }
+    return 'unknown';
+  }
 }
 
 // Export for use in main app
