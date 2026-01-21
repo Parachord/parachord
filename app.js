@@ -7931,6 +7931,63 @@ ${tracks}
     }
   };
 
+  // Navigate to a Top Album from History page
+  const openTopAlbum = async (album) => {
+    console.log(`🎵 Opening Top Album: ${album.artist} - ${album.name}`);
+
+    try {
+      // Search MusicBrainz for the release
+      const searchQuery = encodeURIComponent(`release:"${album.name}" AND artist:"${album.artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) {
+        throw new Error('MusicBrainz search failed');
+      }
+
+      const mbData = await mbResponse.json();
+
+      if (!mbData.releases || mbData.releases.length === 0) {
+        // Fallback: just navigate to artist page
+        console.log('Release not found in MusicBrainz, navigating to artist page');
+        fetchArtistData(album.artist);
+        return;
+      }
+
+      const release = mbData.releases[0];
+      const artistCredit = release['artist-credit']?.[0];
+
+      // Create artist object for the release page
+      const artist = {
+        id: artistCredit?.artist?.id,
+        name: artistCredit?.artist?.name || album.artist
+      };
+
+      // Create release object matching the expected format
+      const releaseObj = {
+        id: release.id,
+        title: release.title,
+        date: release.date,
+        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
+        albumArt: album.image
+      };
+
+      // Set artist context and fetch release data
+      // Mark that we're opening a release so header stays collapsed
+      openingReleaseRef.current = true;
+      setCurrentArtist(artist);
+      navigateTo('artist');
+      fetchReleaseData(releaseObj, artist);
+
+    } catch (error) {
+      console.error('Error opening Top Album:', error);
+      // Fallback: navigate to artist page
+      fetchArtistData(album.artist);
+    }
+  };
+
   // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
   const prefetchCriticsPicksTracks = async (album) => {
     // Skip if already prefetched
@@ -14612,7 +14669,8 @@ useEffect(() => {
                   ...topAlbums.albums.map((album) =>
                     React.createElement('div', {
                       key: album.id,
-                      className: 'group cursor-pointer'
+                      className: 'group cursor-pointer',
+                      onClick: () => openTopAlbum(album)
                     },
                       // Album art with hover overlay
                       React.createElement('div', {
