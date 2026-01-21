@@ -388,7 +388,35 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
+// Helper function to pause Spotify playback
+const pauseSpotifyPlayback = async () => {
+  const token = store.get('spotify_token');
+  if (!token) return;
+
+  try {
+    const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok || response.status === 204) {
+      console.log('✅ Spotify playback paused on quit');
+    } else if (response.status === 403) {
+      // 403 often means no active device or already paused - that's fine
+      console.log('ℹ️ Spotify: no active playback to pause');
+    } else {
+      console.log('⚠️ Spotify pause response:', response.status);
+    }
+  } catch (err) {
+    console.error('Failed to pause Spotify on quit:', err.message);
+  }
+};
+
+app.on('before-quit', async (event) => {
+  // Pause Spotify before quitting - this is more reliable than beforeunload
+  await pauseSpotifyPlayback();
+});
+
+app.on('window-all-closed', async () => {
   globalShortcut.unregisterAll();
   if (authServer) {
     authServer.close();
@@ -399,6 +427,8 @@ app.on('window-all-closed', () => {
   if (localFilesService) {
     localFilesService.shutdown();
   }
+  // Also try to pause Spotify here as a backup
+  await pauseSpotifyPlayback();
   if (process.platform !== 'darwin') {
     app.quit();
   }
