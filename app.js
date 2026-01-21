@@ -13811,19 +13811,19 @@ useEffect(() => {
               Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) => {
                 if (!enabled) return null;
                 const capLabels = {
-                  resolve: { icon: '🎯', label: 'Resolve' },
-                  search: { icon: '🔍', label: 'Search' },
-                  stream: { icon: '▶️', label: 'Stream' },
-                  browse: { icon: '📁', label: 'Browse' },
-                  urlLookup: { icon: '🔗', label: 'URL Lookup' },
-                  recommendations: { icon: '⭐', label: 'Recommendations' },
-                  metadata: { icon: '📋', label: 'Metadata' }
+                  resolve: 'Resolve',
+                  search: 'Search',
+                  stream: 'Stream',
+                  browse: 'Browse',
+                  urlLookup: 'URL Lookup',
+                  recommendations: 'Recommendations',
+                  metadata: 'Metadata'
                 };
-                const capInfo = capLabels[cap] || { icon: '✓', label: cap };
+                const label = capLabels[cap] || cap;
                 return React.createElement('span', {
                   key: cap,
-                  className: 'px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700 flex items-center gap-1'
-                }, capInfo.icon, ' ', capInfo.label);
+                  className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium'
+                }, label);
               })
             )
           ),
@@ -14174,19 +14174,19 @@ useEffect(() => {
               Object.entries(selectedMarketplaceItem.capabilities || {}).map(([cap, enabled]) => {
                 if (!enabled) return null;
                 const capLabels = {
-                  resolve: { icon: '🎯', label: 'Resolve' },
-                  search: { icon: '🔍', label: 'Search' },
-                  stream: { icon: '▶️', label: 'Stream' },
-                  browse: { icon: '📁', label: 'Browse' },
-                  urlLookup: { icon: '🔗', label: 'URL Lookup' },
-                  recommendations: { icon: '⭐', label: 'Recommendations' },
-                  metadata: { icon: '📋', label: 'Metadata' }
+                  resolve: 'Resolve',
+                  search: 'Search',
+                  stream: 'Stream',
+                  browse: 'Browse',
+                  urlLookup: 'URL Lookup',
+                  recommendations: 'Recommendations',
+                  metadata: 'Metadata'
                 };
-                const capInfo = capLabels[cap] || { icon: '✓', label: cap };
+                const label = capLabels[cap] || cap;
                 return React.createElement('span', {
                   key: cap,
-                  className: 'px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700 flex items-center gap-1'
-                }, capInfo.icon, ' ', capInfo.label);
+                  className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium'
+                }, label);
               })
             )
           ),

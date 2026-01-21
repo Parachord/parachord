@@ -3,7 +3,7 @@
     "id": "spotify",
     "name": "Spotify",
     "version": "1.0.0",
-    "author": "Harmonix Team",
+    "author": "Parachord Team",
     "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
     "icon": "♫",
     "color": "#1DB954",

@@ -19,7 +19,7 @@
     "id": "applemusic",
     "name": "Apple Music",
     "version": "1.0.0",
-    "author": "Harmonix Team",
+    "author": "Parachord Team",
     "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
     "icon": "🍎",
     "color": "#FA243C",

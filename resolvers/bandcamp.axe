@@ -3,7 +3,7 @@
     "id": "bandcamp",
     "name": "Bandcamp",
     "version": "1.2.0",
-    "author": "Harmonix Team",
+    "author": "Parachord Team",
     "description": "Find and purchase music on Bandcamp. Plays tracks in embedded player with autoplay.",
     "icon": "🎸",
     "color": "#629AA9",
