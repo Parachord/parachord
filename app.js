@@ -1047,6 +1047,17 @@ const Parachord = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
+  // Per-resolver volume offsets (dB adjustment, applied to base volume)
+  // Default offsets: Spotify is normalized at -14 LUFS, others may be louder
+  const [resolverVolumeOffsets, setResolverVolumeOffsets] = useState({
+    spotify: 0,      // Spotify is already normalized
+    localfiles: 0,   // Local files vary, start neutral
+    bandcamp: -3,    // Bandcamp tends to be slightly louder
+    youtube: -6,     // YouTube videos are often much louder
+    qobuz: 0         // Qobuz is typically well mastered
+  });
+  // Per-track volume adjustments (trackId -> dB offset from resolver default)
+  const trackVolumeAdjustments = useRef({});
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
     artists: [],
@@ -2187,11 +2198,32 @@ const Parachord = () => {
     return null;
   };
 
-  // Set Spotify playback volume via API
-  const setSpotifyVolume = async (volumePercent) => {
+  // Calculate effective volume with resolver offset and per-track adjustment
+  // Returns volume as 0-100 percentage
+  const getEffectiveVolume = (baseVolume, resolverId, trackId) => {
+    // Get resolver offset (dB)
+    const resolverOffset = resolverVolumeOffsets[resolverId] || 0;
+    // Get per-track adjustment (dB)
+    const trackOffset = trackId ? (trackVolumeAdjustments.current[trackId] || 0) : 0;
+    // Total dB adjustment
+    const totalOffsetDb = resolverOffset + trackOffset;
+    // Convert dB to linear multiplier: 10^(dB/20)
+    const multiplier = Math.pow(10, totalOffsetDb / 20);
+    // Apply to base volume and clamp to 0-100
+    const effectiveVolume = Math.max(0, Math.min(100, baseVolume * multiplier));
+    return effectiveVolume;
+  };
+
+  // Set Spotify playback volume via API (with normalization)
+  const setSpotifyVolume = async (volumePercent, applyNormalization = true) => {
     if (!spotifyTokenRef.current) return;
     try {
-      const response = await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round(volumePercent)}`, {
+      // Apply normalization if enabled
+      let effectiveVolume = volumePercent;
+      if (applyNormalization && currentTrackRef.current) {
+        effectiveVolume = getEffectiveVolume(volumePercent, 'spotify', currentTrackRef.current.id);
+      }
+      const response = await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round(effectiveVolume)}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${spotifyTokenRef.current}`
@@ -2203,6 +2235,13 @@ const Parachord = () => {
     } catch (error) {
       console.error('Error setting Spotify volume:', error);
     }
+  };
+
+  // Apply normalized volume for local file playback
+  const applyLocalFileVolume = (baseVolume, trackId) => {
+    if (!audioRef.current) return;
+    const effectiveVolume = getEffectiveVolume(baseVolume, 'localfiles', trackId);
+    audioRef.current.volume = effectiveVolume / 100;
   };
 
   // Cache for album art URLs (releaseId -> { url, timestamp })
@@ -3422,7 +3461,10 @@ const Parachord = () => {
       const audioUrl = `local-audio://${filePath}`;
       console.log('🎵 Audio URL:', audioUrl);
       audioRef.current.src = audioUrl;
-      audioRef.current.volume = volume / 100;
+      // Apply normalized volume for local files
+      const effectiveVolume = getEffectiveVolume(volume, 'localfiles', sourceToPlay.id || trackOrSource.id);
+      audioRef.current.volume = effectiveVolume / 100;
+      console.log(`🔊 Applied volume: ${volume}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.localfiles || 0}dB)`);
 
       // Explicitly load to trigger metadata events
       audioRef.current.load();
@@ -3537,6 +3579,14 @@ const Parachord = () => {
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
+
+        // Apply normalized volume for Spotify
+        if (resolverId === 'spotify') {
+          const trackId = sourceToPlay.id || trackOrSource.id;
+          const effectiveVolume = getEffectiveVolume(volume, 'spotify', trackId);
+          console.log(`🔊 Applied Spotify volume: ${volume}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.spotify || 0}dB)`);
+          setSpotifyVolume(volume, true); // Apply with normalization
+        }
 
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
         // This ensures we don't show "Playing in browser" for Spotify Connect playback
@@ -4679,6 +4729,13 @@ const Parachord = () => {
         console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
       }
 
+      // Load volume normalization offsets
+      const savedVolumeOffsets = await window.electron.store.get('resolver_volume_offsets');
+      if (savedVolumeOffsets) {
+        setResolverVolumeOffsets(prev => ({ ...prev, ...savedVolumeOffsets }));
+        console.log('📦 Loaded volume normalization offsets');
+      }
+
       // Mark settings as loaded so save useEffect knows it's safe to save
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
@@ -4716,6 +4773,9 @@ const Parachord = () => {
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+
+      // Save volume normalization offsets
+      await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
 
       // Note: Meta service configs are saved immediately when changed, not in periodic save
 
@@ -14133,6 +14193,124 @@ useEffect(() => {
                   },
                   className: 'px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
                 }, 'Clear Cache')
+              ),
+
+              // Volume Normalization Section
+              React.createElement('div', {
+                className: 'bg-white border border-gray-200 rounded-lg p-6'
+              },
+                React.createElement('h3', {
+                  className: 'text-lg font-semibold text-gray-900 mb-2'
+                }, 'Volume Normalization'),
+                React.createElement('p', {
+                  className: 'text-sm text-gray-500 mb-4'
+                }, 'Adjust volume offsets per source to balance loudness between different resolvers. Negative values reduce volume for louder sources.'),
+
+                // Resolver volume offset sliders
+                React.createElement('div', { className: 'space-y-4' },
+                  // Spotify
+                  React.createElement('div', { className: 'flex items-center gap-4' },
+                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Spotify'),
+                    React.createElement('input', {
+                      type: 'range',
+                      min: '-12',
+                      max: '6',
+                      step: '1',
+                      value: resolverVolumeOffsets.spotify || 0,
+                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, spotify: Number(e.target.value) })),
+                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
+                    }),
+                    React.createElement('span', {
+                      className: 'w-16 text-sm text-gray-600 text-right'
+                    }, `${resolverVolumeOffsets.spotify > 0 ? '+' : ''}${resolverVolumeOffsets.spotify || 0} dB`)
+                  ),
+
+                  // Local Files
+                  React.createElement('div', { className: 'flex items-center gap-4' },
+                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Local Files'),
+                    React.createElement('input', {
+                      type: 'range',
+                      min: '-12',
+                      max: '6',
+                      step: '1',
+                      value: resolverVolumeOffsets.localfiles || 0,
+                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, localfiles: Number(e.target.value) })),
+                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
+                    }),
+                    React.createElement('span', {
+                      className: 'w-16 text-sm text-gray-600 text-right'
+                    }, `${resolverVolumeOffsets.localfiles > 0 ? '+' : ''}${resolverVolumeOffsets.localfiles || 0} dB`)
+                  ),
+
+                  // Bandcamp
+                  React.createElement('div', { className: 'flex items-center gap-4' },
+                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Bandcamp'),
+                    React.createElement('input', {
+                      type: 'range',
+                      min: '-12',
+                      max: '6',
+                      step: '1',
+                      value: resolverVolumeOffsets.bandcamp || 0,
+                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, bandcamp: Number(e.target.value) })),
+                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
+                      disabled: true,
+                      title: 'Browser playback - volume control not available'
+                    }),
+                    React.createElement('span', {
+                      className: 'w-16 text-sm text-gray-400 text-right'
+                    }, 'N/A')
+                  ),
+
+                  // YouTube
+                  React.createElement('div', { className: 'flex items-center gap-4' },
+                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'YouTube'),
+                    React.createElement('input', {
+                      type: 'range',
+                      min: '-12',
+                      max: '6',
+                      step: '1',
+                      value: resolverVolumeOffsets.youtube || 0,
+                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, youtube: Number(e.target.value) })),
+                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
+                      disabled: true,
+                      title: 'Browser playback - volume control not available'
+                    }),
+                    React.createElement('span', {
+                      className: 'w-16 text-sm text-gray-400 text-right'
+                    }, 'N/A')
+                  ),
+
+                  // Qobuz
+                  React.createElement('div', { className: 'flex items-center gap-4' },
+                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Qobuz'),
+                    React.createElement('input', {
+                      type: 'range',
+                      min: '-12',
+                      max: '6',
+                      step: '1',
+                      value: resolverVolumeOffsets.qobuz || 0,
+                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, qobuz: Number(e.target.value) })),
+                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
+                    }),
+                    React.createElement('span', {
+                      className: 'w-16 text-sm text-gray-600 text-right'
+                    }, `${resolverVolumeOffsets.qobuz > 0 ? '+' : ''}${resolverVolumeOffsets.qobuz || 0} dB`)
+                  )
+                ),
+
+                // Reset button
+                React.createElement('div', { className: 'mt-4 pt-4 border-t border-gray-200' },
+                  React.createElement('button', {
+                    onClick: () => setResolverVolumeOffsets({
+                      spotify: 0,
+                      localfiles: 0,
+                      bandcamp: -3,
+                      youtube: -6,
+                      qobuz: 0
+                    }),
+                    className: 'px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors'
+                  }, 'Reset to Defaults')
+                )
               )
             ),
 
@@ -14424,9 +14602,15 @@ useEffect(() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);
             const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'spotify';
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
+            const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
+            const hasOffset = resolverOffset !== 0;
             return React.createElement('div', {
               className: 'flex items-center gap-1',
-              title: isDisabled ? 'Volume control not available for browser playback' : 'Volume'
+              title: isDisabled
+                ? 'Volume control not available for browser playback'
+                : hasOffset
+                  ? `Volume (${resolverOffset > 0 ? '+' : ''}${resolverOffset}dB normalization applied)`
+                  : 'Volume'
             },
               React.createElement('span', { className: isDisabled ? 'text-gray-600' : 'text-gray-400' },
                 React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
@@ -14442,13 +14626,13 @@ useEffect(() => {
                 onChange: (e) => {
                     const newVolume = Number(e.target.value);
                     setVolume(newVolume);
-                    // Local files: set HTML5 audio volume
-                    if (audioRef.current) {
-                      audioRef.current.volume = newVolume / 100;
+                    // Local files: apply normalized volume
+                    if (currentResolverId === 'localfiles' && audioRef.current) {
+                      applyLocalFileVolume(newVolume, currentTrack?.id);
                     }
-                    // Spotify: set volume via API
+                    // Spotify: set volume via API with normalization
                     if (currentResolverId === 'spotify') {
-                      setSpotifyVolume(newVolume);
+                      setSpotifyVolume(newVolume, true);
                     }
                   },
                 className: `w-20 h-1 rounded-full appearance-none ${isDisabled ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-gray-600 cursor-pointer'}`
