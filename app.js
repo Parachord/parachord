@@ -11681,8 +11681,8 @@ useEffect(() => {
           })
         ),
         
-        // Skeleton loading state for artist - hide when loading a release
-        !currentRelease && !loadingRelease && loadingArtist && React.createElement('div', {
+        // Skeleton loading state for artist - only show before currentArtist is set
+        !currentRelease && !loadingRelease && loadingArtist && !currentArtist && React.createElement('div', {
           className: 'flex-1'
         },
           // Skeleton header area with shimmer
@@ -11731,8 +11731,8 @@ useEffect(() => {
           )
         ),
         
-        // Artist content (scrollable) - only show if no release is being viewed or loaded
-        !currentRelease && !loadingRelease && !loadingArtist && currentArtist && React.createElement('div', {
+        // Artist content (scrollable) - show when we have artist data (even while releases are loading)
+        !currentRelease && !loadingRelease && currentArtist && React.createElement('div', {
           ref: artistPageScrollRef,
           className: 'scrollable-content',
           style: {
@@ -11761,8 +11761,8 @@ useEffect(() => {
                   ? searchFiltered.length
                   : searchFiltered.filter(r => r.releaseType === value).length;
 
-                // Don't show filter pills with 0 count (except 'all')
-                if (count === 0 && value !== 'all') return null;
+                // While loading, show all filter types; otherwise hide those with 0 count (except 'all')
+                if (!loadingArtist && count === 0 && value !== 'all') return null;
 
                 return React.createElement('button', {
                   key: value,
@@ -11772,7 +11772,7 @@ useEffect(() => {
                       ? 'bg-purple-600 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`,
-                }, `${label} (${count})`);
+                }, loadingArtist ? label : `${label} (${count})`);
               })
             ),
             // Spacer
@@ -11862,8 +11862,29 @@ useEffect(() => {
           artistPageTab === 'music' && React.createElement('div', {
             className: 'space-y-6 p-6'
           },
-            // Discography grid
-            React.createElement('div', {
+            // Loading skeletons for discography
+            loadingArtist && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+            },
+              Array.from({ length: 10 }).map((_, i) =>
+                React.createElement('div', { key: `album-skeleton-${i}` },
+                  React.createElement('div', {
+                    className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-3 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                  })
+                )
+              )
+            ),
+            // Discography grid (when loaded)
+            !loadingArtist && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
               sortArtistReleases(filterArtistReleases(artistReleases)).map(release =>
@@ -11933,8 +11954,8 @@ useEffect(() => {
               )
             ),
 
-            // Empty state
-            (() => {
+            // Empty state (only show when not loading)
+            !loadingArtist && (() => {
               const filtered = sortArtistReleases(filterArtistReleases(artistReleases));
               const typeFiltered = filtered.filter(r => releaseTypeFilter === 'all' || r.releaseType === releaseTypeFilter);
               if (typeFiltered.length === 0) {
