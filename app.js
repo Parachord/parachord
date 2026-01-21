@@ -1199,7 +1199,7 @@ const Parachord = () => {
   const externalTrackTimeoutRef = useRef(null);
   const playbackPollerRef = useRef(null);
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
-  const [settingsTab, setSettingsTab] = useState('installed'); // 'installed' | 'marketplace' | 'general' | 'about'
+  const [settingsTab, setSettingsTab] = useState('marketplace'); // 'marketplace' | 'installed' | 'general' | 'about'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
@@ -15364,15 +15364,6 @@ useEffect(() => {
             className: 'w-48 border-r border-gray-200 py-6 flex-shrink-0'
           },
             React.createElement('nav', { className: 'space-y-1 px-3' },
-              // Installed Plug-Ins tab
-              React.createElement('button', {
-                onClick: () => setSettingsTab('installed'),
-                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
-                  settingsTab === 'installed'
-                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
-                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
-                }`
-              }, 'Installed Plug-Ins'),
               // Marketplace tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('marketplace'),
@@ -15382,6 +15373,15 @@ useEffect(() => {
                     : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
                 }`
               }, 'Marketplace'),
+              // Installed Plug-Ins tab
+              React.createElement('button', {
+                onClick: () => setSettingsTab('installed'),
+                className: `w-full text-left px-4 py-3 text-sm transition-colors ${
+                  settingsTab === 'installed'
+                    ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
+                    : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
+                }`
+              }, 'Installed Plug-Ins'),
               // General tab (placeholder)
               React.createElement('button', {
                 onClick: () => setSettingsTab('general'),
@@ -15535,34 +15535,95 @@ useEffect(() => {
 
             // Marketplace Tab
             settingsTab === 'marketplace' && React.createElement('div', null,
-              // Header with search
-              React.createElement('div', { className: 'flex items-center justify-between mb-8' },
-                React.createElement('div', null,
-                  React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Marketplace'),
-                  React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
-                    'Discover and install new plug-ins to extend Parachord.'
+              // Header
+              React.createElement('div', { className: 'mb-6' },
+                React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Marketplace'),
+                React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
+                  'Discover and install plug-ins to extend Parachord.'
+                )
+              ),
+
+              // Plug-in architecture description
+              React.createElement('div', { className: 'bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 rounded-xl p-5 mb-8' },
+                React.createElement('div', { className: 'flex gap-4' },
+                  // Icon
+                  React.createElement('div', { className: 'flex-shrink-0 w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center' },
+                    React.createElement('svg', { className: 'w-5 h-5 text-purple-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z' })
+                    )
+                  ),
+                  // Content
+                  React.createElement('div', { className: 'flex-1' },
+                    React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Extensible Plug-in Architecture'),
+                    React.createElement('p', { className: 'text-sm text-gray-600 leading-relaxed mb-3' },
+                      'Parachord\'s plug-in system lets you connect to your favorite music services and customize your listening experience. Each plug-in runs in a secure sandbox, ensuring your data stays safe while enabling powerful integrations.'
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-3' },
+                      // Feature 1
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Stream from multiple services in one unified library')
+                      ),
+                      // Feature 2
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Enrich metadata with artist bios, lyrics, and recommendations')
+                      ),
+                      // Feature 3
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Sandboxed execution keeps your credentials secure')
+                      )
+                    )
                   )
                 )
               ),
+
               // Search and filter bar
-              React.createElement('div', { className: 'flex gap-4 mb-8' },
-                React.createElement('input', {
-                  type: 'text',
-                  placeholder: 'Search plug-ins...',
-                  value: marketplaceSearchQuery,
-                  onChange: (e) => setMarketplaceSearchQuery(e.target.value),
-                  className: 'flex-1 max-w-md px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
-                }),
-                React.createElement('select', {
-                  value: marketplaceCategory,
-                  onChange: (e) => setMarketplaceCategory(e.target.value),
-                  className: 'px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
-                },
-                  React.createElement('option', { value: 'all' }, 'All Categories'),
-                  React.createElement('option', { value: 'streaming' }, 'Streaming'),
-                  React.createElement('option', { value: 'purchase' }, 'Purchase'),
-                  React.createElement('option', { value: 'metadata' }, 'Metadata'),
-                  React.createElement('option', { value: 'radio' }, 'Radio')
+              React.createElement('div', { className: 'flex items-center gap-4 mb-8' },
+                // Search input
+                React.createElement('div', { className: 'relative' },
+                  React.createElement('svg', {
+                    className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400',
+                    fill: 'none',
+                    viewBox: '0 0 24 24',
+                    stroke: 'currentColor'
+                  },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  ),
+                  React.createElement('input', {
+                    type: 'text',
+                    placeholder: 'Search plug-ins...',
+                    value: marketplaceSearchQuery,
+                    onChange: (e) => setMarketplaceSearchQuery(e.target.value),
+                    className: 'w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                  })
+                ),
+                // Category filter pills
+                React.createElement('div', { className: 'flex gap-2' },
+                  [
+                    { value: 'all', label: 'All' },
+                    { value: 'streaming', label: 'Streaming' },
+                    { value: 'purchase', label: 'Purchase' },
+                    { value: 'metadata', label: 'Metadata' },
+                    { value: 'radio', label: 'Radio' }
+                  ].map(({ value, label }) =>
+                    React.createElement('button', {
+                      key: value,
+                      onClick: () => setMarketplaceCategory(value),
+                      className: `px-3 py-1.5 rounded-full text-sm transition-all ${
+                        marketplaceCategory === value
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`
+                    }, label)
+                  )
                 )
               ),
               // Loading state
@@ -15610,159 +15671,188 @@ useEffect(() => {
             ),
 
             // General Tab
-            settingsTab === 'general' && React.createElement('div', {
-              className: 'space-y-6'
-            },
-              // Cache Management Section
-              React.createElement('div', {
-                className: 'bg-white border border-gray-200 rounded-lg p-6'
-              },
-                React.createElement('h3', {
-                  className: 'text-lg font-semibold text-gray-900 mb-2'
-                }, 'Cache Management'),
-                React.createElement('p', {
-                  className: 'text-sm text-gray-500 mb-4'
-                }, 'Clear cached data including artist images, album art, and API responses. This may temporarily slow down loading while data is re-fetched.'),
-                React.createElement('button', {
-                  onClick: async () => {
-                    // Clear all caches
-                    artistImageCache.current = {};
-                    albumArtCache.current = {};
-                    artistDataCache.current = {};
-                    albumToReleaseIdCache.current = {};
-
-                    // Clear persisted caches
-                    if (window.electron?.store) {
-                      await window.electron.store.set('cache_artist_images', {});
-                      await window.electron.store.set('cache_album_art', {});
-                      await window.electron.store.set('cache_artist_data', {});
-                      await window.electron.store.set('cache_album_release_ids', {});
-                    }
-
-                    // Show confirmation (using a simple alert for now)
-                    alert('Cache cleared successfully!');
-                  },
-                  className: 'px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
-                }, 'Clear Cache')
+            settingsTab === 'general' && React.createElement('div', null,
+              // Page Header
+              React.createElement('div', { className: 'mb-8' },
+                React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'General'),
+                React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
+                  'Configure application settings and preferences.'
+                )
               ),
 
-              // Volume Normalization Section
-              React.createElement('div', {
-                className: 'bg-white border border-gray-200 rounded-lg p-6'
-              },
-                React.createElement('h3', {
-                  className: 'text-lg font-semibold text-gray-900 mb-2'
-                }, 'Volume Normalization'),
-                React.createElement('p', {
-                  className: 'text-sm text-gray-500 mb-4'
-                }, 'Adjust volume offsets per source to balance loudness between different resolvers. Negative values reduce volume for louder sources.'),
-
-                // Resolver volume offset sliders
-                React.createElement('div', { className: 'space-y-4' },
-                  // Spotify
-                  React.createElement('div', { className: 'flex items-center gap-4' },
-                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Spotify'),
-                    React.createElement('input', {
-                      type: 'range',
-                      min: '-12',
-                      max: '6',
-                      step: '1',
-                      value: resolverVolumeOffsets.spotify || 0,
-                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, spotify: Number(e.target.value) })),
-                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
-                    }),
-                    React.createElement('span', {
-                      className: 'w-16 text-sm text-gray-600 text-right'
-                    }, `${resolverVolumeOffsets.spotify > 0 ? '+' : ''}${resolverVolumeOffsets.spotify || 0} dB`)
+              // Settings sections
+              React.createElement('div', { className: 'space-y-8' },
+                // Cache Management Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Cache Management'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Clear cached data to free up space or fix display issues')
                   ),
+                  React.createElement('p', {
+                    className: 'text-sm text-gray-600 mb-5 leading-relaxed'
+                  }, 'This will remove cached artist images, album art, and API responses. Loading may be slower temporarily while data is re-fetched.'),
+                  React.createElement('button', {
+                    onClick: async () => {
+                      // Clear all caches
+                      artistImageCache.current = {};
+                      albumArtCache.current = {};
+                      artistDataCache.current = {};
+                      albumToReleaseIdCache.current = {};
 
-                  // Local Files
-                  React.createElement('div', { className: 'flex items-center gap-4' },
-                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Local Files'),
-                    React.createElement('input', {
-                      type: 'range',
-                      min: '-12',
-                      max: '6',
-                      step: '1',
-                      value: resolverVolumeOffsets.localfiles || 0,
-                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, localfiles: Number(e.target.value) })),
-                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
-                    }),
-                    React.createElement('span', {
-                      className: 'w-16 text-sm text-gray-600 text-right'
-                    }, `${resolverVolumeOffsets.localfiles > 0 ? '+' : ''}${resolverVolumeOffsets.localfiles || 0} dB`)
-                  ),
+                      // Clear persisted caches
+                      if (window.electron?.store) {
+                        await window.electron.store.set('cache_artist_images', {});
+                        await window.electron.store.set('cache_album_art', {});
+                        await window.electron.store.set('cache_artist_data', {});
+                        await window.electron.store.set('cache_album_release_ids', {});
+                      }
 
-                  // Bandcamp
-                  React.createElement('div', { className: 'flex items-center gap-4' },
-                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Bandcamp'),
-                    React.createElement('input', {
-                      type: 'range',
-                      min: '-12',
-                      max: '6',
-                      step: '1',
-                      value: resolverVolumeOffsets.bandcamp || 0,
-                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, bandcamp: Number(e.target.value) })),
-                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
-                      disabled: true,
-                      title: 'Browser playback - volume control not available'
-                    }),
-                    React.createElement('span', {
-                      className: 'w-16 text-sm text-gray-400 text-right'
-                    }, 'N/A')
-                  ),
-
-                  // YouTube
-                  React.createElement('div', { className: 'flex items-center gap-4' },
-                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'YouTube'),
-                    React.createElement('input', {
-                      type: 'range',
-                      min: '-12',
-                      max: '6',
-                      step: '1',
-                      value: resolverVolumeOffsets.youtube || 0,
-                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, youtube: Number(e.target.value) })),
-                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer',
-                      disabled: true,
-                      title: 'Browser playback - volume control not available'
-                    }),
-                    React.createElement('span', {
-                      className: 'w-16 text-sm text-gray-400 text-right'
-                    }, 'N/A')
-                  ),
-
-                  // Qobuz
-                  React.createElement('div', { className: 'flex items-center gap-4' },
-                    React.createElement('span', { className: 'w-24 text-sm text-gray-700 font-medium' }, 'Qobuz'),
-                    React.createElement('input', {
-                      type: 'range',
-                      min: '-12',
-                      max: '6',
-                      step: '1',
-                      value: resolverVolumeOffsets.qobuz || 0,
-                      onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, qobuz: Number(e.target.value) })),
-                      className: 'flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer'
-                    }),
-                    React.createElement('span', {
-                      className: 'w-16 text-sm text-gray-600 text-right'
-                    }, `${resolverVolumeOffsets.qobuz > 0 ? '+' : ''}${resolverVolumeOffsets.qobuz || 0} dB`)
+                      // Show confirmation (using a simple alert for now)
+                      alert('Cache cleared successfully!');
+                    },
+                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' })
+                    ),
+                    'Clear Cache'
                   )
                 ),
 
-                // Reset button
-                React.createElement('div', { className: 'mt-4 pt-4 border-t border-gray-200' },
-                  React.createElement('button', {
-                    onClick: () => setResolverVolumeOffsets({
-                      spotify: 0,
-                      localfiles: 0,
-                      bandcamp: -3,
-                      youtube: -6,
-                      qobuz: 0
-                    }),
-                    className: 'px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors'
-                  }, 'Reset to Defaults')
+                // Volume Normalization Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Volume Normalization'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Balance loudness between different sources')
+                  ),
+                  React.createElement('p', {
+                    className: 'text-sm text-gray-600 mb-6 leading-relaxed'
+                  }, 'Adjust volume offsets per resolver to balance loudness. Negative values reduce volume for louder sources.'),
+
+                  // Resolver volume offset sliders
+                  React.createElement('div', { className: 'space-y-3' },
+                    // Spotify
+                    React.createElement('div', { className: 'flex items-center gap-4 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors' },
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-900 font-medium' }, 'Spotify'),
+                      React.createElement('input', {
+                        type: 'range',
+                        min: '-12',
+                        max: '6',
+                        step: '1',
+                        value: resolverVolumeOffsets.spotify || 0,
+                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, spotify: Number(e.target.value) })),
+                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
+                      }),
+                      React.createElement('span', {
+                        className: 'w-16 text-sm text-gray-600 text-right font-mono tabular-nums'
+                      }, `${resolverVolumeOffsets.spotify > 0 ? '+' : ''}${resolverVolumeOffsets.spotify || 0} dB`)
+                    ),
+
+                    // Local Files
+                    React.createElement('div', { className: 'flex items-center gap-4 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors' },
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-900 font-medium' }, 'Local Files'),
+                      React.createElement('input', {
+                        type: 'range',
+                        min: '-12',
+                        max: '6',
+                        step: '1',
+                        value: resolverVolumeOffsets.localfiles || 0,
+                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, localfiles: Number(e.target.value) })),
+                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
+                      }),
+                      React.createElement('span', {
+                        className: 'w-16 text-sm text-gray-600 text-right font-mono tabular-nums'
+                      }, `${resolverVolumeOffsets.localfiles > 0 ? '+' : ''}${resolverVolumeOffsets.localfiles || 0} dB`)
+                    ),
+
+                    // Bandcamp
+                    React.createElement('div', { className: 'flex items-center gap-4 py-2 px-3 rounded-lg opacity-50' },
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-500 font-medium' }, 'Bandcamp'),
+                      React.createElement('input', {
+                        type: 'range',
+                        min: '-12',
+                        max: '6',
+                        step: '1',
+                        value: resolverVolumeOffsets.bandcamp || 0,
+                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, bandcamp: Number(e.target.value) })),
+                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-not-allowed',
+                        disabled: true,
+                        title: 'Browser playback - volume control not available'
+                      }),
+                      React.createElement('span', {
+                        className: 'w-16 text-xs text-gray-400 text-right italic'
+                      }, 'Browser')
+                    ),
+
+                    // YouTube
+                    React.createElement('div', { className: 'flex items-center gap-4 py-2 px-3 rounded-lg opacity-50' },
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-500 font-medium' }, 'YouTube'),
+                      React.createElement('input', {
+                        type: 'range',
+                        min: '-12',
+                        max: '6',
+                        step: '1',
+                        value: resolverVolumeOffsets.youtube || 0,
+                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, youtube: Number(e.target.value) })),
+                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-not-allowed',
+                        disabled: true,
+                        title: 'Browser playback - volume control not available'
+                      }),
+                      React.createElement('span', {
+                        className: 'w-16 text-xs text-gray-400 text-right italic'
+                      }, 'Browser')
+                    ),
+
+                    // Qobuz
+                    React.createElement('div', { className: 'flex items-center gap-4 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors' },
+                      React.createElement('span', { className: 'w-28 text-sm text-gray-900 font-medium' }, 'Qobuz'),
+                      React.createElement('input', {
+                        type: 'range',
+                        min: '-12',
+                        max: '6',
+                        step: '1',
+                        value: resolverVolumeOffsets.qobuz || 0,
+                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, qobuz: Number(e.target.value) })),
+                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
+                      }),
+                      React.createElement('span', {
+                        className: 'w-16 text-sm text-gray-600 text-right font-mono tabular-nums'
+                      }, `${resolverVolumeOffsets.qobuz > 0 ? '+' : ''}${resolverVolumeOffsets.qobuz || 0} dB`)
+                    )
+                  ),
+
+                  // Reset button
+                  React.createElement('div', { className: 'mt-6 pt-5 border-t border-gray-100' },
+                    React.createElement('button', {
+                      onClick: () => setResolverVolumeOffsets({
+                        spotify: 0,
+                        localfiles: 0,
+                        bandcamp: -3,
+                        youtube: -6,
+                        qobuz: 0
+                      }),
+                      className: 'inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-purple-300 transition-colors'
+                    },
+                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                      ),
+                      'Reset to Defaults'
+                    )
+                  )
                 )
-              )
+              ) // Close space-y-8 wrapper
             ),
 
             // About Tab
@@ -15806,7 +15896,18 @@ useEffect(() => {
 
               // Tagline
               React.createElement('p', { className: 'text-gray-500 mb-8 text-center max-w-md' },
-                'A modern multi-source music player inspired by Tomahawk.'
+                'A modern multi-source music player inspired by ',
+                React.createElement('a', {
+                  href: '#',
+                  onClick: (e) => {
+                    e.preventDefault();
+                    if (window.electron?.shell?.openExternal) {
+                      window.electron.shell.openExternal('https://github.com/tomahawk-player/tomahawk');
+                    }
+                  },
+                  className: 'text-purple-600 hover:text-purple-700 hover:underline'
+                }, 'Tomahawk'),
+                '.'
               ),
 
               // Divider
