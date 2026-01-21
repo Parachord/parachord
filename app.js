@@ -1248,12 +1248,12 @@ const Parachord = () => {
   // Critic's Picks state
   const [criticsPicks, setCriticsPicks] = useState([]);
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
-  const criticsPicksLoaded = useRef(false);
+  const [criticsPicksLoaded, setCriticsPicksLoaded] = useState(false);
 
   // Charts state
   const [charts, setCharts] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(false);
-  const chartsLoaded = useRef(false);
+  const [chartsLoaded, setChartsLoaded] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
@@ -5565,6 +5565,16 @@ const Parachord = () => {
               title: savedLastView.playlistTitle
             });
             console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})`);
+          } else if (savedLastView.view === 'discover') {
+            // Restore discover view - charts will be loaded by useEffect when cacheLoaded is true
+            setActiveView('discover');
+            setViewHistory(['library', 'discover']);
+            console.log(`📦 Restoring last view: discover (Pop of the Tops)`);
+          } else if (savedLastView.view === 'critics-picks') {
+            // Restore critics-picks view - data will be loaded by useEffect when cacheLoaded is true
+            setActiveView('critics-picks');
+            setViewHistory(['library', 'critics-picks']);
+            console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
@@ -7793,7 +7803,44 @@ ${tracks}
     }
   };
 
-  // Parse Apple Music Charts RSS feed
+  // Parse Apple Music Charts JSON feed
+  const parseChartsJSON = (data) => {
+    try {
+      const results = data?.feed?.results || [];
+      const albums = [];
+
+      results.forEach((item, index) => {
+        const album = item.name || '';
+        const artist = item.artistName || '';
+        const artworkUrl = item.artworkUrl100 || '';
+        const link = item.url || '';
+        const genres = (item.genres || [])
+          .map(g => g.name)
+          .filter(g => g !== 'Music');
+
+        if (album && artist) {
+          albums.push({
+            id: `charts-${index}-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+            artist: artist,
+            title: album,
+            rank: index + 1,
+            link: link,
+            genres: genres,
+            pubDate: item.releaseDate ? new Date(item.releaseDate) : null,
+            // Use artwork URL directly from JSON (higher quality available)
+            albumArt: artworkUrl ? artworkUrl.replace('100x100bb', '300x300bb') : null
+          });
+        }
+      });
+
+      return albums;
+    } catch (error) {
+      console.error('Error parsing Charts JSON:', error);
+      return [];
+    }
+  };
+
+  // Parse Apple Music Charts RSS feed (legacy fallback)
   const parseChartsRSS = (rssString) => {
     try {
       const parser = new DOMParser();
@@ -7860,7 +7907,7 @@ ${tracks}
 
   // Load Critic's Picks from RSS feed
   const loadCriticsPicks = async () => {
-    if (criticsPicksLoading || criticsPicksLoaded.current) return;
+    if (criticsPicksLoading || criticsPicksLoaded) return;
 
     setCriticsPicksLoading(true);
     console.log('📰 Loading Critic\'s Picks...');
@@ -7878,7 +7925,7 @@ ${tracks}
 
       // Set albums immediately (without album art)
       setCriticsPicks(albums);
-      criticsPicksLoaded.current = true;
+      setCriticsPicksLoaded(true);
 
       // Fetch album art in background
       fetchCriticsPicksAlbumArt(albums);
@@ -7895,26 +7942,27 @@ ${tracks}
     }
   };
 
-  // Load Charts from Apple Music RSS feed
+  // Load Charts from Apple Music JSON feed
   const loadCharts = async () => {
-    if (chartsLoading || chartsLoaded.current) return;
+    if (chartsLoading || chartsLoaded) return;
 
     setChartsLoading(true);
     console.log('📊 Loading Charts...');
 
     try {
-      const response = await fetch('https://rss.marketingtools.apple.com/api/v2/us/music/most-played/50/albums.rss');
+      // Use JSON endpoint instead of RSS (RSS returns 500 intermittently)
+      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json');
       if (!response.ok) {
-        throw new Error(`Failed to fetch RSS: ${response.status}`);
+        throw new Error(`Failed to fetch charts: ${response.status}`);
       }
 
-      const rssText = await response.text();
-      const albums = parseChartsRSS(rssText);
+      const data = await response.json();
+      const albums = parseChartsJSON(data);
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
 
       setCharts(albums);
-      chartsLoaded.current = true;
+      setChartsLoaded(true);
 
       // Wait for cache to be loaded before fetching album art
       if (cacheLoaded) {
@@ -7947,6 +7995,9 @@ ${tracks}
     const cachedUpdates = [];
 
     for (const album of albums) {
+      // Skip albums that already have artwork from the JSON feed
+      if (album.albumArt) continue;
+
       const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
       const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
 
@@ -8344,6 +8395,22 @@ ${tracks}
 
     return [];
   };
+
+  // Load charts when navigating to discover page (Pop of the Tops)
+  useEffect(() => {
+    // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
+    if (activeView === 'discover' && cacheLoaded && !chartsLoaded) {
+      loadCharts();
+    }
+  }, [activeView, cacheLoaded, chartsLoaded]);
+
+  // Load critics picks when navigating to critics-picks page
+  useEffect(() => {
+    // Only load if we're on the critics-picks page AND cache is loaded AND not already loaded
+    if (activeView === 'critics-picks' && cacheLoaded && !criticsPicksLoaded) {
+      loadCriticsPicks();
+    }
+  }, [activeView, cacheLoaded, criticsPicksLoaded]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
@@ -15153,8 +15220,8 @@ useEffect(() => {
             },
             onScroll: handleChartsScroll
           },
-            // Skeleton loading state
-            chartsLoading && React.createElement('div', {
+            // Skeleton loading state - show when loading OR when charts haven't been loaded yet
+            (chartsLoading || !chartsLoaded) && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
               Array.from({ length: 15 }).map((_, i) =>
@@ -15179,8 +15246,8 @@ useEffect(() => {
               )
             ),
 
-            // Albums grid with filter/sort
-            !chartsLoading && (() => {
+            // Albums grid with filter/sort - only show when loaded and not loading
+            chartsLoaded && !chartsLoading && (() => {
               const filtered = filterCharts(charts);
               const sorted = sortCharts(filtered);
 
@@ -15491,8 +15558,8 @@ useEffect(() => {
             },
             onScroll: handleCriticsScroll
           },
-            // Skeleton loading state
-            criticsPicksLoading && React.createElement('div', {
+            // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
+            (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
             Array.from({ length: 15 }).map((_, i) =>
@@ -15517,8 +15584,8 @@ useEffect(() => {
             )
           ),
 
-          // Albums grid with filter/sort
-          !criticsPicksLoading && (() => {
+          // Albums grid with filter/sort - only show when loaded and not loading
+          criticsPicksLoaded && !criticsPicksLoading && (() => {
             const filtered = filterCriticsPicks(criticsPicks);
             const sorted = sortCriticsPicks(filtered);
 
