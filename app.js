@@ -1198,14 +1198,6 @@ const Parachord = () => {
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
   const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
 
-  // History page state
-  const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
-  const [historySearchOpen, setHistorySearchOpen] = useState(false);
-  const [historySearch, setHistorySearch] = useState('');
-  const [historySortDropdownOpen, setHistorySortDropdownOpen] = useState(false);
-  const [historySort, setHistorySort] = useState('recent');
-  const [listeningHistory, setListeningHistory] = useState({ tracks: [], loading: true, error: null });
-
   // Sidebar badge state for visual feedback on additions
   const [sidebarBadges, setSidebarBadges] = useState({
     collection: null,
@@ -1262,15 +1254,6 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [criticsSortDropdownOpen]);
-
-  // Close history sort dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setHistorySortDropdownOpen(false);
-    if (historySortDropdownOpen) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [historySortDropdownOpen]);
 
   // Close artist sort dropdown when clicking outside
   useEffect(() => {
@@ -1335,16 +1318,6 @@ const Parachord = () => {
     });
   }, []);
 
-  // History page scroll handler for header collapse
-  const handleHistoryScroll = useCallback((e) => {
-    const scrollTop = e.target.scrollTop;
-    setHistoryHeaderCollapsed(prev => {
-      if (!prev && scrollTop > 50) return true;
-      if (prev && scrollTop === 0) return false;
-      return prev;
-    });
-  }, []);
-
   // Reset collection header collapse when leaving library view
   useEffect(() => {
     if (activeView !== 'library') {
@@ -1386,15 +1359,6 @@ const Parachord = () => {
     if (activeView !== 'recommendations') {
       setRecommendationsHeaderCollapsed(false);
       setRecommendationsTab('artists');
-    }
-  }, [activeView]);
-
-  // Reset history header collapse when leaving history view
-  useEffect(() => {
-    if (activeView !== 'history') {
-      setHistoryHeaderCollapsed(false);
-      setHistorySearchOpen(false);
-      setHistorySearch('');
     }
   }, [activeView]);
 
@@ -1622,33 +1586,6 @@ const Parachord = () => {
     { value: 'recent', label: 'Date Added' },
     { value: 'score-desc', label: 'Score' },
     { value: 'artist', label: 'Artist Name' }
-  ];
-
-  // Filter and sort history
-  const filterHistory = useCallback((items) => {
-    if (!historySearch.trim()) return items;
-    const query = historySearch.toLowerCase();
-    return items.filter(t =>
-      t.title.toLowerCase().includes(query) ||
-      t.artist.toLowerCase().includes(query) ||
-      (t.album && t.album.toLowerCase().includes(query))
-    );
-  }, [historySearch]);
-
-  const sortHistory = useCallback((items) => {
-    const sorted = [...items];
-    switch (historySort) {
-      case 'recent': return sorted; // Keep original order (most recent first)
-      case 'artist': return sorted.sort((a, b) => a.artist.localeCompare(b.artist));
-      case 'title': return sorted.sort((a, b) => a.title.localeCompare(b.title));
-      default: return sorted;
-    }
-  }, [historySort]);
-
-  const historySortOptions = [
-    { value: 'recent', label: 'Recent' },
-    { value: 'artist', label: 'Artist A-Z' },
-    { value: 'title', label: 'Title A-Z' }
   ];
 
   const [isScanning, setIsScanning] = useState(false);
@@ -6967,15 +6904,7 @@ ${tracks}
     console.log('⭐ Loading Recommendations...');
 
     try {
-      // Get Last.fm username from store
-      const lastfmConfig = await window.electron?.store?.get('lastfm');
-      const username = lastfmConfig?.username;
-
-      if (!username) {
-        throw new Error('No Last.fm account connected. Configure your account in Settings > Resolvers.');
-      }
-
-      const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(username)}/recommended`);
+      const response = await fetch('https://www.last.fm/player/station/user/jherskowitz/recommended');
       if (!response.ok) {
         throw new Error(`Failed to fetch recommendations: ${response.status}`);
       }
@@ -7077,129 +7006,6 @@ ${tracks}
     }
 
     console.log(`⭐ Finished resolving recommendation tracks`);
-  };
-
-  // Load Listening History from Last.fm
-  const loadListeningHistory = async () => {
-    setListeningHistory(prev => ({ ...prev, loading: true, error: null }));
-    console.log('📜 Loading Listening History...');
-
-    try {
-      // Get Last.fm username from store
-      const lastfmConfig = await window.electron?.store?.get('lastfm');
-      const username = lastfmConfig?.username;
-
-      if (!username) {
-        setListeningHistory({
-          tracks: [],
-          loading: false,
-          error: 'No Last.fm account connected. Configure your account in Settings > Resolvers.'
-        });
-        return;
-      }
-
-      const apiKey = lastfmApiKey.current;
-      if (!apiKey) {
-        setListeningHistory({
-          tracks: [],
-          loading: false,
-          error: 'Last.fm API key not configured.'
-        });
-        return;
-      }
-
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=50`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch listening history: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const recentTracks = data.recenttracks?.track || [];
-
-      console.log(`📜 Received ${recentTracks.length} recent tracks`);
-
-      // Transform tracks to app format
-      const tracks = recentTracks.map((track, index) => ({
-        id: `history-${index}-${track.date?.uts || 'now'}-${track.name}`.replace(/\s+/g, '-'),
-        title: track.name,
-        artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-        album: track.album?.['#text'] || null,
-        albumArt: track.image?.[2]?.['#text'] || null, // Medium size image
-        playedAt: track.date?.uts ? parseInt(track.date.uts) * 1000 : null, // Convert to ms
-        nowPlaying: track['@attr']?.nowplaying === 'true',
-        sources: {} // Will be populated by resolver pipeline
-      }));
-
-      // Set initial state with tracks
-      setListeningHistory({
-        tracks,
-        loading: false,
-        error: null
-      });
-
-      // Resolve tracks in background using the resolver pipeline
-      resolveHistoryTracks(tracks);
-
-    } catch (error) {
-      console.error('Failed to load Listening History:', error);
-      setListeningHistory({
-        tracks: [],
-        loading: false,
-        error: error.message || 'Failed to load listening history. Please try again.'
-      });
-    }
-  };
-
-  // Resolve history tracks using the resolver pipeline
-  const resolveHistoryTracks = async (tracks) => {
-    console.log(`📜 Resolving ${tracks.length} history tracks...`);
-
-    for (const track of tracks) {
-      // Check if queue resolution has priority - if so, pause
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing history resolution - queue resolution has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming history resolution`);
-      }
-
-      console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-
-      // Resolve all sources for this track
-      for (const resolverId of activeResolvers) {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.resolve) continue;
-
-        try {
-          const config = await getResolverConfig(resolverId);
-          const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-          if (resolved) {
-            console.log(`  ✅ ${resolver.name}: Found match for "${track.title}"`);
-            // Update the track's sources and trigger re-render
-            setListeningHistory(prev => ({
-              ...prev,
-              tracks: prev.tracks.map(t =>
-                t.id === track.id
-                  ? {
-                      ...t,
-                      sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null
-                    }
-                  : t
-              )
-            }));
-          }
-        } catch (error) {
-          console.error(`  ❌ ${resolver.name} resolve error:`, error);
-        }
-      }
-    }
-
-    console.log(`📜 Finished resolving history tracks`);
   };
 
   // Fetch album art for Critic's Picks in background
@@ -9039,13 +8845,8 @@ useEffect(() => {
               'Stations'
             ),
             React.createElement('button', {
-              onClick: () => {
-                navigateTo('history');
-                loadListeningHistory();
-              },
-              className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
-                activeView === 'history' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
-              }`
+              onClick: () => {}, // Placeholder
+              className: 'w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-gray-400 cursor-not-allowed'
             },
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
@@ -13088,380 +12889,6 @@ useEffect(() => {
                   className: 'text-center py-12 text-gray-400'
                 }, 'No recommended songs found.')
               )
-          )
-        ),
-
-        // History view with collapsible hero header
-        activeView === 'history' && React.createElement('div', {
-          className: 'flex-1 flex flex-col h-full',
-          style: { overflow: 'hidden', minHeight: 0 }
-        },
-          // Header section (outside scrollable area)
-          React.createElement('div', {
-            className: 'relative',
-            style: {
-              height: historyHeaderCollapsed ? '80px' : '320px',
-              flexShrink: 0,
-              transition: 'height 300ms ease',
-              overflow: 'hidden'
-            }
-          },
-            // Gradient background - blue/cyan theme for history
-            React.createElement('div', {
-              className: 'absolute inset-0 bg-gradient-to-br from-cyan-500 via-blue-500 to-indigo-600'
-            }),
-            // Background pattern - clock/time icons
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                opacity: 0.15,
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'1.5\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\'/%3E%3Cpath d=\'M30 22v8l5 5\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // EXPANDED STATE - Centered content
-            !historyHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: historyHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease'
-              }
-            },
-              React.createElement('h1', {
-                className: 'text-5xl font-light text-white',
-                style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                }
-              }, 'HISTORY'),
-              React.createElement('div', {
-                className: 'flex items-center gap-1 mt-6',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              },
-                React.createElement('span', {
-                  className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                }, `${listeningHistory.tracks.length} Tracks`)
-              ),
-              React.createElement('p', {
-                className: 'mt-2 text-white/80 text-sm'
-              }, 'Your recent listening activity from Last.fm')
-            ),
-            // COLLAPSED STATE - Inline layout
-            historyHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
-              style: {
-                opacity: historyHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease'
-              }
-            },
-              React.createElement('h1', {
-                className: 'text-2xl font-light text-white',
-                style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase'
-                }
-              }, 'HISTORY'),
-              React.createElement('div', { className: 'flex-1' }),
-              React.createElement('span', {
-                className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-              }, `${listeningHistory.tracks.length} Tracks`)
-            )
-          ),
-          // Filter bar (outside scrollable area)
-          React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
-            style: { flexShrink: 0 }
-          },
-            // Sort dropdown
-            React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setHistorySortDropdownOpen(!historySortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-              },
-                React.createElement('span', null, historySortOptions.find(o => o.value === historySort)?.label || 'Sort'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              historySortDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-              },
-                historySortOptions.map(option =>
-                  React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setHistorySort(option.value);
-                      setHistorySortDropdownOpen(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      historySort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    option.label,
-                    historySort === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
-            React.createElement('div', { className: 'flex-1' }),
-            // Search
-            React.createElement('div', { className: 'flex items-center' },
-              historySearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: historySearch,
-                    onChange: (e) => setHistorySearch(e.target.value),
-                    onBlur: () => { if (!historySearch.trim()) setHistorySearchOpen(false); },
-                    autoFocus: true,
-                    placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
-                    style: { width: '150px' }
-                  }),
-                  historySearch && React.createElement('button', {
-                    onClick: () => { setHistorySearch(''); setHistorySearchOpen(false); },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
-                  )
-                )
-              :
-                React.createElement('button', {
-                  onClick: () => setHistorySearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
-                },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                  )
-                )
-            )
-          ),
-          // Scrollable content area
-          React.createElement('div', {
-            className: 'flex-1 overflow-y-auto scrollable-content p-6',
-            onScroll: handleHistoryScroll
-          },
-            // Loading state
-            listeningHistory.loading ?
-              React.createElement('div', { className: 'space-y-0' },
-                ...Array(15).fill(null).map((_, i) =>
-                  React.createElement('div', {
-                    key: `history-skeleton-${i}`,
-                    className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
-                  },
-                    React.createElement('div', {
-                      className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { width: '280px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { width: '180px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'flex gap-1 ml-auto',
-                      style: { width: '100px' }
-                    },
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 125}ms` }
-                      })
-                    )
-                  )
-                )
-              )
-            // Error state
-            : listeningHistory.error ?
-              React.createElement('div', { className: 'text-center py-12' },
-                React.createElement('div', { className: 'text-gray-400 mb-4' }, listeningHistory.error),
-                React.createElement('button', {
-                  onClick: loadListeningHistory,
-                  className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                }, 'Try Again')
-              )
-            // Track list
-            : (() => {
-                const filtered = filterHistory(listeningHistory.tracks);
-                const sorted = sortHistory(filtered);
-
-                if (sorted.length === 0) {
-                  return React.createElement('div', {
-                    className: 'text-center py-12 text-gray-400'
-                  }, historySearch ? 'No tracks match your search.' : 'No recent tracks found.');
-                }
-
-                return React.createElement('div', { className: 'space-y-0' },
-                  ...sorted.map((track, index) => {
-                    const hasResolved = Object.keys(track.sources || {}).length > 0;
-                    const isResolving = Object.keys(track.sources || {}).length === 0;
-
-                    return React.createElement('div', {
-                      key: track.id,
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'track',
-                          track: {
-                            id: track.id,
-                            title: track.title,
-                            artist: track.artist,
-                            album: track.album,
-                            duration: track.duration,
-                            sources: track.sources || {}
-                          }
-                        }));
-                      },
-                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${
-                        isResolving ? 'opacity-60' : ''
-                      }`,
-                      onClick: () => {
-                        // Set remaining tracks as queue and play this track
-                        const tracksAfter = sorted.slice(index + 1);
-                        setCurrentQueue(tracksAfter);
-                        handlePlay(track);
-                      },
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
-                            type: 'track',
-                            track: track
-                          });
-                        }
-                      }
-                    },
-                      // Track number
-                      React.createElement('span', {
-                        className: 'text-sm text-gray-400 flex-shrink-0 text-right',
-                        style: { pointerEvents: 'none', width: '32px' }
-                      }, String(index + 1).padStart(2, '0')),
-
-                      // Track title - fixed width column
-                      React.createElement('span', {
-                        className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
-                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
-                      }, track.nowPlaying ? `▶ ${track.title}` : track.title),
-
-                      // Artist name - fixed width column, clickable
-                      React.createElement('span', {
-                        className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: { width: '180px', flexShrink: 0 },
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          fetchArtistData(track.artist);
-                        }
-                      }, track.artist),
-
-                      // Duration - fixed width column
-                      React.createElement('span', {
-                        className: 'text-sm text-gray-400 text-right tabular-nums',
-                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
-                      }, track.duration ? formatTime(track.duration) : '--:--'),
-
-                      // Resolver icons - fixed width column
-                      React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end ml-auto',
-                        style: { width: '100px', flexShrink: 0, minHeight: '24px' }
-                      },
-                        isResolving ?
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              title: 'Resolving track...'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
-                        : hasResolved ?
-                          Object.entries(track.sources)
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = sorted.slice(index + 1);
-                                  setCurrentQueue(tracksAfter);
-                                  handlePlay({ ...track, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '24px',
-                                  height: '24px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '10px',
-                                  fontWeight: 'bold',
-                                  color: 'white',
-                                  pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                              })());
-                            })
-                        :
-                          // Show shimmer skeletons while resolving
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              title: 'Resolving track...'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
-                      )
-                    );
-                  })
-                );
-              })()
           )
         ),
 
