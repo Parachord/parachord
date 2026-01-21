@@ -8901,9 +8901,10 @@ const playOnSpotifyConnect = async (track) => {
     const activeDevice = devices.find(d => d.is_active) || devices[0];
     console.log('Selected device:', activeDevice.name, 'Active:', activeDevice.is_active);
     
-    // If device is not active, try to transfer playback to it first
+    // If device is not active, wake it up by transferring playback with play:true
+    // This is more reliable than transferring then playing separately
     if (!activeDevice.is_active) {
-      console.log('Device not active, transferring playback first...');
+      console.log('Device not active, waking device and starting playback...');
       const transferResponse = await fetch('https://api.spotify.com/v1/me/player', {
         method: 'PUT',
         headers: {
@@ -8912,22 +8913,23 @@ const playOnSpotifyConnect = async (track) => {
         },
         body: JSON.stringify({
           device_ids: [activeDevice.id],
-          play: false // Don't start playing yet
+          play: true // Wake device AND start playing
         })
       });
-      
+
       if (!transferResponse.ok && transferResponse.status !== 204) {
-        console.error('Failed to transfer playback:', transferResponse.status);
+        console.error('Failed to wake device:', transferResponse.status);
         const error = await transferResponse.text();
-        console.error('Transfer error details:', error);
+        console.error('Wake error details:', error);
+        // Don't return - try the play call anyway as fallback
       } else {
-        console.log('Playback transferred to device');
-        // Small delay to let the transfer complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log('Device woken up, waiting for it to become ready...');
+        // Longer delay to let device fully wake up
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    
-    // Now play track on device
+
+    // Now play the specific track on the device
     console.log('Starting playback on device:', activeDevice.name);
     const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, {
       method: 'PUT',
