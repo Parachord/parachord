@@ -12130,23 +12130,14 @@ useEffect(() => {
                       },
                         React.createElement('div', {
                           className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
-                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gray-100'
+                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
                           }`,
                           style: {
                             backgroundImage: artist.image ? `url(${artist.image})` : 'none',
                             backgroundSize: artist.image ? 'cover' : '200% 100%',
                             backgroundPosition: 'center'
                           }
-                        },
-                          // Only show fallback icon after image lookup completes with no result
-                          artist.imageLoaded && !artist.image && React.createElement('div', {
-                            className: 'w-full h-full flex items-center justify-center text-gray-400'
-                          },
-                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                            )
-                          )
-                        )
+                        })
                       ),
                       React.createElement('span', {
                         className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
@@ -14444,25 +14435,16 @@ useEffect(() => {
                         className: 'relative w-36 h-36 rounded-full overflow-hidden'
                       },
                         React.createElement('div', {
-                          // Show shimmer while loading, solid bg when loaded but no image, image when available
+                          // Show shimmer while loading, purple gradient when loaded but no image, image when available
                           className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
-                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gray-100'
+                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
                           }`,
                           style: {
                             backgroundImage: artist.image ? `url(${artist.image})` : 'none',
                             backgroundSize: artist.image ? 'cover' : '200% 100%',
                             backgroundPosition: 'center'
                           }
-                        },
-                          // Only show fallback icon when image lookup completed but no image found
-                          artist.imageLoaded && !artist.image && React.createElement('div', {
-                            className: 'w-full h-full flex items-center justify-center text-gray-400'
-                          },
-                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                            )
-                          )
-                        )
+                        })
                       ),
                       React.createElement('span', {
                         className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
