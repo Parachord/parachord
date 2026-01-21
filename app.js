@@ -4879,7 +4879,7 @@ const Parachord = () => {
     setSearchContainerWidth(container.offsetWidth);
 
     return () => resizeObserver.disconnect();
-  }, [view]); // Re-attach when view changes
+  }, [activeView]); // Re-attach when view changes
 
   // Calculate how many items fit in a row based on container width and item size
   const getItemsPerRow = (minItemWidth, gap = 16) => {
