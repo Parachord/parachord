@@ -17132,8 +17132,8 @@ useEffect(() => {
     // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
     // z-50 to stay above queue drawer
     React.createElement('div', {
-      className: 'bg-gray-800/95 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0 relative z-50',
-      style: { minHeight: '85px' }
+      className: 'bg-gray-800/95 backdrop-blur-xl border-t border-gray-700 py-3 no-drag flex-shrink-0 relative z-50',
+      style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px' }
     },
       React.createElement('div', { className: 'flex items-center justify-between gap-4' },
         // LEFT: Transport controls + Queue button
