@@ -1158,6 +1158,8 @@ const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
   const [isPlaying, setIsPlaying] = useState(false);
+  // Track if currentTrack was restored from saved queue and needs explicit playback start
+  const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
 
@@ -3395,6 +3397,7 @@ const Parachord = () => {
   }, [activeResolvers, resolverOrder]);
 
   // Save queue when it changes (if remember queue is enabled)
+  // Include currentTrack so it can be restored as the playing track
   useEffect(() => {
     // Skip until settings are loaded to avoid overwriting saved queue
     if (!resolverSettingsLoaded.current) return;
@@ -3403,13 +3406,15 @@ const Parachord = () => {
     // Debounce the save to avoid saving too frequently
     const timeoutId = setTimeout(async () => {
       if (window.electron?.store) {
-        await window.electron.store.set('saved_queue', currentQueue);
-        console.log(`💾 Saved queue with ${currentQueue.length} tracks`);
+        // Save currentTrack + queue together so we restore the correct playing track
+        const fullQueue = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+        await window.electron.store.set('saved_queue', fullQueue);
+        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue`);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [currentQueue, rememberQueue]);
+  }, [currentTrack, currentQueue, rememberQueue]);
 
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
@@ -3758,6 +3763,8 @@ const Parachord = () => {
         streamingPlaybackActiveRef.current = false;
         setBrowserPlaybackActive(false);
         setIsExternalPlayback(false);
+        // Clear explicit start flag since we're playing a new track
+        trackNeedsExplicitStart.current = false;
 
         console.log('✅ Local file playing');
 
@@ -3837,6 +3844,8 @@ const Parachord = () => {
         sourceToPlay;
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
+      // Clear explicit start flag since we're playing a new track
+      trackNeedsExplicitStart.current = false;
       showExternalTrackPromptUI(trackToSet);
       return; // Don't play yet, wait for user confirmation
     }
@@ -3889,6 +3898,8 @@ const Parachord = () => {
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
+        // Clear explicit start flag since we're playing a new track
+        trackNeedsExplicitStart.current = false;
         // Reset baseline for smooth progress interpolation
         spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
         if (audioContext) {
@@ -4500,20 +4511,56 @@ const Parachord = () => {
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       try {
-        const endpoint = isPlaying ?
-          'https://api.spotify.com/v1/me/player/pause' :
-          'https://api.spotify.com/v1/me/player/play';
+        if (isPlaying) {
+          // Pausing - simple pause request
+          const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${spotifyToken}`
+            }
+          });
 
-        const response = await fetch(endpoint, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${spotifyToken}`
+          if (response.ok || response.status === 204) {
+            setIsPlaying(false);
+            console.log('Paused Spotify playback');
           }
-        });
+        } else {
+          // Playing - check if we need to explicitly start this track
+          // (e.g., restored from saved queue, Spotify may have different track loaded)
+          const spotifyUri = currentTrack.spotifyUri || currentTrack.sources?.spotify;
 
-        if (response.ok || response.status === 204) {
-          setIsPlaying(!isPlaying);
-          console.log(isPlaying ? 'Paused' : 'Resumed', 'Spotify playback');
+          if (trackNeedsExplicitStart.current && spotifyUri) {
+            // Explicitly start this specific track
+            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${spotifyToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                uris: [spotifyUri]
+              })
+            });
+
+            if (response.ok || response.status === 204) {
+              setIsPlaying(true);
+              trackNeedsExplicitStart.current = false;
+              console.log('Started Spotify playback with explicit track:', currentTrack.title);
+            }
+          } else {
+            // Normal resume
+            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${spotifyToken}`
+              }
+            });
+
+            if (response.ok || response.status === 204) {
+              setIsPlaying(true);
+              console.log('Resumed Spotify playback');
+            }
+          }
         }
       } catch (error) {
         console.error('Spotify play/pause error:', error);
@@ -5215,6 +5262,8 @@ const Parachord = () => {
           setCurrentTrack(firstTrack);
           setCurrentQueue(remainingQueue);
           setIsPlaying(false); // Ensure it starts paused
+          // Mark that this track needs explicit start (not just resume) when played
+          trackNeedsExplicitStart.current = true;
           console.log(`📦 Restored queue: "${firstTrack.title}" ready in playbar, ${remainingQueue.length} tracks in queue`);
         }
       }
