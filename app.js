@@ -1362,6 +1362,7 @@ const Parachord = () => {
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
   const pendingHistoryLoad = useRef(null); // Track pending history tab load from view restore
   const pendingReleaseLoad = useRef(null); // Track pending release/album load from view restore
+  const pendingPlaylistLoad = useRef(null); // Track pending playlist load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
   const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
@@ -5327,7 +5328,7 @@ const Parachord = () => {
       // Load last active view
       const savedLastView = await window.electron.store.get('last_active_view');
       if (savedLastView) {
-        const validViews = ['library', 'search', 'artist', 'playlists', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'new-releases'];
+        const validViews = ['library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'new-releases'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
           if (savedLastView.view === 'artist' && savedLastView.artistName) {
@@ -5384,6 +5385,16 @@ const Parachord = () => {
               setRecommendationsTab(savedLastView.recommendationsTab);
             }
             console.log(`📦 Restoring last view: recommendations [${savedLastView.recommendationsTab || 'artists'}]`);
+          } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
+            // Restore playlist detail view - need to find the playlist by ID
+            setActiveView('playlist-view');
+            setViewHistory(['library', 'playlists', 'playlist-view']);
+            // Store pending playlist load - will be processed once playlists are loaded
+            pendingPlaylistLoad.current = {
+              id: savedLastView.playlistId,
+              title: savedLastView.playlistTitle
+            };
+            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
@@ -5487,10 +5498,14 @@ const Parachord = () => {
     if (activeView === 'recommendations') {
       viewData.recommendationsTab = recommendationsTab;
     }
+    if (activeView === 'playlist-view' && selectedPlaylist) {
+      viewData.playlistId = selectedPlaylist.id;
+      viewData.playlistTitle = selectedPlaylist.title;
+    }
 
     window.electron.store.set('last_active_view', viewData);
-    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
-  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab]);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}`);
+  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab, selectedPlaylist?.id]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -5516,6 +5531,23 @@ const Parachord = () => {
       fetchReleaseData(release, currentArtist);
     }
   }, [currentArtist]);
+
+  // Load pending playlist once playlists are loaded
+  useEffect(() => {
+    if (playlists.length > 0 && pendingPlaylistLoad.current) {
+      const pending = pendingPlaylistLoad.current;
+      pendingPlaylistLoad.current = null; // Clear pending load
+      const playlist = playlists.find(p => p.id === pending.id);
+      if (playlist) {
+        console.log(`📦 Loading playlist for restored view: ${playlist.title}`);
+        setSelectedPlaylist(playlist);
+      } else {
+        console.log(`📦 Playlist not found: ${pending.title}, falling back to playlists view`);
+        setActiveView('playlists');
+        setViewHistory(['library', 'playlists']);
+      }
+    }
+  }, [playlists]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
@@ -17046,7 +17078,7 @@ useEffect(() => {
     // z-50 to stay above queue drawer
     React.createElement('div', {
       className: 'bg-gray-800/95 backdrop-blur-xl border-t border-gray-700 px-4 py-3 no-drag flex-shrink-0 relative z-50',
-      style: { minHeight: '100px' }
+      style: { minHeight: '85px' }
     },
       React.createElement('div', { className: 'flex items-center justify-between gap-4' },
         // LEFT: Transport controls + Queue button
@@ -17123,7 +17155,7 @@ useEffect(() => {
             },
               React.createElement('div', {
                 className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
-                style: { width: '76px', height: '76px' }
+                style: { width: '61px', height: '61px' }
               },
                 currentTrack.albumArt && React.createElement('img', {
                   src: currentTrack.albumArt,
@@ -18018,7 +18050,7 @@ useEffect(() => {
       // Panel - positioned at right edge of sidebar
       React.createElement('div', {
         className: 'absolute w-96 bg-white shadow-2xl flex flex-col',
-        style: { left: '256px', top: '28px', bottom: '100px', pointerEvents: 'auto' }, // Account for title bar and player
+        style: { left: '256px', top: '28px', bottom: '85px', pointerEvents: 'auto' }, // Account for title bar and player
         onDragOver: (e) => {
           // Allow drag events to pass through to children
           e.preventDefault();
@@ -18724,7 +18756,7 @@ useEffect(() => {
     React.createElement('div', {
       className: 'fixed left-0 right-0 backdrop-blur-md border-t border-gray-700/50 shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
-        bottom: queueDrawerOpen ? '100px' : -queueDrawerHeight, // Position above the playbar (100px height)
+        bottom: queueDrawerOpen ? '85px' : -queueDrawerHeight, // Position above the playbar (85px height)
         height: queueDrawerHeight + 'px',
         background: 'linear-gradient(to top, rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.5))'
       }
