@@ -1218,6 +1218,7 @@ const Parachord = () => {
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
   const [queueDropTarget, setQueueDropTarget] = useState(null); // Index where track will be dropped in queue
   const [droppingTrackId, setDroppingTrackId] = useState(null); // Track ID that's animating "drop" into player
+  const [insertedTrackId, setInsertedTrackId] = useState(null); // Track ID that was just inserted via "previous"
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
 
@@ -1827,6 +1828,7 @@ const Parachord = () => {
   const currentQueueRef = useRef([]);
   const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
+  const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
@@ -4447,16 +4449,6 @@ const Parachord = () => {
       await window.electron.playbackWindow.close();
     }
 
-    // Stop Spotify playback if active
-    if (spotifyPlayer && isPlaying) {
-      try {
-        console.log('⏹️ Pausing Spotify before next track');
-        await spotifyPlayer.pause();
-      } catch (e) {
-        console.error('Error pausing Spotify:', e);
-      }
-    }
-
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -4502,6 +4494,12 @@ const Parachord = () => {
 
     const nextTrack = queue[nextTrackIndex];
 
+    // Push current track to history before moving to next (for "previous" navigation)
+    if (track) {
+      playHistoryRef.current = [...playHistoryRef.current, track];
+      console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
+    }
+
     // Remove the track we're about to play from the queue
     const newQueue = queue.filter((_, index) => index !== nextTrackIndex);
     setCurrentQueue(newQueue);
@@ -4537,16 +4535,6 @@ const Parachord = () => {
       await window.electron.playbackWindow.close();
     }
 
-    // Stop Spotify playback if active
-    if (spotifyPlayer && isPlaying) {
-      try {
-        console.log('⏹️ Pausing Spotify before restarting track');
-        await spotifyPlayer.pause();
-      } catch (e) {
-        console.error('Error pausing Spotify:', e);
-      }
-    }
-
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -4568,10 +4556,40 @@ const Parachord = () => {
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
 
-    // In a queue-based system, "previous" restarts the current track
-    // (we don't keep history of played tracks)
-    console.log(`⬅️ Restarting current track: "${track.title}"`);
-    handlePlay(track);
+    // Check if we have history to go back to
+    const history = playHistoryRef.current;
+    if (history.length > 0) {
+      // Pop the previous track from history
+      const previousTrack = history[history.length - 1];
+      playHistoryRef.current = history.slice(0, -1);
+
+      // Put current track at the front of the queue so it plays next after the previous track
+      // This maintains proper playback order: previous -> current -> rest of queue
+      if (track) {
+        // Check if track is already in queue before inserting
+        const queue = currentQueueRef.current;
+        const isDuplicate = queue.some(t =>
+          t.title === track.title && t.artist === track.artist
+        );
+
+        if (isDuplicate) {
+          console.log(`⏭️ Track "${track.title}" already in queue, skipping duplicate`);
+        } else {
+          setCurrentQueue(prev => [track, ...prev]);
+          console.log(`📥 Returned "${track.title}" to front of queue`);
+          // Trigger insert animation
+          setInsertedTrackId(track.id);
+          setTimeout(() => setInsertedTrackId(null), 1000); // Clear after animation
+        }
+      }
+
+      console.log(`⬅️ Going back to previous track: "${previousTrack.title}" (${playHistoryRef.current.length} tracks remaining in history)`);
+      handlePlay(previousTrack);
+    } else {
+      // No history - restart current track
+      console.log(`⬅️ No history, restarting current track: "${track.title}"`);
+      handlePlay(track);
+    }
   };
 
   // Queue management functions
@@ -10686,6 +10704,13 @@ useEffect(() => {
       )
     ),
 
+    // Show loading state until cache is loaded (prevents flash of default view)
+    !cacheLoaded ? React.createElement('div', {
+      className: 'flex-1 flex items-center justify-center bg-white'
+    },
+      React.createElement('div', { className: 'animate-pulse text-gray-400' }, 'Loading...')
+    ) :
+
     // Search Page - Full page search view
     activeView === 'search' ? (
       searchDetailCategory ?
@@ -16227,7 +16252,8 @@ useEffect(() => {
           React.createElement('button', {
             onClick: handlePlayPause,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
+            style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
           }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 })),
           React.createElement('button', {
             onClick: handleNext,
@@ -17957,8 +17983,10 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-500 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          // flex-col-reverse so first track (next up) appears at bottom, closest to playbar
-          React.createElement('div', { className: 'flex flex-col-reverse justify-end h-full' },
+          // flex-col-reverse with justify-start pins tracks to the bottom (playbar)
+          // In reverse column, justify-start aligns to the visual bottom
+          // pb-2 adds padding so the first track row isn't cut off
+          React.createElement('div', { className: 'flex flex-col-reverse justify-start h-full pb-2' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -17973,6 +18001,7 @@ useEffect(() => {
               const isDraggedOver = queueDropTarget === index;
               const isDragging = draggedQueueTrack === index;
               const isDropping = droppingTrackId === track.id;
+              const isInserted = insertedTrackId === track.id;
 
               return React.createElement('div', {
                 key: track.id,
@@ -18029,7 +18058,8 @@ useEffect(() => {
                   isError ? 'opacity-50' : ''
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
                   isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
-                  isDropping ? 'queue-track-drop' : ''}`
+                  isDropping ? 'queue-track-drop' : ''} ${
+                  isInserted ? 'queue-track-insert' : ''}`
               },
                 // Track number / status indicator - fixed width
                 React.createElement('span', {
