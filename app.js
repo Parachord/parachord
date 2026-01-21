@@ -1191,14 +1191,20 @@ const Parachord = () => {
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
 
-  // Meta Services state (Last.fm, etc.)
+  // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
-  const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username: '...', apiKey: '...' } }
+  const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username, apiKey }, listenbrainz: { username, userToken } }
   const [lastfmAdvancedOpen, setLastfmAdvancedOpen] = useState(false); // Advanced section accordion state
   const [lastfmUsernameInput, setLastfmUsernameInput] = useState(''); // Input field value
   const [lastfmApiKeyInput, setLastfmApiKeyInput] = useState(''); // Advanced: API key input
   const [lastfmApiSecretInput, setLastfmApiSecretInput] = useState(''); // Advanced: API secret input
   const [lastfmConnecting, setLastfmConnecting] = useState(false); // Loading state during connection
+
+  // ListenBrainz state
+  const [listenbrainzAdvancedOpen, setListenbrainzAdvancedOpen] = useState(false); // Advanced section accordion state
+  const [listenbrainzUsernameInput, setListenbrainzUsernameInput] = useState(''); // Input field value
+  const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
+  const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
 
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState('');
@@ -1244,6 +1250,7 @@ const Parachord = () => {
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
   const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
+  const [recommendationsSourceFilter, setRecommendationsSourceFilter] = useState('all'); // 'all' | 'listenbrainz' | 'lastfm'
 
   // History page state
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
@@ -4992,16 +4999,17 @@ const Parachord = () => {
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
-    if (cacheLoaded && pendingHistoryLoad.current && metaServiceConfigs.lastfm?.username) {
+    const hasMetaService = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
+    if (cacheLoaded && pendingHistoryLoad.current && hasMetaService) {
       const tab = pendingHistoryLoad.current;
       pendingHistoryLoad.current = null; // Clear pending load
       console.log(`📦 Loading history data for restored tab: ${tab}`);
       if (tab === 'topTracks') loadTopTracks();
       else if (tab === 'topAlbums') loadTopAlbums();
       else if (tab === 'topArtists') loadTopArtists();
-      // recent tracks load automatically via their own useEffect
+      else if (tab === 'recent') loadListeningHistory();
     }
-  }, [cacheLoaded, metaServiceConfigs.lastfm?.username]);
+  }, [cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
@@ -7405,12 +7413,14 @@ ${tracks}
     }
   };
 
-  // Load Recommendations from Last.fm
+  // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
   const loadRecommendations = async () => {
-    // Check if Last.fm is configured
+    // Check if Last.fm or ListenBrainz is configured
     const lastfmConfig = metaServiceConfigs.lastfm;
-    if (!lastfmConfig?.username) {
-      console.log('⭐ Last.fm not configured, skipping recommendations load');
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+
+    if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
+      console.log('⭐ No recommendation service configured, skipping recommendations load');
       setRecommendations({
         artists: [],
         tracks: [],
@@ -7421,27 +7431,54 @@ ${tracks}
     }
 
     setRecommendations(prev => ({ ...prev, loading: true, error: null }));
-    console.log(`⭐ Loading Recommendations for ${lastfmConfig.username}...`);
 
     try {
-      const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(lastfmConfig.username)}/recommended`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch recommendations: ${response.status}`);
+      // Fetch from both services in parallel if both are configured
+      const fetchPromises = [];
+
+      if (listenbrainzConfig?.username) {
+        console.log(`⭐ Loading Recommendations from ListenBrainz for ${listenbrainzConfig.username}...`);
+        fetchPromises.push(
+          loadListenbrainzRecommendations(listenbrainzConfig.username)
+            .catch(err => { console.error('ListenBrainz recommendations error:', err); return []; })
+        );
+      } else {
+        fetchPromises.push(Promise.resolve([]));
       }
 
-      const data = await response.json();
-      const playlist = data.playlist || [];
+      if (lastfmConfig?.username) {
+        console.log(`⭐ Loading Recommendations from Last.fm for ${lastfmConfig.username}...`);
+        fetchPromises.push(
+          loadLastfmRecommendations(lastfmConfig.username)
+            .catch(err => { console.error('Last.fm recommendations error:', err); return []; })
+        );
+      } else {
+        fetchPromises.push(Promise.resolve([]));
+      }
 
-      console.log(`⭐ Received ${playlist.length} recommended tracks`);
+      const [listenbrainzTracks, lastfmTracks] = await Promise.all(fetchPromises);
 
-      // Transform tracks to app format with empty sources (will be resolved)
-      const tracks = playlist.map((track, index) => ({
-        id: track.spelling_id || `rec-${index}-${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
-        title: track.name || track._name,
-        artist: track.artists?.[0]?.name || track.artists?.[0]?._name || 'Unknown Artist',
-        duration: track.duration || null,
-        sources: {} // Will be populated by resolver pipeline
-      }));
+      // Merge and de-dupe tracks (ListenBrainz first since it has MBID metadata)
+      const seenTracks = new Set();
+      const tracks = [];
+
+      for (const track of listenbrainzTracks) {
+        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
+        if (!seenTracks.has(key)) {
+          seenTracks.add(key);
+          tracks.push({ ...track, source: 'listenbrainz' });
+        }
+      }
+
+      for (const track of lastfmTracks) {
+        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
+        if (!seenTracks.has(key)) {
+          seenTracks.add(key);
+          tracks.push({ ...track, source: 'lastfm' });
+        }
+      }
+
+      console.log(`⭐ Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm tracks → ${tracks.length} unique tracks`);
 
       // Extract unique artists
       const artistMap = new Map();
@@ -7449,7 +7486,9 @@ ${tracks}
         if (track.artist && !artistMap.has(track.artist)) {
           artistMap.set(track.artist, {
             id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-            name: track.artist
+            name: track.artist,
+            image: null,
+            imageLoaded: false // Track whether image lookup has completed
           });
         }
       });
@@ -7481,13 +7520,90 @@ ${tracks}
     }
   };
 
-  // Reload recommendations when Last.fm config changes (user connects/disconnects)
+  // Load recommendations from Last.fm
+  const loadLastfmRecommendations = async (username) => {
+    const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(username)}/recommended`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Last.fm recommendations: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const playlist = data.playlist || [];
+
+    // Transform tracks to app format with empty sources (will be resolved)
+    return playlist.map((track, index) => ({
+      id: track.spelling_id || `rec-${index}-${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
+      title: track.name || track._name,
+      artist: track.artists?.[0]?.name || track.artists?.[0]?._name || 'Unknown Artist',
+      duration: track.duration || null,
+      sources: {} // Will be populated by resolver pipeline
+    }));
+  };
+
+  // Load recommendations from ListenBrainz
+  const loadListenbrainzRecommendations = async (username) => {
+    // ListenBrainz has a recommendations endpoint that returns personalized playlists
+    // First try to get recommendation playlists
+    const playlistsResponse = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/playlists/recommendations`);
+
+    if (playlistsResponse.ok) {
+      const playlistsData = await playlistsResponse.json();
+      const playlists = playlistsData.playlists || [];
+
+      // Get the most recent recommendation playlist
+      if (playlists.length > 0) {
+        const latestPlaylist = playlists[0];
+        const playlistId = latestPlaylist.playlist?.identifier?.split('/').pop();
+
+        if (playlistId) {
+          // Fetch the full playlist with tracks
+          const playlistResponse = await fetch(`https://api.listenbrainz.org/1/playlist/${playlistId}`);
+          if (playlistResponse.ok) {
+            const playlistData = await playlistResponse.json();
+            const tracks = playlistData.playlist?.track || [];
+
+            return tracks.map((track, index) => ({
+              id: track.identifier?.[0]?.split('/').pop() || `lb-rec-${index}-${track.title}`.replace(/\s+/g, '-'),
+              title: track.title || 'Unknown Track',
+              artist: track.creator || 'Unknown Artist',
+              duration: track.duration ? Math.floor(track.duration / 1000) : null,
+              sources: {},
+              mbid: track.identifier?.[0]?.split('/').pop() || null
+            }));
+          }
+        }
+      }
+    }
+
+    // Fallback: use top recordings as pseudo-recommendations
+    console.log('⭐ No ListenBrainz recommendation playlists found, falling back to top recordings');
+    const statsResponse = await fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(username)}/recordings?range=month&count=50`);
+
+    if (statsResponse.ok) {
+      const statsData = await statsResponse.json();
+      const recordings = statsData.payload?.recordings || [];
+
+      return recordings.map((rec, index) => ({
+        id: rec.recording_mbid || `lb-top-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
+        title: rec.track_name || 'Unknown Track',
+        artist: rec.artist_name || 'Unknown Artist',
+        duration: null,
+        sources: {},
+        mbid: rec.recording_mbid || null,
+        listenCount: rec.listen_count
+      }));
+    }
+
+    return [];
+  };
+
+  // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
-    // Only reload if we're on the recommendations page
-    if (activeView === 'recommendations') {
+    // Only load if we're on the recommendations page AND cache is loaded
+    if (activeView === 'recommendations' && cacheLoaded) {
       loadRecommendations();
     }
-  }, [metaServiceConfigs.lastfm?.username]);
+  }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
   // Resolve recommendation tracks using the resolver pipeline
   const resolveRecommendationTracks = async (tracks) => {
@@ -7546,72 +7662,98 @@ ${tracks}
     for (const artist of artists) {
       try {
         const result = await getArtistImage(artist.name);
-        if (result?.url) {
-          setRecommendations(prev => ({
-            ...prev,
-            artists: prev.artists.map(a =>
-              a.id === artist.id ? { ...a, image: result.url } : a
-            )
-          }));
-        }
+        setRecommendations(prev => ({
+          ...prev,
+          artists: prev.artists.map(a =>
+            a.id === artist.id ? { ...a, image: result?.url || null, imageLoaded: true } : a
+          )
+        }));
       } catch (err) {
         console.error(`Error fetching image for ${artist.name}:`, err);
+        // Mark as loaded even on error so we show fallback icon instead of spinner
+        setRecommendations(prev => ({
+          ...prev,
+          artists: prev.artists.map(a =>
+            a.id === artist.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
       }
     }
     console.log(`⭐ Finished fetching recommended artist images`);
   };
 
-  // Load Listening History from Last.fm
+  // Load Listening History from Last.fm and/or ListenBrainz (merged and de-duped)
   const loadListeningHistory = async () => {
     setListeningHistory(prev => ({ ...prev, loading: true, error: null }));
     console.log('📜 Loading Listening History...');
 
     try {
-      // Get Last.fm config from metaServiceConfigs
+      // Get configs from metaServiceConfigs
       const lastfmConfig = metaServiceConfigs.lastfm;
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
-      if (!lastfmConfig?.username) {
+      // If no service is configured
+      if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
         setListeningHistory({
           tracks: [],
           loading: false,
-          error: 'No Last.fm account connected. Configure your account in Settings > Resolvers.'
+          error: 'No listening history service connected. Configure Last.fm or ListenBrainz in Settings > Resolvers.'
         });
         return;
       }
 
-      const apiKey = lastfmApiKey.current;
-      if (!apiKey) {
-        setListeningHistory({
-          tracks: [],
-          loading: false,
-          error: 'Last.fm API key not configured.'
-        });
-        return;
+      // Fetch from both services in parallel if both are configured
+      const fetchPromises = [];
+
+      if (listenbrainzConfig?.username) {
+        console.log(`📜 Loading history from ListenBrainz for ${listenbrainzConfig.username}...`);
+        fetchPromises.push(
+          loadListenbrainzHistory(listenbrainzConfig.username)
+            .catch(err => { console.error('ListenBrainz history error:', err); return []; })
+        );
+      } else {
+        fetchPromises.push(Promise.resolve([]));
       }
 
-      const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch listening history: ${response.status}`);
+      if (lastfmConfig?.username) {
+        const apiKey = lastfmApiKey.current;
+        if (apiKey) {
+          console.log(`📜 Loading history from Last.fm for ${lastfmConfig.username}...`);
+          fetchPromises.push(
+            loadLastfmHistory(lastfmConfig.username, apiKey)
+              .catch(err => { console.error('Last.fm history error:', err); return []; })
+          );
+        } else {
+          console.log('📜 Last.fm API key not configured, skipping Last.fm history');
+          fetchPromises.push(Promise.resolve([]));
+        }
+      } else {
+        fetchPromises.push(Promise.resolve([]));
       }
 
-      const data = await response.json();
-      const recentTracks = data.recenttracks?.track || [];
+      const [listenbrainzTracks, lastfmTracks] = await Promise.all(fetchPromises);
 
-      console.log(`📜 Received ${recentTracks.length} recent tracks`);
+      // Merge and de-dupe tracks by artist+title+timestamp (within 5 min window)
+      // Sort by playedAt descending, keeping most recent plays
+      const allTracks = [
+        ...listenbrainzTracks.map(t => ({ ...t, source: 'listenbrainz' })),
+        ...lastfmTracks.map(t => ({ ...t, source: 'lastfm' }))
+      ].sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
 
-      // Transform tracks to app format
-      const tracks = recentTracks.map((track, index) => ({
-        id: `history-${index}-${track.date?.uts || 'now'}-${track.name}`.replace(/\s+/g, '-'),
-        title: track.name,
-        artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-        album: track.album?.['#text'] || null,
-        albumArt: track.image?.[2]?.['#text'] || null, // Medium size image
-        playedAt: track.date?.uts ? parseInt(track.date.uts) * 1000 : null, // Convert to ms
-        nowPlaying: track['@attr']?.nowplaying === 'true',
-        sources: {} // Will be populated by resolver pipeline
-      }));
+      const seenTracks = new Set();
+      const tracks = [];
+
+      for (const track of allTracks) {
+        // Create a key that considers artist+title and groups listens within 5 minutes
+        const timeWindow = track.playedAt ? Math.floor(track.playedAt / (5 * 60 * 1000)) : 'now';
+        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}|${timeWindow}`;
+        if (!seenTracks.has(key)) {
+          seenTracks.add(key);
+          tracks.push(track);
+        }
+      }
+
+      console.log(`📜 Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm listens → ${tracks.length} unique listens`);
 
       // Set initial state with tracks
       setListeningHistory({
@@ -7840,6 +7982,57 @@ ${tracks}
       }
     }
     console.log(`📊 Finished resolving top tracks`);
+  };
+
+  // Load listening history from Last.fm
+  const loadLastfmHistory = async (username, apiKey) => {
+    const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=50`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Last.fm listening history: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const recentTracks = data.recenttracks?.track || [];
+
+    // Transform tracks to app format
+    return recentTracks.map((track, index) => ({
+      id: `history-${index}-${track.date?.uts || 'now'}-${track.name}`.replace(/\s+/g, '-'),
+      title: track.name,
+      artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
+      album: track.album?.['#text'] || null,
+      albumArt: track.image?.[2]?.['#text'] || null, // Medium size image
+      playedAt: track.date?.uts ? parseInt(track.date.uts) * 1000 : null, // Convert to ms
+      nowPlaying: track['@attr']?.nowplaying === 'true',
+      sources: {} // Will be populated by resolver pipeline
+    }));
+  };
+
+  // Load listening history from ListenBrainz
+  const loadListenbrainzHistory = async (username) => {
+    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/listens?count=50`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ListenBrainz listening history: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const listens = data.payload?.listens || [];
+
+    // Transform listens to app format
+    return listens.map((listen, index) => ({
+      id: listen.recording_msid || `lb-history-${index}-${listen.listened_at}-${listen.track_metadata?.track_name}`.replace(/\s+/g, '-'),
+      title: listen.track_metadata?.track_name || 'Unknown Track',
+      artist: listen.track_metadata?.artist_name || 'Unknown Artist',
+      album: listen.track_metadata?.release_name || null,
+      albumArt: null, // ListenBrainz doesn't provide album art directly
+      playedAt: listen.listened_at ? listen.listened_at * 1000 : null, // Convert to ms
+      nowPlaying: listen.playing_now || false,
+      sources: {},
+      mbid: listen.track_metadata?.additional_info?.recording_mbid || null
+    }));
   };
 
   // Resolve history tracks using the resolver pipeline
@@ -9450,6 +9643,85 @@ ${tracks}
     console.log('🎧 Disconnected from Last.fm');
   };
 
+  // ListenBrainz specific helpers
+  const connectListenbrainz = async (username, userToken) => {
+    if (!username?.trim()) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Username Required',
+        message: 'Please enter your ListenBrainz username.'
+      });
+      return false;
+    }
+
+    setListenbrainzConnecting(true);
+
+    // Validate username exists by checking the user endpoint
+    try {
+      const response = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username.trim())}/listen-count`);
+      if (!response.ok) {
+        setListenbrainzConnecting(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Invalid Username',
+          message: `Could not find ListenBrainz user "${username}". Please check the username and try again.`
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('ListenBrainz validation error:', error);
+      setListenbrainzConnecting(false);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not connect to ListenBrainz. Please check your internet connection.'
+      });
+      return false;
+    }
+
+    // If token provided, validate it
+    if (userToken?.trim()) {
+      try {
+        const tokenResponse = await fetch('https://api.listenbrainz.org/1/validate-token', {
+          headers: {
+            'Authorization': `Token ${userToken.trim()}`
+          }
+        });
+        const tokenData = await tokenResponse.json();
+        if (!tokenData.valid) {
+          setListenbrainzConnecting(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Invalid Token',
+            message: 'The user token is invalid. Please check and try again, or leave it blank to connect without a token.'
+          });
+          return false;
+        }
+      } catch (error) {
+        console.error('ListenBrainz token validation error:', error);
+        // Non-fatal - continue without token
+      }
+    }
+
+    await saveMetaServiceConfig('listenbrainz', {
+      username: username.trim(),
+      userToken: userToken?.trim() || null
+    });
+
+    setListenbrainzConnecting(false);
+    // Clear inputs after successful connection
+    setListenbrainzUsernameInput('');
+    setListenbrainzTokenInput('');
+
+    console.log(`🎵 Connected to ListenBrainz as ${username}`);
+    return true;
+  };
+
+  const disconnectListenbrainz = async () => {
+    await clearMetaServiceConfig('listenbrainz');
+    console.log('🎵 Disconnected from ListenBrainz');
+  };
+
 // Listen for Spotify auth events
 useEffect(() => {
   checkSpotifyToken();
@@ -9850,10 +10122,7 @@ useEffect(() => {
           React.createElement('div', { className: 'mb-4' },
             React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Discover'),
             React.createElement('button', {
-              onClick: () => {
-                navigateTo('recommendations');
-                loadRecommendations();
-              },
+              onClick: () => navigateTo('recommendations'),
               className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
                 activeView === 'recommendations' ? 'bg-gray-200 text-gray-900 font-medium' : 'text-gray-600 hover:bg-gray-100'
               }`
@@ -13733,9 +14002,11 @@ useEffect(() => {
               ),
               React.createElement('p', {
                 className: 'mt-2 text-white/70 text-sm'
-              }, metaServiceConfigs.lastfm?.username
-                ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
-                : 'Connect your Last.fm account to get started'
+              }, metaServiceConfigs.listenbrainz?.username
+                ? `Personalized picks for ${metaServiceConfigs.listenbrainz.username}`
+                : metaServiceConfigs.lastfm?.username
+                  ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
+                  : 'Connect your Last.fm or ListenBrainz account to get started'
               )
             ),
             // COLLAPSED STATE - Inline layout matching artist page
@@ -13784,19 +14055,64 @@ useEffect(() => {
             )
           ),
           // Scrollable content area
-          React.createElement('div', {
-            className: 'flex-1 overflow-y-auto scrollable-content p-6',
-            onScroll: (e) => {
-              const scrollTop = e.target.scrollTop;
-              if (scrollTop > 50 && !recommendationsHeaderCollapsed) {
-                setRecommendationsHeaderCollapsed(true);
-              } else if (scrollTop <= 50 && recommendationsHeaderCollapsed) {
-                setRecommendationsHeaderCollapsed(false);
+          (() => {
+            // Check if both services are configured (show filter bar even while loading)
+            const hasBothServicesConfigured = metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username;
+
+            // Compute filtered recommendations data
+            const listenbrainzTrackCount = recommendations.tracks.filter(t => t.source === 'listenbrainz').length;
+            const lastfmTrackCount = recommendations.tracks.filter(t => t.source === 'lastfm').length;
+            const hasBothSourcesWithData = listenbrainzTrackCount > 0 && lastfmTrackCount > 0;
+
+            // Filter tracks based on source filter
+            const filteredTracks = recommendationsSourceFilter === 'all'
+              ? recommendations.tracks
+              : recommendations.tracks.filter(t => t.source === recommendationsSourceFilter);
+
+            // Get unique artists from filtered tracks
+            const filteredArtistNames = new Set(filteredTracks.map(t => t.artist));
+            const filteredArtists = recommendations.artists.filter(a => filteredArtistNames.has(a.name));
+
+            return React.createElement('div', {
+              className: 'flex-1 overflow-y-auto scrollable-content',
+              onScroll: (e) => {
+                const scrollTop = e.target.scrollTop;
+                if (scrollTop > 50 && !recommendationsHeaderCollapsed) {
+                  setRecommendationsHeaderCollapsed(true);
+                } else if (scrollTop <= 50 && recommendationsHeaderCollapsed) {
+                  setRecommendationsHeaderCollapsed(false);
+                }
               }
-            }
-          },
-            // Loading state - show skeleton for active tab
-            recommendations.loading ?
+            },
+              // Sticky filter bar - show when both services are configured (even during loading)
+              hasBothServicesConfigured && React.createElement('div', {
+                className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              },
+                // Source filter pills
+                React.createElement('div', { className: 'flex gap-2' },
+                  [
+                    { value: 'all', label: 'All', count: recommendations.tracks.length },
+                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzTrackCount },
+                    { value: 'lastfm', label: 'Last.fm', count: lastfmTrackCount }
+                  ].map(({ value, label, count }) =>
+                    React.createElement('button', {
+                      key: value,
+                      onClick: () => setRecommendationsSourceFilter(value),
+                      className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
+                        recommendationsSourceFilter === value
+                          ? value === 'listenbrainz' ? 'bg-indigo-600 text-white'
+                            : value === 'lastfm' ? 'bg-red-600 text-white'
+                            : 'bg-purple-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`
+                    }, recommendations.loading ? label : `${label} (${count})`)
+                  )
+                )
+              ),
+              // Content with padding
+              React.createElement('div', { className: 'p-6' },
+                // Loading state - show skeleton for active tab
+                recommendations.loading ?
               React.createElement('div', null,
                 // Artists skeleton (when artists tab active)
                 recommendationsTab === 'artists' && React.createElement('div', {
@@ -13855,25 +14171,39 @@ useEffect(() => {
               React.createElement('div', { className: 'text-center py-16' },
                 React.createElement('div', {
                   className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center text-4xl'
-                }, '🎧'),
+                }, '🎵'),
                 React.createElement('h3', {
                   className: 'text-xl font-medium text-gray-900 mb-2'
-                }, 'Connect your Last.fm account'),
+                }, 'Connect a music service'),
                 React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
-                  'Get personalized music recommendations based on your listening history. Connect your Last.fm account to get started.'
+                  'Get personalized music recommendations based on your listening history. Connect your Last.fm or ListenBrainz account to get started.'
                 ),
-                React.createElement('button', {
-                  onClick: () => {
-                    setActiveView('settings');
-                    setSettingsTab('installed');
-                    // Find and select the Last.fm service
-                    const lastfmService = metaServices.find(s => s.id === 'lastfm');
-                    if (lastfmService) {
-                      setSelectedResolver(lastfmService);
-                    }
-                  },
-                  className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
-                }, 'Connect Last.fm')
+                React.createElement('div', { className: 'flex gap-3 justify-center' },
+                  React.createElement('button', {
+                    onClick: () => {
+                      setActiveView('settings');
+                      setSettingsTab('installed');
+                      // Find and select the ListenBrainz service
+                      const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
+                      if (listenbrainzService) {
+                        setSelectedResolver(listenbrainzService);
+                      }
+                    },
+                    className: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium'
+                  }, 'Connect ListenBrainz'),
+                  React.createElement('button', {
+                    onClick: () => {
+                      setActiveView('settings');
+                      setSettingsTab('installed');
+                      // Find and select the Last.fm service
+                      const lastfmService = metaServices.find(s => s.id === 'lastfm');
+                      if (lastfmService) {
+                        setSelectedResolver(lastfmService);
+                      }
+                    },
+                    className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
+                  }, 'Connect Last.fm')
+                )
               )
             // Other error state
             : recommendations.error ?
@@ -13887,11 +14217,11 @@ useEffect(() => {
             // Results - show content based on active tab
             : React.createElement('div', null,
                 // Artists tab content - grid matching Top Artists style
-                recommendationsTab === 'artists' && recommendations.artists.length > 0 && React.createElement('div', {
+                recommendationsTab === 'artists' && filteredArtists.length > 0 && React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-8',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...recommendations.artists.map((artist) =>
+                  ...filteredArtists.map((artist) =>
                     React.createElement('div', {
                       key: artist.id,
                       className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
@@ -13927,14 +14257,18 @@ useEffect(() => {
                         className: 'relative w-36 h-36 rounded-full overflow-hidden'
                       },
                         React.createElement('div', {
-                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
+                          // Show shimmer while loading, solid bg when loaded but no image, image when available
+                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
+                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gray-100'
+                          }`,
                           style: {
                             backgroundImage: artist.image ? `url(${artist.image})` : 'none',
                             backgroundSize: artist.image ? 'cover' : '200% 100%',
                             backgroundPosition: 'center'
                           }
                         },
-                          !artist.image && React.createElement('div', {
+                          // Only show fallback icon when image lookup completed but no image found
+                          artist.imageLoaded && !artist.image && React.createElement('div', {
                             className: 'w-full h-full flex items-center justify-center text-gray-400'
                           },
                             React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -13951,13 +14285,13 @@ useEffect(() => {
                 ),
 
                 // Artists tab empty state
-                recommendationsTab === 'artists' && recommendations.artists.length === 0 && React.createElement('div', {
+                recommendationsTab === 'artists' && filteredArtists.length === 0 && React.createElement('div', {
                   className: 'text-center py-12 text-gray-400'
-                }, 'No recommended artists found.'),
+                }, recommendationsSourceFilter !== 'all' ? `No artists from ${recommendationsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}.` : 'No recommended artists found.'),
 
                 // Songs tab content - track list table
-                recommendationsTab === 'songs' && recommendations.tracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...recommendations.tracks.map((track, index) => {
+                recommendationsTab === 'songs' && filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
+                  ...filteredTracks.map((track, index) => {
                       const hasResolved = Object.keys(track.sources || {}).length > 0;
                       const isResolving = Object.keys(track.sources || {}).length === 0;
 
@@ -13992,7 +14326,7 @@ useEffect(() => {
                         }`,
                         onClick: () => {
                           // Set remaining tracks as queue and play this track
-                          const tracksAfter = recommendations.tracks.slice(index + 1);
+                          const tracksAfter = filteredTracks.slice(index + 1);
                           setCurrentQueue(tracksAfter);
                           handlePlay(track);
                         },
@@ -14116,11 +14450,13 @@ useEffect(() => {
                 ),
 
                 // Songs tab empty state
-                recommendationsTab === 'songs' && recommendations.tracks.length === 0 && React.createElement('div', {
+                recommendationsTab === 'songs' && filteredTracks.length === 0 && React.createElement('div', {
                   className: 'text-center py-12 text-gray-400'
-                }, 'No recommended songs found.')
+                }, recommendationsSourceFilter !== 'all' ? `No songs from ${recommendationsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}.` : 'No recommended songs found.')
               )
-          )
+            )
+          );
+          })()
         ),
 
         // History view with collapsible hero header and tabs
@@ -14196,7 +14532,12 @@ useEffect(() => {
               ),
               React.createElement('p', {
                 className: 'mt-2 text-white/80 text-sm'
-              }, 'Your listening activity from Last.fm')
+              }, metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username
+                ? 'Your listening activity from ListenBrainz & Last.fm'
+                : metaServiceConfigs.listenbrainz?.username
+                  ? 'Your listening activity from ListenBrainz'
+                  : 'Your listening activity from Last.fm'
+              )
             ),
             // COLLAPSED STATE - Inline layout with tabs
             historyHeaderCollapsed && React.createElement('div', {
@@ -15850,6 +16191,91 @@ useEffect(() => {
                     disabled: lastfmConnecting || !lastfmUsernameInput.trim(),
                     className: 'w-full px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
                   }, lastfmConnecting ? 'Connecting...' : 'Connect')
+                )
+          ),
+
+          // ListenBrainz authentication section
+          selectedResolver.id === 'listenbrainz' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            // Connected state
+            metaServiceConfigs.listenbrainz?.username
+              ? React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between' },
+                    React.createElement('div', null,
+                      React.createElement('span', { className: 'font-medium text-gray-900' }, 'ListenBrainz Account'),
+                      React.createElement('p', { className: 'text-xs text-gray-500' },
+                        `Connected as ${metaServiceConfigs.listenbrainz.username}`
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: disconnectListenbrainz,
+                      className: 'px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+                    }, 'Disconnect')
+                  ),
+                  React.createElement('div', {
+                    className: 'mt-3 flex items-center gap-2 text-green-600 text-sm'
+                  },
+                    React.createElement('span', null, '✓'),
+                    React.createElement('span', null, 'Connected to ListenBrainz')
+                  ),
+                  // Show token status if configured
+                  metaServiceConfigs.listenbrainz.userToken && React.createElement('p', {
+                    className: 'mt-2 text-xs text-gray-500'
+                  }, '🔑 User token configured')
+                )
+              // Not connected state
+              : React.createElement('div', null,
+                  React.createElement('span', { className: 'font-medium text-gray-900' }, 'ListenBrainz Account'),
+                  React.createElement('p', { className: 'text-xs text-gray-500 mt-1 mb-4' },
+                    'Enter your ListenBrainz username to enable open-source music recommendations and history.'
+                  ),
+                  // Username input
+                  React.createElement('div', { className: 'mb-4' },
+                    React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Username'),
+                    React.createElement('input', {
+                      type: 'text',
+                      value: listenbrainzUsernameInput,
+                      onChange: (e) => setListenbrainzUsernameInput(e.target.value),
+                      placeholder: 'Your ListenBrainz username',
+                      className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                    })
+                  ),
+                  // Advanced accordion
+                  React.createElement('div', { className: 'mb-4' },
+                    React.createElement('button', {
+                      onClick: () => setListenbrainzAdvancedOpen(!listenbrainzAdvancedOpen),
+                      className: 'text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1'
+                    },
+                      React.createElement('span', {
+                        className: `transform transition-transform ${listenbrainzAdvancedOpen ? 'rotate-90' : ''}`
+                      }, '▶'),
+                      'Advanced'
+                    ),
+                    listenbrainzAdvancedOpen && React.createElement('div', {
+                      className: 'mt-3 p-3 bg-gray-50 rounded-lg space-y-3'
+                    },
+                      React.createElement('p', { className: 'text-xs text-gray-500' },
+                        'Optional: Add your user token to enable listen submissions and access private data. Find it at listenbrainz.org/settings/'
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('label', { className: 'block text-xs font-medium text-gray-600 mb-1' }, 'User Token'),
+                        React.createElement('input', {
+                          type: 'password',
+                          value: listenbrainzTokenInput,
+                          onChange: (e) => setListenbrainzTokenInput(e.target.value),
+                          placeholder: 'Your ListenBrainz user token',
+                          className: 'w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500'
+                        })
+                      )
+                    )
+                  ),
+                  // Connect button
+                  React.createElement('button', {
+                    onClick: () => connectListenbrainz(listenbrainzUsernameInput, listenbrainzTokenInput),
+                    disabled: listenbrainzConnecting || !listenbrainzUsernameInput.trim(),
+                    className: 'w-full px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                  }, listenbrainzConnecting ? 'Connecting...' : 'Connect')
                 )
           ),
 
