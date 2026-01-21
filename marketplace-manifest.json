@@ -66,27 +66,6 @@
       "tags": ["streaming", "hi-res", "audiophile", "preview"]
     },
     {
-      "id": "musicbrainz",
-      "name": "MusicBrainz",
-      "version": "1.0.0",
-      "author": "Parachord Team",
-      "description": "Open music encyclopedia providing metadata and artist information. Does not provide streaming.",
-      "icon": "📚",
-      "color": "#BA478F",
-      "homepage": "https://musicbrainz.org",
-      "capabilities": {
-        "resolve": false,
-        "search": true,
-        "stream": false,
-        "browse": false,
-        "urlLookup": false
-      },
-      "requiresAuth": false,
-      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/musicbrainz.axe",
-      "category": "metadata",
-      "tags": ["metadata", "free", "encyclopedia", "open-source"]
-    },
-    {
       "id": "youtube",
       "name": "YouTube",
       "version": "1.0.0",
