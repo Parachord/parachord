@@ -18,20 +18,19 @@
   "manifest": {
     "id": "applemusic",
     "name": "Apple Music",
+    "type": "meta-service",
     "version": "1.0.0",
-    "author": "Harmonix Team",
-    "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
+    "author": "Parachord Team",
+    "description": "Search and identify tracks via iTunes/Apple Music catalog. Streaming support coming soon.",
     "icon": "🍎",
     "color": "#FA243C",
     "homepage": "https://music.apple.com",
-    "email": "support@harmonix.app"
+    "email": "support@parachord.com"
   },
 
   "capabilities": {
-    "resolve": true,
     "search": true,
-    "stream": false,
-    "browse": false,
+    "metadata": true,
     "urlLookup": true
   },
 

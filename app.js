@@ -72,7 +72,6 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"spotify","name":"Spotify","version":"1.0.0","author":"Parachord Team","description":"Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.","icon":"♫","color":"#1DB954","homepage":"https://spotify.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":true,"authType":"oauth","scopes":["user-read-playback-state","user-modify-playback-state","user-read-currently-playing"],"configurable":{"clientId":{"type":"text","label":"Client ID","default":"c040c0ee133344b282e6342198bcbeea","readonly":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) return []; try { const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=20`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) { console.error('Spotify search failed:', response.status); return []; } const data = await response.json(); return data.tracks.items.map(track => ({ id: `spotify-${track.id}`, title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), sources: ['spotify'], spotifyUri: track.uri, spotifyId: track.id, albumArt: track.album.images[0]?.url })); } catch (error) { console.error('Spotify search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `artist:${artist} track:${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!config.token) { console.error('Spotify not connected'); return false; } try { const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!devicesResponse.ok) return false; const devicesData = await devicesResponse.json(); const devices = devicesData.devices || []; if (devices.length === 0) { console.error('No Spotify devices found'); return false; } const activeDevice = devices.find(d => d.is_active) || devices[0]; if (!activeDevice.is_active) { const transferResponse = await fetch('https://api.spotify.com/v1/me/player', { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ device_ids: [activeDevice.id], play: false }) }); if (!transferResponse.ok && transferResponse.status !== 204) { console.error('Failed to transfer playback'); } await new Promise(resolve => setTimeout(resolve, 500)); } const playResponse = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ uris: [track.spotifyUri] }) }); return playResponse.ok || playResponse.status === 204; } catch (error) { console.error('Spotify play error:', error); return false; } }","init":"async function(config) { console.log('Spotify resolver initialized'); }","cleanup":"async function() { console.log('Spotify resolver cleanup'); }"}},
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
-  {"manifest":{"id":"musicbrainz","name":"MusicBrainz","version":"1.0.0","author":"Parachord Team","description":"Open music encyclopedia providing metadata and artist information. Does not provide streaming.","icon":"📚","color":"#BA478F","homepage":"https://musicbrainz.org","email":"support@harmonix.app"},"capabilities":{"resolve":false,"search":true,"stream":false,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { const response = await fetch(`https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&limit=20&fmt=json`, { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }); if (!response.ok) { console.error('MusicBrainz search failed:', response.status); return []; } const data = await response.json(); return data.recordings.map(recording => ({ id: `musicbrainz-${recording.id}`, title: recording.title, artist: recording['artist-credit']?.map(ac => ac.name).join(', ') || 'Unknown Artist', album: recording.releases?.[0]?.title || 'Unknown Album', duration: recording.length ? Math.floor(recording.length / 1000) : 180, sources: ['musicbrainz'], musicbrainzId: recording.id })); } catch (error) { console.error('MusicBrainz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { return null; }","play":"async function(track, config) { console.log('MusicBrainz provides metadata only, no playback'); return false; }","init":"async function(config) { console.log('MusicBrainz resolver initialized'); }","cleanup":"async function() { console.log('MusicBrainz resolver cleanup'); }"}}
 ];
 
 
@@ -1143,6 +1142,7 @@ const Parachord = () => {
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
+  const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -1153,6 +1153,16 @@ const Parachord = () => {
   const [droppingTrackId, setDroppingTrackId] = useState(null); // Track ID that's animating "drop" into player
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
+
+  // Meta Services state (Last.fm, etc.)
+  const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
+  const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username: '...', apiKey: '...' } }
+  const [lastfmAdvancedOpen, setLastfmAdvancedOpen] = useState(false); // Advanced section accordion state
+  const [lastfmUsernameInput, setLastfmUsernameInput] = useState(''); // Input field value
+  const [lastfmApiKeyInput, setLastfmApiKeyInput] = useState(''); // Advanced: API key input
+  const [lastfmApiSecretInput, setLastfmApiSecretInput] = useState(''); // Advanced: API secret input
+  const [lastfmConnecting, setLastfmConnecting] = useState(false); // Loading state during connection
+
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState('');
   const [urlImportLoading, setUrlImportLoading] = useState(false);
@@ -2199,11 +2209,42 @@ const Parachord = () => {
         } else {
           console.log(`✅ Loaded ${builtinAxeFiles.length} .axe files from disk`);
         }
-        
-        const resolvers = await resolverLoader.current.loadResolvers(resolversToLoad);
+
+        // Separate content resolvers from meta services by manifest type
+        const contentResolverAxes = resolversToLoad.filter(axe =>
+          !axe.manifest.type || axe.manifest.type === 'resolver'
+        );
+        const metaServiceAxes = resolversToLoad.filter(axe =>
+          axe.manifest.type === 'meta-service'
+        );
+
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services`);
+
+        // Load content resolvers through the resolver loader
+        const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
         setLoadedResolvers(resolvers);
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
+
+        // Set meta services directly (they don't need the resolver pipeline)
+        if (metaServiceAxes.length > 0) {
+          const metaServicesData = metaServiceAxes.map(axe => ({
+            id: axe.manifest.id,
+            name: axe.manifest.name,
+            type: axe.manifest.type,
+            version: axe.manifest.version,
+            author: axe.manifest.author,
+            description: axe.manifest.description,
+            icon: axe.manifest.icon,
+            color: axe.manifest.color,
+            homepage: axe.manifest.homepage,
+            capabilities: axe.capabilities,
+            settings: axe.settings,
+            _filename: axe._filename
+          }));
+          setMetaServices(metaServicesData);
+          console.log(`✅ Loaded ${metaServicesData.length} meta services:`, metaServicesData.map(s => s.name).join(', '));
+        }
       } catch (error) {
         console.error('❌ Failed to load resolvers:', error);
         console.log('💾 Attempting to use fallback resolvers...');
@@ -4437,6 +4478,13 @@ const Parachord = () => {
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
+      // Load meta service configs (Last.fm, etc.)
+      const savedMetaServiceConfigs = await window.electron.store.get('meta_service_configs');
+      if (savedMetaServiceConfigs) {
+        setMetaServiceConfigs(savedMetaServiceConfigs);
+        console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
+      }
+
       // Mark settings as loaded so save useEffect knows it's safe to save
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
@@ -4474,6 +4522,8 @@ const Parachord = () => {
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+
+      // Note: Meta service configs are saved immediately when changed, not in periodic save
 
       console.log('💾 Cache and resolver settings saved to persistent storage');
       console.log('   Saved resolver order:', resolverOrderRef.current);
@@ -6900,11 +6950,24 @@ ${tracks}
 
   // Load Recommendations from Last.fm
   const loadRecommendations = async () => {
+    // Check if Last.fm is configured
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    if (!lastfmConfig?.username) {
+      console.log('⭐ Last.fm not configured, skipping recommendations load');
+      setRecommendations({
+        artists: [],
+        tracks: [],
+        loading: false,
+        error: 'not_configured'
+      });
+      return;
+    }
+
     setRecommendations(prev => ({ ...prev, loading: true, error: null }));
-    console.log('⭐ Loading Recommendations...');
+    console.log(`⭐ Loading Recommendations for ${lastfmConfig.username}...`);
 
     try {
-      const response = await fetch('https://www.last.fm/player/station/user/jherskowitz/recommended');
+      const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(lastfmConfig.username)}/recommended`);
       if (!response.ok) {
         throw new Error(`Failed to fetch recommendations: ${response.status}`);
       }
@@ -6957,6 +7020,14 @@ ${tracks}
       }));
     }
   };
+
+  // Reload recommendations when Last.fm config changes (user connects/disconnects)
+  useEffect(() => {
+    // Only reload if we're on the recommendations page
+    if (activeView === 'recommendations') {
+      loadRecommendations();
+    }
+  }, [metaServiceConfigs.lastfm?.username]);
 
   // Resolve recommendation tracks using the resolver pipeline
   const resolveRecommendationTracks = async (tracks) => {
@@ -8411,6 +8482,83 @@ ${tracks}
       removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
     }
+  };
+
+  // Meta Service config helpers
+  const saveMetaServiceConfig = async (serviceId, config) => {
+    const newConfigs = { ...metaServiceConfigs, [serviceId]: config };
+    setMetaServiceConfigs(newConfigs);
+    if (window.electron?.store) {
+      await window.electron.store.set('meta_service_configs', newConfigs);
+      console.log(`💾 Saved ${serviceId} config`);
+    }
+  };
+
+  const clearMetaServiceConfig = async (serviceId) => {
+    const newConfigs = { ...metaServiceConfigs };
+    delete newConfigs[serviceId];
+    setMetaServiceConfigs(newConfigs);
+    if (window.electron?.store) {
+      await window.electron.store.set('meta_service_configs', newConfigs);
+      console.log(`🗑️ Cleared ${serviceId} config`);
+    }
+  };
+
+  // Last.fm specific helpers
+  const connectLastfm = async (username, apiKey, apiSecret) => {
+    if (!username?.trim()) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Username Required',
+        message: 'Please enter your Last.fm username.'
+      });
+      return false;
+    }
+
+    setLastfmConnecting(true);
+
+    // Validate username exists by checking the recommendations endpoint
+    try {
+      const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(username.trim())}/recommended`);
+      if (!response.ok) {
+        setLastfmConnecting(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Invalid Username',
+          message: `Could not find Last.fm user "${username}". Please check the username and try again.`
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('Last.fm validation error:', error);
+      setLastfmConnecting(false);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Connection Error',
+        message: 'Could not connect to Last.fm. Please check your internet connection.'
+      });
+      return false;
+    }
+
+    await saveMetaServiceConfig('lastfm', {
+      username: username.trim(),
+      apiKey: apiKey?.trim() || null,
+      apiSecret: apiSecret?.trim() || null
+    });
+
+    setLastfmConnecting(false);
+    // Clear inputs after successful connection
+    setLastfmUsernameInput('');
+    setLastfmApiKeyInput('');
+    setLastfmApiSecretInput('');
+
+    console.log(`🎧 Connected to Last.fm as ${username}`);
+    return true;
+  };
+
+  const disconnectLastfm = async () => {
+    await clearMetaServiceConfig('lastfm');
+    console.log('🎧 Disconnected from Last.fm');
   };
 
 // Listen for Spotify auth events
@@ -12585,7 +12733,10 @@ useEffect(() => {
               ),
               React.createElement('p', {
                 className: 'mt-2 text-white/70 text-sm'
-              }, 'Personalized picks from Last.fm')
+              }, metaServiceConfigs.lastfm?.username
+                ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
+                : 'Connect your Last.fm account to get started'
+              )
             ),
             // COLLAPSED STATE - Inline layout matching artist page
             recommendationsHeaderCollapsed && React.createElement('div', {
@@ -12704,7 +12855,32 @@ useEffect(() => {
                   )
                 )
               )
-            // Error state
+            // Not configured state
+            : recommendations.error === 'not_configured' ?
+              React.createElement('div', { className: 'text-center py-16' },
+                React.createElement('div', {
+                  className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center text-4xl'
+                }, '🎧'),
+                React.createElement('h3', {
+                  className: 'text-xl font-medium text-gray-900 mb-2'
+                }, 'Connect your Last.fm account'),
+                React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
+                  'Get personalized music recommendations based on your listening history. Connect your Last.fm account to get started.'
+                ),
+                React.createElement('button', {
+                  onClick: () => {
+                    setActiveView('settings');
+                    setSettingsTab('installed');
+                    // Find and select the Last.fm service
+                    const lastfmService = metaServices.find(s => s.id === 'lastfm');
+                    if (lastfmService) {
+                      setSelectedResolver(lastfmService);
+                    }
+                  },
+                  className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
+                }, 'Connect Last.fm')
+              )
+            // Other error state
             : recommendations.error ?
               React.createElement('div', { className: 'text-center py-12' },
                 React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
@@ -12900,7 +13076,7 @@ useEffect(() => {
             className: 'w-48 border-r border-gray-200 py-6 flex-shrink-0'
           },
             React.createElement('nav', { className: 'space-y-1 px-3' },
-              // Installed Resolvers tab
+              // Installed Plug-Ins tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('installed'),
                 className: `w-full text-left px-4 py-3 text-sm transition-colors ${
@@ -12908,7 +13084,7 @@ useEffect(() => {
                     ? 'text-gray-900 font-medium border-l-2 border-purple-600 bg-gray-50'
                     : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'
                 }`
-              }, 'Installed Resolvers'),
+              }, 'Installed Plug-Ins'),
               // Marketplace tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('marketplace'),
@@ -12942,14 +13118,14 @@ useEffect(() => {
           React.createElement('div', {
             className: 'flex-1 overflow-y-auto p-8'
           },
-            // Installed Resolvers Tab
+            // Installed Plug-Ins Tab
             settingsTab === 'installed' && React.createElement('div', null,
-              // Header
+              // Page Header with Add button
               React.createElement('div', { className: 'flex items-center justify-between mb-8' },
                 React.createElement('div', null,
-                  React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Installed Resolvers'),
+                  React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Installed Plug-Ins'),
                   React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
-                    'Select the platforms you want to stream music from. Drag and drop to reorder priority.'
+                    'Manage your installed plug-ins for playback and services.'
                   )
                 ),
                 // Add from file button
@@ -12963,46 +13139,109 @@ useEffect(() => {
                   'Add from file'
                 )
               ),
-              // Resolver grid
-              React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
-              },
-                resolverOrder.map((resolverId, index) => {
-                  const resolver = allResolvers.find(r => r.id === resolverId);
-                  if (!resolver) return null;
 
-                  const isActive = activeResolvers.includes(resolver.id);
+              // Content Resolvers Section
+              React.createElement('div', { className: 'mb-10' },
+                React.createElement('div', { className: 'mb-4' },
+                  React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider' }, 'Content Resolvers'),
+                  React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+                    'Drag to reorder playback priority'
+                  )
+                ),
+                // Resolver grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  resolverOrder
+                    .filter(resolverId => allResolvers.some(r => r.id === resolverId))
+                    .map((resolverId, index) => {
+                    const resolver = allResolvers.find(r => r.id === resolverId);
 
-                  // Check if marketplace has a newer version
-                  const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === resolver.id);
-                  const hasUpdate = marketplaceResolver &&
-                    marketplaceResolver.version !== resolver.version &&
-                    marketplaceResolver.version > resolver.version;
+                    const isActive = activeResolvers.includes(resolver.id);
 
-                  return React.createElement(ResolverCard, {
-                    key: resolver.id,
-                    resolver: resolver,
-                    isActive: isActive,
-                    hasUpdate: hasUpdate,
-                    priorityNumber: index + 1,
-                    draggable: true,
-                    isDragging: draggedResolver === resolver.id,
-                    isDragOver: dragOverResolver === resolver.id,
-                    onClick: () => setSelectedResolver(resolver),
-                    onDragStart: (e) => handleResolverDragStart(e, resolver.id),
-                    onDragOver: handleResolverDragOver,
-                    onDragEnter: (e) => handleResolverDragEnter(e, resolver.id),
-                    onDragLeave: handleResolverDragLeave,
-                    onDrop: (e) => handleResolverDrop(e, resolver.id),
-                    onDragEnd: handleResolverDragEnd,
-                    onContextMenu: (e) => {
-                      e.preventDefault();
-                      if (window.electron?.resolvers?.showContextMenu) {
-                        window.electron.resolvers.showContextMenu(resolver.id);
+                    // Check if marketplace has a newer version
+                    const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === resolver.id);
+                    const hasUpdate = marketplaceResolver &&
+                      marketplaceResolver.version !== resolver.version &&
+                      marketplaceResolver.version > resolver.version;
+
+                    return React.createElement(ResolverCard, {
+                      key: resolver.id,
+                      resolver: resolver,
+                      isActive: isActive,
+                      hasUpdate: hasUpdate,
+                      priorityNumber: index + 1,
+                      draggable: true,
+                      isDragging: draggedResolver === resolver.id,
+                      isDragOver: dragOverResolver === resolver.id,
+                      onClick: () => setSelectedResolver(resolver),
+                      onDragStart: (e) => handleResolverDragStart(e, resolver.id),
+                      onDragOver: handleResolverDragOver,
+                      onDragEnter: (e) => handleResolverDragEnter(e, resolver.id),
+                      onDragLeave: handleResolverDragLeave,
+                      onDrop: (e) => handleResolverDrop(e, resolver.id),
+                      onDragEnd: handleResolverDragEnd,
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.resolvers?.showContextMenu) {
+                          window.electron.resolvers.showContextMenu(resolver.id);
+                        }
+                      }
+                    });
+                  })
+                )
+              ),
+
+              // Meta Services Section
+              metaServices.length > 0 && React.createElement('div', null,
+                React.createElement('div', { className: 'mb-4' },
+                  React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider' }, 'Meta Services'),
+                  React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+                    'Connected services for recommendations and metadata'
+                  )
+                ),
+                // Meta services grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  metaServices.map(service => {
+                    const config = metaServiceConfigs[service.id];
+                    const requiresAuth = service.settings?.requiresAuth !== false;
+                    const isConnected = service.id === 'lastfm' ? !!config?.username : !!config;
+
+                    // Determine status text
+                    let statusText = null;
+                    let statusClass = 'text-gray-400';
+                    if (requiresAuth) {
+                      if (isConnected) {
+                        statusText = service.id === 'lastfm' ? `Connected as ${config.username}` : 'Connected';
+                        statusClass = 'text-green-600';
+                      } else {
+                        statusText = 'Not configured';
                       }
                     }
-                  });
-                })
+
+                    return React.createElement('div', {
+                      key: service.id,
+                      onClick: () => setSelectedResolver(service),
+                      className: 'relative bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:shadow-md transition-all hover:border-gray-300'
+                    },
+                      // Service icon
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg flex items-center justify-center text-2xl mb-3',
+                        style: { backgroundColor: service.color + '20' }
+                      }, service.icon),
+                      // Service name
+                      React.createElement('h4', { className: 'font-medium text-gray-900 text-sm' }, service.name),
+                      // Connection status (only show if requires auth)
+                      statusText && React.createElement('p', { className: `text-xs mt-1 ${statusClass}` }, statusText),
+                      // Connected indicator dot
+                      isConnected && React.createElement('div', {
+                        className: 'absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full'
+                      })
+                    );
+                  })
+                )
               )
             ),
 
@@ -13013,7 +13252,7 @@ useEffect(() => {
                 React.createElement('div', null,
                   React.createElement('h2', { className: 'text-xl font-semibold text-gray-900' }, 'Marketplace'),
                   React.createElement('p', { className: 'text-sm text-gray-500 mt-1' },
-                    'Discover and install new resolver plugins.'
+                    'Discover and install new plug-ins to extend Parachord.'
                   )
                 )
               ),
@@ -13021,7 +13260,7 @@ useEffect(() => {
               React.createElement('div', { className: 'flex gap-4 mb-8' },
                 React.createElement('input', {
                   type: 'text',
-                  placeholder: 'Search resolvers...',
+                  placeholder: 'Search plug-ins...',
                   value: marketplaceSearchQuery,
                   onChange: (e) => setMarketplaceSearchQuery(e.target.value),
                   className: 'flex-1 max-w-md px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
@@ -13046,7 +13285,7 @@ useEffect(() => {
               !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length === 0 &&
                 React.createElement('div', {
                   className: 'text-center py-12 text-gray-400'
-                }, 'No resolvers available in marketplace yet.'),
+                }, 'No plug-ins available in marketplace yet.'),
               // Resolver grid
               !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length > 0 &&
                 React.createElement('div', {
@@ -13076,9 +13315,7 @@ useEffect(() => {
                         resolver: resolver,
                         isInstalled: isInstalled,
                         isInstalling: isInstalling,
-                        onClick: isInstalled
-                          ? () => setSelectedResolver(installedResolver)
-                          : () => handleInstallFromMarketplace(resolver)
+                        onClick: () => setSelectedMarketplaceItem({ ...resolver, isInstalled, installedResolver })
                       });
                     })
                 )
@@ -13585,23 +13822,25 @@ useEffect(() => {
               Object.entries(selectedResolver.capabilities || {}).map(([cap, enabled]) => {
                 if (!enabled) return null;
                 const capLabels = {
-                  resolve: { icon: '🎯', label: 'Resolve' },
-                  search: { icon: '🔍', label: 'Search' },
-                  stream: { icon: '▶️', label: 'Stream' },
-                  browse: { icon: '📁', label: 'Browse' },
-                  urlLookup: { icon: '🔗', label: 'URL Lookup' }
+                  resolve: 'Resolve',
+                  search: 'Search',
+                  stream: 'Stream',
+                  browse: 'Browse',
+                  urlLookup: 'URL Lookup',
+                  recommendations: 'Recommendations',
+                  metadata: 'Metadata'
                 };
-                const capInfo = capLabels[cap] || { icon: '✓', label: cap };
+                const label = capLabels[cap] || cap;
                 return React.createElement('span', {
                   key: cap,
-                  className: 'px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700 flex items-center gap-1'
-                }, capInfo.icon, ' ', capInfo.label);
+                  className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium'
+                }, label);
               })
             )
           ),
 
-          // Enable/Disable toggle
-          React.createElement('div', {
+          // Enable/Disable toggle (only for content resolvers, not meta services)
+          selectedResolver.type !== 'meta-service' && React.createElement('div', {
             className: 'flex items-center justify-between py-3 border-t border-gray-100'
           },
             React.createElement('div', null,
@@ -13663,6 +13902,101 @@ useEffect(() => {
                 'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
               )
             )
+          ),
+
+          // Last.fm authentication section
+          selectedResolver.id === 'lastfm' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            // Connected state
+            metaServiceConfigs.lastfm?.username
+              ? React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between' },
+                    React.createElement('div', null,
+                      React.createElement('span', { className: 'font-medium text-gray-900' }, 'Last.fm Account'),
+                      React.createElement('p', { className: 'text-xs text-gray-500' },
+                        `Connected as ${metaServiceConfigs.lastfm.username}`
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: disconnectLastfm,
+                      className: 'px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+                    }, 'Disconnect')
+                  ),
+                  React.createElement('div', {
+                    className: 'mt-3 flex items-center gap-2 text-green-600 text-sm'
+                  },
+                    React.createElement('span', null, '✓'),
+                    React.createElement('span', null, 'Connected to Last.fm')
+                  ),
+                  // Show API key status if configured
+                  metaServiceConfigs.lastfm.apiKey && React.createElement('p', {
+                    className: 'mt-2 text-xs text-gray-500'
+                  }, '🔑 Using custom API key')
+                )
+              // Not connected state
+              : React.createElement('div', null,
+                  React.createElement('span', { className: 'font-medium text-gray-900' }, 'Last.fm Account'),
+                  React.createElement('p', { className: 'text-xs text-gray-500 mt-1 mb-4' },
+                    'Enter your Last.fm username to enable personalized recommendations.'
+                  ),
+                  // Username input
+                  React.createElement('div', { className: 'mb-4' },
+                    React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Username'),
+                    React.createElement('input', {
+                      type: 'text',
+                      value: lastfmUsernameInput,
+                      onChange: (e) => setLastfmUsernameInput(e.target.value),
+                      placeholder: 'Your Last.fm username',
+                      className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                    })
+                  ),
+                  // Advanced accordion
+                  React.createElement('div', { className: 'mb-4' },
+                    React.createElement('button', {
+                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
+                      className: 'text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1'
+                    },
+                      React.createElement('span', {
+                        className: `transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }, '▶'),
+                      'Advanced'
+                    ),
+                    lastfmAdvancedOpen && React.createElement('div', {
+                      className: 'mt-3 p-3 bg-gray-50 rounded-lg space-y-3'
+                    },
+                      React.createElement('p', { className: 'text-xs text-gray-500' },
+                        'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('label', { className: 'block text-xs font-medium text-gray-600 mb-1' }, 'API Key'),
+                        React.createElement('input', {
+                          type: 'text',
+                          value: lastfmApiKeyInput,
+                          onChange: (e) => setLastfmApiKeyInput(e.target.value),
+                          placeholder: 'Your Last.fm API key',
+                          className: 'w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500'
+                        })
+                      ),
+                      React.createElement('div', null,
+                        React.createElement('label', { className: 'block text-xs font-medium text-gray-600 mb-1' }, 'API Secret'),
+                        React.createElement('input', {
+                          type: 'password',
+                          value: lastfmApiSecretInput,
+                          onChange: (e) => setLastfmApiSecretInput(e.target.value),
+                          placeholder: 'Your Last.fm API secret',
+                          className: 'w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500'
+                        })
+                      )
+                    )
+                  ),
+                  // Connect button
+                  React.createElement('button', {
+                    onClick: () => connectLastfm(lastfmUsernameInput, lastfmApiKeyInput, lastfmApiSecretInput),
+                    disabled: lastfmConnecting || !lastfmUsernameInput.trim(),
+                    className: 'w-full px-4 py-2 text-sm text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                  }, lastfmConnecting ? 'Connecting...' : 'Connect')
+                )
           ),
 
           // Local Files settings section
@@ -13802,6 +14136,131 @@ useEffect(() => {
               className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
             }, 'Done')
           )
+        )
+      )
+    ),
+
+    // Marketplace Item Detail Modal
+    selectedMarketplaceItem && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50',
+      onClick: (e) => { if (e.target === e.currentTarget) setSelectedMarketplaceItem(null); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden'
+      },
+        // Modal header with colored background
+        React.createElement('div', {
+          className: 'p-6 flex items-center gap-4',
+          style: { backgroundColor: selectedMarketplaceItem.color || '#6B7280' }
+        },
+          // Logo
+          React.createElement('div', {
+            className: 'w-16 h-16 flex items-center justify-center'
+          }, SERVICE_LOGOS[selectedMarketplaceItem.id] || React.createElement('span', { className: 'text-4xl' }, selectedMarketplaceItem.icon)),
+          // Name and version
+          React.createElement('div', { className: 'flex-1 text-white' },
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('h2', { className: 'text-xl font-bold' }, selectedMarketplaceItem.name),
+              selectedMarketplaceItem.version && React.createElement('span', {
+                className: 'px-2 py-0.5 bg-white/20 rounded text-xs'
+              }, 'v', selectedMarketplaceItem.version)
+            ),
+            React.createElement('p', { className: 'text-white/80 text-sm' }, selectedMarketplaceItem.author || 'Unknown')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setSelectedMarketplaceItem(null),
+            className: 'w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors'
+          }, '✕')
+        ),
+        // Modal body
+        React.createElement('div', { className: 'p-6 space-y-6' },
+          // Description
+          React.createElement('p', { className: 'text-gray-600 text-sm' }, selectedMarketplaceItem.description),
+
+          // Capabilities
+          selectedMarketplaceItem.capabilities && React.createElement('div', null,
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Capabilities'),
+            React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              Object.entries(selectedMarketplaceItem.capabilities || {}).map(([cap, enabled]) => {
+                if (!enabled) return null;
+                const capLabels = {
+                  resolve: 'Resolve',
+                  search: 'Search',
+                  stream: 'Stream',
+                  browse: 'Browse',
+                  urlLookup: 'URL Lookup',
+                  recommendations: 'Recommendations',
+                  metadata: 'Metadata'
+                };
+                const label = capLabels[cap] || cap;
+                return React.createElement('span', {
+                  key: cap,
+                  className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium'
+                }, label);
+              })
+            )
+          ),
+
+          // Category
+          selectedMarketplaceItem.category && React.createElement('div', null,
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Category'),
+            React.createElement('span', {
+              className: 'px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs capitalize'
+            }, selectedMarketplaceItem.category)
+          ),
+
+          // Update available notice (only when installed and update exists)
+          selectedMarketplaceItem.isInstalled &&
+            selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+            React.createElement('div', {
+              className: 'flex items-center gap-2 py-3 border-t border-gray-100 text-orange-500 text-sm'
+            },
+              React.createElement('span', null, '⬆'),
+              React.createElement('span', null, `Update available: v${selectedMarketplaceItem.version}`)
+            )
+        ),
+        // Modal footer with action buttons
+        React.createElement('div', {
+          className: 'px-6 py-4 bg-gray-50 flex items-center justify-end gap-2'
+        },
+          selectedMarketplaceItem.isInstalled
+            ? React.createElement(React.Fragment, null,
+                // Update button if newer version available
+                selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                  React.createElement('button', {
+                    onClick: async () => {
+                      await handleInstallFromMarketplace(selectedMarketplaceItem);
+                      setSelectedMarketplaceItem(null);
+                    },
+                    disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                    className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
+                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
+                // Uninstall button (always shown, disabled for built-in)
+                React.createElement('button', {
+                  onClick: async () => {
+                    await handleUninstallResolver(selectedMarketplaceItem.id);
+                    setSelectedMarketplaceItem(null);
+                  },
+                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id),
+                  className: 'px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id)
+                    ? 'Built-in plug-ins cannot be uninstalled'
+                    : 'Uninstall this plug-in'
+                }, 'Uninstall')
+              )
+            : React.createElement('button', {
+                onClick: async () => {
+                  await handleInstallFromMarketplace(selectedMarketplaceItem);
+                  setSelectedMarketplaceItem(null);
+                },
+                disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
+              }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
+          React.createElement('button', {
+            onClick: () => setSelectedMarketplaceItem(null),
+            className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
+          }, 'Done')
         )
       )
     ),
