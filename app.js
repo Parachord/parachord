@@ -1507,13 +1507,6 @@ const Parachord = () => {
   }, [searchDetailCategory, searchResults.tracks.length]);
 
 
-  // Collection page scroll handler for header collapse
-  const handleCollectionScroll = useCallback((e) => {
-    const { scrollTop } = e.target;
-    const shouldCollapse = scrollTop > 50;
-    setCollectionHeaderCollapsed(prev => prev !== shouldCollapse ? shouldCollapse : prev);
-  }, []);
-
   // Track if we're opening a release (to prevent header reset during artist change)
   const openingReleaseRef = useRef(false);
   // Track if we're restoring saved state (to prevent tab reset during restore)
@@ -3007,7 +3000,36 @@ const Parachord = () => {
       if (window.electron?.collection?.load) {
         try {
           const data = await window.electron.collection.load();
-          setCollectionData(data);
+
+          // Clean up corrupted sources data (e.g., numeric keys like "0" instead of resolver IDs)
+          const validResolverIds = ['spotify', 'youtube', 'bandcamp', 'qobuz', 'soundcloud', 'localfiles'];
+          let cleanedCount = 0;
+          const cleanedTracks = data.tracks?.map(track => {
+            if (track.sources && typeof track.sources === 'object') {
+              const cleanedSources = {};
+              for (const [key, value] of Object.entries(track.sources)) {
+                if (validResolverIds.includes(key)) {
+                  cleanedSources[key] = value;
+                } else {
+                  cleanedCount++;
+                }
+              }
+              return { ...track, sources: cleanedSources };
+            }
+            return track;
+          }) || [];
+
+          if (cleanedCount > 0) {
+            console.log(`🧹 Cleaned ${cleanedCount} corrupted source entries from collection`);
+            const cleanedData = { ...data, tracks: cleanedTracks };
+            setCollectionData(cleanedData);
+            // Save the cleaned data
+            if (window.electron?.collection?.save) {
+              await window.electron.collection.save(cleanedData);
+            }
+          } else {
+            setCollectionData(data);
+          }
         } catch (error) {
           console.error('Failed to load collection:', error);
         }
@@ -6654,11 +6676,14 @@ const Parachord = () => {
 
   // Resolve library tracks against active resolvers (for local files)
   const resolveLibraryTracks = async () => {
-    if (!library || library.length === 0) return;
     if (!allResolvers || allResolvers.length === 0) return;
     if (!activeResolvers || activeResolvers.length === 0) return;
 
-    console.log(`🔍 Resolving ${library.length} library tracks against active resolvers...`);
+    // Merge local files and collection tracks for resolution
+    const allTracks = [...library, ...collectionData.tracks];
+    if (allTracks.length === 0) return;
+
+    console.log(`🔍 Resolving ${allTracks.length} tracks (${library.length} local + ${collectionData.tracks.length} collection) against active resolvers...`);
 
     // Get enabled resolvers (excluding localfiles since tracks already have that source)
     const enabledResolvers = resolverOrder
@@ -6671,12 +6696,8 @@ const Parachord = () => {
       return;
     }
 
-    // Take a snapshot of current library to avoid stale closure issues
-    const librarySnapshot = [...library];
-    const updatedSources = {}; // Map of filePath -> sources
-
     // Mark all tracks that need resolving as "resolving"
-    const tracksToResolve = librarySnapshot.filter(track => {
+    const tracksToResolve = allTracks.filter(track => {
       const existingSources = track.sources || {};
       return !Object.keys(existingSources).some(id => id !== 'localfiles');
     });
@@ -6686,16 +6707,25 @@ const Parachord = () => {
     }
 
     // Resolve tracks one at a time with delay to avoid rate limiting
-    for (let i = 0; i < librarySnapshot.length; i++) {
-      const track = librarySnapshot[i];
+    for (let i = 0; i < allTracks.length; i++) {
+      const track = allTracks[i];
       const trackKey = track.filePath || track.id;
       const artistName = track.artist || 'Unknown Artist';
+      const isCollectionTrack = !track.filePath;
 
       // Skip if track already has sources from external resolvers
+      // Only consider valid resolver IDs (not numeric keys like "0" from corrupted data)
       const existingSources = track.sources || {};
-      const hasExternalSources = Object.keys(existingSources).some(id => id !== 'localfiles');
-      if (hasExternalSources) continue;
+      const validResolverIds = ['spotify', 'youtube', 'bandcamp', 'qobuz', 'soundcloud', 'localfiles'];
+      const hasExternalSources = Object.keys(existingSources).some(id =>
+        validResolverIds.includes(id) && id !== 'localfiles'
+      );
+      if (hasExternalSources) {
+        console.log(`  ⏭️ Skipping "${track.title}" - already has sources: ${Object.keys(existingSources).join(', ')}`);
+        continue;
+      }
 
+      console.log(`  🔎 Resolving: "${track.title}" by ${artistName}${track.album ? ` (${track.album})` : ''}`);
       const sources = { ...existingSources };
 
       // Query enabled resolvers
@@ -6704,7 +6734,7 @@ const Parachord = () => {
 
         try {
           const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(artistName, track.title, null, config);
+          const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
           if (result) {
             const confidence = calculateLibraryConfidence(track, result);
@@ -6724,20 +6754,35 @@ const Parachord = () => {
       // Store updated sources if we found new ones
       const hasNewSources = Object.keys(sources).length > Object.keys(existingSources).length;
       if (hasNewSources) {
-        updatedSources[trackKey] = sources;
-
-        // Update library immediately for this track, THEN remove from resolving set
-        // This ensures we go directly from "resolving" to "has sources" with no gap
-        setLibrary(prev => prev.map(t => {
-          const tKey = t.filePath || t.id;
-          if (tKey === trackKey) {
-            return { ...t, sources: sources };
-          }
-          return t;
-        }));
+        if (isCollectionTrack) {
+          // Update collection data for this track and persist
+          setCollectionData(prev => {
+            const newData = {
+              ...prev,
+              tracks: prev.tracks.map(t => {
+                if (t.id === trackKey) {
+                  return { ...t, sources: sources };
+                }
+                return t;
+              })
+            };
+            // Save async (don't block)
+            saveCollection(newData);
+            return newData;
+          });
+        } else {
+          // Update library for this track
+          setLibrary(prev => prev.map(t => {
+            const tKey = t.filePath || t.id;
+            if (tKey === trackKey) {
+              return { ...t, sources: sources };
+            }
+            return t;
+          }));
+        }
       }
 
-      // Mark this track as done resolving (after library update if there were new sources)
+      // Mark this track as done resolving (after update if there were new sources)
       setResolvingLibraryTracks(prev => {
         const next = new Set(prev);
         next.delete(trackKey);
@@ -6883,16 +6928,17 @@ const Parachord = () => {
     }
   }, [id3EditorOpen]);
 
-  // Effect to resolve library tracks when library or resolvers change
+  // Effect to resolve library and collection tracks when they or resolvers change
   useEffect(() => {
-    if (library.length > 0 && allResolvers.length > 0 && activeResolvers.length > 0) {
+    const totalTracks = library.length + collectionData.tracks.length;
+    if (totalTracks > 0 && allResolvers.length > 0 && activeResolvers.length > 0) {
       // Delay to let UI render first, then resolve in background
       const timer = setTimeout(() => {
         resolveLibraryTracks();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [library.length, allResolvers.length, activeResolvers.length]);
+  }, [library.length, collectionData.tracks.length, allResolvers.length, activeResolvers.length]);
 
   // Lazy load album art after page is displayed
   const fetchAlbumArtLazy = async (releases) => {
@@ -13970,23 +14016,21 @@ useEffect(() => {
           )
         ),
 
-        // Library view with hero
+        // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement('div', {
-          className: 'h-full overflow-y-auto scrollable-content',
-          onScroll: handleCollectionScroll
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
         },
-          // Sticky header container
+          // Header section (outside scrollable area)
           React.createElement('div', {
-            className: 'sticky top-0 z-20'
+            className: 'relative',
+            style: {
+              height: collectionHeaderCollapsed ? '80px' : '320px',
+              flexShrink: 0,
+              transition: 'height 300ms ease-out',
+              overflow: 'hidden'
+            }
           },
-            // Hero section (collapsible)
-            React.createElement('div', {
-              className: 'relative overflow-hidden',
-              style: {
-                height: collectionHeaderCollapsed ? '80px' : '320px',
-                transition: 'height 300ms ease-out'
-              }
-            },
               // Gradient background
               React.createElement('div', {
                 className: 'absolute inset-0 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700'
@@ -13999,16 +14043,14 @@ useEffect(() => {
                   backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'20\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'12\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3Ccircle cx=\'30\' cy=\'30\' r=\'4\'/%3E%3C/g%3E%3C/svg%3E")'
                 }
               }),
-              // Expanded content - centered title, stats, button
-              React.createElement('div', {
-                className: 'absolute inset-0 flex flex-col items-center justify-center',
-                style: {
-                  opacity: collectionHeaderCollapsed ? 0 : 1,
-                  transform: collectionHeaderCollapsed ? 'translateY(-20px)' : 'translateY(0)',
-                  transition: 'opacity 300ms ease-out, transform 300ms ease-out',
-                  pointerEvents: collectionHeaderCollapsed ? 'none' : 'auto'
-                }
-              },
+              // EXPANDED STATE - Centered content
+            !collectionHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+              style: {
+                opacity: collectionHeaderCollapsed ? 0 : 1,
+                transition: 'opacity 300ms ease-out'
+              }
+            },
                 // Title
                 React.createElement('h1', {
                   className: 'text-5xl font-light text-white',
@@ -14053,15 +14095,14 @@ useEffect(() => {
                   }
                 }, 'Start Collection Station')
               ),
-              // Collapsed content - inline row (matching artist page layout)
-              React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6',
-                style: {
-                  opacity: collectionHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out',
-                  pointerEvents: collectionHeaderCollapsed ? 'auto' : 'none'
-                }
-              },
+            // COLLAPSED STATE - Inline layout matching Recommendations
+            collectionHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-6 z-10',
+              style: {
+                opacity: collectionHeaderCollapsed ? 1 : 0,
+                transition: 'opacity 300ms ease-out'
+              }
+            },
                 // Left: Title
                 React.createElement('h1', {
                   className: 'text-2xl font-light text-white mr-6',
@@ -14105,10 +14146,22 @@ useEffect(() => {
                   }
                 }, 'Start Station')
               )
-            ),
-            // Filter bar (always visible, below hero)
+          ),
+          // Scrollable content area
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto scrollable-content',
+            onScroll: (e) => {
+              const scrollTop = e.target.scrollTop;
+              if (scrollTop > 50 && !collectionHeaderCollapsed) {
+                setCollectionHeaderCollapsed(true);
+              } else if (scrollTop <= 50 && collectionHeaderCollapsed) {
+                setCollectionHeaderCollapsed(false);
+              }
+            }
+          },
+            // Sticky filter bar
             React.createElement('div', {
-              className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
             },
               // Sort dropdown (moved to left)
               React.createElement('div', { className: 'relative' },
@@ -14192,11 +14245,10 @@ useEffect(() => {
                     )
                   )
               )
-            )
-          ),
-          // Content area
-          React.createElement('div', { className: 'p-6' },
-            // Artists tab
+            ),
+            // Content with padding
+            React.createElement('div', { className: 'p-6' },
+              // Artists tab
             collectionTab === 'artists' && (() => {
               const filtered = filterCollectionItems(collectionData.artists, 'artists');
               const sorted = sortCollectionItems(filtered, 'artists');
@@ -14358,8 +14410,10 @@ useEffect(() => {
 
               return React.createElement('div', { className: 'space-y-0' },
                 sorted.map((track, index) => {
-                  const hasResolved = Object.keys(track.sources || {}).length > 0;
-                  const isCurrentTrack = currentTrack?.id === track.id || currentTrack?.filePath === track.filePath;
+                  // Use track's own sources (updated by resolution)
+                  const effectiveSources = track.sources || {};
+                  const hasResolved = Object.keys(effectiveSources).length > 0;
+                  const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const trackKey = track.filePath || track.id;
                   const isResolving = resolvingLibraryTracks.has(trackKey);
 
@@ -14433,7 +14487,7 @@ useEffect(() => {
                       style: { width: '120px', flexShrink: 0, minHeight: '24px' }
                     },
                       (() => {
-                        const sources = track.sources || {};
+                        const sources = effectiveSources;
                         const sourceIds = Object.keys(sources);
                         const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
 
@@ -14476,12 +14530,12 @@ useEffect(() => {
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
                               }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             });
-                        } else if (isResolving && track.filePath) {
-                          // Show LO icon + shimmer skeletons while resolving
+                        } else if (isResolving) {
+                          // Show shimmer skeletons while resolving (for both local and collection tracks)
                           const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
                           return React.createElement('div', { className: 'flex items-center gap-1' },
-                            // LO icon
-                            localFilesResolver && React.createElement('button', {
+                            // LO icon only for local files
+                            track.filePath && localFilesResolver && React.createElement('button', {
                               key: 'localfiles',
                               className: 'no-drag',
                               onClick: (e) => {
@@ -14561,6 +14615,7 @@ useEffect(() => {
                 })
               );
             })()
+            )
           )
         ),
 
@@ -17224,7 +17279,19 @@ useEffect(() => {
             return React.createElement('button', {
               onClick: () => {
                 if (!isInCollection) {
-                  addTrackToCollection(currentTrack);
+                  // Get sources from trackSources state as fallback (keyed by position-title)
+                  const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
+                  const stateSources = trackSources[trackSourceKey];
+                  // Also check cache
+                  const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
+                  const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
+                  // Merge sources: currentTrack.sources > cached > state
+                  const effectiveSources = {
+                    ...(stateSources || {}),
+                    ...(cachedSources || {}),
+                    ...(currentTrack.sources || {})
+                  };
+                  addTrackToCollection({ ...currentTrack, sources: effectiveSources });
                 } else {
                   showToast(`${currentTrack.title} is already in your collection`);
                 }
