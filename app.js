@@ -186,6 +186,29 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
   );
 });
 
+// Service logo SVG paths - reusable for different sizes
+const SERVICE_LOGO_PATHS = {
+  spotify: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z',
+  bandcamp: 'M0 18.75l7.437-13.5H24l-7.438 13.5H0z',
+  qobuz: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-7c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z',
+  youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+  localfiles: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z',
+  applemusic: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
+};
+
+// Helper to create resolver icon at any size
+const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
+  const path = SERVICE_LOGO_PATHS[resolverId];
+  if (!path) return null;
+  return React.createElement('svg', {
+    viewBox: '0 0 24 24',
+    width: size,
+    height: size,
+    fill: fill,
+    style: { flexShrink: 0 }
+  }, React.createElement('path', { d: path }));
+};
+
 // Service logo SVGs - white versions for colored backgrounds
 const SERVICE_LOGOS = {
   spotify: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
@@ -1051,9 +1074,6 @@ const ReleasePage = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        color: 'white',
                         pointerEvents: 'auto',
                         opacity: confidence > 0.8 ? 1 : 0.6,
                         transition: 'transform 0.1s'
@@ -1061,11 +1081,7 @@ const ReleasePage = ({
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                       onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                       title: `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
-                    }, (() => {
-                      // Custom abbreviations for resolvers
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                      return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                    })());
+                    }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                   });
                 })()
               ),
@@ -11355,7 +11371,6 @@ useEffect(() => {
                           qobuz: '#0070CC',
                           applemusic: '#FA243C'
                         };
-                        const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                         return React.createElement('div', {
                           key: source,
                           style: {
@@ -11365,12 +11380,9 @@ useEffect(() => {
                             backgroundColor: colors[source] || '#9CA3AF',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '8px',
-                            fontWeight: 'bold',
-                            color: 'white'
+                            justifyContent: 'center'
                           }
-                        }, abbrevMap[source] || source.slice(0, 2).toUpperCase());
+                        }, React.createElement(ResolverIcon, { resolverId: source, size: 10 }));
                       })
                     : [])
                   )
@@ -12787,9 +12799,6 @@ useEffect(() => {
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  fontSize: '10px',
-                                  fontWeight: 'bold',
-                                  color: 'white',
                                   pointerEvents: 'auto',
                                   opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
                                   transition: 'transform 0.1s'
@@ -12797,10 +12806,7 @@ useEffect(() => {
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                              })());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                         :
                           // Show shimmer skeletons while resolving (match resolver icon size)
@@ -13658,9 +13664,6 @@ useEffect(() => {
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  fontSize: '10px',
-                                  fontWeight: 'bold',
-                                  color: 'white',
                                   pointerEvents: 'auto',
                                   opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
                                   transition: 'transform 0.1s'
@@ -13668,10 +13671,7 @@ useEffect(() => {
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                              })());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             });
                         } else if (isResolving && track.filePath) {
                           // Show LO icon + shimmer skeletons while resolving
@@ -14877,9 +14877,6 @@ useEffect(() => {
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
-                                    fontWeight: 'bold',
-                                    color: 'white',
                                     pointerEvents: 'auto',
                                     opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
                                     transition: 'transform 0.1s'
@@ -14887,10 +14884,7 @@ useEffect(() => {
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, (() => {
-                                  const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                  return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                                })());
+                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                               })
                           :
                             // Show shimmer skeletons while resolving
@@ -15302,11 +15296,11 @@ useEffect(() => {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', color: 'white', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' }[resolverId] || resolver.name.slice(0, 2).toUpperCase());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -15388,11 +15382,11 @@ useEffect(() => {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', color: 'white', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}`
-                              }, { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' }[resolverId] || resolver.name.slice(0, 2).toUpperCase());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -18151,8 +18145,6 @@ useEffect(() => {
                     availableSources.map(resolverId => {
                       const resolver = allResolvers.find(r => r.id === resolverId);
                       if (!resolver) return null;
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                      const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                       const source = track.sources?.[resolverId];
                       const confidence = source?.confidence || 0;
                       return React.createElement('button', {
@@ -18172,16 +18164,13 @@ useEffect(() => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: 'bold',
-                          color: 'white',
                           opacity: confidence > 0.8 ? 1 : 0.6,
                           transition: 'transform 0.1s'
                         },
                         onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                         onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                         title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-                      }, abbrev);
+                      }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                     })
                   :
                     // Show shimmer skeletons while resolving (match resolver icon size)
