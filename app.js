@@ -396,7 +396,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 };
 
 // SearchArtistCard component - for quick search results with circular artist image (matches related artists style)
-const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) => {
+const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, itemWidth }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
 
@@ -417,10 +417,13 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
     // Note: getArtistImage excluded from deps - function identity changes but behavior doesn't
   }, [artist.name]);
 
+  // Calculate image size based on item width (leave room for name below)
+  const imageSize = itemWidth ? Math.min(itemWidth - 8, 120) : 96;
+
   return React.createElement('div', {
     onClick: onClick,
-    className: 'flex-1 min-w-0 flex flex-col items-center cursor-grab active:cursor-grabbing group transition-all duration-300 ease-out',
-    style: { minWidth: '100px', maxWidth: '160px' },
+    className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group transition-all duration-300 ease-out',
+    style: { width: itemWidth || 130 },
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'copy';
@@ -443,7 +446,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
   },
     // Circular artist image (matches related artists style)
     React.createElement('div', {
-      className: 'relative w-24 h-24 rounded-full overflow-hidden mb-2 mx-auto'
+      className: 'relative rounded-full overflow-hidden mb-2 mx-auto transition-all duration-300 ease-out',
+      style: { width: imageSize, height: imageSize }
     },
       React.createElement('div', {
         className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
@@ -461,7 +465,11 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
         !imageLoading && !imageUrl && React.createElement('div', {
           className: 'w-full h-full flex items-center justify-center text-white/70'
         },
-          React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+          React.createElement('svg', {
+            className: 'transition-all duration-300',
+            style: { width: imageSize * 0.5, height: imageSize * 0.5 },
+            fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1
+          },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
           )
         )
@@ -1192,6 +1200,8 @@ const Parachord = () => {
   });
   const [searchDetailCategory, setSearchDetailCategory] = useState(null); // null = main view, 'artists'|'tracks'|'albums'|'playlists' = detail view
   const [searchPreviewItem, setSearchPreviewItem] = useState(null); // Currently previewed item in detail view
+  const searchResultsContainerRef = useRef(null); // Ref for measuring search results container width
+  const [searchContainerWidth, setSearchContainerWidth] = useState(800); // Width of search results container for responsive item count
   const [searchPreviewArtistImage, setSearchPreviewArtistImage] = useState(null); // Artist image for preview pane
   const [searchPreviewArtistBio, setSearchPreviewArtistBio] = useState(null); // Artist bio snippet for preview pane
   const [searchHeaderCollapsed, setSearchHeaderCollapsed] = useState(false); // Search detail header collapse state
@@ -4851,6 +4861,32 @@ const Parachord = () => {
     }
 
     return track;
+  };
+
+  // ResizeObserver to track search results container width for responsive item count
+  useEffect(() => {
+    const container = searchResultsContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSearchContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    resizeObserver.observe(container);
+    // Set initial width
+    setSearchContainerWidth(container.offsetWidth);
+
+    return () => resizeObserver.disconnect();
+  }, [view]); // Re-attach when view changes
+
+  // Calculate how many items fit in a row based on container width and item size
+  const getItemsPerRow = (minItemWidth, gap = 16) => {
+    const availableWidth = searchContainerWidth;
+    // Calculate how many items fit: (width + gap) * n - gap <= availableWidth
+    // n <= (availableWidth + gap) / (minItemWidth + gap)
+    return Math.max(1, Math.floor((availableWidth + gap) / (minItemWidth + gap)));
   };
 
   const performSearch = async (query) => {
@@ -11323,7 +11359,7 @@ useEffect(() => {
           ),
 
           // Content area
-          React.createElement('div', { className: 'px-8 py-6' },
+          React.createElement('div', { className: 'px-8 py-6', ref: searchResultsContainerRef },
         // Main view content
         React.createElement('div', null,
           // Large search input with cursor styling
@@ -11345,45 +11381,42 @@ useEffect(() => {
         // Results area
         // Show skeletons when no query or when searching
         (!searchQuery || isSearching) ?
-          // Loading skeletons - single row with max-height overflow hidden
+          // Loading skeletons - dynamically sized based on container width
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton - circular style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
-              React.createElement('div', {
-                className: 'flex gap-4',
-                style: { maxHeight: '160px', overflow: 'hidden' }
-              },
-                ...Array(12).fill(null).map((_, i) =>
-                  React.createElement('div', {
+              React.createElement('div', { className: 'flex gap-4' },
+                ...Array(getItemsPerRow(130)).fill(null).map((_, i) => {
+                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(130) - 1) * 16) / getItemsPerRow(130));
+                  const imageSize = Math.min(skeletonWidth - 8, 120);
+                  return React.createElement('div', {
                     key: `artist-skeleton-${i}`,
-                    className: 'flex-1 min-w-0 flex flex-col items-center',
-                    style: { minWidth: '100px', maxWidth: '160px' }
+                    className: 'flex flex-col items-center transition-all duration-300 ease-out',
+                    style: { width: skeletonWidth }
                   },
                     React.createElement('div', {
-                      className: 'w-24 h-24 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer mx-auto',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                      className: 'rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer mx-auto transition-all duration-300 ease-out',
+                      style: { width: imageSize, height: imageSize, backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
                     }),
                     React.createElement('div', {
                       className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
                     })
-                  )
-                )
+                  );
+                })
               )
             ),
             // Songs skeleton - rounded style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
-              React.createElement('div', {
-                className: 'flex gap-4',
-                style: { maxHeight: '200px', overflow: 'hidden' }
-              },
-                ...Array(12).fill(null).map((_, i) =>
-                  React.createElement('div', {
+              React.createElement('div', { className: 'flex gap-4' },
+                ...Array(getItemsPerRow(110)).fill(null).map((_, i) => {
+                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
+                  return React.createElement('div', {
                     key: `track-skeleton-${i}`,
-                    className: 'flex-1 min-w-0',
-                    style: { minWidth: '80px', maxWidth: '140px' }
+                    className: 'transition-all duration-300 ease-out',
+                    style: { width: skeletonWidth }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
@@ -11401,22 +11434,20 @@ useEffect(() => {
                       className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-10 mt-1 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 150}ms` }
                     })
-                  )
-                )
+                  );
+                })
               )
             ),
             // Albums skeleton - rounded style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ALBUMS'),
-              React.createElement('div', {
-                className: 'flex gap-4',
-                style: { maxHeight: '240px', overflow: 'hidden' }
-              },
-                ...Array(10).fill(null).map((_, i) =>
-                  React.createElement('div', {
+              React.createElement('div', { className: 'flex gap-4' },
+                ...Array(getItemsPerRow(150)).fill(null).map((_, i) => {
+                  const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(150) - 1) * 16) / getItemsPerRow(150));
+                  return React.createElement('div', {
                     key: `album-skeleton-${i}`,
-                    className: 'flex-1 min-w-0',
-                    style: { minWidth: '120px', maxWidth: '180px' }
+                    className: 'transition-all duration-300 ease-out',
+                    style: { width: skeletonWidth }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-3 animate-shimmer',
@@ -11430,8 +11461,8 @@ useEffect(() => {
                       className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
                     })
-                  )
-                )
+                  );
+                })
               )
             )
           )
@@ -11461,15 +11492,15 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'flex gap-4',
-              style: { maxHeight: '160px', overflow: 'hidden' }
+              className: 'flex gap-4'
             },
-              ...searchResults.artists.slice(0, 12).map(artist =>
+              ...searchResults.artists.slice(0, getItemsPerRow(130)).map(artist =>
                 React.createElement(SearchArtistCard, {
                   key: artist.id,
                   artist: artist,
                   onClick: () => fetchArtistData(artist.name),
                   getArtistImage: getArtistImage,
+                  itemWidth: Math.floor((searchContainerWidth - (getItemsPerRow(130) - 1) * 16) / getItemsPerRow(130)),
                   onContextMenu: (artist) => {
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       window.electron.contextMenu.showTrackMenu({
@@ -11501,14 +11532,14 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'flex gap-4',
-              style: { maxHeight: '200px', overflow: 'hidden' }
+              className: 'flex gap-4'
             },
-              ...searchResults.tracks.slice(0, 12).map(track =>
-                React.createElement('div', {
+              ...searchResults.tracks.slice(0, getItemsPerRow(110)).map(track => {
+                const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
+                return React.createElement('div', {
                   key: track.id,
-                  className: 'flex-1 min-w-0 text-left group transition-all duration-300 ease-out',
-                  style: { minWidth: '80px', maxWidth: '140px' }
+                  className: 'text-left group transition-all duration-300 ease-out',
+                  style: { width: trackItemWidth }
                 },
                   // Album art with rounded corners - this is the draggable part
                   React.createElement('div', {
@@ -11590,8 +11621,8 @@ useEffect(() => {
                       })
                     : [])
                   )
-                )
-              )
+                );
+              })
             )
           ),
 
@@ -11609,19 +11640,19 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'flex gap-4',
-              style: { maxHeight: '240px', overflow: 'hidden' }
+              className: 'flex gap-4'
             },
-              ...searchResults.albums.slice(0, 10).map(album =>
-                React.createElement('button', {
+              ...searchResults.albums.slice(0, getItemsPerRow(150)).map(album => {
+                const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(150) - 1) * 16) / getItemsPerRow(150));
+                return React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
                   onMouseEnter: () => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
                   },
-                  className: 'flex-1 min-w-0 text-left group cursor-grab active:cursor-grabbing transition-all duration-300 ease-out',
-                  style: { minWidth: '120px', maxWidth: '180px' },
+                  className: 'text-left group cursor-grab active:cursor-grabbing transition-all duration-300 ease-out',
+                  style: { width: albumItemWidth },
                   draggable: true,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
@@ -11682,8 +11713,8 @@ useEffect(() => {
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate' },
                     `${album['artist-credit']?.[0]?.name || 'Unknown'} • ${album['first-release-date']?.split('-')[0] || ''}`
                   )
-                )
-              )
+                );
+              })
             )
           ),
 
