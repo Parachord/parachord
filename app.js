@@ -11173,13 +11173,13 @@ useEffect(() => {
                       // Track title - fixed width column
                       React.createElement('span', {
                         className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
-                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                        style: { pointerEvents: 'none', width: '560px', flexShrink: 0 }
                       }, track.title),
 
                       // Artist name - fixed width column, clickable
                       React.createElement('span', {
                         className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: { width: '180px', flexShrink: 0 },
+                        style: { width: '360px', flexShrink: 0 },
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(track.artist);
@@ -11189,12 +11189,12 @@ useEffect(() => {
                       // Duration - fixed width column (before resolver icons)
                       React.createElement('span', {
                         className: 'text-sm text-gray-400 text-right tabular-nums',
-                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto' }
                       }, formatTime(track.duration)),
 
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end ml-auto',
+                        className: 'flex items-center gap-1 justify-end',
                         style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                       },
                         isResolving ?
@@ -11925,7 +11925,7 @@ useEffect(() => {
                       // Title skeleton
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { width: '280px', flexShrink: 0, animationDelay: '0.1s' }
+                        style: { width: '560px', flexShrink: 0, animationDelay: '0.1s' }
                       }),
                       // Artist skeleton (wider)
                       React.createElement('div', {
@@ -12035,7 +12035,7 @@ useEffect(() => {
                     // Track title - fixed width column
                     React.createElement('span', {
                       className: `text-sm truncate transition-colors ${isCurrentTrack && isPlaying ? 'text-purple-600 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`,
-                      style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                      style: { pointerEvents: 'none', width: '560px', flexShrink: 0 }
                     }, track.title),
 
                     // Artist name - fixed width column, clickable (wider)
@@ -12067,7 +12067,7 @@ useEffect(() => {
                     // Duration - right-justified before resolver icons
                     React.createElement('span', {
                       className: 'text-sm text-gray-400 text-right tabular-nums mr-4',
-                      style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                      style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto' }
                     }, formatTime(track.duration)),
 
                     // Resolver icons - fixed width column (last column)
@@ -13018,11 +13018,11 @@ useEffect(() => {
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '280px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                        style: { width: '560px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '180px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                        style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
@@ -13150,13 +13150,13 @@ useEffect(() => {
                         // Track title - fixed width column
                         React.createElement('span', {
                           className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
-                          style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                          style: { pointerEvents: 'none', width: '560px', flexShrink: 0 }
                         }, track.title),
 
                         // Artist name - fixed width column, clickable
                         React.createElement('span', {
                           className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                          style: { width: '180px', flexShrink: 0 },
+                          style: { width: '360px', flexShrink: 0 },
                           onClick: (e) => {
                             e.stopPropagation();
                             fetchArtistData(track.artist);
@@ -13166,12 +13166,12 @@ useEffect(() => {
                         // Duration - fixed width column
                         React.createElement('span', {
                           className: 'text-sm text-gray-400 text-right tabular-nums',
-                          style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                          style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto' }
                         }, formatTime(track.duration)),
 
                         // Resolver icons - fixed width column
                         React.createElement('div', {
-                          className: 'flex items-center gap-1 justify-end ml-auto',
+                          className: 'flex items-center gap-1 justify-end',
                           style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                         },
                           isResolving ?
@@ -13433,11 +13433,11 @@ useEffect(() => {
                     }),
                     React.createElement('div', {
                       className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { width: '280px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      style: { width: '560px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                     }),
                     React.createElement('div', {
                       className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { width: '180px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                      style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
                     }),
                     React.createElement('div', {
                       className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
@@ -13529,13 +13529,13 @@ useEffect(() => {
                       // Track title - fixed width column
                       React.createElement('span', {
                         className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`,
-                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0 }
+                        style: { pointerEvents: 'none', width: '560px', flexShrink: 0 }
                       }, track.nowPlaying ? `▶ ${track.title}` : track.title),
 
                       // Artist name - fixed width column, clickable
                       React.createElement('span', {
                         className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: { width: '180px', flexShrink: 0 },
+                        style: { width: '360px', flexShrink: 0 },
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(track.artist);
@@ -13545,12 +13545,12 @@ useEffect(() => {
                       // Duration - fixed width column
                       React.createElement('span', {
                         className: 'text-sm text-gray-400 text-right tabular-nums',
-                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0 }
+                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto' }
                       }, track.duration ? formatTime(track.duration) : '--:--'),
 
                       // Resolver icons - fixed width column
                       React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end ml-auto',
+                        className: 'flex items-center gap-1 justify-end',
                         style: { width: '100px', flexShrink: 0, minHeight: '24px' }
                       },
                         isResolving ?
