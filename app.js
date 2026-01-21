@@ -3724,8 +3724,10 @@ const Parachord = () => {
                 console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
               }
             } else {
-              // Playing normally - reset stuck counter
+              // Playing normally - reset stuck counter and log progress periodically
               stuckAtZeroCount = 0;
+              // Log every poll to confirm polling is working
+              console.log(`▶️ Spotify playing: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
             }
           } else {
             // Track changed - Spotify advanced on its own or user changed track
@@ -8926,15 +8928,40 @@ const playOnSpotifyConnect = async (track) => {
       console.log(`Device ${i + 1}:`, {
         name: d.name,
         type: d.type,
+        id: d.id,
         is_active: d.is_active,
         is_restricted: d.is_restricted,
         volume_percent: d.volume_percent
       });
     });
-    
-    // Find active device or use first available
-    const activeDevice = devices.find(d => d.is_active) || devices[0];
-    console.log('Selected device:', activeDevice.name, 'Active:', activeDevice.is_active);
+
+    // Filter out restricted devices (can't be controlled remotely)
+    const controllableDevices = devices.filter(d => !d.is_restricted);
+    if (controllableDevices.length === 0) {
+      console.warn('⚠️ All devices are restricted, trying with all devices anyway');
+    }
+    const availableDevices = controllableDevices.length > 0 ? controllableDevices : devices;
+
+    // Device selection priority:
+    // 1. Active device (if any)
+    // 2. Computer type devices (Spotify desktop app)
+    // 3. Smartphone type devices
+    // 4. Any other device (but NOT Web Browser - these are often phantom devices)
+    let activeDevice = availableDevices.find(d => d.is_active);
+
+    if (!activeDevice) {
+      // No active device - select by preference
+      // Prefer Computer > Smartphone > Speaker > other, but avoid "Web Player" type
+      const computerDevice = availableDevices.find(d => d.type === 'Computer');
+      const smartphoneDevice = availableDevices.find(d => d.type === 'Smartphone');
+      const speakerDevice = availableDevices.find(d => d.type === 'Speaker');
+      const nonWebDevice = availableDevices.find(d => d.type !== 'Computer' && !d.name.toLowerCase().includes('web'));
+
+      activeDevice = computerDevice || smartphoneDevice || speakerDevice || nonWebDevice || availableDevices[0];
+      console.log(`📱 No active device, selected by preference: "${activeDevice.name}" (${activeDevice.type})`);
+    } else {
+      console.log(`📱 Using active device: "${activeDevice.name}" (${activeDevice.type})`);
+    }
     
     // If device is not active, wake it up by transferring playback with play:true
     // This is more reliable than transferring then playing separately
@@ -8978,7 +9005,35 @@ const playOnSpotifyConnect = async (track) => {
     });
     
     if (response.ok || response.status === 204) {
-      console.log('✅ Playing on Spotify:', activeDevice.name);
+      console.log('✅ Play command accepted by Spotify:', activeDevice.name);
+
+      // Verify playback actually started by polling the player state
+      // This catches cases where the command was accepted but playback didn't start
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay before checking
+
+      try {
+        const verifyResponse = await fetch('https://api.spotify.com/v1/me/player', {
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        });
+
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          if (verifyData.is_playing) {
+            console.log('✅ Verified: Spotify is now playing');
+          } else {
+            console.warn('⚠️ Play command accepted but Spotify reports is_playing=false');
+            console.log('Player state:', {
+              is_playing: verifyData.is_playing,
+              progress_ms: verifyData.progress_ms,
+              item: verifyData.item?.name,
+              device: verifyData.device?.name
+            });
+          }
+        }
+      } catch (verifyError) {
+        console.warn('Could not verify playback state:', verifyError.message);
+      }
+
       setCurrentTrack(track);
       setIsPlaying(true);
       // Reset browser playback state since we're now using Spotify Connect
