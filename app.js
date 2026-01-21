@@ -1216,6 +1216,7 @@ const Parachord = () => {
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
   const [playlists, setPlaylists] = useState([]);
+  const [playlistsLoading, setPlaylistsLoading] = useState(true); // Loading state for playlists
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
@@ -1362,7 +1363,7 @@ const Parachord = () => {
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
   const pendingHistoryLoad = useRef(null); // Track pending history tab load from view restore
   const pendingReleaseLoad = useRef(null); // Track pending release/album load from view restore
-  const pendingPlaylistLoad = useRef(null); // Track pending playlist load from view restore
+  const [pendingPlaylistLoad, setPendingPlaylistLoad] = useState(null); // Track pending playlist load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
   const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
@@ -2953,7 +2954,7 @@ const Parachord = () => {
       try {
         const loadedPlaylists = await window.electron.playlists.load();
         console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from files`);
-        
+
         if (loadedPlaylists.length > 0) {
           // Parse each playlist to get title, creator, and tracks
           const parsedPlaylists = loadedPlaylists.map(playlist => {
@@ -2969,14 +2970,25 @@ const Parachord = () => {
           });
 
           setPlaylists(parsedPlaylists);
+          // Local playlists loaded - if no hosted playlists, we're done
+          const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
+          if (hostedPlaylistUrls.length === 0) {
+            setPlaylistsLoading(false);
+          }
         } else {
           console.log('📋 No playlists found - playlists/ folder is empty');
+          // Check if there are hosted playlists to load
+          const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
+          if (hostedPlaylistUrls.length === 0) {
+            setPlaylistsLoading(false);
+          }
         }
       } catch (error) {
         console.error('Failed to load playlists:', error);
+        setPlaylistsLoading(false);
       }
     };
-    
+
     loadPlaylistsFromFiles();
 
     // Listen for local files library changes
@@ -4595,26 +4607,13 @@ const Parachord = () => {
         } else {
           // Playing - check if we need to explicitly start this track
           // (e.g., restored from saved queue, Spotify may have different track loaded)
-          const spotifyUri = currentTrack.spotifyUri || currentTrack.sources?.spotify;
-
-          if (trackNeedsExplicitStart.current && spotifyUri) {
-            // Explicitly start this specific track
-            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
-              method: 'PUT',
-              headers: {
-                'Authorization': `Bearer ${spotifyToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                uris: [spotifyUri]
-              })
-            });
-
-            if (response.ok || response.status === 204) {
-              setIsPlaying(true);
-              trackNeedsExplicitStart.current = false;
-              console.log('Started Spotify playback with explicit track:', currentTrack.title);
-            }
+          if (trackNeedsExplicitStart.current) {
+            // Use handlePlay to properly start the track with device handling
+            // This ensures device discovery and wake-up logic is used
+            console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
+            trackNeedsExplicitStart.current = false;
+            handlePlay(currentTrack);
+            return;
           } else {
             // Normal resume
             const response = await fetch('https://api.spotify.com/v1/me/player/play', {
@@ -5021,7 +5020,16 @@ const Parachord = () => {
       );
       if (artistResponse.ok) {
         const data = await artistResponse.json();
-        results.artists = data.artists || [];
+        const rawArtists = data.artists || [];
+
+        // Deduplicate artists by name (case-insensitive)
+        const seenArtists = new Set();
+        results.artists = rawArtists.filter(artist => {
+          const name = artist.name?.toLowerCase() || '';
+          if (seenArtists.has(name)) return false;
+          seenArtists.add(name);
+          return true;
+        });
       }
 
       // Search MusicBrainz for albums (release-groups)
@@ -5412,10 +5420,10 @@ const Parachord = () => {
             setActiveView('playlist-view');
             setViewHistory(['library', 'playlists', 'playlist-view']);
             // Store pending playlist load - will be processed once playlists are loaded
-            pendingPlaylistLoad.current = {
+            setPendingPlaylistLoad({
               id: savedLastView.playlistId,
               title: savedLastView.playlistTitle
-            };
+            });
             console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
@@ -5556,20 +5564,33 @@ const Parachord = () => {
 
   // Load pending playlist once playlists are loaded
   useEffect(() => {
-    if (playlists.length > 0 && pendingPlaylistLoad.current) {
-      const pending = pendingPlaylistLoad.current;
-      pendingPlaylistLoad.current = null; // Clear pending load
-      const playlist = playlists.find(p => p.id === pending.id);
+    if (pendingPlaylistLoad) {
+      const playlist = playlists.find(p => p.id === pendingPlaylistLoad.id);
       if (playlist) {
         console.log(`📦 Loading playlist for restored view: ${playlist.title}`);
-        setSelectedPlaylist(playlist);
-      } else {
-        console.log(`📦 Playlist not found: ${pending.title}, falling back to playlists view`);
-        setActiveView('playlists');
-        setViewHistory(['library', 'playlists']);
+        setPendingPlaylistLoad(null); // Clear only when found
+        // Use loadPlaylist to properly parse XSPF and populate playlistTracks
+        // Skip navigation since we already set activeView to 'playlist-view'
+        loadPlaylist(playlist, { skipNavigation: true });
       }
+      // Don't clear pending or fall back yet - hosted playlists may still be loading
     }
-  }, [playlists]);
+  }, [playlists, pendingPlaylistLoad]);
+
+  // Give up on pending playlist load after timeout (hosted playlists should be loaded by then)
+  useEffect(() => {
+    if (pendingPlaylistLoad) {
+      const timer = setTimeout(() => {
+        if (pendingPlaylistLoad) {
+          console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
+          setPendingPlaylistLoad(null);
+          setActiveView('playlists');
+          setViewHistory(['library', 'playlists']);
+        }
+      }, 5000); // 5 second timeout to allow hosted playlists to load
+      return () => clearTimeout(timer);
+    }
+  }, [pendingPlaylistLoad]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
@@ -5640,7 +5661,10 @@ const Parachord = () => {
       return;
     }
 
-    // No valid cache - clear state and show loading
+    // No valid cache - set minimal artist data immediately so header/tabs show
+    // while releases are loading
+    setCurrentArtist({ name: artistName });
+    setArtistReleases([]);
     setLoadingArtist(true);
     setArtistImage(null);
     setArtistImagePosition('center 25%');
@@ -9528,7 +9552,7 @@ ${tracks}
   // State for current playlist's cover art grid
   const [playlistCoverArt, setPlaylistCoverArt] = useState([]);
 
-  const loadPlaylist = async (playlistOrId) => {
+  const loadPlaylist = async (playlistOrId, { skipNavigation = false } = {}) => {
     // Accept either a playlist object or an ID for backwards compatibility
     let playlist;
     if (typeof playlistOrId === 'string') {
@@ -9547,7 +9571,9 @@ ${tracks}
 
     setSelectedPlaylist(playlist);
     setPlaylistCoverArt([]); // Reset cover art
-    navigateTo('playlist-view');
+    if (!skipNavigation) {
+      navigateTo('playlist-view');
+    }
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
     // Parse XSPF if we have the content
@@ -10191,7 +10217,10 @@ ${tracks}
   useEffect(() => {
     const loadHostedPlaylists = async () => {
       let hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
-      if (hostedPlaylistUrls.length === 0) return;
+      if (hostedPlaylistUrls.length === 0) {
+        setPlaylistsLoading(false);
+        return;
+      }
 
       // Deduplicate by URL (in case duplicates accumulated from previous bug)
       const seenUrls = new Set();
@@ -10218,6 +10247,9 @@ ${tracks}
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
       }
+
+      // All hosted playlists loaded
+      setPlaylistsLoading(false);
     };
 
     // Delay to allow local playlists to load first
@@ -13334,6 +13366,156 @@ useEffect(() => {
         )
       )
       
+      // Main content area - Playlist Page loading state (waiting for playlist to be resolved)
+      : activeView === 'playlist-view' && !selectedPlaylist ? React.createElement('div', {
+        className: 'flex-1 flex flex-col',
+        style: { overflow: 'hidden' }
+      },
+        // Hero header with pending playlist title (real header, not skeleton)
+        React.createElement('div', {
+          className: 'relative',
+          style: {
+            height: '140px',
+            flexShrink: 0,
+            overflow: 'hidden'
+          }
+        },
+          // Gradient background (same as loaded state)
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              backgroundImage: 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: 'blur(20px) brightness(0.7)',
+              transform: 'scale(1.2)'
+            }
+          }),
+          // Gradient overlay
+          React.createElement('div', {
+            className: 'absolute inset-0',
+            style: {
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(17,17,17,0.95) 100%)'
+            }
+          }),
+          // Header content with title
+          React.createElement('div', {
+            className: 'absolute inset-0 flex items-center px-8 z-10'
+          },
+            // Playlist icon
+            React.createElement('div', {
+              className: 'w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mr-3'
+            },
+              React.createElement('svg', { className: 'w-3 h-3 text-white', fill: 'currentColor', viewBox: '0 0 24 24' },
+                React.createElement('circle', { cx: '12', cy: '12', r: '10' })
+              )
+            ),
+            // Playlist name from pending load
+            React.createElement('h1', {
+              className: 'text-2xl font-bold text-white',
+              style: {
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase'
+              }
+            }, pendingPlaylistLoad?.title || 'Loading...')
+          )
+        ),
+        // Content area with sticky bar and loading skeletons
+        React.createElement('div', {
+          className: 'scrollable-content bg-white',
+          style: {
+            flex: 1,
+            overflowY: 'scroll',
+            pointerEvents: 'auto'
+          }
+        },
+          // PLAYLIST DETAILS sticky bar (same as loaded state)
+          React.createElement('div', {
+            className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+          },
+            React.createElement('span', {
+              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
+            }, 'Playlist Details'),
+            React.createElement('button', {
+              onClick: () => {
+                setPendingPlaylistLoad(null);
+                setActiveView('playlists');
+                setViewHistory(['library', 'playlists']);
+              },
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            },
+              'CLOSE',
+              React.createElement('span', { className: 'text-gray-400' }, '×')
+            )
+          ),
+          // Loading content placeholder
+          React.createElement('div', { className: 'flex gap-0 p-6' },
+            // LEFT COLUMN: Skeleton album art and metadata
+            React.createElement('div', {
+              className: 'flex-shrink-0 pr-8',
+              style: { width: '240px' }
+            },
+              // Skeleton 2x2 album art grid
+              React.createElement('div', {
+                className: 'grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden mb-4',
+                style: { width: '192px', height: '192px' }
+              },
+                Array.from({ length: 4 }).map((_, i) =>
+                  React.createElement('div', {
+                    key: `cover-skeleton-${i}`,
+                    className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  })
+                )
+              ),
+              // Skeleton metadata
+              React.createElement('div', { className: 'mt-4 space-y-2' },
+                React.createElement('div', {
+                  className: 'h-5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-40 animate-shimmer',
+                  style: { backgroundSize: '200% 100%' }
+                }),
+                React.createElement('div', {
+                  className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-32 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '100ms' }
+                }),
+                React.createElement('div', {
+                  className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-24 animate-shimmer',
+                  style: { backgroundSize: '200% 100%', animationDelay: '200ms' }
+                })
+              )
+            ),
+            // RIGHT COLUMN: Skeleton track list
+            React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+              Array.from({ length: 8 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `track-skeleton-${i}`,
+                  className: 'flex items-center gap-4 py-2 px-3'
+                },
+                  React.createElement('div', {
+                    className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { width: '200px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { width: '120px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
+                  }),
+                  React.createElement('div', { className: 'flex-1' }),
+                  React.createElement('div', {
+                    className: 'w-10 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms` }
+                  })
+                )
+              )
+            )
+          )
+        )
+      )
+
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement('div', {
         className: 'flex-1 flex flex-col',
@@ -13493,7 +13675,11 @@ useEffect(() => {
                 }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
                 React.createElement('p', {
                   className: 'text-sm text-gray-500'
-                }, `${playlistTracks.length.toString().padStart(2, '0')} Songs`),
+                }, playlistTracks.length > 0
+                  ? `${playlistTracks.length.toString().padStart(2, '0')} Songs`
+                  : selectedPlaylist.tracks?.length > 0
+                    ? `${selectedPlaylist.tracks.length.toString().padStart(2, '0')} Songs`
+                    : 'Loading...'),
                 // Created date
                 selectedPlaylist.createdAt && React.createElement('p', {
                   className: 'text-xs text-gray-400'
@@ -13734,9 +13920,13 @@ useEffect(() => {
               className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              React.createElement('span', {
-                className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-              }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`)
+              playlistsLoading && playlists.length === 0
+                ? React.createElement('div', {
+                    className: 'h-5 w-24 rounded bg-white/20 animate-pulse'
+                  })
+                : React.createElement('span', {
+                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                  }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`)
             ),
             React.createElement('button', {
               onClick: () => setShowUrlImportDialog(true),
@@ -13863,6 +14053,40 @@ useEffect(() => {
           (() => {
             const filtered = filterPlaylists(playlists);
             const sorted = sortPlaylists(filtered);
+
+            // Show loading skeletons while playlists are loading
+            if (playlistsLoading && sorted.length === 0) {
+              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
+                Array.from({ length: 10 }).map((_, i) =>
+                  React.createElement('div', { key: `playlist-skeleton-${i}` },
+                    // Skeleton 2x2 album art grid
+                    React.createElement('div', {
+                      className: 'aspect-square rounded-lg overflow-hidden mb-3 shadow-md'
+                    },
+                      React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                        [0, 1, 2, 3].map(idx =>
+                          React.createElement('div', {
+                            key: idx,
+                            className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                            style: { backgroundSize: '200% 100%', animationDelay: `${(i * 4 + idx) * 30}ms` }
+                          })
+                        )
+                      )
+                    ),
+                    // Skeleton title
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                    }),
+                    // Skeleton creator
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                    })
+                  )
+                )
+              );
+            }
 
             if (sorted.length === 0 && playlistsSearch) {
               return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
@@ -14007,10 +14231,9 @@ useEffect(() => {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'settings'].includes(activeView) &&
+        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
-            activeView === 'playlist-view' && selectedPlaylist ? selectedPlaylist.title :
             activeView === 'friends' ? 'Friends' :
             'Discover'
           )
