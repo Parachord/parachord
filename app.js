@@ -4990,9 +4990,9 @@ const Parachord = () => {
     console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
   }, [activeView, currentArtist?.name, artistPageTab, historyTab, settingsTab, collectionTab, recommendationsTab]);
 
-  // Load pending history data once metaServiceConfigs is ready
+  // Load pending history data once cache is fully loaded
   useEffect(() => {
-    if (pendingHistoryLoad.current && metaServiceConfigs.lastfm?.username) {
+    if (cacheLoaded && pendingHistoryLoad.current && metaServiceConfigs.lastfm?.username) {
       const tab = pendingHistoryLoad.current;
       pendingHistoryLoad.current = null; // Clear pending load
       console.log(`📦 Loading history data for restored tab: ${tab}`);
@@ -5001,7 +5001,7 @@ const Parachord = () => {
       else if (tab === 'topArtists') loadTopArtists();
       // recent tracks load automatically via their own useEffect
     }
-  }, [metaServiceConfigs.lastfm?.username]);
+  }, [cacheLoaded, metaServiceConfigs.lastfm?.username]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
