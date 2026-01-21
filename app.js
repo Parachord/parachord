@@ -7570,16 +7570,41 @@ ${tracks}
       const artists = topArtistsList.map((artist, index) => ({
         id: `top-artist-${index}-${artist.name}`.replace(/\s+/g, '-'),
         name: artist.name,
-        image: artist.image?.[3]?.['#text'] || artist.image?.[2]?.['#text'] || null,
+        image: null, // Will be fetched from Spotify
         playCount: parseInt(artist.playcount) || 0,
         rank: index + 1
       }));
 
       setTopArtists({ artists, loading: false, error: null });
+
+      // Fetch artist images from Spotify in background
+      resolveTopArtistImages(artists);
     } catch (error) {
       console.error('Failed to load Top Artists:', error);
       setTopArtists({ artists: [], loading: false, error: error.message });
     }
+  };
+
+  // Resolve artist images from Spotify
+  const resolveTopArtistImages = async (artists) => {
+    console.log(`📊 Fetching images for ${artists.length} top artists...`);
+
+    for (const artist of artists) {
+      try {
+        const result = await getArtistImage(artist.name);
+        if (result?.url) {
+          setTopArtists(prev => ({
+            ...prev,
+            artists: prev.artists.map(a =>
+              a.id === artist.id ? { ...a, image: result.url } : a
+            )
+          }));
+        }
+      } catch (err) {
+        console.error(`Error fetching image for ${artist.name}:`, err);
+      }
+    }
+    console.log(`📊 Finished fetching top artist images`);
   };
 
   // Load Top Albums from Last.fm
@@ -14227,7 +14252,7 @@ useEffect(() => {
                         onClick: () => { const tracksAfter = filtered.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay(track); },
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.electron.contextMenu.showTrackMenu({ type: 'track', track }); }
                       },
-                        React.createElement('span', { className: 'text-sm text-gray-400 flex-shrink-0 text-right', style: { width: '32px' } }, String(track.rank).padStart(2, '0')),
+                        React.createElement('span', { className: 'text-sm text-gray-500 font-medium flex-shrink-0 text-right', style: { width: '32px' } }, `#${track.rank}`),
                         React.createElement('span', { className: `text-sm truncate transition-colors ${hasResolved ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-500'}`, style: { width: '360px', flexShrink: 0 } }, track.title),
                         React.createElement('span', {
                           className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
@@ -14299,20 +14324,28 @@ useEffect(() => {
                       onClick: () => fetchArtistData(artist.name)
                     },
                       React.createElement('div', {
-                        className: 'w-32 h-32 rounded-full bg-gray-200 overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all',
-                        style: {
-                          backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }
+                        className: 'relative w-32 h-32'
                       },
-                        !artist.image && React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-gray-400'
+                        React.createElement('div', {
+                          className: 'w-full h-full rounded-full bg-gray-200 overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all',
+                          style: {
+                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center'
+                          }
                         },
-                          React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                          !artist.image && React.createElement('div', {
+                            className: 'w-full h-full flex items-center justify-center text-gray-400'
+                          },
+                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                            )
                           )
-                        )
+                        ),
+                        // Rank badge
+                        React.createElement('div', {
+                          className: 'absolute top-0 right-0 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
+                        }, `#${artist.rank}`)
                       ),
                       React.createElement('span', {
                         className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
@@ -14362,7 +14395,7 @@ useEffect(() => {
                       onClick: () => fetchArtistData(album.artist)
                     },
                       React.createElement('div', {
-                        className: 'aspect-square bg-gray-200 rounded-lg overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all',
+                        className: 'aspect-square bg-gray-200 rounded-lg overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all relative',
                         style: {
                           backgroundImage: album.image ? `url(${album.image})` : 'none',
                           backgroundSize: 'cover',
@@ -14375,7 +14408,11 @@ useEffect(() => {
                           React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                           )
-                        )
+                        ),
+                        // Rank badge
+                        React.createElement('div', {
+                          className: 'absolute top-2 right-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
+                        }, `#${album.rank}`)
                       ),
                       React.createElement('span', {
                         className: 'mt-3 text-sm font-medium text-gray-700 truncate group-hover:text-purple-600 transition-colors'
