@@ -320,7 +320,33 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 
   return React.createElement('button', {
     onClick: onNavigate,
-    className: 'text-left group'
+    className: 'text-left group cursor-grab active:cursor-grabbing',
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'artist',
+        artist: {
+          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          name: artist.name,
+          image: imageUrl
+        }
+      }));
+    },
+    onContextMenu: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.electron?.contextMenu?.showTrackMenu) {
+        window.electron.contextMenu.showTrackMenu({
+          type: 'artist',
+          artist: {
+            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+            name: artist.name,
+            image: imageUrl
+          }
+        });
+      }
+    }
   },
     // Artist image square (matches SearchArtistCard)
     React.createElement('div', { className: 'w-full aspect-square bg-gray-100 mb-2 relative overflow-hidden' },
@@ -7342,6 +7368,9 @@ ${tracks}
       // Resolve tracks in background using the resolver pipeline
       resolveRecommendationTracks(tracks);
 
+      // Fetch artist images in background
+      resolveRecommendationArtistImages(artists);
+
     } catch (error) {
       console.error('Failed to load Recommendations:', error);
       setRecommendations(prev => ({
@@ -7408,6 +7437,28 @@ ${tracks}
     }
 
     console.log(`⭐ Finished resolving recommendation tracks`);
+  };
+
+  // Fetch images for recommended artists
+  const resolveRecommendationArtistImages = async (artists) => {
+    console.log(`⭐ Fetching images for ${artists.length} recommended artists...`);
+
+    for (const artist of artists) {
+      try {
+        const result = await getArtistImage(artist.name);
+        if (result?.url) {
+          setRecommendations(prev => ({
+            ...prev,
+            artists: prev.artists.map(a =>
+              a.id === artist.id ? { ...a, image: result.url } : a
+            )
+          }));
+        }
+      } catch (err) {
+        console.error(`Error fetching image for ${artist.name}:`, err);
+      }
+    }
+    console.log(`⭐ Finished fetching recommended artist images`);
   };
 
   // Load Listening History from Last.fm
@@ -8261,6 +8312,25 @@ ${tracks}
     } finally {
       setLoadingRelated(false);
     }
+  };
+
+  // Fetch images for related artists
+  const resolveRelatedArtistImages = async (artists) => {
+    console.log(`🎸 Fetching images for ${artists.length} related artists...`);
+
+    for (const artist of artists) {
+      try {
+        const result = await getArtistImage(artist.name);
+        if (result?.url) {
+          setRelatedArtists(prev => prev.map(a =>
+            a.name === artist.name ? { ...a, image: result.url } : a
+          ));
+        }
+      } catch (err) {
+        console.error(`Error fetching image for ${artist.name}:`, err);
+      }
+    }
+    console.log(`🎸 Finished fetching related artist images`);
   };
 
   // Get 4 unique album covers for a playlist's 2x2 grid display
@@ -10037,14 +10107,16 @@ useEffect(() => {
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        window.electronAPI.showContextMenu({
-                          type: 'artist',
-                          artist: {
-                            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                            name: artist.name,
-                            image: null
-                          }
-                        });
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'artist',
+                            artist: {
+                              id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                              name: artist.name,
+                              image: null
+                            }
+                          });
+                        }
                       }
                     },
                       // Row number
@@ -10118,18 +10190,20 @@ useEffect(() => {
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        window.electronAPI.showContextMenu({
-                          type: 'track',
-                          track: {
-                            id: track.id,
-                            title: track.title,
-                            artist: track.artist,
-                            album: track.album,
-                            duration: track.duration,
-                            albumArt: track.albumArt,
-                            sources: track.sources || {}
-                          }
-                        });
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'track',
+                            track: {
+                              id: track.id,
+                              title: track.title,
+                              artist: track.artist,
+                              album: track.album,
+                              duration: track.duration,
+                              albumArt: track.albumArt,
+                              sources: track.sources || {}
+                            }
+                          });
+                        }
                       }
                     },
                       // Row number
@@ -10678,7 +10752,7 @@ useEffect(() => {
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name);
-                      if (related.length > 0) setRelatedArtists(related);
+                      if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
                   className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
@@ -10738,7 +10812,7 @@ useEffect(() => {
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name);
-                      if (related.length > 0) setRelatedArtists(related);
+                      if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
                   className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
@@ -10986,7 +11060,7 @@ useEffect(() => {
                         fetchArtistData(artistName);
                       }
                       const related = await getRelatedArtists(artistName);
-                      if (related.length > 0) setRelatedArtists(related);
+                      if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
                   className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
@@ -11397,39 +11471,79 @@ useEffect(() => {
 
           // RELATED ARTISTS TAB
           artistPageTab === 'related' && React.createElement('div', { className: 'p-6' },
-            // Loading state - skeleton grid
+            // Loading state - skeleton grid matching Top Artists style
             loadingRelated && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'grid gap-x-4 gap-y-8',
+              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
             },
-              Array.from({ length: 10 }).map((_, i) =>
-                React.createElement('div', {
-                  key: `skeleton-${i}`,
-                  className: 'flex flex-col'
-                },
-                  // Square image skeleton
-                  React.createElement('div', {
-                    className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer mb-2',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                  }),
-                  // Name skeleton
-                  React.createElement('div', {
-                    className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                  })
+              Array.from({ length: 12 }).map((_, i) =>
+                React.createElement('div', { key: `skeleton-${i}`, className: 'flex flex-col items-center' },
+                  React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+                  React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
                 )
               )
             ),
-            // Related artists grid (sorted by match, highest first)
+            // Related artists grid (sorted by match, highest first) - matching Top Artists style
             !loadingRelated && relatedArtists.length > 0 && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'grid gap-x-4 gap-y-8',
+              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
             },
-              [...relatedArtists].sort((a, b) => b.match - a.match).map((artist, index) =>
-                React.createElement(RelatedArtistCard, {
-                  key: `related-${index}`,
-                  artist: artist,
-                  getArtistImage: getArtistImage,
-                  onNavigate: () => fetchArtistData(artist.name)
-                })
+              [...relatedArtists].sort((a, b) => b.match - a.match).map((artist) =>
+                React.createElement('div', {
+                  key: artist.name,
+                  className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
+                  draggable: true,
+                  onDragStart: (e) => {
+                    e.dataTransfer.effectAllowed = 'copy';
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'artist',
+                      artist: {
+                        id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                        name: artist.name,
+                        image: artist.image
+                      }
+                    }));
+                  },
+                  onClick: () => fetchArtistData(artist.name),
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'artist',
+                        artist: {
+                          id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                          name: artist.name,
+                          image: artist.image
+                        }
+                      });
+                    }
+                  }
+                },
+                  React.createElement('div', {
+                    className: 'relative w-36 h-36 rounded-full overflow-hidden'
+                  },
+                    React.createElement('div', {
+                      className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
+                      style: {
+                        backgroundImage: artist.image ? `url(${artist.image})` : 'none',
+                        backgroundSize: artist.image ? 'cover' : '200% 100%',
+                        backgroundPosition: 'center'
+                      }
+                    },
+                      !artist.image && React.createElement('div', {
+                        className: 'w-full h-full flex items-center justify-center text-gray-400'
+                      },
+                        React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                        )
+                      )
+                    )
+                  ),
+                  React.createElement('span', {
+                    className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
+                  }, artist.name)
+                )
               )
             ),
             // No related artists found
@@ -13308,7 +13422,7 @@ useEffect(() => {
             }
 
             return React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
             },
               sorted.map(album =>
               React.createElement('div', {
@@ -13529,18 +13643,13 @@ useEffect(() => {
               React.createElement('div', null,
                 // Artists skeleton (when artists tab active)
                 recommendationsTab === 'artists' && React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...Array(10).fill(null).map((_, i) =>
-                    React.createElement('div', { key: `rec-artist-skeleton-${i}` },
-                      React.createElement('div', {
-                        className: 'w-full aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                      })
+                  ...Array(12).fill(null).map((_, i) =>
+                    React.createElement('div', { key: `rec-artist-skeleton-${i}`, className: 'flex flex-col items-center' },
+                      React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
                     )
                   )
                 ),
@@ -13620,17 +13729,67 @@ useEffect(() => {
               )
             // Results - show content based on active tab
             : React.createElement('div', null,
-                // Artists tab content - grid matching Related Artists
+                // Artists tab content - grid matching Top Artists style
                 recommendationsTab === 'artists' && recommendations.artists.length > 0 && React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...recommendations.artists.map(artist =>
-                    React.createElement(RelatedArtistCard, {
+                  ...recommendations.artists.map((artist) =>
+                    React.createElement('div', {
                       key: artist.id,
-                      artist: artist,
-                      getArtistImage: getArtistImage,
-                      onNavigate: () => fetchArtistData(artist.name)
-                    })
+                      className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'artist',
+                          artist: {
+                            id: artist.id,
+                            name: artist.name,
+                            image: artist.image
+                          }
+                        }));
+                      },
+                      onClick: () => fetchArtistData(artist.name),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'artist',
+                            artist: {
+                              id: artist.id,
+                              name: artist.name,
+                              image: artist.image
+                            }
+                          });
+                        }
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'relative w-36 h-36 rounded-full overflow-hidden'
+                      },
+                        React.createElement('div', {
+                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
+                          style: {
+                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
+                            backgroundSize: artist.image ? 'cover' : '200% 100%',
+                            backgroundPosition: 'center'
+                          }
+                        },
+                          !artist.image && React.createElement('div', {
+                            className: 'w-full h-full flex items-center justify-center text-gray-400'
+                          },
+                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                            )
+                          )
+                        )
+                      ),
+                      React.createElement('span', {
+                        className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
+                      }, artist.name)
+                    )
                   )
                 ),
 
@@ -14291,12 +14450,12 @@ useEffect(() => {
             historyTab === 'topArtists' && (
               topArtists.loading ?
                 React.createElement('div', {
-                  className: 'grid gap-6',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...Array(12).fill(null).map((_, i) =>
                     React.createElement('div', { key: `artist-skeleton-${i}`, className: 'flex flex-col items-center' },
-                      React.createElement('div', { className: 'w-32 h-32 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
                       React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } }),
                       React.createElement('div', { className: 'w-16 h-3 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
                     )
@@ -14314,23 +14473,49 @@ useEffect(() => {
                 React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top artists found for this period.')
               :
                 React.createElement('div', {
-                  className: 'grid gap-6',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...topArtists.artists.map((artist) =>
                     React.createElement('div', {
                       key: artist.id,
-                      className: 'flex flex-col items-center cursor-pointer group',
-                      onClick: () => fetchArtistData(artist.name)
+                      className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'artist',
+                          artist: {
+                            id: artist.id,
+                            name: artist.name,
+                            image: artist.image
+                          }
+                        }));
+                      },
+                      onClick: () => fetchArtistData(artist.name),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'artist',
+                            artist: {
+                              id: artist.id,
+                              name: artist.name,
+                              image: artist.image
+                            }
+                          });
+                        }
+                      }
                     },
                       React.createElement('div', {
-                        className: 'relative w-32 h-32'
+                        className: 'relative w-36 h-36 rounded-full overflow-hidden'
                       },
                         React.createElement('div', {
-                          className: 'w-full h-full rounded-full bg-gray-200 overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all',
+                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
                           style: {
                             backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                            backgroundSize: 'cover',
+                            backgroundSize: artist.image ? 'cover' : '200% 100%',
                             backgroundPosition: 'center'
                           }
                         },
@@ -14362,14 +14547,15 @@ useEffect(() => {
             historyTab === 'topAlbums' && (
               topAlbums.loading ?
                 React.createElement('div', {
-                  className: 'grid gap-6',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
                 },
                   ...Array(12).fill(null).map((_, i) =>
-                    React.createElement('div', { key: `album-skeleton-${i}`, className: 'flex flex-col' },
-                      React.createElement('div', { className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded-lg', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'w-16 h-3 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
+                    React.createElement('div', { key: `album-skeleton-${i}` },
+                      React.createElement('div', { className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'space-y-1' },
+                        React.createElement('div', { className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } }),
+                        React.createElement('div', { className: 'h-3 w-1/2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
+                      )
                     )
                   )
                 )
@@ -14385,45 +14571,54 @@ useEffect(() => {
                 React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top albums found for this period.')
               :
                 React.createElement('div', {
-                  className: 'grid gap-6',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
                 },
                   ...topAlbums.albums.map((album) =>
                     React.createElement('div', {
                       key: album.id,
-                      className: 'flex flex-col cursor-pointer group',
-                      onClick: () => fetchArtistData(album.artist)
+                      className: 'group cursor-pointer'
                     },
+                      // Album art with hover overlay
                       React.createElement('div', {
-                        className: 'aspect-square bg-gray-200 rounded-lg overflow-hidden group-hover:ring-4 ring-purple-500/30 transition-all relative',
-                        style: {
-                          backgroundImage: album.image ? `url(${album.image})` : 'none',
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center'
-                        }
+                        className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
                       },
-                        !album.image && React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-gray-400'
+                        // Placeholder always rendered behind
+                        React.createElement('div', {
+                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
                         },
-                          React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                          React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                            React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                            React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
+                            React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                           )
                         ),
+                        album.image && React.createElement('img', {
+                          src: album.image,
+                          alt: album.name,
+                          className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                          onError: (e) => { e.target.style.display = 'none'; }
+                        }),
                         // Rank badge
                         React.createElement('div', {
                           className: 'absolute top-2 right-2 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
                         }, `#${album.rank}`)
                       ),
-                      React.createElement('span', {
-                        className: 'mt-3 text-sm font-medium text-gray-700 truncate group-hover:text-purple-600 transition-colors'
-                      }, album.name),
-                      React.createElement('span', {
-                        className: 'text-xs text-gray-500 truncate hover:text-purple-600 transition-colors',
-                        onClick: (e) => { e.stopPropagation(); fetchArtistData(album.artist); }
-                      }, album.artist),
-                      React.createElement('span', {
-                        className: 'text-xs text-gray-400'
-                      }, `${album.playCount} plays`)
+                      // Album info
+                      React.createElement('div', { className: 'space-y-1' },
+                        React.createElement('div', {
+                          className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                        }, album.name),
+                        React.createElement('div', {
+                          className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            fetchArtistData(album.artist);
+                          }
+                        }, album.artist),
+                        React.createElement('div', {
+                          className: 'text-xs text-gray-400'
+                        }, `${album.playCount} plays`)
+                      )
                     )
                   )
                 )
