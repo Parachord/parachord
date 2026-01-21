@@ -13110,6 +13110,7 @@ useEffect(() => {
                         key: track.id,
                         draggable: true,
                         onDragStart: (e) => {
+                          setDraggingTrackForPlaylist(track); // Enable playlist drop target
                           e.dataTransfer.effectAllowed = 'copy';
                           e.dataTransfer.setData('text/plain', JSON.stringify({
                             type: 'track',
@@ -13121,6 +13122,15 @@ useEffect(() => {
                               sources: track.sources || {}
                             }
                           }));
+                        },
+                        onDragEnd: () => {
+                          setDraggingTrackForPlaylist(null);
+                          setDropTargetPlaylistId(null);
+                          setDropTargetNewPlaylist(false);
+                          // Close panel if it was opened by drag and nothing was dropped
+                          if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                            setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                          }
                         },
                         className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${
                           isResolving ? 'opacity-60' : ''
@@ -13488,6 +13498,7 @@ useEffect(() => {
                       key: track.id,
                       draggable: true,
                       onDragStart: (e) => {
+                        setDraggingTrackForPlaylist(track); // Enable playlist drop target
                         e.dataTransfer.effectAllowed = 'copy';
                         e.dataTransfer.setData('text/plain', JSON.stringify({
                           type: 'track',
@@ -13500,6 +13511,15 @@ useEffect(() => {
                             sources: track.sources || {}
                           }
                         }));
+                      },
+                      onDragEnd: () => {
+                        setDraggingTrackForPlaylist(null);
+                        setDropTargetPlaylistId(null);
+                        setDropTargetNewPlaylist(false);
+                        // Close panel if it was opened by drag and nothing was dropped
+                        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                        }
                       },
                       className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${
                         isResolving ? 'opacity-60' : ''
