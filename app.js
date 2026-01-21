@@ -186,6 +186,29 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
   );
 });
 
+// Service logo SVG paths - reusable for different sizes
+const SERVICE_LOGO_PATHS = {
+  spotify: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z',
+  bandcamp: 'M0 18.75l7.437-13.5H24l-7.438 13.5H0z',
+  qobuz: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-7c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z',
+  youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+  localfiles: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z',
+  applemusic: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
+};
+
+// Helper to create resolver icon at any size
+const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
+  const path = SERVICE_LOGO_PATHS[resolverId];
+  if (!path) return null;
+  return React.createElement('svg', {
+    viewBox: '0 0 24 24',
+    width: size,
+    height: size,
+    fill: fill,
+    style: { flexShrink: 0 }
+  }, React.createElement('path', { d: path }));
+};
+
 // Service logo SVGs - white versions for colored backgrounds
 const SERVICE_LOGOS = {
   spotify: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
@@ -815,13 +838,36 @@ const ReleasePage = ({
     }
   };
 
-  return React.createElement('div', { className: 'flex gap-0 p-6' },
-    // LEFT COLUMN: Album art and metadata
+  // Use a ref to track container width for responsive layout
+  const [containerWidth, setContainerWidth] = React.useState(800);
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Responsive sizes based on container width
+  const isCompact = containerWidth < 700;
+  const albumArtSize = isCompact ? 160 : 192; // 160px or 192px (w-40 or w-48)
+  const columnWidth = isCompact ? 180 : 240;
+
+  return React.createElement('div', { ref: containerRef, className: 'flex gap-0 p-6' },
+    // LEFT COLUMN: Album art and metadata - responsive width with smooth animation
     React.createElement('div', {
-      className: 'flex-shrink-0 pr-8',
-      style: { width: '240px' }
+      className: 'flex-shrink-0 pr-4 md:pr-8',
+      style: {
+        width: `${columnWidth}px`,
+        transition: 'width 300ms ease'
+      }
     },
-      // Album art container - make draggable
+      // Album art container - make draggable, responsive size with smooth animation
       React.createElement('div', {
         draggable: true,
         onDragStart: (e) => {
@@ -838,7 +884,12 @@ const ReleasePage = ({
           };
           e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
         },
-        className: 'w-48 h-48 rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg relative overflow-hidden cursor-grab active:cursor-grabbing'
+        className: 'rounded bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg relative overflow-hidden cursor-grab active:cursor-grabbing',
+        style: {
+          width: `${albumArtSize}px`,
+          height: `${albumArtSize}px`,
+          transition: 'width 300ms ease, height 300ms ease'
+        }
       },
         // Image (absolute positioned, hides on error)
         release.albumArt && React.createElement('img', {
@@ -863,16 +914,28 @@ const ReleasePage = ({
           )
         ),
 
-      // Album title and metadata
+      // Album title and metadata - responsive sizing with smooth animation
       React.createElement('div', { className: 'mt-4 space-y-1' },
         React.createElement('h2', {
-          className: 'font-bold text-gray-900 text-lg leading-tight'
+          className: 'font-bold text-gray-900 leading-tight',
+          style: {
+            fontSize: isCompact ? '1rem' : '1.125rem',
+            transition: 'font-size 300ms ease'
+          }
         }, release.title),
         React.createElement('p', {
-          className: 'text-sm text-gray-500'
+          className: 'text-gray-500',
+          style: {
+            fontSize: isCompact ? '0.75rem' : '0.875rem',
+            transition: 'font-size 300ms ease'
+          }
         }, formatDate(release.date)),
         React.createElement('p', {
-          className: 'text-sm text-gray-500'
+          className: 'text-gray-500',
+          style: {
+            fontSize: isCompact ? '0.75rem' : '0.875rem',
+            transition: 'font-size 300ms ease'
+          }
         }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
       )
     ),
@@ -1051,9 +1114,6 @@ const ReleasePage = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        color: 'white',
                         pointerEvents: 'auto',
                         opacity: confidence > 0.8 ? 1 : 0.6,
                         transition: 'transform 0.1s'
@@ -1061,11 +1121,7 @@ const ReleasePage = ({
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                       onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                       title: `Play from ${resolver.name} (${Math.round(confidence * 100)}% match)`
-                    }, (() => {
-                      // Custom abbreviations for resolvers
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                      return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                    })());
+                    }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                   });
                 })()
               ),
@@ -1098,6 +1154,10 @@ const Parachord = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
+
+  // Track main content width for responsive layouts
+  const [mainContentWidth, setMainContentWidth] = useState(800);
+  const mainContentRef = useRef(null);
   // Per-resolver volume offsets (dB adjustment, applied to base volume)
   // Default offsets: Spotify is normalized at -14 LUFS, others may be louder
   const [resolverVolumeOffsets, setResolverVolumeOffsets] = useState({
@@ -1199,6 +1259,7 @@ const Parachord = () => {
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
   const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
   const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
+  const [rememberQueue, setRememberQueue] = useState(false); // Remember queue on app close/reopen
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
@@ -1328,6 +1389,21 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [collectionSortDropdownOpen]);
+
+  // Track main content width for responsive header buttons
+  useEffect(() => {
+    if (!mainContentRef.current) return;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setMainContentWidth(entry.contentRect.width);
+      }
+    });
+    resizeObserver.observe(mainContentRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Responsive breakpoints
+  const isCompactHeader = mainContentWidth < 700;
 
   // Close playlists sort dropdown when clicking outside
   useEffect(() => {
@@ -1856,21 +1932,25 @@ const Parachord = () => {
 
   // Artist page scroll handler for header collapse
   const artistCollapseLockedRef = useRef(false);
+  const artistLastScrollTopRef = useRef(0);
   const handleArtistPageScroll = useCallback((e) => {
     const scrollTop = e.target.scrollTop;
+    const lastScrollTop = artistLastScrollTopRef.current;
+    const isScrollingUp = scrollTop < lastScrollTop;
+    artistLastScrollTopRef.current = scrollTop;
 
     // If locked (during transition), ignore scroll events
     if (artistCollapseLockedRef.current) return;
 
-    // Only collapse when scrolled down past threshold
-    if (scrollTop > 50 && !isHeaderCollapsed) {
+    // Collapse when scrolled down past threshold
+    if (scrollTop > 50 && !isHeaderCollapsed && !isScrollingUp) {
       artistCollapseLockedRef.current = true;
       setIsHeaderCollapsed(true);
       // Unlock after transition completes
       setTimeout(() => { artistCollapseLockedRef.current = false; }, 350);
     }
-    // Only expand when scrolled to very top
-    else if (scrollTop === 0 && isHeaderCollapsed) {
+    // Expand when scrolling up near the top (within 100px) or at very top
+    else if (isHeaderCollapsed && isScrollingUp && scrollTop < 100) {
       artistCollapseLockedRef.current = true;
       setIsHeaderCollapsed(false);
       setTimeout(() => { artistCollapseLockedRef.current = false; }, 350);
@@ -3306,6 +3386,23 @@ const Parachord = () => {
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
 
+  // Save queue when it changes (if remember queue is enabled)
+  useEffect(() => {
+    // Skip until settings are loaded to avoid overwriting saved queue
+    if (!resolverSettingsLoaded.current) return;
+    if (!rememberQueue) return;
+
+    // Debounce the save to avoid saving too frequently
+    const timeoutId = setTimeout(async () => {
+      if (window.electron?.store) {
+        await window.electron.store.set('saved_queue', currentQueue);
+        console.log(`💾 Saved queue with ${currentQueue.length} tracks`);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentQueue, rememberQueue]);
+
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
     prefetchedReleasesRef.current = prefetchedReleases;
@@ -3897,7 +3994,7 @@ const Parachord = () => {
       let errorCount = 0; // Track consecutive polling errors
       let lastTrackUri = trackUri; // Track what we started playing
       let stuckAtZeroCount = 0; // Track how many times we've been stuck at 0% with is_playing=false
-      const MAX_STUCK_AT_ZERO = 6; // After 30 seconds (6 * 5s polls) of being stuck at 0%, give up
+      const MAX_STUCK_AT_ZERO = 3; // After 15 seconds (3 * 5s polls) of being stuck at 0%, give up
 
       const pollInterval = setInterval(async () => {
         try {
@@ -5016,6 +5113,26 @@ const Parachord = () => {
       if (savedSkipExternalPrompt !== undefined) {
         setSkipExternalPrompt(savedSkipExternalPrompt);
         console.log('📦 Loaded skip external prompt preference:', savedSkipExternalPrompt);
+      }
+
+      // Load remember queue preference
+      const savedRememberQueue = await window.electron.store.get('remember_queue');
+      if (savedRememberQueue !== undefined) {
+        setRememberQueue(savedRememberQueue);
+        console.log('📦 Loaded remember queue preference:', savedRememberQueue);
+      }
+
+      // Load saved queue if remember queue is enabled
+      if (savedRememberQueue) {
+        const savedQueue = await window.electron.store.get('saved_queue');
+        if (savedQueue && Array.isArray(savedQueue) && savedQueue.length > 0) {
+          // Move first track to playbar (paused), rest stays in queue
+          const [firstTrack, ...remainingQueue] = savedQueue;
+          setCurrentTrack(firstTrack);
+          setCurrentQueue(remainingQueue);
+          setIsPlaying(false); // Ensure it starts paused
+          console.log(`📦 Restored queue: "${firstTrack.title}" ready in playbar, ${remainingQueue.length} tracks in queue`);
+        }
       }
 
       // Load last active view
@@ -9333,7 +9450,7 @@ ${tracks}
       setForwardHistory([]); // Clear forward history when navigating to a new view
       setActiveView(view);
       if (view === 'settings') {
-        setSettingsTab('installed');
+        setSettingsTab('marketplace');
       }
     }
   };
@@ -10576,6 +10693,7 @@ useEffect(() => {
 
       // Main content area
       React.createElement('div', {
+        ref: mainContentRef,
         className: 'flex-1 flex flex-col overflow-hidden bg-white'
       },
 
@@ -11355,7 +11473,6 @@ useEffect(() => {
                           qobuz: '#0070CC',
                           applemusic: '#FA243C'
                         };
-                        const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
                         return React.createElement('div', {
                           key: source,
                           style: {
@@ -11365,12 +11482,9 @@ useEffect(() => {
                             backgroundColor: colors[source] || '#9CA3AF',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '8px',
-                            fontWeight: 'bold',
-                            color: 'white'
+                            justifyContent: 'center'
                           }
-                        }, abbrevMap[source] || source.slice(0, 2).toUpperCase());
+                        }, React.createElement(ResolverIcon, { resolverId: source, size: 10 }));
                       })
                     : [])
                   )
@@ -11507,15 +11621,24 @@ useEffect(() => {
         style: { overflow: 'hidden' }
       },
         // Artist page hero header (not inside scrollable area) - only show when NOT viewing or loading a release
+        // Clickable to toggle collapse state
         !currentRelease && !loadingRelease && React.createElement('div', {
           className: 'relative',
           style: {
             height: isHeaderCollapsed ? '80px' : '320px',
             flexShrink: 0,
             transition: 'height 300ms ease',
-            overflow: 'hidden'
-          }
+            overflow: 'hidden',
+            cursor: isHeaderCollapsed ? 'pointer' : 'default'
+          },
         },
+          // Clickable overlay to expand collapsed header (sits behind content)
+          isHeaderCollapsed && React.createElement('div', {
+            className: 'absolute inset-0 z-0',
+            style: { cursor: 'pointer' },
+            onClick: () => setIsHeaderCollapsed(false),
+            title: 'Click to expand'
+          }),
           // Background image with gradient overlay
           artistImage && React.createElement('div', {
             className: 'absolute inset-0',
@@ -11523,7 +11646,8 @@ useEffect(() => {
               backgroundImage: `url(${artistImage})`,
               backgroundSize: 'cover',
               backgroundPosition: artistImagePosition,
-              filter: 'blur(0px)'
+              filter: 'blur(0px)',
+              pointerEvents: 'none'
             }
           }),
           // Gradient overlay for readability
@@ -11534,7 +11658,8 @@ useEffect(() => {
                 ? isHeaderCollapsed
                   ? 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(17,17,17,0.95) 100%)'
                   : 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(17,17,17,1) 100%)'
-                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
+                : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)',
+              pointerEvents: 'none'
             }
           }),
           // EXPANDED STATE - Artist info overlay (centered)
@@ -11585,15 +11710,15 @@ useEffect(() => {
                 }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             ),
-            // Start Artist Station button
+            // Start Artist Station button - responsive sizing
             React.createElement('button', {
               onClick: () => console.log('Start Artist Station - placeholder'),
-              className: 'mt-6 px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
+              className: `mt-6 rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-4 py-1.5 text-sm' : 'px-6 py-2'}`,
               style: {
                 backgroundColor: '#E91E63',
                 boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
               }
-            }, 'Start Artist Station')
+            }, isCompactHeader ? 'Station' : 'Start Artist Station')
           ),
           // COLLAPSED STATE - Inline layout
           !loadingRelease && currentArtist && isHeaderCollapsed && React.createElement('div', {
@@ -11603,16 +11728,18 @@ useEffect(() => {
               transition: 'opacity 300ms ease'
             }
           },
-            // Left side: Artist name
+            // Left side: Artist name - clickable to expand header
             React.createElement('h1', {
-              className: 'text-2xl font-light mr-6 text-white flex-shrink-0',
+              className: 'text-2xl font-light mr-6 text-white flex-shrink-0 cursor-pointer hover:text-purple-300 transition-colors no-drag',
               style: {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
                 maxWidth: '40%',
                 lineHeight: '1.2'
-              }
+              },
+              onClick: () => setIsHeaderCollapsed(false),
+              title: 'Click to expand'
             }, currentArtist.name),
             // Center: Navigation tabs
             React.createElement('div', {
@@ -11645,15 +11772,15 @@ useEffect(() => {
                 }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             ),
-            // Right side: Start Artist Station button
+            // Right side: Start Artist Station button - responsive sizing
             React.createElement('button', {
               onClick: () => console.log('Start Artist Station - placeholder'),
-              className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+              className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
               style: {
                 backgroundColor: '#E91E63',
                 boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
               }
-            }, 'Start Artist Station')
+            }, isCompactHeader ? 'Station' : 'Start Artist Station')
           )
         ),
         
@@ -11718,14 +11845,14 @@ useEffect(() => {
                   }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
                 ]).flat().filter(Boolean)
               ),
-              // Right side: Start Album Station button
+              // Right side: Start Album Station button - responsive sizing
               React.createElement('button', {
-                className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+                className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
                 style: {
                   backgroundColor: '#E91E63',
                   boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
                 }
-              }, 'Start Album Station')
+              }, isCompactHeader ? 'Station' : 'Start Album Station')
             )
           ),
           // Skeleton content with white background (matching release page)
@@ -11893,15 +12020,15 @@ useEffect(() => {
                 }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             ),
-            // Right side: Start Album Station button
+            // Right side: Start Album Station button - responsive sizing
             React.createElement('button', {
               onClick: () => console.log('Start Album Station - placeholder'),
-              className: 'ml-auto px-5 py-2 rounded-full font-medium text-white text-sm no-drag transition-all hover:scale-105',
+              className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
               style: {
                 backgroundColor: '#E91E63',
                 boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
               }
-            }, 'Start Album Station')
+            }, isCompactHeader ? 'Station' : 'Start Album Station')
           )
         ),
 
@@ -12787,9 +12914,6 @@ useEffect(() => {
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  fontSize: '10px',
-                                  fontWeight: 'bold',
-                                  color: 'white',
                                   pointerEvents: 'auto',
                                   opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
                                   transition: 'transform 0.1s'
@@ -12797,10 +12921,7 @@ useEffect(() => {
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                              })());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                         :
                           // Show shimmer skeletons while resolving (match resolver icon size)
@@ -13658,9 +13779,6 @@ useEffect(() => {
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  fontSize: '10px',
-                                  fontWeight: 'bold',
-                                  color: 'white',
                                   pointerEvents: 'auto',
                                   opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
                                   transition: 'transform 0.1s'
@@ -13668,10 +13786,7 @@ useEffect(() => {
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, (() => {
-                                const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                              })());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             });
                         } else if (isResolving && track.filePath) {
                           // Show LO icon + shimmer skeletons while resolving
@@ -14877,9 +14992,6 @@ useEffect(() => {
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '10px',
-                                    fontWeight: 'bold',
-                                    color: 'white',
                                     pointerEvents: 'auto',
                                     opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
                                     transition: 'transform 0.1s'
@@ -14887,10 +14999,7 @@ useEffect(() => {
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, (() => {
-                                  const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                                  return abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
-                                })());
+                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                               })
                           :
                             // Show shimmer skeletons while resolving
@@ -15302,11 +15411,11 @@ useEffect(() => {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', color: 'white', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' }[resolverId] || resolver.name.slice(0, 2).toUpperCase());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -15388,11 +15497,11 @@ useEffect(() => {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', color: 'white', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}`
-                              }, { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' }[resolverId] || resolver.name.slice(0, 2).toUpperCase());
+                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -16138,6 +16247,49 @@ useEffect(() => {
                       'Show prompts again'
                     )
                   )
+                ),
+
+                // Queue Settings Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Queue Settings'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Configure queue persistence')
+                  ),
+                  // Remember queue toggle
+                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
+                    React.createElement('div', null,
+                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                        'Remember queue'
+                      ),
+                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                        'Restore your queue when you reopen the app'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !rememberQueue;
+                        setRememberQueue(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('remember_queue', newValue);
+                          // If turning off, clear the saved queue
+                          if (!newValue) {
+                            await window.electron.store.set('saved_queue', []);
+                          }
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${rememberQueue ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  )
                 )
               ) // Close space-y-8 wrapper
             ),
@@ -16409,28 +16561,29 @@ useEffect(() => {
               currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
             ),
             React.createElement('div', { className: 'flex-1 w-24' },
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: currentTrack?.duration || 100,
-                value: currentTrack && !browserPlaybackActive ? progress : 0,
-                disabled: !currentTrack || browserPlaybackActive,
-                onChange: async (e) => {
-                  if (browserPlaybackActive || !currentTrack) return;
-                  const newPosition = Number(e.target.value);
-                  setProgress(newPosition);
-                  if ((currentTrack.sources?.spotify || currentTrack.spotifyUri) && spotifyPlayer) {
-                    try {
-                      await spotifyPlayer.seek(newPosition * 1000);
-                    } catch (err) {
-                      console.error('Seek error:', err);
+              (() => {
+                // Check if current track is Spotify (seeking not supported)
+                const isSpotifyTrack = currentTrack && (currentTrack.sources?.spotify || currentTrack.spotifyUri || currentTrack.resolver === 'spotify');
+                const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyTrack;
+
+                return React.createElement('input', {
+                  type: 'range',
+                  min: '0',
+                  max: currentTrack?.duration || 100,
+                  value: currentTrack && !browserPlaybackActive ? progress : 0,
+                  disabled: isSeekDisabled,
+                  onChange: async (e) => {
+                    if (browserPlaybackActive || !currentTrack || isSpotifyTrack) return;
+                    const newPosition = Number(e.target.value);
+                    setProgress(newPosition);
+                    if (currentTrack?.sources?.localfiles && audioRef.current) {
+                      audioRef.current.currentTime = newPosition;
                     }
-                  } else if (currentTrack?.sources?.localfiles && audioRef.current) {
-                    audioRef.current.currentTime = newPosition;
-                  }
-                },
-                className: `progress-slider w-full h-1 rounded-full ${!currentTrack || browserPlaybackActive ? 'bg-gray-700' : 'bg-gray-600'}`
-              })
+                  },
+                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-700' : 'bg-gray-600'}`,
+                  title: isSpotifyTrack ? 'Seeking not available for Spotify tracks' : undefined
+                });
+              })()
             ),
             React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-left tabular-nums' },
               currentTrack ? formatTime(currentTrack.duration) : '0:00'
@@ -18151,8 +18304,6 @@ useEffect(() => {
                     availableSources.map(resolverId => {
                       const resolver = allResolvers.find(r => r.id === resolverId);
                       if (!resolver) return null;
-                      const abbrevMap = { spotify: 'SP', bandcamp: 'BC', youtube: 'YT', qobuz: 'QZ', applemusic: 'AM', localfiles: 'LO' };
-                      const abbrev = abbrevMap[resolverId] || resolver.name.slice(0, 2).toUpperCase();
                       const source = track.sources?.[resolverId];
                       const confidence = source?.confidence || 0;
                       return React.createElement('button', {
@@ -18172,16 +18323,13 @@ useEffect(() => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: 'bold',
-                          color: 'white',
                           opacity: confidence > 0.8 ? 1 : 0.6,
                           transition: 'transform 0.1s'
                         },
                         onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                         onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                         title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-                      }, abbrev);
+                      }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
                     })
                   :
                     // Show shimmer skeletons while resolving (match resolver icon size)
