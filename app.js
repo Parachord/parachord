@@ -3643,17 +3643,26 @@ const Parachord = () => {
 
           // Check if we're still playing the same track we started with
           if (currentUri === lastTrackUri) {
-            // If within 1 second of end, trigger next (regardless of is_playing state)
-            if (progressMs >= durationMs - 1000) {
+            // Calculate if we're at or near the end of the track
+            const isNearEnd = progressMs >= durationMs - 1000;
+            const isAtEnd = progressMs >= durationMs - 100; // Within 100ms of end
+            const percentComplete = (progressMs / durationMs) * 100;
+
+            // If playing and near end, or if stopped and at end, trigger next
+            if (isNearEnd && isPlaying) {
               console.log('🎵 Track ending, auto-advancing to next...');
               clearInterval(pollInterval);
               playbackPollerRef.current = null;
-              // Use ref to avoid stale closure in interval callback
+              if (handleNextRef.current) handleNextRef.current();
+            } else if (!isPlaying && (isAtEnd || percentComplete >= 98)) {
+              // Track finished playing (is_playing=false and at end of track)
+              console.log(`🎵 Track finished (${percentComplete.toFixed(1)}% complete), auto-advancing to next...`);
+              clearInterval(pollInterval);
+              playbackPollerRef.current = null;
               if (handleNextRef.current) handleNextRef.current();
             } else if (!isPlaying) {
-              // Track is paused mid-playback - user paused intentionally
-              // Keep polling but don't advance (user might resume)
-              console.log('⏸️ Spotify playback paused, continuing to poll...');
+              // Track is paused mid-playback (not at end) - user paused intentionally
+              console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
             }
           } else {
             // Track changed - Spotify advanced on its own or user changed track
