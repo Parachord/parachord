@@ -8665,7 +8665,8 @@ ${tracks}
           name: a.name || a.artist_name,
           mbid: a.artist_mbid,
           match: Math.round(a.score * 100) || Math.max(95 - (index * 4), 20), // Convert score to percentage
-          source: 'listenbrainz'
+          source: 'listenbrainz',
+          imageLoaded: false
         }));
         console.log(`🎸 Returning ${similarArtists.length} ListenBrainz similar artists:`, similarArtists.map(a => a.name));
         return similarArtists;
@@ -8703,7 +8704,8 @@ ${tracks}
           name: a.name,
           match: Math.round(parseFloat(a.match) * 100), // Convert 0-1 to percentage
           url: a.url,
-          source: 'lastfm'
+          source: 'lastfm',
+          imageLoaded: false
         }));
         console.log(`🎸 Returning ${artists.length} Last.fm similar artists`);
         return artists;
