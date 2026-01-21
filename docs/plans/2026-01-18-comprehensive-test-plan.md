@@ -420,25 +420,142 @@
 | BC-30 | Drop URL shows loading state | Drop Bandcamp URL | Shows spinner while fetching metadata |
 | BC-31 | Drop invalid Bandcamp URL | Drop malformed bandcamp.com URL | Shows error toast, no track added |
 
-### 5.6 Spotify Authentication
-| Test ID | Test Case | Steps | Expected Result |
-|---------|-----------|-------|-----------------|
-| R-24 | Spotify auth flow | Click "Connect Spotify" button | Opens browser OAuth flow, returns with token |
-| R-25 | Token storage | Authenticate with Spotify, restart app | Token persists, no re-authentication needed |
-| R-26 | Token refresh | Use app after token expires | Automatically refreshes token using refresh token |
-| R-27 | Missing credentials | Start app without .env file | Shows error: "Missing Spotify Client ID" |
-| R-28 | Token displayed in settings | Connect Spotify, check settings | Shows token status (connected/disconnected) |
-| R-29 | Disconnect Spotify | Clear Spotify token | Next Spotify play attempt triggers re-authentication |
+### 5.6 YouTube Resolver
 
-### 5.7 Cache Management
+#### URL Pattern Matching
 | Test ID | Test Case | Steps | Expected Result |
 |---------|-----------|-------|-----------------|
-| R-30 | Album art cache saves | View artist with album art, restart | Album art loads from cache (no API calls) |
-| R-31 | Track sources cache saves | Resolve tracks, restart app, load same playlist | Sources load from cache immediately |
-| R-32 | Artist data cache saves | View artist page, restart, view again | Artist data loads from cache (no MusicBrainz call) |
-| R-33 | Cache TTL respected | Wait past cache TTL, reload cached data | Makes fresh API call instead of using cache |
-| R-34 | Cache invalidation on resolver change | Change resolvers, reload playlist | Track sources cache invalidated, re-resolves |
-| R-35 | Storage quota handling | Fill cache to near-capacity | App continues functioning, manages storage gracefully |
+| YT-01 | Standard watch URL | Drop `https://www.youtube.com/watch?v=dQw4w9WgXcQ` | Resolver matches, lookupUrl called |
+| YT-02 | Short youtu.be URL | Drop `https://youtu.be/dQw4w9WgXcQ` | Resolver matches, extracts video ID |
+| YT-03 | Music YouTube URL | Drop `https://music.youtube.com/watch?v=xyz123` | Resolver matches |
+| YT-04 | Mobile YouTube URL | Drop `https://m.youtube.com/watch?v=xyz123` | Resolver matches |
+| YT-05 | URL with extra params | Drop `https://www.youtube.com/watch?v=xyz123&list=PLxyz&t=30` | Extracts video ID correctly, ignores other params |
+| YT-06 | Playlist URL (not supported) | Drop `https://www.youtube.com/playlist?list=PLxyz` | No resolver match (no video ID) |
+| YT-07 | Channel URL (not supported) | Drop `https://www.youtube.com/@channelname` | No resolver match |
+
+#### URL Lookup (Metadata Extraction)
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-08 | Valid video lookup | lookupUrl with valid YouTube watch URL | Returns { title, artist, album:'YouTube', duration, albumArt, youtubeId, youtubeUrl } |
+| YT-09 | Title parsing (artist - title) | lookupUrl on video titled "Artist - Song Name" | Parses artist from title prefix, song from suffix |
+| YT-10 | Title parsing (no dash) | lookupUrl on video titled "Song Name Only" | artist = channel name, title = full video title |
+| YT-11 | Album art thumbnail | lookupUrl on any video | albumArt contains `i.ytimg.com/vi/[id]/mqdefault.jpg` |
+| YT-12 | Short URL lookup | lookupUrl with `youtu.be/xyz123` | Extracts ID, returns metadata |
+| YT-13 | Invalid video ID | lookupUrl with nonexistent video ID | Returns null (oEmbed 404) |
+| YT-14 | Private/deleted video | lookupUrl on private or deleted video | Returns null, no crash |
+| YT-15 | Age-restricted video | lookupUrl on age-restricted content | Returns metadata (oEmbed works for these) |
+
+#### Search Functionality
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-16 | Basic search query | search("artist song title", config) | Returns array of video results |
+| YT-17 | Search appends "music" | search("coldplay", config) | Query sent as "coldplay music" to filter music content |
+| YT-18 | Search result structure | Check returned search results | Each has: id, title, artist (channel), album:'YouTube', duration:180, sources:['youtube'], youtubeId, youtubeUrl, thumbnail, albumArt |
+| YT-19 | Search limit | Search with many results | Returns max 20 results |
+| YT-20 | Search with special characters | search("Sigur Rós Hoppípolla", config) | Handles unicode, returns results |
+| YT-21 | Search no results | search("xyznonexistent123randomtext", config) | Returns empty array [] |
+| YT-22 | Search network failure | search() with network disconnected | Returns empty array [], logs error |
+
+#### External Browser Playback
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-23 | Play opens external browser | play() with valid youtubeUrl | Calls `shell.openExternal()`, opens default browser |
+| YT-24 | Play returns success | play() succeeds | Returns true after opening browser |
+| YT-25 | Play missing URL | play() with track missing youtubeUrl | Returns false, logs error |
+| YT-26 | Play fallback to window.open | play() when electron.shell unavailable | Falls back to `window.open()` |
+
+#### Browser Extension Integration
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-27 | Extension connects on YouTube | Navigate to youtube.com/watch page | Console shows: `[Parachord] Content script loaded on: youtube` |
+| YT-28 | Media element detected | Open YouTube video | Extension finds `video.html5-main-video` element |
+| YT-29 | Playing event sent | Video starts playing | Extension sends `playing` event to app |
+| YT-30 | Paused event sent | Pause YouTube video | Extension sends `paused` event to app |
+| YT-31 | Ended event sent | Let video finish | Extension sends `ended` event to app |
+| YT-32 | App receives playing event | Video plays with extension connected | App console shows: `Extension message: event playing`, `🎬 Browser playback connected: youtube` |
+| YT-33 | App receives ended event | Video ends | App console shows: `⏹️ Browser playback ended`, auto-advance triggers |
+
+#### Transport Control Sync (YouTube)
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-34 | Play command to YouTube | With YouTube paused, click Play in app | Extension resumes video playback |
+| YT-35 | Pause command to YouTube | With YouTube playing, click Pause in app | Extension pauses video |
+| YT-36 | Next clears YouTube state | Click Next while YouTube playing | Browser playback state clears, next track plays |
+
+#### Drag & Drop Integration
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| YT-37 | Drop YouTube URL on queue | Drag `youtube.com/watch?v=xyz` to queue area | Track metadata extracted via oEmbed, added to queue |
+| YT-38 | Drop short URL on queue | Drag `youtu.be/xyz` to queue area | Track added with correct metadata |
+| YT-39 | Drop URL shows loading state | Drop YouTube URL | Shows spinner while fetching oEmbed |
+| YT-40 | Drop invalid YouTube URL | Drop malformed youtube.com URL | Shows error toast, no track added |
+
+### 5.7 Browser Extension System
+
+#### WebSocket Connection
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| EXT-01 | Server starts on app launch | Start Parachord app | Console shows: `Extension WebSocket server running on ws://127.0.0.1:9876` |
+| EXT-02 | Extension connects | Open Chrome with extension installed | Console shows: `Browser extension connected` |
+| EXT-03 | Extension popup shows status | Click extension icon | Popup shows green "Connected" indicator |
+| EXT-04 | Reconnection on disconnect | Disable then re-enable extension | Extension reconnects automatically |
+| EXT-05 | Multiple tabs supported | Open YouTube in multiple tabs | Events from active tab are processed |
+| EXT-06 | Port conflict handling | Start another app on port 9876, then Parachord | Error logged, app functions for local playback |
+
+#### Content Script Behavior
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| EXT-07 | Loads on supported sites | Navigate to youtube.com or bandcamp.com | Console shows: `[Parachord] Content script loaded on: [site]` |
+| EXT-08 | Ignores unsupported sites | Navigate to google.com | No content script logs |
+| EXT-09 | Detects media element | Open page with audio/video | Console shows: `[Parachord] Media element found: [VIDEO/AUDIO]` |
+| EXT-10 | SPA navigation handling | Navigate within YouTube (SPA) | Content script detects URL change, re-attaches listeners |
+| EXT-11 | Reports initial playing state | Navigate to auto-playing video | Extension sends `playing` event immediately |
+
+#### Event Communication
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| EXT-12 | Connected event | Content script loads | App receives `{ type: 'event', event: 'connected', site, url }` |
+| EXT-13 | Playing event | Media starts playing | App receives `{ type: 'event', event: 'playing', site }` |
+| EXT-14 | Paused event | Media pauses | App receives `{ type: 'event', event: 'paused', site }` |
+| EXT-15 | Ended event | Media ends | App receives `{ type: 'event', event: 'ended', site }` |
+| EXT-16 | Tab closed event | Close browser tab playing media | App receives notification, triggers auto-advance |
+
+#### Command Handling
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| EXT-17 | Play command | Send play command from app | Extension calls `media.play()` or clicks play button |
+| EXT-18 | Pause command | Send pause command from app | Extension calls `media.pause()` |
+| EXT-19 | Stop command | Send stop command from app | Extension pauses and resets media to 0 |
+| EXT-20 | Command with no media | Send command before media element exists | Command handled gracefully, no crash |
+
+#### Mixed Source Auto-Advance
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| EXT-21 | Spotify → YouTube transition | Queue: Spotify track, then YouTube track | Spotify ends, YouTube opens in browser, extension connects |
+| EXT-22 | YouTube → Spotify transition | Queue: YouTube track, then Spotify track | YouTube ends, browser state clears, Spotify plays |
+| EXT-23 | YouTube → Bandcamp transition | Queue: YouTube, then Bandcamp | YouTube ends, Bandcamp opens (embed or browser) |
+| EXT-24 | All-external queue | Queue: YouTube → Bandcamp → YouTube | Each track opens in browser, auto-advance works throughout |
+| EXT-25 | Browser state cleanup on source change | Playing YouTube, play Spotify track | `browserPlaybackActive` resets, YouTube tab can close |
+
+### 5.8 Spotify Authentication
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| SP-01 | Spotify auth flow | Click "Connect Spotify" button | Opens browser OAuth flow, returns with token |
+| SP-02 | Token storage | Authenticate with Spotify, restart app | Token persists, no re-authentication needed |
+| SP-03 | Token refresh | Use app after token expires | Automatically refreshes token using refresh token |
+| SP-04 | Missing credentials | Start app without .env file | Shows error: "Missing Spotify Client ID" |
+| SP-05 | Token displayed in settings | Connect Spotify, check settings | Shows token status (connected/disconnected) |
+| SP-06 | Disconnect Spotify | Clear Spotify token | Next Spotify play attempt triggers re-authentication |
+
+### 5.9 Cache Management
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| CM-01 | Album art cache saves | View artist with album art, restart | Album art loads from cache (no API calls) |
+| CM-02 | Track sources cache saves | Resolve tracks, restart app, load same playlist | Sources load from cache immediately |
+| CM-03 | Artist data cache saves | View artist page, restart, view again | Artist data loads from cache (no MusicBrainz call) |
+| CM-04 | Cache TTL respected | Wait past cache TTL, reload cached data | Makes fresh API call instead of using cache |
+| CM-05 | Cache invalidation on resolver change | Change resolvers, reload playlist | Track sources cache invalidated, re-resolves |
+| CM-06 | Storage quota handling | Fill cache to near-capacity | App continues functioning, manages storage gracefully |
 
 ---
 
