@@ -2377,6 +2377,17 @@ const Parachord = () => {
             setBrowserPlaybackActive(true);
             setIsExternalPlayback(true);
 
+            // Stop Spotify polling - browser is now handling playback
+            if (playbackPollerRef.current) {
+              console.log('⏹️ Stopping Spotify polling - browser playback connected');
+              clearInterval(playbackPollerRef.current);
+              playbackPollerRef.current = null;
+            }
+            if (pollingRecoveryRef.current) {
+              clearInterval(pollingRecoveryRef.current);
+              pollingRecoveryRef.current = null;
+            }
+
             // Close previous tab if one was pending
             if (pendingCloseTabIdRef.current && pendingCloseTabIdRef.current !== message.tabId) {
               window.electron.extension.sendCommand({
@@ -3467,6 +3478,17 @@ const Parachord = () => {
       // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
       streamingPlaybackActiveRef.current = false; // Allow browser events for external playback
+
+      // Stop Spotify polling when switching to external browser playback
+      if (playbackPollerRef.current) {
+        console.log('⏹️ Stopping Spotify polling for external browser playback');
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
       // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
       // Merge source with original track, explicitly preserving queue-essential properties
       const trackToSet = trackOrSource.sources ?
