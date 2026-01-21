@@ -2695,6 +2695,30 @@ const Parachord = () => {
     }
   }, [isPlaying, audioContext, currentTrack, startTime]);
 
+  // Smooth progress interpolation for Spotify tracks
+  // API polling happens every 5 seconds, but we want smooth 1-second visual updates
+  const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, fromApi: false });
+
+  useEffect(() => {
+    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
+    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
+
+    if (isPlaying && isStreamingTrack && hasValidDuration && !browserPlaybackActive) {
+      const interval = setInterval(() => {
+        const baseline = spotifyProgressBaselineRef.current;
+        const elapsed = (Date.now() - baseline.timestamp) / 1000;
+        const interpolatedProgress = baseline.progress + elapsed;
+
+        // Don't exceed track duration
+        if (interpolatedProgress < currentTrack.duration) {
+          setProgress(interpolatedProgress);
+        }
+      }, 1000); // Update every second for smooth progress bar
+
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentTrack, browserPlaybackActive]);
+
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
     if (toast) {
@@ -3488,6 +3512,8 @@ const Parachord = () => {
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
+        // Reset baseline for smooth progress interpolation
+        spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now() };
         if (audioContext) {
           setStartTime(audioContext.currentTime);
         }
@@ -3534,6 +3560,8 @@ const Parachord = () => {
             setCurrentTrack(trackToSet);
             setIsPlaying(true);
             setProgress(0);
+            // Reset baseline for smooth progress interpolation
+            spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now() };
             if (audioContext) {
               setStartTime(audioContext.currentTime);
             }
@@ -9019,7 +9047,12 @@ const getCurrentPlaybackState = async () => {
           setIsPlaying(newIsPlaying);
         }
 
-        // Update progress (always, for smooth progress bar)
+        // Update progress baseline for smooth interpolation
+        // The interpolation effect will smoothly update between API polls
+        spotifyProgressBaselineRef.current = {
+          progress: newProgress,
+          timestamp: Date.now()
+        };
         setProgress(newProgress);
 
         // Only update track if it's different
