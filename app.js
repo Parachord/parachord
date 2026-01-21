@@ -1293,7 +1293,7 @@ const Parachord = () => {
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
   const [queueDropTarget, setQueueDropTarget] = useState(null); // Index where track will be dropped in queue
-  const [droppingTrackId, setDroppingTrackId] = useState(null); // Track ID that's animating "drop" into player
+  const [droppingFromIndex, setDroppingFromIndex] = useState(null); // Index of clicked track - all tracks at index <= this fall down
   const [insertedTrackId, setInsertedTrackId] = useState(null); // Track ID that was just inserted via "previous"
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
@@ -19266,10 +19266,10 @@ useEffect(() => {
             React.createElement('span', { className: 'text-sm text-gray-500 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          // flex-col-reverse with justify-end pins tracks to the bottom when content is short
+          // flex-col-reverse reverses the main axis (bottom to top)
+          // justify-start pins items to the START of that axis = BOTTOM of the container
           // min-h-full ensures it fills the container when there's little content
-          // Without h-full, the container can grow and the parent will scroll
-          React.createElement('div', { className: 'flex flex-col-reverse justify-end min-h-full pb-2' },
+          React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full pb-2' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -19283,8 +19283,12 @@ useEffect(() => {
 
               const isDraggedOver = queueDropTarget === index;
               const isDragging = draggedQueueTrack === index;
-              const isDropping = droppingTrackId === track.id;
               const isInserted = insertedTrackId === track.id;
+              // With flex-col-reverse + justify-start, index 0 is at the bottom (near player)
+              // When clicking a track, all tracks at index <= droppingFromIndex fall down into player
+              // Remaining tracks (index > droppingFromIndex) stay in place - they'll naturally be
+              // at the bottom after state change thanks to flex-col-reverse + justify-start
+              const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
 
               return React.createElement('div', {
                 key: track.id,
@@ -19341,7 +19345,7 @@ useEffect(() => {
                   isError ? 'opacity-50' : ''
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
                   isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
-                  isDropping ? 'queue-track-drop' : ''} ${
+                  isFallingDown ? 'queue-track-drop' : ''} ${
                   isInserted ? 'queue-track-insert' : ''}`
               },
                 // Track number / status indicator - fixed width
@@ -19364,13 +19368,14 @@ useEffect(() => {
                   style: { flex: '1 1 0', minWidth: 0 },
                   onClick: () => {
                     if (isLoading || isError) return;
-                    // Trigger drop animation for this track
-                    setDroppingTrackId(track.id);
+                    // Trigger drop animation for all tracks at index <= clicked index
+                    // These tracks will fall down into the player together
+                    setDroppingFromIndex(index);
                     // After animation, play the track
                     setTimeout(() => {
                       setCurrentQueue(prev => prev.slice(index + 1));
                       handlePlay(track);
-                      setDroppingTrackId(null);
+                      setDroppingFromIndex(null);
                     }, 300);
                   }
                 },
