@@ -3596,6 +3596,8 @@ const Parachord = () => {
 
       let errorCount = 0; // Track consecutive polling errors
       let lastTrackUri = trackUri; // Track what we started playing
+      let stuckAtZeroCount = 0; // Track how many times we've been stuck at 0% with is_playing=false
+      const MAX_STUCK_AT_ZERO = 6; // After 30 seconds (6 * 5s polls) of being stuck at 0%, give up
 
       const pollInterval = setInterval(async () => {
         try {
@@ -3662,8 +3664,33 @@ const Parachord = () => {
               playbackPollerRef.current = null;
               if (handleNextRef.current) handleNextRef.current();
             } else if (!isPlaying) {
-              // Track is paused mid-playback (not at end) - user paused intentionally
-              console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
+              // Track is paused - could be user pause or playback never started
+              if (progressMs === 0) {
+                // Stuck at 0% - playback may have failed to start
+                stuckAtZeroCount++;
+                if (stuckAtZeroCount >= MAX_STUCK_AT_ZERO) {
+                  // Been stuck at 0% for too long - playback failed to start
+                  console.error(`❌ Spotify playback stuck at 0% for ${stuckAtZeroCount * 5}s - device may not be active`);
+                  clearInterval(pollInterval);
+                  playbackPollerRef.current = null;
+
+                  // Check if queue has more tracks and advance
+                  const queue = currentQueueRef.current;
+                  if (queue && queue.length > 0) {
+                    console.log('⏭️ Auto-advancing to next track due to playback failure...');
+                    if (handleNextRef.current) handleNextRef.current();
+                  }
+                } else {
+                  console.log(`⏸️ Spotify playback paused at 0% (${stuckAtZeroCount}/${MAX_STUCK_AT_ZERO}), waiting for playback to start...`);
+                }
+              } else {
+                // User paused mid-playback (progress > 0) - reset stuck counter
+                stuckAtZeroCount = 0;
+                console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
+              }
+            } else {
+              // Playing normally - reset stuck counter
+              stuckAtZeroCount = 0;
             }
           } else {
             // Track changed - Spotify advanced on its own or user changed track
