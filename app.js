@@ -598,6 +598,20 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
+  // Start as loaded if no album art (will show gradient placeholder immediately)
+  const [imageLoaded, setImageLoaded] = React.useState(!release.albumArt);
+  const [imageFailed, setImageFailed] = React.useState(false);
+
+  // Reset image state when album art URL changes
+  React.useEffect(() => {
+    if (release.albumArt) {
+      setImageLoaded(false);
+      setImageFailed(false);
+    } else {
+      // No album art - mark as loaded to show gradient placeholder
+      setImageLoaded(true);
+    }
+  }, [release.albumArt]);
 
   const handleDragStart = (e) => {
     e.dataTransfer.effectAllowed = 'copy';
@@ -658,13 +672,21 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
       e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
     }
   },
-    // Album art - shows image when loaded, gradient placeholder when not
+    // Album art container
+    // States: 1) shimmer (loading image), 2) image (loaded), 3) gradient placeholder (no image/failed)
     React.createElement('div', {
+      className: release.albumArt && !imageLoaded ? 'animate-shimmer' : '',
       style: {
         width: '100%',
         aspectRatio: '1',
         borderRadius: '8px',
-        background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+        // Shimmer: gray gradient animating. Placeholder: purple gradient. Image loaded: transparent
+        background: release.albumArt && !imageLoaded
+          ? 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)'  // Shimmer gray
+          : !release.albumArt || imageFailed
+            ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'  // Purple gradient placeholder
+            : 'transparent',  // Image loaded successfully
+        backgroundSize: release.albumArt && !imageLoaded ? '200% 100%' : undefined,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -674,7 +696,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         position: 'relative'
       }
     },
-      // Album art image (if loaded) - onError hides broken image to show gradient behind
+      // Album art image - hidden until loaded
       release.albumArt && React.createElement('img', {
         src: release.albumArt,
         alt: release.title,
@@ -685,19 +707,22 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           pointerEvents: 'none',
           position: 'absolute',
           top: 0,
-          left: 0
+          left: 0,
+          opacity: imageLoaded && !imageFailed ? 1 : 0,
+          transition: 'opacity 0.2s ease-in-out'
         },
-        onError: (e) => {
-          // Hide broken image to reveal gradient placeholder behind
-          e.target.style.display = 'none';
+        onLoad: () => setImageLoaded(true),
+        onError: () => {
+          setImageLoaded(true);
+          setImageFailed(true);
         }
       }),
 
-      // Music icon placeholder (always rendered, behind the image)
-      React.createElement('svg', {
-        style: { 
-          width: '48px', 
-          height: '48px', 
+      // Music icon placeholder (only show when no image)
+      (!release.albumArt || imageFailed) && React.createElement('svg', {
+        style: {
+          width: '48px',
+          height: '48px',
           color: 'rgba(255, 255, 255, 0.5)',
           pointerEvents: 'none'
         },
@@ -1353,6 +1378,8 @@ const Parachord = () => {
 
   // Track if we're opening a release (to prevent header reset during artist change)
   const openingReleaseRef = useRef(false);
+  // Track if we're restoring saved state (to prevent tab reset during restore)
+  const restoringStateRef = useRef(false);
 
   // Playlists page scroll handler for header collapse
   const playlistsCollapseLockedRef = useRef(false);
@@ -1861,7 +1888,7 @@ const Parachord = () => {
     }
   }, [searchDetailCategory]);
 
-  // Reset header collapse and tab when navigating to a new artist (but not when opening a release)
+  // Reset header collapse and tab when navigating to a new artist (but not when opening a release or restoring state)
   useEffect(() => {
     // Don't reset header if we're opening a release - it should stay collapsed
     if (openingReleaseRef.current) {
@@ -1869,10 +1896,37 @@ const Parachord = () => {
     } else {
       setIsHeaderCollapsed(false);
     }
-    setArtistPageTab('music');
-    setArtistBio(null);
-    setRelatedArtists([]);
+    // Don't reset tab or clear data if we're restoring saved state
+    if (restoringStateRef.current) {
+      restoringStateRef.current = false;
+    } else {
+      setArtistPageTab('music');
+      setArtistBio(null);
+      setRelatedArtists([]);
+    }
   }, [currentArtist]);
+
+  // Fetch tab data when restored to biography or related artists tab
+  useEffect(() => {
+    if (!currentArtist) return;
+
+    if (artistPageTab === 'biography' && !artistBio) {
+      (async () => {
+        const bioData = await getArtistBio(currentArtist.name);
+        if (bioData) setArtistBio(bioData);
+      })();
+    }
+
+    if (artistPageTab === 'related' && relatedArtists.length === 0 && !loadingRelated) {
+      (async () => {
+        const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
+        if (related.length > 0) {
+          setRelatedArtists(related);
+          resolveRelatedArtistImages(related);
+        }
+      })();
+    }
+  }, [artistPageTab, currentArtist]);
 
   // Load local files data when resolver modal is opened
   useEffect(() => {
@@ -4861,6 +4915,8 @@ const Parachord = () => {
             // Restore artist page tab if saved
             if (savedLastView.artistPageTab) {
               setArtistPageTab(savedLastView.artistPageTab);
+              // Mark that we're restoring state so useEffect doesn't reset the tab
+              restoringStateRef.current = true;
             }
             // Fetch the artist data (this will populate currentArtist)
             setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
