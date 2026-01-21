@@ -12134,11 +12134,13 @@ useEffect(() => {
                           className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
                             artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
                           }`,
-                          style: {
-                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                            backgroundSize: artist.image ? 'cover' : '200% 100%',
+                          style: artist.image ? {
+                            backgroundImage: `url(${artist.image})`,
+                            backgroundSize: 'cover',
                             backgroundPosition: 'center'
-                          }
+                          } : !artist.imageLoaded ? {
+                            backgroundSize: '200% 100%'
+                          } : {}
                         })
                       ),
                       React.createElement('span', {
@@ -14441,11 +14443,13 @@ useEffect(() => {
                           className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
                             artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
                           }`,
-                          style: {
-                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                            backgroundSize: artist.image ? 'cover' : '200% 100%',
+                          style: artist.image ? {
+                            backgroundImage: `url(${artist.image})`,
+                            backgroundSize: 'cover',
                             backgroundPosition: 'center'
-                          }
+                          } : !artist.imageLoaded ? {
+                            backgroundSize: '200% 100%'
+                          } : {}
                         })
                       ),
                       React.createElement('span', {
