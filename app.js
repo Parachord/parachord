@@ -419,7 +419,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
 
   return React.createElement('div', {
     onClick: onClick,
-    className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
+    className: 'flex-1 min-w-0 flex flex-col items-center cursor-grab active:cursor-grabbing group transition-all duration-300 ease-out',
+    style: { minWidth: '100px', maxWidth: '160px' },
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'copy';
@@ -11344,19 +11345,20 @@ useEffect(() => {
         // Results area
         // Show skeletons when no query or when searching
         (!searchQuery || isSearching) ?
-          // Loading skeletons - single row with overflow hidden
+          // Loading skeletons - single row with max-height overflow hidden
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton - circular style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
               React.createElement('div', {
-                className: 'grid gap-4',
-                style: { gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }
+                className: 'flex gap-4',
+                style: { maxHeight: '160px', overflow: 'hidden' }
               },
-                ...Array(8).fill(null).map((_, i) =>
+                ...Array(12).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `artist-skeleton-${i}`,
-                    className: 'flex flex-col items-center'
+                    className: 'flex-1 min-w-0 flex flex-col items-center',
+                    style: { minWidth: '100px', maxWidth: '160px' }
                   },
                     React.createElement('div', {
                       className: 'w-24 h-24 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer mx-auto',
@@ -11374,12 +11376,14 @@ useEffect(() => {
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
               React.createElement('div', {
-                className: 'grid gap-4',
-                style: { gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))' }
+                className: 'flex gap-4',
+                style: { maxHeight: '200px', overflow: 'hidden' }
               },
-                ...Array(10).fill(null).map((_, i) =>
+                ...Array(12).fill(null).map((_, i) =>
                   React.createElement('div', {
-                    key: `track-skeleton-${i}`
+                    key: `track-skeleton-${i}`,
+                    className: 'flex-1 min-w-0',
+                    style: { minWidth: '80px', maxWidth: '140px' }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
@@ -11405,12 +11409,14 @@ useEffect(() => {
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ALBUMS'),
               React.createElement('div', {
-                className: 'grid gap-4',
-                style: { gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }
+                className: 'flex gap-4',
+                style: { maxHeight: '240px', overflow: 'hidden' }
               },
-                ...Array(8).fill(null).map((_, i) =>
+                ...Array(10).fill(null).map((_, i) =>
                   React.createElement('div', {
-                    key: `album-skeleton-${i}`
+                    key: `album-skeleton-${i}`,
+                    className: 'flex-1 min-w-0',
+                    style: { minWidth: '120px', maxWidth: '180px' }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-3 animate-shimmer',
@@ -11455,10 +11461,10 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'grid gap-4',
-              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }
+              className: 'flex gap-4',
+              style: { maxHeight: '160px', overflow: 'hidden' }
             },
-              ...searchResults.artists.slice(0, 8).map(artist =>
+              ...searchResults.artists.slice(0, 12).map(artist =>
                 React.createElement(SearchArtistCard, {
                   key: artist.id,
                   artist: artist,
@@ -11495,13 +11501,14 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'grid gap-4',
-              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))' }
+              className: 'flex gap-4',
+              style: { maxHeight: '200px', overflow: 'hidden' }
             },
-              ...searchResults.tracks.slice(0, 10).map(track =>
+              ...searchResults.tracks.slice(0, 12).map(track =>
                 React.createElement('div', {
                   key: track.id,
-                  className: 'text-left group'
+                  className: 'flex-1 min-w-0 text-left group transition-all duration-300 ease-out',
+                  style: { minWidth: '80px', maxWidth: '140px' }
                 },
                   // Album art with rounded corners - this is the draggable part
                   React.createElement('div', {
@@ -11602,10 +11609,10 @@ useEffect(() => {
                 }, 'Show more')
             ),
             React.createElement('div', {
-              className: 'grid gap-4',
-              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }
+              className: 'flex gap-4',
+              style: { maxHeight: '240px', overflow: 'hidden' }
             },
-              ...searchResults.albums.slice(0, 8).map(album =>
+              ...searchResults.albums.slice(0, 10).map(album =>
                 React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
@@ -11613,7 +11620,8 @@ useEffect(() => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
                   },
-                  className: 'text-left group cursor-grab active:cursor-grabbing',
+                  className: 'flex-1 min-w-0 text-left group cursor-grab active:cursor-grabbing transition-all duration-300 ease-out',
+                  style: { minWidth: '120px', maxWidth: '180px' },
                   draggable: true,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
