@@ -367,7 +367,60 @@
 | R-22 | Invalid .axe file | Place malformed .axe file in resolvers folder | App loads other resolvers, logs error for invalid file |
 | R-23 | Resolver uninstall | Delete .axe file, restart | Resolver removed from settings |
 
-### 5.5 Spotify Authentication
+### 5.5 Bandcamp Resolver
+
+#### URL Pattern Matching
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| BC-01 | Standard track URL | Drop `https://artist.bandcamp.com/track/song-name` | Resolver matches, lookupUrl called |
+| BC-02 | Track URL without https | Drop `artist.bandcamp.com/track/song-name` | Resolver matches after URL normalization |
+| BC-03 | Subdomain variations | Drop `some-artist-name.bandcamp.com/track/title` | Resolver matches any subdomain |
+| BC-04 | Album URL (not supported) | Drop `artist.bandcamp.com/album/album-name` | No resolver match (album pattern not in urlPatterns) |
+| BC-05 | Artist page URL (not supported) | Drop `artist.bandcamp.com` | No resolver match |
+
+#### URL Lookup (Metadata Extraction)
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| BC-06 | Valid track URL lookup | lookupUrl with valid Bandcamp track URL | Returns { title, artist, album, duration, albumArt, bandcampUrl, bandcampTrackId } |
+| BC-07 | Track title extracted | lookupUrl on track page | Title matches page's trackTitle element or ld+json name |
+| BC-08 | Artist name extracted | lookupUrl on track page | Artist extracted from byArtist or #name-section |
+| BC-09 | Album name extracted | lookupUrl on track with album | Album name extracted from inAlbum or page structure |
+| BC-10 | Duration parsed from ld+json | lookupUrl on track with duration metadata | Duration in seconds parsed from ISO 8601 format (PT3M45S → 225) |
+| BC-11 | Album art URL extracted | lookupUrl on track with cover | albumArt contains #tralbumArt img src |
+| BC-12 | Track ID extracted | lookupUrl on valid track | bandcampTrackId contains numeric ID from page |
+| BC-13 | Single without album | lookupUrl on standalone single | album defaults to "Single" |
+| BC-14 | Missing artist fallback | lookupUrl on track with no artist info | artist defaults to "Unknown Artist" |
+| BC-15 | Invalid URL returns null | lookupUrl with 404 URL | Returns null, no crash |
+| BC-16 | Non-Bandcamp URL | lookupUrl with youtube.com URL | Returns null (fetch fails or parsing fails) |
+
+#### Search Functionality
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| BC-17 | Basic search query | search("artist song title", config) | Returns array of track results |
+| BC-18 | Search result structure | Check returned search results | Each has: id, title, artist, album, duration, sources:['bandcamp'], bandcampUrl |
+| BC-19 | Search limit | Search with many results | Returns max 20 results |
+| BC-20 | Search with special characters | search("Sigur Rós Hoppípolla", config) | Handles unicode, returns results |
+| BC-21 | Search no results | search("xyznonexistent123", config) | Returns empty array [] |
+| BC-22 | Search network failure | search() with network disconnected | Returns empty array [], logs error |
+
+#### Playback
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| BC-23 | Play with track ID (embed) | play() with bandcampTrackId present | Opens embedded player in playback window |
+| BC-24 | Play without track ID (fallback) | play() without bandcampTrackId | Fetches page via proxy to extract ID, then embeds |
+| BC-25 | Play external fallback | play() when embed fails | Falls back to shell.openExternal() |
+| BC-26 | Play missing URL | play() with track missing bandcampUrl | Returns false, logs error |
+| BC-27 | Cleanup closes playback window | cleanup() called | Playback window closed if open |
+
+#### Drag & Drop Integration
+| Test ID | Test Case | Steps | Expected Result |
+|---------|-----------|-------|-----------------|
+| BC-28 | Drop Bandcamp URL on queue | Drag URL to Now Playing queue area | Track metadata extracted, added to queue |
+| BC-29 | Drop Bandcamp URL on playlist | Drag URL to playlist in sidebar | Track added to playlist |
+| BC-30 | Drop URL shows loading state | Drop Bandcamp URL | Shows spinner while fetching metadata |
+| BC-31 | Drop invalid Bandcamp URL | Drop malformed bandcamp.com URL | Shows error toast, no track added |
+
+### 5.6 Spotify Authentication
 | Test ID | Test Case | Steps | Expected Result |
 |---------|-----------|-------|-----------------|
 | R-24 | Spotify auth flow | Click "Connect Spotify" button | Opens browser OAuth flow, returns with token |
@@ -377,7 +430,7 @@
 | R-28 | Token displayed in settings | Connect Spotify, check settings | Shows token status (connected/disconnected) |
 | R-29 | Disconnect Spotify | Clear Spotify token | Next Spotify play attempt triggers re-authentication |
 
-### 5.6 Cache Management
+### 5.7 Cache Management
 | Test ID | Test Case | Steps | Expected Result |
 |---------|-----------|-------|-----------------|
 | R-30 | Album art cache saves | View artist with album art, restart | Album art loads from cache (no API calls) |
