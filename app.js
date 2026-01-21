@@ -1133,7 +1133,8 @@ const Parachord = () => {
   const [artistSortDropdownOpen, setArtistSortDropdownOpen] = useState(false);
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
   const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm
-  const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm
+  const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
+  const [relatedArtistsSourceFilter, setRelatedArtistsSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'listenbrainz' | 'both'
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
@@ -8625,19 +8626,70 @@ ${tracks}
     }
   };
 
-  // Fetch related artists from Last.fm (lazy loaded on Related Artists tab click)
-  const getRelatedArtists = async (artistName) => {
+  // Fetch similar artists from ListenBrainz Labs API
+  const getListenBrainzSimilarArtists = async (artistMbid) => {
+    if (!artistMbid) {
+      console.log('🎸 ListenBrainz similar artists skipped: no MBID');
+      return [];
+    }
+
+    try {
+      const url = 'https://labs.api.listenbrainz.org/similar-artists/json';
+      const payload = [
+        {
+          artist_mbids: [artistMbid],
+          algorithm: 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30'
+        }
+      ];
+
+      console.log(`🎸 Fetching ListenBrainz similar artists for MBID: ${artistMbid}`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        console.error('ListenBrainz similar artists request failed:', response.status);
+        return [];
+      }
+
+      const data = await response.json();
+      console.log(`🎸 ListenBrainz returned ${data?.length || 0} results`);
+
+      // Filter out the reference artist (first result) and map to our format
+      // ListenBrainz returns results with score field, higher is more similar
+      if (data && Array.isArray(data) && data.length > 1) {
+        // Skip first result (reference artist) and take next 20
+        const similarArtists = data.slice(1, 21).map((a, index) => ({
+          name: a.name || a.artist_name,
+          mbid: a.artist_mbid,
+          match: Math.round(a.score * 100) || Math.max(95 - (index * 4), 20), // Convert score to percentage
+          source: 'listenbrainz'
+        }));
+        console.log(`🎸 Returning ${similarArtists.length} ListenBrainz similar artists:`, similarArtists.map(a => a.name));
+        return similarArtists;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch similar artists from ListenBrainz:', error);
+      return [];
+    }
+  };
+
+  // Fetch similar artists from Last.fm API
+  const getLastfmSimilarArtists = async (artistName) => {
     if (!artistName) return [];
 
     const apiKey = lastfmApiKey.current;
     if (!apiKey) {
-      console.warn('⚠️ Last.fm API key not available, cannot fetch related artists');
+      console.log('🎸 Last.fm similar artists skipped: no API key');
       return [];
     }
 
-    setLoadingRelated(true);
     try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=12`;
+      const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=20`;
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -8647,17 +8699,69 @@ ${tracks}
 
       const data = await response.json();
       if (data.similarartists?.artist) {
-        // Map to our format with match percentage
-        return data.similarartists.artist.map(a => ({
+        const artists = data.similarartists.artist.map(a => ({
           name: a.name,
           match: Math.round(parseFloat(a.match) * 100), // Convert 0-1 to percentage
-          url: a.url
+          url: a.url,
+          source: 'lastfm'
         }));
+        console.log(`🎸 Returning ${artists.length} Last.fm similar artists`);
+        return artists;
       }
 
       return [];
     } catch (error) {
-      console.error('Failed to fetch related artists from Last.fm:', error);
+      console.error('Failed to fetch similar artists from Last.fm:', error);
+      return [];
+    }
+  };
+
+  // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
+  const getRelatedArtists = async (artistName, artistMbid) => {
+    if (!artistName) return [];
+
+    setLoadingRelated(true);
+    try {
+      // Fetch from both sources in parallel
+      const [lastfmArtists, listenbrainzArtists] = await Promise.all([
+        getLastfmSimilarArtists(artistName),
+        getListenBrainzSimilarArtists(artistMbid)
+      ]);
+
+      console.log(`🎸 Fetched ${lastfmArtists.length} from Last.fm, ${listenbrainzArtists.length} from ListenBrainz`);
+
+      // Merge and de-dupe by artist name (case-insensitive)
+      const artistMap = new Map();
+
+      // Add Last.fm artists first
+      for (const artist of lastfmArtists) {
+        const key = artist.name.toLowerCase().trim();
+        artistMap.set(key, { ...artist });
+      }
+
+      // Merge ListenBrainz artists, combining data for duplicates
+      for (const artist of listenbrainzArtists) {
+        const key = artist.name.toLowerCase().trim();
+        if (artistMap.has(key)) {
+          const existing = artistMap.get(key);
+          // Keep the higher match score and add ListenBrainz MBID
+          artistMap.set(key, {
+            ...existing,
+            match: Math.max(existing.match, artist.match),
+            mbid: artist.mbid || existing.mbid,
+            source: 'both' // Mark as appearing in both sources
+          });
+        } else {
+          artistMap.set(key, { ...artist });
+        }
+      }
+
+      const merged = Array.from(artistMap.values());
+      console.log(`🎸 Merged to ${merged.length} unique related artists`);
+
+      return merged;
+    } catch (error) {
+      console.error('Failed to fetch related artists:', error);
       return [];
     } finally {
       setLoadingRelated(false);
@@ -11177,7 +11281,7 @@ useEffect(() => {
                       if (bioData) setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
-                      const related = await getRelatedArtists(currentArtist.name);
+                      const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
                       if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
@@ -11237,7 +11341,7 @@ useEffect(() => {
                       if (bioData) setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
-                      const related = await getRelatedArtists(currentArtist.name);
+                      const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
                       if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
@@ -11485,7 +11589,7 @@ useEffect(() => {
                       if (artistReleases.length === 0) {
                         fetchArtistData(artistName);
                       }
-                      const related = await getRelatedArtists(artistName);
+                      const related = await getRelatedArtists(artistName, currentArtist?.mbid);
                       if (related.length > 0) { setRelatedArtists(related); resolveRelatedArtistImages(related); }
                     }
                   },
@@ -11896,87 +12000,137 @@ useEffect(() => {
           ),
 
           // RELATED ARTISTS TAB
-          artistPageTab === 'related' && React.createElement('div', { className: 'p-6' },
-            // Loading state - skeleton grid matching Top Artists style
-            loadingRelated && React.createElement('div', {
-              className: 'grid gap-x-4 gap-y-8',
-              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-            },
-              Array.from({ length: 12 }).map((_, i) =>
-                React.createElement('div', { key: `skeleton-${i}`, className: 'flex flex-col items-center' },
-                  React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                  React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
+          artistPageTab === 'related' && (() => {
+            // Compute source counts for filter pills
+            const listenbrainzCount = relatedArtists.filter(a => a.source === 'listenbrainz').length;
+            const lastfmCount = relatedArtists.filter(a => a.source === 'lastfm').length;
+            const bothCount = relatedArtists.filter(a => a.source === 'both').length;
+            // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
+            const hasBothServicesConfigured = !!currentArtist?.mbid && !!lastfmApiKey.current;
+
+            // Filter artists based on source filter
+            const filteredArtists = relatedArtistsSourceFilter === 'all'
+              ? relatedArtists
+              : relatedArtists.filter(a =>
+                  relatedArtistsSourceFilter === 'both'
+                    ? a.source === 'both'
+                    : a.source === relatedArtistsSourceFilter || a.source === 'both'
+                );
+
+            return React.createElement('div', null,
+              // Sticky filter bar - show when both services are configured
+              hasBothServicesConfigured && React.createElement('div', {
+                className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              },
+                React.createElement('div', { className: 'flex gap-2' },
+                  [
+                    { value: 'all', label: 'All', count: relatedArtists.length },
+                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount },
+                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount },
+                    { value: 'both', label: 'Both', count: bothCount }
+                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count }) =>
+                    React.createElement('button', {
+                      key: value,
+                      onClick: () => setRelatedArtistsSourceFilter(value),
+                      className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
+                        relatedArtistsSourceFilter === value
+                          ? value === 'listenbrainz' ? 'bg-orange-500 text-white'
+                            : value === 'lastfm' ? 'bg-red-600 text-white'
+                            : value === 'both' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white'
+                            : 'bg-purple-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`
+                    }, loadingRelated ? label : `${label} (${count})`)
+                  )
                 )
-              )
-            ),
-            // Related artists grid (sorted by match, highest first) - matching Top Artists style
-            !loadingRelated && relatedArtists.length > 0 && React.createElement('div', {
-              className: 'grid gap-x-4 gap-y-8',
-              style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-            },
-              [...relatedArtists].sort((a, b) => b.match - a.match).map((artist) =>
-                React.createElement('div', {
-                  key: artist.name,
-                  className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
-                  draggable: true,
-                  onDragStart: (e) => {
-                    e.dataTransfer.effectAllowed = 'copy';
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'artist',
-                      artist: {
-                        id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                        name: artist.name,
-                        image: artist.image
-                      }
-                    }));
-                  },
-                  onClick: () => fetchArtistData(artist.name),
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
-                        type: 'artist',
-                        artist: {
-                          id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-                          name: artist.name,
-                          image: artist.image
-                        }
-                      });
-                    }
-                  }
+              ),
+              // Content with padding
+              React.createElement('div', { className: 'p-6' },
+                // Loading state - skeleton grid matching Top Artists style
+                loadingRelated && React.createElement('div', {
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  React.createElement('div', {
-                    className: 'relative w-36 h-36 rounded-full overflow-hidden'
-                  },
+                  Array.from({ length: 12 }).map((_, i) =>
+                    React.createElement('div', { key: `skeleton-${i}`, className: 'flex flex-col items-center' },
+                      React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
+                    )
+                  )
+                ),
+                // Related artists grid (sorted by match, highest first) - matching Top Artists style
+                !loadingRelated && filteredArtists.length > 0 && React.createElement('div', {
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                },
+                  [...filteredArtists].sort((a, b) => b.match - a.match).map((artist) =>
                     React.createElement('div', {
-                      className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
-                      style: {
-                        backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                        backgroundSize: artist.image ? 'cover' : '200% 100%',
-                        backgroundPosition: 'center'
+                      key: artist.name,
+                      className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group',
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'artist',
+                          artist: {
+                            id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                            name: artist.name,
+                            image: artist.image
+                          }
+                        }));
+                      },
+                      onClick: () => fetchArtistData(artist.name),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'artist',
+                            artist: {
+                              id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                              name: artist.name,
+                              image: artist.image
+                            }
+                          });
+                        }
                       }
                     },
-                      !artist.image && React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-gray-400'
+                      React.createElement('div', {
+                        className: 'relative w-36 h-36 rounded-full overflow-hidden'
                       },
-                        React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                        React.createElement('div', {
+                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
+                          style: {
+                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
+                            backgroundSize: artist.image ? 'cover' : '200% 100%',
+                            backgroundPosition: 'center'
+                          }
+                        },
+                          !artist.image && React.createElement('div', {
+                            className: 'w-full h-full flex items-center justify-center text-gray-400'
+                          },
+                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                            )
+                          )
                         )
-                      )
+                      ),
+                      React.createElement('span', {
+                        className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
+                      }, artist.name)
                     )
-                  ),
-                  React.createElement('span', {
-                    className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
-                  }, artist.name)
+                  )
+                ),
+                // No related artists found (or filtered to none)
+                !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
+                  className: 'text-center py-12 text-gray-400'
+                }, relatedArtists.length === 0
+                  ? 'No related artists found.'
+                  : `No artists from ${relatedArtistsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : relatedArtistsSourceFilter === 'lastfm' ? 'Last.fm' : 'both sources'}.`
                 )
               )
-            ),
-            // No related artists found
-            !loadingRelated && relatedArtists.length === 0 && React.createElement('div', {
-              className: 'text-center py-12 text-gray-400'
-            }, 'No related artists found.')
-          )
+            );
+          })()
         )
       )
       
