@@ -2469,7 +2469,8 @@ const Parachord = () => {
           case 'ended':
             console.log('🎵 Playback window track ended, advancing to next');
             setBrowserPlaybackActive(false);
-            handleNext();
+            // Use ref to avoid stale closure in useEffect
+            if (handleNextRef.current) handleNextRef.current();
             break;
         }
       });
