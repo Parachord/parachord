@@ -1247,6 +1247,7 @@ const Parachord = () => {
 
   // History page state
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
+  const pendingHistoryLoad = useRef(null); // Track pending history tab load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
   const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
@@ -4862,13 +4863,8 @@ const Parachord = () => {
             setViewHistory(['library', 'history']);
             const tab = savedLastView.historyTab || 'topTracks';
             setHistoryTab(tab);
-            // Load data for the restored tab
-            setTimeout(() => {
-              if (tab === 'topTracks') loadTopTracks();
-              else if (tab === 'topAlbums') loadTopAlbums();
-              else if (tab === 'topArtists') loadTopArtists();
-              // recent tracks load automatically via useEffect
-            }, 100);
+            // Mark that we need to load data once metaServiceConfigs is ready
+            pendingHistoryLoad.current = tab;
             console.log(`📦 Restoring last view: history [${tab}]`);
           } else if (savedLastView.view === 'settings') {
             // Restore settings view with tab
@@ -4993,6 +4989,19 @@ const Parachord = () => {
     window.electron.store.set('last_active_view', viewData);
     console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
   }, [activeView, currentArtist?.name, artistPageTab, historyTab, settingsTab, collectionTab, recommendationsTab]);
+
+  // Load pending history data once metaServiceConfigs is ready
+  useEffect(() => {
+    if (pendingHistoryLoad.current && metaServiceConfigs.lastfm?.username) {
+      const tab = pendingHistoryLoad.current;
+      pendingHistoryLoad.current = null; // Clear pending load
+      console.log(`📦 Loading history data for restored tab: ${tab}`);
+      if (tab === 'topTracks') loadTopTracks();
+      else if (tab === 'topAlbums') loadTopAlbums();
+      else if (tab === 'topArtists') loadTopArtists();
+      // recent tracks load automatically via their own useEffect
+    }
+  }, [metaServiceConfigs.lastfm?.username]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
