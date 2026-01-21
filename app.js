@@ -4839,6 +4839,28 @@ const Parachord = () => {
         console.log('📦 Loaded volume normalization offsets');
       }
 
+      // Load last active view
+      const savedLastView = await window.electron.store.get('last_active_view');
+      if (savedLastView) {
+        const validViews = ['library', 'search', 'artist', 'playlists', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'new-releases'];
+        if (validViews.includes(savedLastView.view)) {
+          // For artist view, we need to restore the artist data
+          if (savedLastView.view === 'artist' && savedLastView.artistName) {
+            // Set the view first, then fetch artist data
+            setActiveView('artist');
+            setViewHistory(['library', 'artist']);
+            // Fetch the artist data (this will populate currentArtist)
+            setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
+            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})`);
+          } else if (savedLastView.view !== 'artist') {
+            // For other views, just set the view directly
+            setActiveView(savedLastView.view);
+            setViewHistory(['library', savedLastView.view]);
+            console.log(`📦 Restoring last view: ${savedLastView.view}`);
+          }
+        }
+      }
+
       // Mark settings as loaded so save useEffect knows it's safe to save
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
@@ -4902,6 +4924,20 @@ const Parachord = () => {
       saveCacheToStore();
     };
   }, []);
+
+  // Save last active view when it changes
+  useEffect(() => {
+    if (!resolverSettingsLoaded.current || !window.electron?.store) return;
+
+    const viewData = { view: activeView };
+    // For artist view, also save the artist name so we can restore it
+    if (activeView === 'artist' && currentArtist?.name) {
+      viewData.artistName = currentArtist.name;
+    }
+
+    window.electron.store.set('last_active_view', viewData);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}`);
+  }, [activeView, currentArtist?.name]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
