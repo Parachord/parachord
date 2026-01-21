@@ -8775,13 +8775,16 @@ ${tracks}
     for (const artist of artists) {
       try {
         const result = await getArtistImage(artist.name);
-        if (result?.url) {
-          setRelatedArtists(prev => prev.map(a =>
-            a.name === artist.name ? { ...a, image: result.url } : a
-          ));
-        }
+        // Update with image URL and mark as loaded
+        setRelatedArtists(prev => prev.map(a =>
+          a.name === artist.name ? { ...a, image: result?.url || null, imageLoaded: true } : a
+        ));
       } catch (err) {
         console.error(`Error fetching image for ${artist.name}:`, err);
+        // Mark as loaded even on error so we show the fallback icon
+        setRelatedArtists(prev => prev.map(a =>
+          a.name === artist.name ? { ...a, imageLoaded: true } : a
+        ));
       }
     }
     console.log(`🎸 Finished fetching related artist images`);
@@ -12067,15 +12070,21 @@ useEffect(() => {
               ),
               // Content with padding
               React.createElement('div', { className: 'p-6' },
-                // Loading state - skeleton grid matching Top Artists style
+                // Loading state - skeleton grid with staggered shimmer animation
                 loadingRelated && React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-8',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   Array.from({ length: 12 }).map((_, i) =>
                     React.createElement('div', { key: `skeleton-${i}`, className: 'flex flex-col items-center' },
-                      React.createElement('div', { className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
+                      React.createElement('div', {
+                        className: 'w-36 h-36 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'w-24 h-4 mt-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      })
                     )
                   )
                 ),
@@ -12120,14 +12129,17 @@ useEffect(() => {
                         className: 'relative w-36 h-36 rounded-full overflow-hidden'
                       },
                         React.createElement('div', {
-                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
+                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
+                            artist.image ? '' : !artist.imageLoaded ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gray-100'
+                          }`,
                           style: {
                             backgroundImage: artist.image ? `url(${artist.image})` : 'none',
                             backgroundSize: artist.image ? 'cover' : '200% 100%',
                             backgroundPosition: 'center'
                           }
                         },
-                          !artist.image && React.createElement('div', {
+                          // Only show fallback icon after image lookup completes with no result
+                          artist.imageLoaded && !artist.image && React.createElement('div', {
                             className: 'w-full h-full flex items-center justify-center text-gray-400'
                           },
                             React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
