@@ -3619,26 +3619,41 @@ const Parachord = () => {
           errorCount = 0; // Reset on success
 
           if (!data.item) {
-            // No track playing - playback stopped
-            console.log('⏹️ Spotify playback stopped');
+            // No track playing - playback stopped or track ended naturally
+            // Check if we have more tracks in queue - if so, this likely means the track ended
+            const queue = currentQueueRef.current;
             clearInterval(pollInterval);
             playbackPollerRef.current = null;
+
+            if (queue && queue.length > 0) {
+              // Track likely ended naturally, advance to next
+              console.log('🎵 Spotify playback ended (no item), advancing to next track...');
+              if (handleNextRef.current) handleNextRef.current();
+            } else {
+              // No queue, playback genuinely stopped
+              console.log('⏹️ Spotify playback stopped (no queue)');
+            }
             return;
           }
 
           const currentUri = data.item.uri;
           const progressMs = data.progress_ms;
           const durationMs = data.item.duration_ms;
+          const isPlaying = data.is_playing;
 
           // Check if we're still playing the same track we started with
           if (currentUri === lastTrackUri) {
-            // If within 1 second of end, trigger next
+            // If within 1 second of end, trigger next (regardless of is_playing state)
             if (progressMs >= durationMs - 1000) {
               console.log('🎵 Track ending, auto-advancing to next...');
               clearInterval(pollInterval);
               playbackPollerRef.current = null;
               // Use ref to avoid stale closure in interval callback
               if (handleNextRef.current) handleNextRef.current();
+            } else if (!isPlaying) {
+              // Track is paused mid-playback - user paused intentionally
+              // Keep polling but don't advance (user might resume)
+              console.log('⏸️ Spotify playback paused, continuing to poll...');
             }
           } else {
             // Track changed - Spotify advanced on its own or user changed track
