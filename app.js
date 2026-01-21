@@ -6129,6 +6129,44 @@ const Parachord = () => {
               )
             );
 
+            // Update criticsPicks so the art shows when returning to Critics Picks page
+            setCriticsPicks(prev =>
+              prev.map(a => {
+                // Match by release title (case-insensitive) and check artist contains match
+                const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
+                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                if (titleMatch && artistMatch) {
+                  return { ...a, albumArt: cacheUrl };
+                }
+                return a;
+              })
+            );
+
+            // Update charts (Pop of the Tops) so the art shows when returning
+            setCharts(prev =>
+              prev.map(a => {
+                const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
+                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                if (titleMatch && artistMatch) {
+                  return { ...a, albumArt: cacheUrl };
+                }
+                return a;
+              })
+            );
+
+            // Update topAlbums (History page) so the art shows when returning
+            setTopAlbums(prev => ({
+              ...prev,
+              albums: prev.albums.map(a => {
+                const titleMatch = a.name.toLowerCase() === release.title.toLowerCase();
+                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                if (titleMatch && artistMatch) {
+                  return { ...a, image: cacheUrl };
+                }
+                return a;
+              })
+            }));
+
             // Save cache to persist
             saveCacheToStore();
           }
@@ -8990,6 +9028,46 @@ ${tracks}
     console.log(`📜 Finished resolving history tracks`);
   };
 
+  // Helper function to search MusicBrainz with fallback for multi-artist names
+  // If artist contains "&" or " and " and search fails, tries with just the first artist name
+  const searchMusicBrainzRelease = async (album, artist) => {
+    const doSearch = async (artistQuery) => {
+      const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artistQuery}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (!mbResponse.ok) {
+        throw new Error('MusicBrainz search failed');
+      }
+
+      const mbData = await mbResponse.json();
+      return mbData.releases || [];
+    };
+
+    // Try with full artist name first
+    let releases = await doSearch(artist);
+
+    // If no results and artist contains "&" or " and ", try with just the first artist
+    if (releases.length === 0) {
+      let firstArtist = null;
+
+      if (artist.includes(' & ')) {
+        firstArtist = artist.split(' & ')[0].trim();
+      } else if (artist.toLowerCase().includes(' and ')) {
+        firstArtist = artist.split(/ and /i)[0].trim();
+      }
+
+      if (firstArtist) {
+        console.log(`MusicBrainz: No results for "${artist}", trying with "${firstArtist}"`);
+        releases = await doSearch(firstArtist);
+      }
+    }
+
+    return releases;
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
@@ -9041,28 +9119,22 @@ ${tracks}
     console.log(`🎵 Opening Critic's Pick: ${album.artist} - ${album.title}`);
 
     try {
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // Search MusicBrainz for the release (with fallback for multi-artist names)
+      const releases = await searchMusicBrainzRelease(album.title, album.artist);
 
-      if (!mbResponse.ok) {
-        throw new Error('MusicBrainz search failed');
-      }
-
-      const mbData = await mbResponse.json();
-
-      if (!mbData.releases || mbData.releases.length === 0) {
+      if (releases.length === 0) {
         // Fallback: just navigate to artist page
         console.log('Release not found in MusicBrainz, navigating to artist page');
         fetchArtistData(album.artist);
         return;
       }
 
-      const release = mbData.releases[0];
+      const release = releases[0];
       const artistCredit = release['artist-credit']?.[0];
+
+      // Cache the release ID mapping so art loaded on album page can be reused
+      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+      albumToReleaseIdCache.current[lookupKey] = release.id;
 
       // Create artist object for the release page
       const artist = {
@@ -9098,28 +9170,22 @@ ${tracks}
     console.log(`🎵 Opening Top Album: ${album.artist} - ${album.name}`);
 
     try {
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album.name}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // Search MusicBrainz for the release (with fallback for multi-artist names)
+      const releases = await searchMusicBrainzRelease(album.name, album.artist);
 
-      if (!mbResponse.ok) {
-        throw new Error('MusicBrainz search failed');
-      }
-
-      const mbData = await mbResponse.json();
-
-      if (!mbData.releases || mbData.releases.length === 0) {
+      if (releases.length === 0) {
         // Fallback: just navigate to artist page
         console.log('Release not found in MusicBrainz, navigating to artist page');
         fetchArtistData(album.artist);
         return;
       }
 
-      const release = mbData.releases[0];
+      const release = releases[0];
       const artistCredit = release['artist-credit']?.[0];
+
+      // Cache the release ID mapping so art loaded on album page can be reused
+      const lookupKey = `${album.artist}-${album.name}`.toLowerCase();
+      albumToReleaseIdCache.current[lookupKey] = release.id;
 
       // Create artist object for the release page
       const artist = {
@@ -9260,25 +9326,15 @@ ${tracks}
     }
 
     try {
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      // Search MusicBrainz for the release (with fallback for multi-artist names)
+      const releases = await searchMusicBrainzRelease(album, artist);
 
-      if (!mbResponse.ok) {
+      if (releases.length === 0) {
         albumToReleaseIdCache.current[lookupKey] = null;
         return null;
       }
 
-      const mbData = await mbResponse.json();
-      if (!mbData.releases || mbData.releases.length === 0) {
-        albumToReleaseIdCache.current[lookupKey] = null;
-        return null;
-      }
-
-      const releaseId = mbData.releases[0].id;
+      const releaseId = releases[0].id;
       albumToReleaseIdCache.current[lookupKey] = releaseId;
 
       // Check if we already have art for this release in the shared cache
