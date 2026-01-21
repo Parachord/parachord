@@ -395,7 +395,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
   );
 };
 
-// SearchArtistCard component - for quick search results with artist image
+// SearchArtistCard component - for quick search results with circular artist image (matches related artists style)
 const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
@@ -417,9 +417,10 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
     // Note: getArtistImage excluded from deps - function identity changes but behavior doesn't
   }, [artist.name]);
 
-  return React.createElement('button', {
+  return React.createElement('div', {
     onClick: onClick,
-    className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
+    className: 'flex-shrink-0 flex flex-col items-center cursor-grab active:cursor-grabbing group',
+    style: { width: '100px' },
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'copy';
@@ -428,7 +429,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
         artist: {
           id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
           name: artist.name,
-          image: null
+          image: imageUrl
         }
       }));
     },
@@ -440,37 +441,34 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
       }
     }
   },
-    // Artist image square
-    React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden' },
-      imageLoading && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center'
+    // Circular artist image (matches related artists style)
+    React.createElement('div', {
+      className: 'relative w-20 h-20 rounded-full overflow-hidden mb-2 mx-auto'
+    },
+      React.createElement('div', {
+        className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
+          imageUrl ? '' : imageLoading ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
+        }`,
+        style: imageUrl ? {
+          backgroundImage: `url(${imageUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        } : imageLoading ? {
+          backgroundSize: '200% 100%'
+        } : {}
       },
-        React.createElement('div', {
-          className: 'w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin'
-        })
-      ),
-      !imageLoading && imageUrl && React.createElement('img', {
-        src: imageUrl,
-        alt: artist.name,
-        className: 'w-full h-full object-cover'
-      }),
-      !imageLoading && !imageUrl && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center text-gray-300'
-      },
-        React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+        // Fallback icon when no image and not loading
+        !imageLoading && !imageUrl && React.createElement('div', {
+          className: 'w-full h-full flex items-center justify-center text-white/70'
+        },
+          React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+          )
         )
       )
     ),
-    // Artist name
-    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, artist.name),
-    // Album and song counts
-    React.createElement('div', { className: 'text-xs text-gray-500' },
-      artist['release-count'] ? `${artist['release-count']} Albums` : ''
-    ),
-    React.createElement('div', { className: 'text-xs text-gray-500' },
-      artist['recording-count'] ? `${artist['recording-count']} Songs` : ''
-    )
+    // Artist name (centered)
+    React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate text-center w-full' }, artist.name)
   );
 };
 
@@ -4818,12 +4816,11 @@ const Parachord = () => {
 
     console.log(`🔍 Resolving recording: ${track.artist} - ${track.title}`);
 
-    // Query enabled resolvers in priority order (limit to first 2 to avoid slow searches)
+    // Query all enabled resolvers in priority order
     const enabledResolvers = resolverOrder
       .filter(id => activeResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
-      .filter(Boolean)
-      .slice(0, 2);
+      .filter(Boolean);
 
     // Parallel resolution with confidence scoring
     const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -4933,16 +4930,28 @@ const Parachord = () => {
     }
   };
 
-  // Fetch album art for search results (albums and tracks)
+  // Fetch album art for search results (albums and tracks) - leverages albumArtCache
   const fetchSearchAlbumArt = async (albums, tracks) => {
     // Fetch album art for albums (release-groups need to be converted to releases first)
     for (const album of albums.slice(0, 10)) { // Limit to first 10 for performance
       if (album.albumArt) continue; // Skip if already has art
 
+      const albumId = album.id;
+
+      // Check albumArtCache first (keyed by release-group ID)
+      const cachedArt = albumArtCache.current[albumId];
+      if (cachedArt?.url) {
+        setSearchResults(prev => ({
+          ...prev,
+          albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: cachedArt.url } : a)
+        }));
+        continue;
+      }
+
       try {
         // Get first release for this release-group
         const releaseResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
+          `https://musicbrainz.org/ws/2/release?release-group=${albumId}&status=official&fmt=json&limit=1`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
 
@@ -4950,6 +4959,18 @@ const Parachord = () => {
           const releaseData = await releaseResponse.json();
           if (releaseData.releases && releaseData.releases.length > 0) {
             const releaseId = releaseData.releases[0].id;
+
+            // Check cache for release ID as well
+            const cachedReleaseArt = albumArtCache.current[releaseId];
+            if (cachedReleaseArt?.url) {
+              // Also cache under release-group ID for future lookups
+              albumArtCache.current[albumId] = cachedReleaseArt;
+              setSearchResults(prev => ({
+                ...prev,
+                albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: cachedReleaseArt.url } : a)
+              }));
+              continue;
+            }
 
             // Fetch album art for this release
             const artResponse = await fetch(
@@ -4961,10 +4982,18 @@ const Parachord = () => {
               const artData = await artResponse.json();
               const frontCover = artData.images.find(img => img.front);
               if (frontCover) {
-                album.albumArt = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
+                const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
 
-                // Update search results to trigger re-render
-                setSearchResults(prev => ({ ...prev, albums: [...prev.albums] }));
+                // Cache under both release-group ID and release ID
+                const cacheEntry = { url: artUrl, timestamp: Date.now() };
+                albumArtCache.current[albumId] = cacheEntry;
+                albumArtCache.current[releaseId] = cacheEntry;
+
+                // Update search results with new album art - create new object reference
+                setSearchResults(prev => ({
+                  ...prev,
+                  albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: artUrl } : a)
+                }));
               }
             }
           }
@@ -4974,13 +5003,26 @@ const Parachord = () => {
       }
     }
 
-    // Fetch album art for tracks (from their releases)
+    // Fetch album art for tracks (from their releases) - check cache first
     for (const track of tracks.slice(0, 10)) { // Limit to first 10 for performance
       if (track.albumArt || !track.releaseId) continue; // Skip if already has art or no release ID
 
+      const trackId = track.id;
+      const releaseId = track.releaseId;
+
+      // Check albumArtCache first
+      const cachedArt = albumArtCache.current[releaseId];
+      if (cachedArt?.url) {
+        setSearchResults(prev => ({
+          ...prev,
+          tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: cachedArt.url } : t)
+        }));
+        continue;
+      }
+
       try {
         const artResponse = await fetch(
-          `https://coverartarchive.org/release/${track.releaseId}`,
+          `https://coverartarchive.org/release/${releaseId}`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
 
@@ -4988,10 +5030,16 @@ const Parachord = () => {
           const artData = await artResponse.json();
           const frontCover = artData.images.find(img => img.front);
           if (frontCover) {
-            track.albumArt = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
+            const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
 
-            // Update search results to trigger re-render
-            setSearchResults(prev => ({ ...prev, tracks: [...prev.tracks] }));
+            // Also cache it for future use
+            albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
+
+            // Update search results with new album art - create new object reference
+            setSearchResults(prev => ({
+              ...prev,
+              tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: artUrl } : t)
+            }));
           }
         }
       } catch (error) {
@@ -11297,46 +11345,80 @@ useEffect(() => {
         // Results area
         // Show skeletons when no query or when searching
         (!searchQuery || isSearching) ?
-          // Loading skeletons
+          // Loading skeletons - single row with overflow hidden
           React.createElement('div', { className: 'space-y-10' },
-            // Artists skeleton
+            // Artists skeleton - circular style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
               React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-                ...Array(7).fill(null).map((_, i) =>
-                  React.createElement('div', { key: `artist-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                ...Array(15).fill(null).map((_, i) =>
+                  React.createElement('div', {
+                    key: `artist-skeleton-${i}`,
+                    className: 'flex-shrink-0 flex flex-col items-center',
+                    style: { width: '100px' }
+                  },
                     React.createElement('div', {
-                      className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                      className: 'w-20 h-20 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer mx-auto',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
                     }),
                     React.createElement('div', {
-                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
                     })
                   )
                 )
               )
             ),
-            // Songs skeleton
+            // Songs skeleton - rounded style
             React.createElement('div', null,
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
               React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-                ...Array(7).fill(null).map((_, i) =>
-                  React.createElement('div', { key: `track-skeleton-${i}`, className: 'flex-shrink-0 w-28' },
+                ...Array(15).fill(null).map((_, i) =>
+                  React.createElement('div', {
+                    key: `track-skeleton-${i}`,
+                    className: 'flex-shrink-0',
+                    style: { width: '120px' }
+                  },
                     React.createElement('div', {
-                      className: 'w-28 h-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
+                      className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
                     }),
                     React.createElement('div', {
-                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 animate-shimmer',
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
                     }),
                     React.createElement('div', {
-                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 animate-shimmer',
+                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 rounded animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-10 mt-1 rounded animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 150}ms` }
+                    })
+                  )
+                )
+              )
+            ),
+            // Albums skeleton - rounded style
+            React.createElement('div', null,
+              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ALBUMS'),
+              React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
+                ...Array(12).fill(null).map((_, i) =>
+                  React.createElement('div', {
+                    key: `album-skeleton-${i}`,
+                    className: 'flex-shrink-0',
+                    style: { width: '160px' }
+                  },
+                    React.createElement('div', {
+                      className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-3 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-3/4 mb-1 rounded animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 50}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 w-1/2 rounded animate-shimmer',
                       style: { backgroundSize: '200% 100%', animationDelay: `${i * 100 + 100}ms` }
                     })
                   )
@@ -11356,11 +11438,11 @@ useEffect(() => {
         :
         // Results
         React.createElement('div', { className: 'space-y-10' },
-          // Artists section with image cards
+          // Artists section with image cards - responsive grid
           searchResults.artists.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS'),
-              searchResults.artists.length > 7 &&
+              searchResults.artists.length > 10 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('artists');
@@ -11369,8 +11451,10 @@ useEffect(() => {
                   className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-              ...searchResults.artists.slice(0, 7).map(artist =>
+            React.createElement('div', {
+              className: 'flex gap-4 overflow-hidden'
+            },
+              ...searchResults.artists.slice(0, 20).map(artist =>
                 React.createElement(SearchArtistCard, {
                   key: artist.id,
                   artist: artist,
@@ -11393,11 +11477,11 @@ useEffect(() => {
             )
           ),
 
-          // Songs/Tracks section with album art cards
+          // Songs/Tracks section with album art cards - responsive grid
           searchResults.tracks.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS'),
-              searchResults.tracks.length > 7 &&
+              searchResults.tracks.length > 10 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('tracks');
@@ -11406,33 +11490,23 @@ useEffect(() => {
                   className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-              ...searchResults.tracks.slice(0, 7).map(track =>
-                React.createElement('button', {
+            React.createElement('div', {
+              className: 'flex gap-4 overflow-hidden'
+            },
+              ...searchResults.tracks.slice(0, 20).map(track =>
+                React.createElement('div', {
                   key: track.id,
-                  onClick: () => handlePlay(track),
-                  className: 'flex-shrink-0 w-28 text-left group cursor-grab active:cursor-grabbing',
-                  draggable: true,
-                  onDragStart: (e) => {
-                    e.dataTransfer.effectAllowed = 'copy';
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'track',
-                      track: {
-                        id: track.id,
-                        title: track.title,
-                        artist: track.artist,
-                        album: track.album,
-                        duration: track.duration,
-                        albumArt: track.albumArt,
-                        sources: track.sources || {}
-                      }
-                    }));
-                  },
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                  className: 'flex-shrink-0 text-left group',
+                  style: { width: '120px' }
+                },
+                  // Album art with rounded corners - this is the draggable part
+                  React.createElement('div', {
+                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 bg-gradient-to-br from-purple-500 to-pink-500 relative flex items-center justify-center cursor-grab active:cursor-grabbing',
+                    draggable: true,
+                    onClick: () => handlePlay(track),
+                    onDragStart: (e) => {
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData('text/plain', JSON.stringify({
                         type: 'track',
                         track: {
                           id: track.id,
@@ -11443,35 +11517,52 @@ useEffect(() => {
                           albumArt: track.albumArt,
                           sources: track.sources || {}
                         }
-                      });
+                      }));
+                    },
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (window.electron?.contextMenu?.showTrackMenu) {
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'track',
+                          track: {
+                            id: track.id,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.album,
+                            duration: track.duration,
+                            albumArt: track.albumArt,
+                            sources: track.sources || {}
+                          }
+                        });
+                      }
                     }
-                  }
-                },
-                  // Album art square
-                  React.createElement('div', { className: 'w-28 h-28 bg-gray-100 mb-2 relative overflow-hidden flex items-center justify-center' },
+                  },
+                    // Placeholder icon always rendered behind
+                    React.createElement('svg', { className: 'w-10 h-10 text-white/60', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                    ),
                     track.albumArt && React.createElement('img', {
                       src: track.albumArt,
                       alt: track.album,
-                      className: 'absolute inset-0 w-full h-full object-cover',
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
                       onError: (e) => { e.target.style.display = 'none'; }
-                    }),
-                    React.createElement('svg', { className: 'w-10 h-10 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                    )
+                    })
                   ),
-                  // Track info
+                  // Track info - not draggable
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate' }, track.artist),
-                  // Resolver icons (small squares like track lists) - always render container for consistent height
-                  React.createElement('div', { className: 'flex gap-1 mt-1', style: { minHeight: '18px' } },
+                  // Resolver icons (small squares like track lists) - show ALL matched resolvers
+                  React.createElement('div', { className: 'flex gap-1 mt-1 flex-wrap', style: { minHeight: '18px' } },
                     ...(track.sources && Object.keys(track.sources).length > 0 ?
-                      Object.keys(track.sources).slice(0, 3).map(source => {
+                      Object.keys(track.sources).map(source => {
                         const colors = {
                           spotify: '#1DB954',
                           youtube: '#FF0000',
                           bandcamp: '#1DA0C3',
                           qobuz: '#0070CC',
-                          applemusic: '#FA243C'
+                          applemusic: '#FA243C',
+                          localfiles: '#6B7280'
                         };
                         return React.createElement('div', {
                           key: source,
@@ -11493,11 +11584,11 @@ useEffect(() => {
             )
           ),
 
-          // Albums section with album art cards
+          // Albums section with album art cards - responsive grid
           searchResults.albums.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ALBUMS'),
-              searchResults.albums.length > 5 &&
+              searchResults.albums.length > 8 &&
                 React.createElement('button', {
                   onClick: () => {
                     setSearchDetailCategory('albums');
@@ -11506,8 +11597,10 @@ useEffect(() => {
                   className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-              ...searchResults.albums.slice(0, 5).map(album =>
+            React.createElement('div', {
+              className: 'flex gap-4 overflow-hidden'
+            },
+              ...searchResults.albums.slice(0, 20).map(album =>
                 React.createElement('button', {
                   key: album.id,
                   onClick: () => handleAlbumClick(album),
@@ -11515,7 +11608,8 @@ useEffect(() => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
                   },
-                  className: 'flex-shrink-0 w-44 text-left group cursor-grab active:cursor-grabbing',
+                  className: 'flex-shrink-0 text-left group cursor-grab active:cursor-grabbing',
+                  style: { width: '160px' },
                   draggable: true,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
@@ -11554,10 +11648,10 @@ useEffect(() => {
                     }
                   }
                 },
-                  // Album art square
-                  React.createElement('div', { className: 'w-44 h-44 bg-gray-100 mb-2 relative overflow-hidden' },
+                  // Album art with rounded corners and hover effect (matches Critics Picks style)
+                  React.createElement('div', { className: 'w-full aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative' },
                     // Placeholder always rendered behind
-                    React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-gray-300' },
+                    React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/60' },
                       React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
                         React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
                         React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
@@ -11567,7 +11661,7 @@ useEffect(() => {
                     album.albumArt && React.createElement('img', {
                       src: album.albumArt,
                       alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover',
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
                       onError: (e) => { e.target.style.display = 'none'; }
                     })
                   ),
@@ -11581,7 +11675,7 @@ useEffect(() => {
             )
           ),
 
-          // Playlists section (kept simple)
+          // Playlists section - single row with overflow hidden
           searchResults.playlists.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
               React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'PLAYLISTS'),
@@ -11594,12 +11688,15 @@ useEffect(() => {
                   className: 'text-xs text-gray-500 hover:text-gray-700'
                 }, 'Show more')
             ),
-            React.createElement('div', { className: 'flex gap-4 overflow-hidden' },
-              ...searchResults.playlists.slice(0, 5).map(playlist =>
+            React.createElement('div', {
+              className: 'flex gap-4 overflow-hidden'
+            },
+              ...searchResults.playlists.slice(0, 20).map(playlist =>
                 React.createElement('button', {
                   key: playlist.title,
                   onClick: () => handlePlaylistClick(playlist),
-                  className: 'flex-shrink-0 w-44 text-left'
+                  className: 'flex-shrink-0 text-left',
+                  style: { width: '160px' }
                 },
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, playlist.title),
                   React.createElement('div', { className: 'text-xs text-gray-500 truncate mt-1' },
