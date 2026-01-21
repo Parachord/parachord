@@ -166,4 +166,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Parachord** - Your music, from everywhere
+**Parachord** - Your music is everywhere but you shouldn't have to be.
