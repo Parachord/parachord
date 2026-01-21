@@ -2430,6 +2430,11 @@ const Parachord = () => {
       if (message.type === 'event') {
         switch (message.event) {
           case 'connected':
+            // Ignore when local file is playing
+            if (audioRef.current && !audioRef.current.paused) {
+              console.log('🎬 Browser connected (ignored - local file playing)');
+              break;
+            }
             // Browser tab with media content connected
             console.log(`🎬 Browser playback connected: ${message.site}`);
             setActiveExtensionTabId(message.tabId);
@@ -2464,6 +2469,11 @@ const Parachord = () => {
               console.log('▶️ Browser playback playing (ignored - streaming active)');
               break;
             }
+            // Ignore when local file is playing
+            if (audioRef.current && !audioRef.current.paused) {
+              console.log('▶️ Browser playback playing (ignored - local file playing)');
+              break;
+            }
             console.log('▶️ Browser playback playing');
             setIsPlaying(true);
             // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
@@ -2477,11 +2487,21 @@ const Parachord = () => {
               console.log('⏸️ Browser playback paused (ignored - streaming active)');
               break;
             }
+            // Ignore when local file is playing
+            if (audioRef.current && !audioRef.current.paused) {
+              console.log('⏸️ Browser playback paused (ignored - local file playing)');
+              break;
+            }
             console.log('⏸️ Browser playback paused');
             setIsPlaying(false);
             break;
 
           case 'ended':
+            // Ignore when local file is playing
+            if (audioRef.current && !audioRef.current.paused) {
+              console.log('⏹️ Browser playback ended (ignored - local file playing)');
+              break;
+            }
             console.log('⏹️ Browser playback ended');
             // Store tab ID to close when next track connects
             pendingCloseTabIdRef.current = message.tabId;
@@ -2491,6 +2511,11 @@ const Parachord = () => {
             break;
 
           case 'tabClosed':
+            // Ignore when local file is playing
+            if (audioRef.current && !audioRef.current.paused) {
+              console.log('🚪 Browser tab closed (ignored - local file playing)');
+              break;
+            }
             setBrowserPlaybackActive(false);
             setActiveExtensionTabId(null);
             // Check if this was a programmatic close (switching tracks)
@@ -2507,8 +2532,9 @@ const Parachord = () => {
 
           case 'heartbeat':
             // Keep-alive from extension - silently maintain active state
-            // Ignore when streaming playback (Spotify) is active
-            if (message.tabId && !streamingPlaybackActiveRef.current) {
+            // Ignore when streaming playback (Spotify) is active or local file is playing
+            const isLocalFilePlaying = audioRef.current && !audioRef.current.paused;
+            if (message.tabId && !streamingPlaybackActiveRef.current && !isLocalFilePlaying) {
               setActiveExtensionTabId(message.tabId);
               setBrowserPlaybackActive(true);
               setIsExternalPlayback(true);
@@ -2526,6 +2552,11 @@ const Parachord = () => {
     // Playback window event handlers (for Bandcamp embedded player, etc.)
     if (window.electron?.playbackWindow?.onEvent) {
       window.electron.playbackWindow.onEvent((eventType) => {
+        // Ignore playback window events when local file is playing
+        if (audioRef.current && !audioRef.current.paused) {
+          console.log(`🎵 Playback window event: ${eventType} (ignored - local file playing)`);
+          return;
+        }
         console.log(`🎵 Playback window event: ${eventType}`);
         switch (eventType) {
           case 'playing':
@@ -2548,6 +2579,11 @@ const Parachord = () => {
 
     if (window.electron?.playbackWindow?.onClosed) {
       window.electron.playbackWindow.onClosed(() => {
+        // Ignore when local file is playing
+        if (audioRef.current && !audioRef.current.paused) {
+          console.log('🎵 Playback window closed (ignored - local file playing)');
+          return;
+        }
         console.log('🎵 Playback window closed');
         setBrowserPlaybackActive(false);
         // Don't auto-advance, just stop playback
@@ -3409,8 +3445,30 @@ const Parachord = () => {
       console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
       console.log('🎵 Source details:', JSON.stringify(sourceToPlay, null, 2));
 
+      // Stop Spotify polling when switching to local file playback
+      if (playbackPollerRef.current) {
+        console.log('⏹️ Stopping Spotify polling for local file playback');
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
+
+      // Pause Spotify if it's playing
+      if (spotifyPlayer && streamingPlaybackActiveRef.current) {
+        console.log('⏹️ Pausing Spotify for local file playback');
+        try {
+          spotifyPlayer.pause();
+        } catch (e) {
+          console.error('Failed to pause Spotify:', e);
+        }
+      }
+
       // Create audio element if needed
       if (!audioRef.current) {
+        console.log('🎵 Creating new Audio element');
         audioRef.current = new Audio();
         audioRef.current.addEventListener('timeupdate', () => {
           if (audioRef.current) {
@@ -3495,7 +3553,6 @@ const Parachord = () => {
         setIsExternalPlayback(false);
 
         console.log('✅ Local file playing');
-        console.log('🎵 Audio element duration after play:', audioRef.current?.duration);
 
         // If audio element has duration now, update the track
         const audioDuration = audioRef.current?.duration;
@@ -3541,6 +3598,13 @@ const Parachord = () => {
       console.log('🌐 External browser track detected, showing prompt...');
       streamingPlaybackActiveRef.current = false; // Allow browser events for external playback
 
+      // Stop any playing local audio before switching to browser playback
+      if (audioRef.current && !audioRef.current.paused) {
+        console.log('⏹️ Stopping local audio before browser playback');
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+
       // Stop Spotify polling when switching to external browser playback
       if (playbackPollerRef.current) {
         console.log('⏹️ Stopping Spotify polling for external browser playback');
@@ -3572,6 +3636,13 @@ const Parachord = () => {
 
     // Use resolver's play method
     try {
+      // Stop any playing local audio before switching to streaming resolver
+      if (audioRef.current && !audioRef.current.paused) {
+        console.log('⏹️ Stopping local audio before streaming playback');
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+
       const config = await getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
 
