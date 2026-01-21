@@ -140,6 +140,7 @@ contextBridge.exposeInMainWorld('electron', {
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
     close: () => ipcRenderer.invoke('close-playback-window'),
+    toggle: () => ipcRenderer.invoke('playback-window-toggle'),
     onClosed: (callback) => {
       ipcRenderer.on('playback-window-closed', () => {
         callback();

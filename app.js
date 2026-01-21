@@ -1139,6 +1139,7 @@ const Parachord = () => {
   const [searchHeaderCollapsed, setSearchHeaderCollapsed] = useState(false); // Search detail header collapse state
   const [activeView, setActiveView] = useState('library');
   const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
+  const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -1196,7 +1197,10 @@ const Parachord = () => {
   const [isExternalPlayback, setIsExternalPlayback] = useState(false);
   const [showExternalPrompt, setShowExternalPrompt] = useState(false);
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
+  const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
+  const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
   const externalTrackTimeoutRef = useRef(null);
+  const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const [settingsTab, setSettingsTab] = useState('marketplace'); // 'marketplace' | 'installed' | 'general' | 'about'
@@ -1281,6 +1285,7 @@ const Parachord = () => {
   // History page state
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
   const pendingHistoryLoad = useRef(null); // Track pending history tab load from view restore
+  const pendingReleaseLoad = useRef(null); // Track pending release/album load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
   const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
@@ -4116,12 +4121,37 @@ const Parachord = () => {
     // Stop any currently playing Spotify track before prompting
     await stopSpotifyPlayback();
 
+    // If user has opted to skip the prompt, auto-open directly
+    if (skipExternalPrompt) {
+      console.log('🚀 Skip prompt enabled, auto-opening external track');
+      setPendingExternalTrack(track);
+      handleOpenExternalTrack(track);
+      return;
+    }
+
     setPendingExternalTrack(track);
     setShowExternalPrompt(true);
+    setExternalTrackCountdown(15);
+
+    // Set countdown interval
+    const interval = setInterval(() => {
+      setExternalTrackCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    externalTrackIntervalRef.current = interval;
 
     // Set 15-second auto-skip timeout
     const timeout = setTimeout(() => {
       console.log('⏱️ External track prompt timeout, auto-skipping...');
+      if (externalTrackIntervalRef.current) {
+        clearInterval(externalTrackIntervalRef.current);
+        externalTrackIntervalRef.current = null;
+      }
       handleSkipExternalTrack();
     }, 15000);
 
@@ -4132,10 +4162,14 @@ const Parachord = () => {
   const handleOpenExternalTrack = async (track) => {
     console.log('✅ User confirmed, opening external track:', track.title);
 
-    // Clear timeout FIRST
+    // Clear timeout and interval FIRST
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
+    }
+    if (externalTrackIntervalRef.current) {
+      clearInterval(externalTrackIntervalRef.current);
+      externalTrackIntervalRef.current = null;
     }
 
     // Determine resolver before state changes
@@ -4189,6 +4223,7 @@ const Parachord = () => {
       setShowExternalPrompt(false);
       setPendingExternalTrack(null);
       setIsExternalPlayback(true);
+      setIsPlaying(true);
       setCurrentTrack(track);
     } catch (error) {
       console.error('❌ Failed to open external track:', error);
@@ -4208,10 +4243,14 @@ const Parachord = () => {
   const handleSkipExternalTrack = () => {
     console.log('⏭️ Skipping external track');
 
-    // Clear timeout if exists
+    // Clear timeout and interval if exists
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
+    }
+    if (externalTrackIntervalRef.current) {
+      clearInterval(externalTrackIntervalRef.current);
+      externalTrackIntervalRef.current = null;
     }
 
     setShowExternalPrompt(false);
@@ -4320,6 +4359,23 @@ const Parachord = () => {
       return;
     }
 
+    // Handle external playback window (Bandcamp embed)
+    if (isExternalPlayback && window.electron?.playbackWindow?.toggle) {
+      console.log('🎸 Toggling playback window play/pause');
+      const result = await window.electron.playbackWindow.toggle();
+      if (result.success) {
+        if (result.state === 'playing') {
+          setIsPlaying(true);
+        } else if (result.state === 'paused') {
+          setIsPlaying(false);
+        } else {
+          // For 'clicked' fallback, just toggle the state
+          setIsPlaying(!isPlaying);
+        }
+      }
+      return;
+    }
+
     // Handle local file playback
     if (audioRef.current && currentTrack?.sources?.localfiles) {
       if (isPlaying) {
@@ -4372,7 +4428,7 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
-    // Stop browser playback if active
+    // Stop browser extension playback if active (YouTube external browser)
     if (browserPlaybackActive && activeExtensionTabId) {
       console.log('⏹️ Stopping browser playback before next track');
       window.electron.extension.sendCommand({
@@ -4385,9 +4441,20 @@ const Parachord = () => {
       setActiveExtensionTabId(null);
     }
 
-    // Close playback window if active (for Bandcamp, etc.)
+    // Close playback window if active (Bandcamp embedded player)
     if (window.electron?.playbackWindow?.close) {
+      console.log('⏹️ Closing playback window before next track');
       await window.electron.playbackWindow.close();
+    }
+
+    // Stop Spotify playback if active
+    if (spotifyPlayer && isPlaying) {
+      try {
+        console.log('⏹️ Pausing Spotify before next track');
+        await spotifyPlayer.pause();
+      } catch (e) {
+        console.error('Error pausing Spotify:', e);
+      }
     }
 
     // Clean up any active polling or timeouts
@@ -4402,6 +4469,10 @@ const Parachord = () => {
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
+    }
+    if (externalTrackIntervalRef.current) {
+      clearInterval(externalTrackIntervalRef.current);
+      externalTrackIntervalRef.current = null;
     }
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
@@ -4460,6 +4531,22 @@ const Parachord = () => {
       setActiveExtensionTabId(null);
     }
 
+    // Close playback window if active (for Bandcamp, etc.)
+    if (window.electron?.playbackWindow?.close) {
+      console.log('⏹️ Closing playback window before restarting track');
+      await window.electron.playbackWindow.close();
+    }
+
+    // Stop Spotify playback if active
+    if (spotifyPlayer && isPlaying) {
+      try {
+        console.log('⏹️ Pausing Spotify before restarting track');
+        await spotifyPlayer.pause();
+      } catch (e) {
+        console.error('Error pausing Spotify:', e);
+      }
+    }
+
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -4472,6 +4559,10 @@ const Parachord = () => {
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
+    }
+    if (externalTrackIntervalRef.current) {
+      clearInterval(externalTrackIntervalRef.current);
+      externalTrackIntervalRef.current = null;
     }
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
@@ -4902,6 +4993,13 @@ const Parachord = () => {
         console.log('📦 Loaded volume normalization offsets');
       }
 
+      // Load skip external prompt preference
+      const savedSkipExternalPrompt = await window.electron.store.get('skip_external_prompt');
+      if (savedSkipExternalPrompt !== undefined) {
+        setSkipExternalPrompt(savedSkipExternalPrompt);
+        console.log('📦 Loaded skip external prompt preference:', savedSkipExternalPrompt);
+      }
+
       // Load last active view
       const savedLastView = await window.electron.store.get('last_active_view');
       if (savedLastView) {
@@ -4918,9 +5016,18 @@ const Parachord = () => {
               // Mark that we're restoring state so useEffect doesn't reset the tab
               restoringStateRef.current = true;
             }
+            // If a release/album was open, save it to load after artist data is fetched
+            if (savedLastView.releaseId) {
+              pendingReleaseLoad.current = {
+                id: savedLastView.releaseId,
+                title: savedLastView.releaseTitle,
+                releaseType: savedLastView.releaseType,
+                date: savedLastView.releaseDate
+              };
+            }
             // Fetch the artist data (this will populate currentArtist)
             setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
-            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}`);
+            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
           } else if (savedLastView.view === 'history') {
             // Restore history view with tab
             setActiveView('history');
@@ -5035,6 +5142,13 @@ const Parachord = () => {
     if (activeView === 'artist' && currentArtist?.name) {
       viewData.artistName = currentArtist.name;
       viewData.artistPageTab = artistPageTab;
+      // Also save current release/album if viewing one
+      if (currentRelease) {
+        viewData.releaseId = currentRelease.id;
+        viewData.releaseTitle = currentRelease.title;
+        viewData.releaseType = currentRelease.releaseType;
+        viewData.releaseDate = currentRelease.date;
+      }
     }
     // Save tab state for views with tabs
     if (activeView === 'history') {
@@ -5051,8 +5165,8 @@ const Parachord = () => {
     }
 
     window.electron.store.set('last_active_view', viewData);
-    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
-  }, [activeView, currentArtist?.name, artistPageTab, historyTab, settingsTab, collectionTab, recommendationsTab]);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
+  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -5067,6 +5181,17 @@ const Parachord = () => {
       else if (tab === 'recent') loadListeningHistory();
     }
   }, [cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
+
+  // Load pending release/album once artist data is available
+  useEffect(() => {
+    if (currentArtist && pendingReleaseLoad.current) {
+      const release = pendingReleaseLoad.current;
+      pendingReleaseLoad.current = null; // Clear pending load
+      console.log(`📦 Loading release for restored view: ${release.title}`);
+      // fetchReleaseData expects a release object and artist object
+      fetchReleaseData(release, currentArtist);
+    }
+  }, [currentArtist]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
@@ -9187,6 +9312,7 @@ ${tracks}
         setSearchPreviewItem(null);
       }
       setViewHistory(prev => [...prev, view]);
+      setForwardHistory([]); // Clear forward history when navigating to a new view
       setActiveView(view);
       if (view === 'settings') {
         setSettingsTab('installed');
@@ -9275,6 +9401,7 @@ ${tracks}
       const currentView = newHistory.pop(); // Remove current view
       const previousView = newHistory[newHistory.length - 1];
       setViewHistory(newHistory);
+      setForwardHistory(prev => [...prev, currentView]); // Add current view to forward history
       setActiveView(previousView);
 
       // Clear associated state when leaving certain views
@@ -9293,6 +9420,16 @@ ${tracks}
         setSelectedPlaylist(null);
         setPlaylistTracks([]);
       }
+    }
+  };
+
+  const navigateForward = () => {
+    if (forwardHistory.length > 0) {
+      const newForwardHistory = [...forwardHistory];
+      const nextView = newForwardHistory.pop();
+      setForwardHistory(newForwardHistory);
+      setViewHistory(prev => [...prev, nextView]);
+      setActiveView(nextView);
     }
   };
 
@@ -10257,8 +10394,9 @@ useEffect(() => {
             )
           ),
           React.createElement('button', {
-            disabled: true, // Forward not implemented yet
-            className: 'p-1.5 rounded text-gray-300 cursor-not-allowed no-drag'
+            onClick: navigateForward,
+            disabled: forwardHistory.length === 0,
+            className: `p-1.5 rounded hover:bg-gray-200 transition-colors no-drag ${forwardHistory.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600'}`
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 5l7 7-7 7' })
@@ -10425,18 +10563,39 @@ useEffect(() => {
 
     // External Track Prompt Modal
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
-      className: 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      onClick: (e) => {
+        if (e.target === e.currentTarget) {
+          // Clear the auto-skip timeout and interval
+          if (externalTrackTimeoutRef.current) {
+            clearTimeout(externalTrackTimeoutRef.current);
+            externalTrackTimeoutRef.current = null;
+          }
+          if (externalTrackIntervalRef.current) {
+            clearInterval(externalTrackIntervalRef.current);
+            externalTrackIntervalRef.current = null;
+          }
+          setIsPlaying(false);
+          setShowExternalPrompt(false);
+          setPendingExternalTrack(null);
+        }
+      }
     },
       React.createElement('div', {
-        className: 'bg-white rounded-lg p-8 max-w-md w-full mx-4 border border-gray-200 shadow-xl relative'
+        className: 'bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden transform transition-all relative',
+        onClick: (e) => e.stopPropagation()
       },
         // Close button
         React.createElement('button', {
           onClick: () => {
-            // Clear the auto-skip timeout
+            // Clear the auto-skip timeout and interval
             if (externalTrackTimeoutRef.current) {
               clearTimeout(externalTrackTimeoutRef.current);
               externalTrackTimeoutRef.current = null;
+            }
+            if (externalTrackIntervalRef.current) {
+              clearInterval(externalTrackIntervalRef.current);
+              externalTrackIntervalRef.current = null;
             }
             // Pause playback and dismiss the prompt
             setIsPlaying(false);
@@ -10444,38 +10603,85 @@ useEffect(() => {
             setPendingExternalTrack(null);
             console.log('⏸️ User dismissed external track prompt, pausing playback');
           },
-          className: 'absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors',
+          className: 'absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors',
           title: 'Dismiss and pause'
-        }, React.createElement(X, { size: 20 })),
-        React.createElement('div', { className: 'text-center mb-6' },
-          React.createElement('div', { className: 'text-6xl mb-4' }, '🌐'),
-          React.createElement('h3', { className: 'text-xl font-semibold text-gray-900 mb-2' },
-            'Next track requires browser'
-          ),
-          React.createElement('div', { className: 'text-gray-600 mb-4' },
-            React.createElement('div', { className: 'font-medium text-gray-900' }, pendingExternalTrack.title),
-            React.createElement('div', { className: 'text-sm text-gray-500' }, pendingExternalTrack.artist),
-            React.createElement('div', { className: 'text-xs text-purple-600 mt-2' },
-              'via ',
-              (allResolvers.find(r =>
-                r.id === (pendingExternalTrack.bandcampUrl ? 'bandcamp' :
-                         pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : 'unknown')
-              )?.name || 'External')
+        }, React.createElement(X, { size: 18 })),
+        // Header with icon
+        React.createElement('div', {
+          className: 'px-6 pt-6 pb-4 flex flex-col items-center text-center'
+        },
+          // Icon circle
+          React.createElement('div', {
+            className: 'w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center mb-4'
+          },
+            React.createElement('svg', {
+              className: 'w-8 h-8 text-purple-600',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor',
+              strokeWidth: 2
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
+              })
             )
           ),
-          React.createElement('div', { className: 'text-xs text-gray-400 mb-6' },
-            'Auto-skipping in 15 seconds...'
+          // Title
+          React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-3' },
+            'Open in Browser'
+          ),
+          // Track info
+          React.createElement('div', { className: 'mb-1' },
+            React.createElement('div', { className: 'font-medium text-gray-900' }, pendingExternalTrack.title),
+            React.createElement('div', { className: 'text-sm text-gray-500' }, pendingExternalTrack.artist)
+          ),
+          // Source badge
+          React.createElement('div', {
+            className: 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mt-2 ' +
+              (pendingExternalTrack.bandcampUrl ? 'bg-cyan-100 text-cyan-700' :
+               pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'bg-red-100 text-red-700' :
+               'bg-purple-100 text-purple-700')
+          },
+            (allResolvers.find(r =>
+              r.id === (pendingExternalTrack.bandcampUrl ? 'bandcamp' :
+                       pendingExternalTrack.youtubeUrl || pendingExternalTrack.youtubeId ? 'youtube' : 'unknown')
+            )?.name || 'External')
           )
         ),
-        React.createElement('div', { className: 'flex gap-3' },
+        // Auto-skip notice with countdown
+        React.createElement('div', { className: 'text-center text-xs text-gray-400 pb-3' },
+          `Auto-skipping in ${externalTrackCountdown} second${externalTrackCountdown !== 1 ? 's' : ''}...`
+        ),
+        // "Don't show again" checkbox
+        React.createElement('label', {
+          className: 'flex items-center justify-center gap-2 px-6 pb-4 cursor-pointer select-none'
+        },
+          React.createElement('input', {
+            type: 'checkbox',
+            id: 'skip-external-prompt-checkbox',
+            className: 'w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer',
+            onChange: async (e) => {
+              const checked = e.target.checked;
+              setSkipExternalPrompt(checked);
+              if (window.electron?.store) {
+                await window.electron.store.set('skip_external_prompt', checked);
+              }
+            }
+          }),
+          React.createElement('span', { className: 'text-xs text-gray-500' }, "Don't show this again")
+        ),
+        // Buttons
+        React.createElement('div', { className: 'px-6 pb-6 flex gap-3' },
           React.createElement('button', {
             onClick: () => handleOpenExternalTrack(pendingExternalTrack),
-            className: 'flex-1 bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-medium transition-colors'
+            className: 'flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-xl font-medium transition-colors'
           }, 'Open in Browser'),
           React.createElement('button', {
             onClick: handleSkipExternalTrack,
-            className: 'flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 px-4 rounded-lg font-medium transition-colors'
-          }, 'Skip Track')
+            className: 'flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium transition-colors'
+          }, 'Skip')
         )
       )
     ),
@@ -15851,6 +16057,62 @@ useEffect(() => {
                       'Reset to Defaults'
                     )
                   )
+                ),
+
+                // Playback Behavior Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Playback Behavior'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Configure how external tracks are handled')
+                  ),
+                  // Skip external prompt toggle
+                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
+                    React.createElement('div', null,
+                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                        'Auto-open external tracks'
+                      ),
+                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                        'Skip the confirmation prompt for Bandcamp, YouTube, etc.'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !skipExternalPrompt;
+                        setSkipExternalPrompt(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('skip_external_prompt', newValue);
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${skipExternalPrompt ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  ),
+                  // Reset prompts button (only shown when skipExternalPrompt is true)
+                  skipExternalPrompt && React.createElement('div', { className: 'mt-4 pt-4 border-t border-gray-100' },
+                    React.createElement('button', {
+                      onClick: async () => {
+                        setSkipExternalPrompt(false);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('skip_external_prompt', false);
+                        }
+                      },
+                      className: 'inline-flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors'
+                    },
+                      React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                      ),
+                      'Show prompts again'
+                    )
+                  )
                 )
               ) // Close space-y-8 wrapper
             ),
@@ -16054,7 +16316,26 @@ useEffect(() => {
                       qobuz: { color: 'text-blue-400' },
                       youtube: { color: 'text-red-400' }
                     }[resolverId] || { color: 'text-purple-400' };
-                    return React.createElement('span', { className: meta.color }, ` · ${resolver.name}`);
+                    return React.createElement(React.Fragment, null,
+                      React.createElement('span', { className: meta.color }, ` · ${resolver.name}`),
+                      // Browser indicator pill for external playback
+                      isExternalPlayback && React.createElement('span', {
+                        className: 'ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-cyan-500/20 text-cyan-300',
+                        title: 'Playing in browser'
+                      },
+                        React.createElement('svg', {
+                          className: 'w-2.5 h-2.5',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor',
+                          strokeWidth: 2.5
+                        },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+                          React.createElement('path', { d: 'M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' })
+                        ),
+                        'browser'
+                      )
+                    );
                   }
                   return null;
                 })()
@@ -16122,7 +16403,7 @@ useEffect(() => {
                     audioRef.current.currentTime = newPosition;
                   }
                 },
-                className: `w-full h-1 rounded-full appearance-none ${!currentTrack || browserPlaybackActive ? 'bg-gray-700 cursor-not-allowed' : 'bg-gray-600 cursor-pointer'}`
+                className: `progress-slider w-full h-1 rounded-full ${!currentTrack || browserPlaybackActive ? 'bg-gray-700' : 'bg-gray-600'}`
               })
             ),
             React.createElement('span', { className: 'text-xs text-gray-400 w-10 text-left tabular-nums' },
@@ -16139,16 +16420,16 @@ useEffect(() => {
               React.createElement('path', { d: 'M17.5,1.5l-8.6,7l-8.4-7v14.9l8.3-6.9l8.8,7.1V1.5z M1.5,14.2V3.6l6.4,5.3L1.5,14.2z M16.5,14.4L9.8,9l6.7-5.4V14.4z' })
             )
           ),
-          // Repeat button (placeholder)
-          React.createElement('button', {
-            disabled: true,
-            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
-            title: 'Repeat (coming soon)'
-          },
-            React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 16 16', fill: 'currentColor' },
-              React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
-            )
-          ),
+          // Repeat button (placeholder) - disabled for now
+          // React.createElement('button', {
+          //   disabled: true,
+          //   className: 'p-2 rounded text-gray-600 cursor-not-allowed',
+          //   title: 'Repeat (coming soon)'
+          // },
+          //   React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 16 16', fill: 'currentColor' },
+          //     React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
+          //   )
+          // ),
           // Volume - only enabled for local files and Spotify
           (() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);
@@ -16192,17 +16473,6 @@ useEffect(() => {
             );
           })()
         )
-      ),
-
-      // External playback notice (if applicable)
-      isExternalPlayback && !browserPlaybackActive && currentTrack && React.createElement('div', {
-        className: 'mt-2 flex items-center justify-center gap-4'
-      },
-        React.createElement('span', { className: 'text-xs text-gray-400' }, '🌐 Playing in browser'),
-        React.createElement('button', {
-          onClick: handleDoneWithExternalTrack,
-          className: 'bg-green-600 hover:bg-green-700 text-white py-1 px-4 rounded text-sm font-medium transition-colors'
-        }, 'Done - Play Next')
       )
     ),
 

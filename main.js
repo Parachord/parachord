@@ -579,14 +579,23 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     playbackWindow.close();
   }
 
+  // Calculate position for upper-right corner of screen
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.workAreaSize;
+  const windowWidth = options.width || 400;
+  const windowHeight = options.height || 200;
+  const padding = 20; // Padding from screen edges
+
   playbackWindow = new BrowserWindow({
-    width: options.width || 400,
-    height: options.height || 200,
+    width: windowWidth,
+    height: windowHeight,
+    x: screenWidth - windowWidth - padding,
+    y: padding,
     minWidth: 300,
-    minHeight: 150,
-    frame: true,
-    titleBarStyle: 'default',
-    title: options.title || 'Parachord Player',
+    minHeight: 100,
+    frame: false,
+    transparent: false,
     backgroundColor: '#1a1a2e',
     webPreferences: {
       nodeIntegration: false,
@@ -619,7 +628,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
             // Wait a bit for audio to be created, then set up event listeners and force play
             setTimeout(() => {
               const audio = document.querySelector('audio');
-              if (audio) {
+              if (audio && !audio._parachordListenersAttached) {
                 // Set up event listeners - use console.log with special prefix that main process will catch
                 audio.addEventListener('play', () => {
                   console.log('__PLAYBACK_EVENT__:playing');
@@ -630,6 +639,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
                 audio.addEventListener('ended', () => {
                   console.log('__PLAYBACK_EVENT__:ended');
                 });
+                audio._parachordListenersAttached = true;
 
                 // Force play
                 audio.play().then(() => {
@@ -674,7 +684,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
         const eventType = message.replace('__PLAYBACK_EVENT__:', '');
         console.log('Playback window event:', eventType);
         // Forward to main renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
           mainWindow.webContents.send('playback-window-event', eventType);
         }
       }
@@ -688,7 +698,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   playbackWindow.on('closed', () => {
     playbackWindow = null;
     // Notify renderer that playback window was closed
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send('playback-window-closed');
     }
   });
@@ -702,6 +712,63 @@ ipcMain.handle('close-playback-window', async () => {
     playbackWindow = null;
   }
   return { success: true };
+});
+
+// Toggle play/pause in the playback window
+ipcMain.handle('playback-window-toggle', async () => {
+  if (playbackWindow && !playbackWindow.isDestroyed()) {
+    try {
+      const result = await playbackWindow.webContents.executeJavaScript(`
+        (function() {
+          const audio = document.querySelector('audio');
+          if (audio) {
+            // Ensure event listeners are attached (may have been missed on initial load)
+            if (!audio._parachordListenersAttached) {
+              audio.addEventListener('play', () => {
+                console.log('__PLAYBACK_EVENT__:playing');
+              });
+              audio.addEventListener('pause', () => {
+                console.log('__PLAYBACK_EVENT__:paused');
+              });
+              audio.addEventListener('ended', () => {
+                console.log('__PLAYBACK_EVENT__:ended');
+              });
+              audio._parachordListenersAttached = true;
+            }
+
+            if (audio.paused) {
+              audio.play();
+              return 'playing';
+            } else {
+              audio.pause();
+              return 'paused';
+            }
+          }
+          // Try clicking the play button as fallback
+          const playBtn = document.querySelector('.playbutton') || document.querySelector('.embeddedplaybutton');
+          if (playBtn) {
+            playBtn.click();
+            return 'clicked';
+          }
+          return 'no-audio';
+        })();
+      `);
+      console.log('Playback window toggle result:', result);
+
+      // Also send the event directly to ensure sync
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        if (result === 'playing' || result === 'paused') {
+          mainWindow.webContents.send('playback-window-event', result);
+        }
+      }
+
+      return { success: true, state: result };
+    } catch (err) {
+      console.error('Failed to toggle playback:', err);
+      return { success: false, error: err.message };
+    }
+  }
+  return { success: false, error: 'No playback window' };
 });
 
 // Proxy fetch handler - bypasses CORS for resolvers that need to fetch external content
