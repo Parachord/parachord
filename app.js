@@ -419,8 +419,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu }) =>
 
   return React.createElement('div', {
     onClick: onClick,
-    className: 'flex-shrink-0 flex flex-col items-center cursor-grab active:cursor-grabbing group',
-    style: { width: '100px' },
+    className: 'flex-1 min-w-0 flex flex-col items-center cursor-grab active:cursor-grabbing group',
+    style: { maxWidth: '120px', minWidth: '80px' },
     draggable: true,
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'copy';
@@ -11354,8 +11354,8 @@ useEffect(() => {
                 ...Array(15).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `artist-skeleton-${i}`,
-                    className: 'flex-shrink-0 flex flex-col items-center',
-                    style: { width: '100px' }
+                    className: 'flex-1 min-w-0 flex flex-col items-center',
+                    style: { maxWidth: '120px', minWidth: '80px' }
                   },
                     React.createElement('div', {
                       className: 'w-20 h-20 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer mx-auto',
@@ -11376,8 +11376,8 @@ useEffect(() => {
                 ...Array(15).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `track-skeleton-${i}`,
-                    className: 'flex-shrink-0',
-                    style: { width: '120px' }
+                    className: 'flex-1 min-w-0',
+                    style: { maxWidth: '140px', minWidth: '100px' }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-2 animate-shimmer',
@@ -11406,8 +11406,8 @@ useEffect(() => {
                 ...Array(12).fill(null).map((_, i) =>
                   React.createElement('div', {
                     key: `album-skeleton-${i}`,
-                    className: 'flex-shrink-0',
-                    style: { width: '160px' }
+                    className: 'flex-1 min-w-0',
+                    style: { maxWidth: '180px', minWidth: '120px' }
                   },
                     React.createElement('div', {
                       className: 'w-full aspect-square rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 mb-3 animate-shimmer',
@@ -11496,8 +11496,8 @@ useEffect(() => {
               ...searchResults.tracks.slice(0, 20).map(track =>
                 React.createElement('div', {
                   key: track.id,
-                  className: 'flex-shrink-0 text-left group',
-                  style: { width: '120px' }
+                  className: 'flex-1 min-w-0 text-left group',
+                  style: { maxWidth: '140px', minWidth: '100px' }
                 },
                   // Album art with rounded corners - this is the draggable part
                   React.createElement('div', {
@@ -11608,8 +11608,8 @@ useEffect(() => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
                   },
-                  className: 'flex-shrink-0 text-left group cursor-grab active:cursor-grabbing',
-                  style: { width: '160px' },
+                  className: 'flex-1 min-w-0 text-left group cursor-grab active:cursor-grabbing',
+                  style: { maxWidth: '180px', minWidth: '120px' },
                   draggable: true,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
