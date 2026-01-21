@@ -4849,9 +4849,50 @@ const Parachord = () => {
             // Set the view first, then fetch artist data
             setActiveView('artist');
             setViewHistory(['library', 'artist']);
+            // Restore artist page tab if saved
+            if (savedLastView.artistPageTab) {
+              setArtistPageTab(savedLastView.artistPageTab);
+            }
             // Fetch the artist data (this will populate currentArtist)
             setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
-            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})`);
+            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}`);
+          } else if (savedLastView.view === 'history') {
+            // Restore history view with tab
+            setActiveView('history');
+            setViewHistory(['library', 'history']);
+            const tab = savedLastView.historyTab || 'topTracks';
+            setHistoryTab(tab);
+            // Load data for the restored tab
+            setTimeout(() => {
+              if (tab === 'topTracks') loadTopTracks();
+              else if (tab === 'topAlbums') loadTopAlbums();
+              else if (tab === 'topArtists') loadTopArtists();
+              // recent tracks load automatically via useEffect
+            }, 100);
+            console.log(`📦 Restoring last view: history [${tab}]`);
+          } else if (savedLastView.view === 'settings') {
+            // Restore settings view with tab
+            setActiveView('settings');
+            setViewHistory(['library', 'settings']);
+            if (savedLastView.settingsTab) {
+              setSettingsTab(savedLastView.settingsTab);
+            }
+            console.log(`📦 Restoring last view: settings [${savedLastView.settingsTab || 'installed'}]`);
+          } else if (savedLastView.view === 'library') {
+            // Restore library view with tab
+            setActiveView('library');
+            if (savedLastView.collectionTab) {
+              setCollectionTab(savedLastView.collectionTab);
+            }
+            console.log(`📦 Restoring last view: library [${savedLastView.collectionTab || 'tracks'}]`);
+          } else if (savedLastView.view === 'recommendations') {
+            // Restore recommendations view with tab
+            setActiveView('recommendations');
+            setViewHistory(['library', 'recommendations']);
+            if (savedLastView.recommendationsTab) {
+              setRecommendationsTab(savedLastView.recommendationsTab);
+            }
+            console.log(`📦 Restoring last view: recommendations [${savedLastView.recommendationsTab || 'artists'}]`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
@@ -4933,11 +4974,25 @@ const Parachord = () => {
     // For artist view, also save the artist name so we can restore it
     if (activeView === 'artist' && currentArtist?.name) {
       viewData.artistName = currentArtist.name;
+      viewData.artistPageTab = artistPageTab;
+    }
+    // Save tab state for views with tabs
+    if (activeView === 'history') {
+      viewData.historyTab = historyTab;
+    }
+    if (activeView === 'settings') {
+      viewData.settingsTab = settingsTab;
+    }
+    if (activeView === 'library') {
+      viewData.collectionTab = collectionTab;
+    }
+    if (activeView === 'recommendations') {
+      viewData.recommendationsTab = recommendationsTab;
     }
 
     window.electron.store.set('last_active_view', viewData);
-    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}`);
-  }, [activeView, currentArtist?.name]);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}`);
+  }, [activeView, currentArtist?.name, artistPageTab, historyTab, settingsTab, collectionTab, recommendationsTab]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
