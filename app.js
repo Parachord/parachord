@@ -20331,7 +20331,7 @@ useEffect(() => {
                   ),
 
                   // Global enable/disable toggle
-                  React.createElement('div', { className: 'flex items-center justify-between py-3 mb-4 px-3 bg-gray-50 rounded-lg' },
+                  React.createElement('div', { className: 'flex items-center justify-between py-3 px-3 bg-gray-50 rounded-lg' },
                     React.createElement('div', null,
                       React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
                         'Enable Scrobbling'
@@ -20356,19 +20356,10 @@ useEffect(() => {
                     )
                   ),
 
-                  // Scrobbler cards
-                  React.createElement('div', { className: 'space-y-4' },
-                    window.scrobblers && window.scrobblers.map(scrobbler =>
-                      React.createElement(ScrobblerSettingsCard, {
-                        key: scrobbler.id,
-                        scrobbler: scrobbler,
-                        config: scrobblerConfigs[scrobbler.id],
-                        onConfigChange: (id, newConfig) => {
-                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        }
-                      })
-                    )
-                  )
+                  // Note about configuring scrobblers
+                  React.createElement('p', {
+                    className: 'text-xs text-gray-500 mt-4 text-center'
+                  }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
                 )
               ) // Close space-y-8 wrapper
             ),
@@ -21120,7 +21111,30 @@ useEffect(() => {
                   // Show API key status if configured
                   metaServiceConfigs.lastfm.apiKey && React.createElement('p', {
                     className: 'mt-2 text-xs text-gray-500'
-                  }, '🔑 Using custom API key')
+                  }, '🔑 Using custom API key'),
+
+                  // Scrobbling section for Last.fm
+                  React.createElement('div', {
+                    className: 'mt-4 pt-4 border-t border-gray-100'
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+                      React.createElement('div', null,
+                        React.createElement('span', { className: 'font-medium text-gray-900' }, 'Scrobbling'),
+                        React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                          'Report your listening history to Last.fm'
+                        )
+                      )
+                    ),
+                    // Scrobbler card for Last.fm
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'lastfm') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'lastfm'),
+                        config: scrobblerConfigs['lastfm'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        }
+                      })
+                  )
                 )
               // Not connected state
               : React.createElement('div', null,
@@ -21215,7 +21229,30 @@ useEffect(() => {
                   // Show token status if configured
                   metaServiceConfigs.listenbrainz.userToken && React.createElement('p', {
                     className: 'mt-2 text-xs text-gray-500'
-                  }, '🔑 User token configured')
+                  }, '🔑 User token configured'),
+
+                  // Scrobbling section for ListenBrainz
+                  React.createElement('div', {
+                    className: 'mt-4 pt-4 border-t border-gray-100'
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+                      React.createElement('div', null,
+                        React.createElement('span', { className: 'font-medium text-gray-900' }, 'Scrobbling'),
+                        React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                          'Report your listening history to ListenBrainz'
+                        )
+                      )
+                    ),
+                    // Scrobbler card for ListenBrainz
+                    window.scrobblers && window.scrobblers.find(s => s.id === 'listenbrainz') &&
+                      React.createElement(ScrobblerSettingsCard, {
+                        scrobbler: window.scrobblers.find(s => s.id === 'listenbrainz'),
+                        config: scrobblerConfigs['listenbrainz'],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        }
+                      })
+                  )
                 )
               // Not connected state
               : React.createElement('div', null,
@@ -21270,6 +21307,27 @@ useEffect(() => {
                     className: 'w-full px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
                   }, listenbrainzConnecting ? 'Connecting...' : 'Connect')
                 )
+          ),
+
+          // Libre.fm scrobbling section
+          selectedResolver.id === 'librefm' && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('span', { className: 'font-medium text-gray-900' }, 'Libre.fm Scrobbling'),
+              React.createElement('p', { className: 'text-xs text-gray-500 mt-1' },
+                'Open-source scrobbling service - an alternative to Last.fm. Report your listening history to Libre.fm.'
+              )
+            ),
+            // Scrobbler card for Libre.fm
+            window.scrobblers && window.scrobblers.find(s => s.id === 'librefm') &&
+              React.createElement(ScrobblerSettingsCard, {
+                scrobbler: window.scrobblers.find(s => s.id === 'librefm'),
+                config: scrobblerConfigs['librefm'],
+                onConfigChange: (id, newConfig) => {
+                  setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                }
+              })
           ),
 
           // Local Files settings section
