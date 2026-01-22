@@ -21079,6 +21079,96 @@ useEffect(() => {
       )
     ),
 
+    // Results Sidebar (slides in from right)
+    resultsSidebar && React.createElement('div', {
+      className: 'fixed top-0 right-0 bottom-0 z-40 flex'
+    },
+      // Backdrop (click to close)
+      React.createElement('div', {
+        className: 'flex-1 bg-black/30 backdrop-blur-sm',
+        onClick: () => setResultsSidebar(null)
+      }),
+
+      // Sidebar panel
+      React.createElement('div', {
+        className: 'w-80 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl',
+        style: { animation: 'slideInRight 0.2s ease-out' }
+      },
+        // Header
+        React.createElement('div', { className: 'p-4 border-b border-gray-700' },
+          React.createElement('div', { className: 'flex items-center justify-between' },
+            React.createElement('h3', { className: 'text-lg font-semibold text-white' }, resultsSidebar.title),
+            React.createElement('button', {
+              onClick: () => setResultsSidebar(null),
+              className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+            },
+              React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+              )
+            )
+          ),
+          resultsSidebar.subtitle && React.createElement('p', {
+            className: 'text-sm text-gray-400 mt-1 truncate'
+          }, resultsSidebar.subtitle)
+        ),
+
+        // Track list
+        React.createElement('div', { className: 'flex-1 overflow-y-auto p-2' },
+          resultsSidebar.tracks.map((track, index) =>
+            React.createElement('div', {
+              key: track.id || index,
+              className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
+            },
+              // Track number
+              React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
+
+              // Track info
+              React.createElement('div', { className: 'flex-1 min-w-0' },
+                React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
+                React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
+              ),
+
+              // Remove button
+              React.createElement('button', {
+                onClick: () => {
+                  setResultsSidebar(prev => ({
+                    ...prev,
+                    tracks: prev.tracks.filter((_, i) => i !== index)
+                  }));
+                },
+                className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                )
+              )
+            )
+          )
+        ),
+
+        // Empty state
+        resultsSidebar.tracks.length === 0 && React.createElement('div', {
+          className: 'flex-1 flex items-center justify-center p-4'
+        },
+          React.createElement('p', { className: 'text-sm text-gray-500' }, 'No tracks remaining')
+        ),
+
+        // Actions
+        React.createElement('div', { className: 'p-4 border-t border-gray-700 space-y-2' },
+          React.createElement('button', {
+            onClick: handleAiAddToQueue,
+            disabled: resultsSidebar.tracks.length === 0,
+            className: 'w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, `Add ${resultsSidebar.tracks.length} to Queue`),
+          React.createElement('button', {
+            onClick: handleAiSavePlaylist,
+            disabled: resultsSidebar.tracks.length === 0,
+            className: 'w-full py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save as Playlist')
+        )
+      )
+    ),
+
     // Import Playlist Dialog Modal
     showUrlImportDialog && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
