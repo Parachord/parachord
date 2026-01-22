@@ -1554,6 +1554,9 @@ const Parachord = () => {
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
+  // Resolver configs (API keys, settings for AI resolvers, etc.)
+  const [resolverConfigs, setResolverConfigs] = useState({});
+  const resolverConfigsRef = useRef({});
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
@@ -4134,6 +4137,11 @@ const Parachord = () => {
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
 
+  // Keep resolverConfigsRef in sync
+  useEffect(() => {
+    resolverConfigsRef.current = resolverConfigs;
+  }, [resolverConfigs]);
+
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
   useEffect(() => {
@@ -6191,6 +6199,13 @@ const Parachord = () => {
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
+      // Load resolver configs (API keys, model settings for AI resolvers, etc.)
+      const savedResolverConfigs = await window.electron.store.get('resolver_configs');
+      if (savedResolverConfigs) {
+        setResolverConfigs(savedResolverConfigs);
+        console.log('📦 Loaded resolver configs:', Object.keys(savedResolverConfigs).join(', ') || 'none');
+      }
+
       // Load meta service configs (Last.fm, etc.)
       const savedMetaServiceConfigs = await window.electron.store.get('meta_service_configs');
       if (savedMetaServiceConfigs) {
@@ -6406,6 +6421,7 @@ const Parachord = () => {
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
+      await window.electron.store.set('resolver_configs', resolverConfigsRef.current);
 
       // Save volume normalization offsets
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
