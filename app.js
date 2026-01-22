@@ -2417,10 +2417,75 @@ const Parachord = () => {
         handlePlay(firstTrack);
       }
 
+      // Background resolution: resolve all tracks across all enabled resolvers
+      // This happens asynchronously so tracks are playable immediately but will
+      // have all sources available for priority-based playback
+      resolveTracksInBackground(resolvedTracks);
+
     } catch (error) {
       console.error(`❌ ${urlType} lookup failed:`, error);
       showToast(`Could not load ${urlType}: ${error.message}`, 'error');
     }
+  };
+
+  // Resolve tracks across all enabled resolvers in the background
+  const resolveTracksInBackground = async (tracks) => {
+    console.log(`🔍 Background resolution: resolving ${tracks.length} tracks across all sources...`);
+
+    const enabledResolvers = resolverOrder
+      .filter(id => activeResolvers.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(r => r && r.capabilities.resolve);
+
+    // Process tracks in batches to avoid overwhelming APIs
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
+      const batch = tracks.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(batch.map(async (track) => {
+        // Skip if track already has multiple sources
+        if (Object.keys(track.sources).length >= enabledResolvers.length) {
+          return;
+        }
+
+        const resolvePromises = enabledResolvers.map(async (resolver) => {
+          // Skip if we already have this source
+          if (track.sources[resolver.id]) return;
+
+          try {
+            const config = await getResolverConfig(resolver.id);
+            const result = await resolver.resolve(track.artist, track.title, track.album, config);
+            if (result) {
+              track.sources[resolver.id] = {
+                ...result,
+                confidence: 0.9
+              };
+              console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
+            }
+          } catch (error) {
+            // Silently fail - background resolution is best-effort
+          }
+        });
+
+        await Promise.all(resolvePromises);
+      }));
+
+      // Small delay between batches to be nice to APIs
+      if (i + BATCH_SIZE < tracks.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // Update queue state with resolved sources
+    setCurrentQueue(prev => prev.map(queueTrack => {
+      const resolvedTrack = tracks.find(t => t.id === queueTrack.id);
+      if (resolvedTrack && Object.keys(resolvedTrack.sources).length > Object.keys(queueTrack.sources).length) {
+        return { ...queueTrack, sources: resolvedTrack.sources };
+      }
+      return queueTrack;
+    }));
+
+    console.log(`✅ Background resolution complete for ${tracks.length} tracks`);
   };
 
   // Handle single track URL drop (original handleUrlDrop logic)
