@@ -1366,6 +1366,7 @@ const Parachord = () => {
   const pendingHistoryLoad = useRef(null); // Track pending history tab load from view restore
   const pendingReleaseLoad = useRef(null); // Track pending release/album load from view restore
   const [pendingPlaylistLoad, setPendingPlaylistLoad] = useState(null); // Track pending playlist load from view restore
+  const [pendingFriendLoad, setPendingFriendLoad] = useState(null); // Track pending friend load from view restore
   const [historyPeriod, setHistoryPeriod] = useState('7day'); // 'overall' | '7day' | '1month' | '3month' | '6month' | '12month'
   const [historyPeriodDropdownOpen, setHistoryPeriodDropdownOpen] = useState(false);
   const [historyHeaderCollapsed, setHistoryHeaderCollapsed] = useState(false);
@@ -1913,6 +1914,7 @@ const Parachord = () => {
   const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+  const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, items: [] }); // Custom context menu state
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
@@ -3265,6 +3267,32 @@ const Parachord = () => {
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
   }, []);
+
+  // Show custom context menu
+  const showContextMenu = useCallback((x, y, items) => {
+    // Adjust position to keep menu on screen
+    const menuWidth = 200;
+    const menuHeight = items.length * 36;
+    const adjustedX = Math.min(x, window.innerWidth - menuWidth - 10);
+    const adjustedY = Math.min(y, window.innerHeight - menuHeight - 10);
+    setContextMenu({ show: true, x: adjustedX, y: adjustedY, items });
+  }, []);
+
+  // Hide context menu
+  const hideContextMenu = useCallback(() => {
+    setContextMenu({ show: false, x: 0, y: 0, items: [] });
+  }, []);
+
+  // Close context menu on Escape key
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && contextMenu.show) {
+        hideContextMenu();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [contextMenu.show, hideContextMenu]);
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
@@ -5663,6 +5691,16 @@ const Parachord = () => {
             setActiveView('critics-picks');
             setViewHistory(['library', 'critics-picks']);
             console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
+          } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
+            // Restore friend history view - need to find the friend and load their data
+            setActiveView('friendHistory');
+            setViewHistory(['library', 'friendHistory']);
+            // Store pending friend load - will be processed once friends are loaded
+            setPendingFriendLoad({
+              id: savedLastView.friendId,
+              tab: savedLastView.friendHistoryTab || 'recent'
+            });
+            console.log(`📦 Restoring last view: friendHistory (${savedLastView.friendId})`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
@@ -5773,10 +5811,14 @@ const Parachord = () => {
       viewData.playlistId = selectedPlaylist.id;
       viewData.playlistTitle = selectedPlaylist.title;
     }
+    if (activeView === 'friendHistory' && currentFriend) {
+      viewData.friendId = currentFriend.id;
+      viewData.friendHistoryTab = friendHistoryTab;
+    }
 
     window.electron.store.set('last_active_view', viewData);
-    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}`);
-  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab, selectedPlaylist?.id]);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}${viewData.friendId ? ` (friend: ${viewData.friendId})` : ''}`);
+  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab, selectedPlaylist?.id, currentFriend?.id, friendHistoryTab]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -5832,6 +5874,30 @@ const Parachord = () => {
       return () => clearTimeout(timer);
     }
   }, [pendingPlaylistLoad]);
+
+  // Load pending friend once friends are loaded
+  useEffect(() => {
+    if (pendingFriendLoad && friends.length > 0) {
+      const friend = friends.find(f => f.id === pendingFriendLoad.id);
+      if (friend) {
+        console.log(`📦 Loading friend for restored view: ${friend.displayName}`);
+        setCurrentFriend(friend);
+        setFriendHistoryTab(pendingFriendLoad.tab || 'recent');
+        setPendingFriendLoad(null);
+        // Load the appropriate data
+        if (pendingFriendLoad.tab === 'topTracks') loadFriendTopTracks(friend);
+        else if (pendingFriendLoad.tab === 'topAlbums') loadFriendTopAlbums(friend);
+        else if (pendingFriendLoad.tab === 'topArtists') loadFriendTopArtists(friend);
+        else loadFriendRecentTracks(friend);
+      } else {
+        // Friend not found, fall back to library
+        console.log(`📦 Friend not found: ${pendingFriendLoad.id}, falling back to library`);
+        setPendingFriendLoad(null);
+        setActiveView('library');
+        setViewHistory(['library']);
+      }
+    }
+  }, [friends, pendingFriendLoad]);
 
   // Fetch artist data and discography from MusicBrainz
   const fetchArtistData = async (artistName) => {
@@ -9323,9 +9389,9 @@ ${tracks}
 
       setFriendHistoryData(prev => ({ ...prev, recent: tracks }));
 
-      // Resolve tracks in background (if resolveHistoryTracks exists)
-      if (tracks.length > 0 && typeof resolveHistoryTracks === 'function') {
-        resolveHistoryTracks(tracks);
+      // Resolve tracks in background
+      if (tracks.length > 0) {
+        resolveFriendHistoryTracks(tracks, 'recent');
       }
     } catch (error) {
       console.error('Failed to load friend recent tracks:', error);
@@ -9366,8 +9432,9 @@ ${tracks}
 
       setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
 
-      if (tracks.length > 0 && typeof resolveTopTracks === 'function') {
-        resolveTopTracks(tracks);
+      // Resolve tracks in background
+      if (tracks.length > 0) {
+        resolveFriendHistoryTracks(tracks, 'topTracks');
       }
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
@@ -9408,6 +9475,11 @@ ${tracks}
       }));
 
       setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
+
+      // Resolve tracks in background
+      if (tracks.length > 0) {
+        resolveFriendHistoryTracks(tracks, 'topTracks');
+      }
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
       showToast('Failed to load top tracks', 'error');
@@ -9708,6 +9780,53 @@ ${tracks}
     }
 
     console.log(`📜 Finished resolving history tracks`);
+  };
+
+  // Resolve friend history tracks - similar to resolveHistoryTracks but updates friendHistoryData
+  const resolveFriendHistoryTracks = async (tracks, dataKey) => {
+    console.log(`👥 Resolving ${tracks.length} friend ${dataKey} tracks...`);
+
+    for (const track of tracks) {
+      // Check if queue resolution has priority - if so, pause
+      if (queueResolutionActiveRef.current) {
+        console.log(`⏸️ Pausing friend history resolution - queue resolution has priority`);
+        while (queueResolutionActiveRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`▶️ Resuming friend history resolution`);
+      }
+
+      // Resolve all sources for this track
+      for (const resolverId of activeResolvers) {
+        const resolver = allResolvers.find(r => r.id === resolverId);
+        if (!resolver || !resolver.capabilities.resolve) continue;
+
+        try {
+          const config = await getResolverConfig(resolverId);
+          const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
+
+          if (resolved) {
+            // Update the track's sources in friendHistoryData
+            setFriendHistoryData(prev => ({
+              ...prev,
+              [dataKey]: prev[dataKey].map(t =>
+                t.id === track.id
+                  ? {
+                      ...t,
+                      sources: { ...t.sources, [resolverId]: resolved },
+                      duration: t.duration || resolved.duration || null
+                    }
+                  : t
+              )
+            }));
+          }
+        } catch (error) {
+          // Silent fail for resolution errors
+        }
+      }
+    }
+
+    console.log(`👥 Finished resolving friend ${dataKey} tracks`);
   };
 
   // Helper function to search MusicBrainz with fallback for multi-artist names
@@ -12047,34 +12166,33 @@ useEffect(() => {
               ),
               'History'
             )
-          )
-        ),
+          ),
 
-        // FRIENDS section (only show if there are pinned friends OR dragging a friend over)
-        (pinnedFriendIds.length > 0 || friendDragOverSidebar) && React.createElement('div', {
-          className: `mb-4 rounded-lg transition-colors ${friendDragOverSidebar ? 'bg-purple-50 ring-2 ring-purple-300 ring-inset' : ''}`,
-          onDragOver: (e) => {
-            if (e.dataTransfer.types.includes('friendid')) {
+          // FRIENDS section (only show if there are pinned friends OR dragging a friend over)
+          (pinnedFriendIds.length > 0 || friendDragOverSidebar) && React.createElement('div', {
+            className: `rounded-lg transition-colors ${friendDragOverSidebar ? 'bg-purple-50 ring-2 ring-purple-300 ring-inset' : ''}`,
+            onDragOver: (e) => {
+              if (e.dataTransfer.types.includes('friendid')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                setFriendDragOverSidebar(true);
+              }
+            },
+            onDragLeave: (e) => {
+              // Only reset if leaving the section entirely
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                setFriendDragOverSidebar(false);
+              }
+            },
+            onDrop: (e) => {
               e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-              setFriendDragOverSidebar(true);
-            }
-          },
-          onDragLeave: (e) => {
-            // Only reset if leaving the section entirely
-            if (!e.currentTarget.contains(e.relatedTarget)) {
               setFriendDragOverSidebar(false);
+              const friendId = e.dataTransfer.getData('friendId');
+              if (friendId && !pinnedFriendIds.includes(friendId)) {
+                pinFriend(friendId);
+              }
             }
           },
-          onDrop: (e) => {
-            e.preventDefault();
-            setFriendDragOverSidebar(false);
-            const friendId = e.dataTransfer.getData('friendId');
-            if (friendId && !pinnedFriendIds.includes(friendId)) {
-              pinFriend(friendId);
-            }
-          }
-        },
           React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
           // Show drop hint when dragging but no friends pinned yet
           friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
@@ -12084,10 +12202,13 @@ useEffect(() => {
             const friend = friends.find(f => f.id === friendId);
             if (!friend) return null;
             const onAir = isOnAir(friend);
+            const isSelected = activeView === 'friendHistory' && currentFriend?.id === friend.id;
 
             return React.createElement('div', {
               key: friend.id,
-              className: 'px-3 py-2 hover:bg-gray-100 rounded cursor-pointer group',
+              className: `px-3 py-2 rounded cursor-pointer group transition-colors ${
+                isSelected ? 'bg-gray-200 text-gray-900' : 'hover:bg-gray-100'
+              }`,
               draggable: true,
               onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
@@ -12168,30 +12289,31 @@ useEffect(() => {
               )
             );
           })
-        ),
+          ),
 
-        // Empty state hint for Friends when no friends pinned but friends exist
-        friends.length > 0 && pinnedFriendIds.length === 0 && !friendDragOverSidebar && React.createElement('div', {
-          className: 'mb-4 rounded-lg transition-colors',
-          onDragOver: (e) => {
-            if (e.dataTransfer.types.includes('friendid')) {
+          // Empty state hint for Friends when no friends pinned but friends exist
+          friends.length > 0 && pinnedFriendIds.length === 0 && !friendDragOverSidebar && React.createElement('div', {
+            className: 'rounded-lg transition-colors',
+            onDragOver: (e) => {
+              if (e.dataTransfer.types.includes('friendid')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                setFriendDragOverSidebar(true);
+              }
+            },
+            onDragLeave: () => setFriendDragOverSidebar(false),
+            onDrop: (e) => {
               e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-              setFriendDragOverSidebar(true);
+              setFriendDragOverSidebar(false);
+              const friendId = e.dataTransfer.getData('friendId');
+              if (friendId && !pinnedFriendIds.includes(friendId)) {
+                pinFriend(friendId);
+              }
             }
           },
-          onDragLeave: () => setFriendDragOverSidebar(false),
-          onDrop: (e) => {
-            e.preventDefault();
-            setFriendDragOverSidebar(false);
-            const friendId = e.dataTransfer.getData('friendId');
-            if (friendId && !pinnedFriendIds.includes(friendId)) {
-              pinFriend(friendId);
-            }
-          }
-        },
-          React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
-          React.createElement('div', { className: 'px-3 py-2 text-xs text-gray-400 italic' }, 'Drag friends here to pin')
+            React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+            React.createElement('div', { className: 'px-3 py-2 text-xs text-gray-400 italic' }, 'Drag friends here to pin')
+          )
         ),
 
         // Settings button at bottom of sidebar
@@ -12217,6 +12339,37 @@ useEffect(() => {
           toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
         }`
       }, toast.message),
+
+      // Custom context menu
+      contextMenu.show && React.createElement('div', {
+        className: 'fixed inset-0 z-[100]',
+        onClick: hideContextMenu,
+        onContextMenu: (e) => { e.preventDefault(); hideContextMenu(); }
+      },
+        React.createElement('div', {
+          className: 'absolute bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]',
+          style: { left: contextMenu.x, top: contextMenu.y },
+          onClick: (e) => e.stopPropagation()
+        },
+          contextMenu.items.map((item, index) =>
+            item.type === 'separator'
+              ? React.createElement('div', {
+                  key: `sep-${index}`,
+                  className: 'border-t border-gray-200 my-1'
+                })
+              : React.createElement('button', {
+                  key: item.label,
+                  onClick: () => {
+                    hideContextMenu();
+                    if (item.action) item.action();
+                  },
+                  className: `w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                    item.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700'
+                  }`
+                }, item.label)
+          )
+        )
+      ),
 
       // Main content area
       React.createElement('div', {
@@ -16232,16 +16385,14 @@ useEffect(() => {
                       onClick: () => navigateToFriend(friend),
                       onContextMenu: (e) => {
                         e.preventDefault();
-                        if (typeof showContextMenu === 'function') {
-                          showContextMenu(e.clientX, e.clientY, [
-                            { label: 'View History', action: () => navigateToFriend(friend) },
-                            isPinned
-                              ? { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) }
-                              : { label: 'Pin to Sidebar', action: () => pinFriend(friend.id) },
-                            { type: 'separator' },
-                            { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
-                          ]);
-                        }
+                        showContextMenu(e.clientX, e.clientY, [
+                          { label: 'View History', action: () => navigateToFriend(friend) },
+                          isPinned
+                            ? { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) }
+                            : { label: 'Pin to Sidebar', action: () => pinFriend(friend.id) },
+                          { type: 'separator' },
+                          { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
+                        ]);
                       }
                     },
                       // Hexagonal avatar
@@ -18146,7 +18297,7 @@ useEffect(() => {
           )
         ),
 
-        // Friend History View
+        // Friend History View - matching History page structure exactly
         activeView === 'friendHistory' && currentFriend && (() => {
           return React.createElement('div', {
             className: 'flex-1 flex flex-col h-full',
@@ -18177,17 +18328,17 @@ useEffect(() => {
                   backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpolygon fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'1.5\' points=\'30,5 55,20 55,50 30,65 5,50 5,20\'/%3E%3C/svg%3E")'
                 }
               }),
-              // EXPANDED STATE - Content
+              // EXPANDED STATE - Centered content with tabs (matching History exactly)
               !historyHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-8 z-10',
+                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
                 style: {
                   opacity: historyHeaderCollapsed ? 0 : 1,
                   transition: 'opacity 300ms ease-out'
                 }
               },
-                // Hexagonal avatar
+                // Hexagonal avatar centered
                 React.createElement('div', {
-                  className: 'w-32 h-32 mr-6 overflow-hidden flex-shrink-0',
+                  className: 'w-24 h-24 mb-4 overflow-hidden',
                   style: {
                     clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
                   }
@@ -18199,116 +18350,42 @@ useEffect(() => {
                         className: 'w-full h-full object-cover'
                       })
                     : React.createElement('div', {
-                        className: 'w-full h-full flex items-center justify-center text-4xl font-medium bg-white/20 text-white'
+                        className: 'w-full h-full flex items-center justify-center text-3xl font-medium bg-white/20 text-white'
                       }, currentFriend.displayName.charAt(0).toUpperCase())
                 ),
-                // Info
-                React.createElement('div', { className: 'flex-1' },
-                  React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
-                    React.createElement('h1', {
-                      className: 'text-3xl font-bold text-white',
-                      style: { textShadow: '0 2px 10px rgba(0,0,0,0.3)' }
-                    }, currentFriend.displayName),
-                    // On-air badge
-                    isOnAir(currentFriend) && React.createElement('span', {
-                      className: 'px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full flex items-center gap-1'
-                    },
-                      React.createElement('span', { className: 'w-2 h-2 bg-white rounded-full animate-pulse' }),
-                      'On Air'
-                    ),
-                    // Service badge
-                    React.createElement('span', {
-                      className: `px-2 py-1 text-xs font-medium rounded-full ${
-                        currentFriend.service === 'lastfm' ? 'bg-red-500/80 text-white' : 'bg-orange-500/80 text-white'
-                      }`
-                    }, currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz')
-                  ),
-                  // Current track if on-air
-                  isOnAir(currentFriend) && currentFriend.cachedRecentTrack && React.createElement('p', {
-                    className: 'text-white/80 text-sm mb-3'
-                  }, `Now playing: ${currentFriend.cachedRecentTrack.name} - ${currentFriend.cachedRecentTrack.artist}`),
-                  // Tabs - matching Collection style
-                  React.createElement('div', {
-                    className: 'flex items-center gap-1',
-                    style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                // Name with badges
+                React.createElement('div', { className: 'flex items-center gap-3 mb-2' },
+                  React.createElement('h1', {
+                    className: 'text-4xl font-light text-white',
+                    style: {
+                      textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                      letterSpacing: '0.2em',
+                      textTransform: 'uppercase'
+                    }
+                  }, currentFriend.displayName),
+                  // On-air badge
+                  isOnAir(currentFriend) && React.createElement('span', {
+                    className: 'px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full flex items-center gap-1'
                   },
-                    [
-                      { key: 'recent', label: 'Recent' },
-                      { key: 'topTracks', label: 'Top Tracks' },
-                      { key: 'topAlbums', label: 'Top Albums' },
-                      { key: 'topArtists', label: 'Top Artists' }
-                    ].map((tab, index) => [
-                      index > 0 && React.createElement('span', { key: `sep-${tab.key}`, className: 'text-white/50 mx-2' }, '|'),
-                      React.createElement('button', {
-                        key: tab.key,
-                        onClick: () => {
-                          setFriendHistoryTab(tab.key);
-                          if (tab.key === 'recent') loadFriendRecentTracks(currentFriend);
-                          else if (tab.key === 'topTracks') loadFriendTopTracks(currentFriend);
-                          else if (tab.key === 'topAlbums') loadFriendTopAlbums(currentFriend);
-                          else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
-                        },
-                        className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                          friendHistoryTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
-                        }`
-                      }, tab.label)
-                    ]).flat().filter(Boolean)
+                    React.createElement('span', { className: 'w-2 h-2 bg-white rounded-full animate-pulse' }),
+                    'On Air'
                   )
                 ),
-                // Pin button
-                React.createElement('button', {
-                  onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
-                  className: 'ml-4 px-4 py-2 rounded-full text-sm font-medium transition-colors no-drag',
-                  style: {
-                    backgroundColor: pinnedFriendIds.includes(currentFriend.id) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.9)',
-                    color: pinnedFriendIds.includes(currentFriend.id) ? 'white' : '#9333ea'
-                  }
-                }, pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to Sidebar')
-              ),
-              // COLLAPSED STATE - Inline layout
-              historyHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-6 justify-between z-10',
-                style: {
-                  opacity: historyHeaderCollapsed ? 1 : 0,
-                  transition: 'opacity 300ms ease-out'
-                }
-              },
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                  React.createElement('div', {
-                    className: 'w-10 h-10 overflow-hidden',
-                    style: {
-                      clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                    }
-                  },
-                    currentFriend.avatarUrl
-                      ? React.createElement('img', {
-                          src: currentFriend.avatarUrl,
-                          alt: currentFriend.displayName,
-                          className: 'w-full h-full object-cover'
-                        })
-                      : React.createElement('div', {
-                          className: 'w-full h-full flex items-center justify-center text-sm font-medium bg-white/20 text-white'
-                        }, currentFriend.displayName.charAt(0).toUpperCase())
-                  ),
-                  React.createElement('h2', { className: 'text-lg font-semibold text-white' }, currentFriend.displayName),
-                  isOnAir(currentFriend) && React.createElement('span', {
-                    className: 'w-2 h-2 bg-green-400 rounded-full'
-                  })
-                ),
-                // Tabs in collapsed mode - matching Collection style
+                // Tabs in expanded state (matching History)
                 React.createElement('div', {
-                  className: 'flex items-center gap-1',
+                  className: 'flex items-center gap-1 mt-4',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   [
-                    { key: 'recent', label: 'Recent' },
+                    { key: 'recent', label: 'Recently Played' },
                     { key: 'topTracks', label: 'Top Tracks' },
                     { key: 'topAlbums', label: 'Top Albums' },
                     { key: 'topArtists', label: 'Top Artists' }
-                  ].map((tab, index) => [
-                    index > 0 && React.createElement('span', { key: `csep-${tab.key}`, className: 'text-white/50 mx-2' }, '|'),
+                  ].map((tab, i) => React.createElement(React.Fragment, { key: tab.key },
+                    i > 0 && React.createElement('span', {
+                      className: 'text-white/50 mx-2'
+                    }, '|'),
                     React.createElement('button', {
-                      key: `c-${tab.key}`,
                       onClick: () => {
                         setFriendHistoryTab(tab.key);
                         if (tab.key === 'recent') loadFriendRecentTracks(currentFriend);
@@ -18320,29 +18397,92 @@ useEffect(() => {
                         friendHistoryTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
                       }`
                     }, tab.label)
-                  ]).flat().filter(Boolean)
+                  ))
+                ),
+                // Service subtitle
+                React.createElement('p', {
+                  className: 'mt-2 text-white/80 text-sm'
+                }, `Listening activity from ${currentFriend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`)
+              ),
+              // COLLAPSED STATE - Inline layout with tabs (matching History)
+              historyHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex items-center px-6 z-10',
+                style: {
+                  opacity: historyHeaderCollapsed ? 1 : 0,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                // Small avatar
+                React.createElement('div', {
+                  className: 'w-10 h-10 mr-4 overflow-hidden flex-shrink-0',
+                  style: {
+                    clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                  }
+                },
+                  currentFriend.avatarUrl
+                    ? React.createElement('img', {
+                        src: currentFriend.avatarUrl,
+                        alt: currentFriend.displayName,
+                        className: 'w-full h-full object-cover'
+                      })
+                    : React.createElement('div', {
+                        className: 'w-full h-full flex items-center justify-center text-sm font-medium bg-white/20 text-white'
+                      }, currentFriend.displayName.charAt(0).toUpperCase())
+                ),
+                React.createElement('h1', {
+                  className: 'text-2xl font-light text-white mr-6',
+                  style: {
+                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase'
+                  }
+                }, currentFriend.displayName),
+                // On-air dot
+                isOnAir(currentFriend) && React.createElement('span', {
+                  className: 'w-2.5 h-2.5 bg-green-400 rounded-full mr-4'
+                }),
+                // Tabs in collapsed mode
+                React.createElement('div', {
+                  className: 'flex items-center gap-1',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                },
+                  [
+                    { key: 'recent', label: 'Recent' },
+                    { key: 'topTracks', label: 'Top Tracks' },
+                    { key: 'topAlbums', label: 'Top Albums' },
+                    { key: 'topArtists', label: 'Top Artists' }
+                  ].map((tab, i) => React.createElement(React.Fragment, { key: `c-${tab.key}` },
+                    i > 0 && React.createElement('span', {
+                      className: 'text-white/50 mx-2'
+                    }, '|'),
+                    React.createElement('button', {
+                      onClick: () => {
+                        setFriendHistoryTab(tab.key);
+                        if (tab.key === 'recent') loadFriendRecentTracks(currentFriend);
+                        else if (tab.key === 'topTracks') loadFriendTopTracks(currentFriend);
+                        else if (tab.key === 'topAlbums') loadFriendTopAlbums(currentFriend);
+                        else if (tab.key === 'topArtists') loadFriendTopArtists(currentFriend);
+                      },
+                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                        friendHistoryTab === tab.key ? 'text-white' : 'text-white/60 hover:text-white'
+                      }`
+                    }, tab.label)
+                  ))
                 )
               )
             ),
-            // Content area with scroll handler for header collapse
+            // Filter bar (outside scrollable area - matching History exactly)
             React.createElement('div', {
-              className: 'flex-1 overflow-y-auto scrollable-content',
-              onScroll: (e) => {
-                const scrollTop = e.target.scrollTop;
-                if (scrollTop > 50 && !historyHeaderCollapsed) {
-                  setHistoryHeaderCollapsed(true);
-                } else if (scrollTop <= 50 && historyHeaderCollapsed) {
-                  setHistoryHeaderCollapsed(false);
-                }
-              }
+              className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+              style: { flexShrink: 0 }
             },
-              // Period filter (for non-recent tabs)
-              friendHistoryTab !== 'recent' && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
-              },
+              // Period dropdown for top charts, empty spacer for recent
+              friendHistoryTab === 'recent' ?
+                React.createElement('div', { className: 'flex-1' })
+              :
                 React.createElement('div', { className: 'relative' },
                   React.createElement('button', {
-                    onClick: () => setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen),
+                    onClick: (e) => { e.stopPropagation(); setHistoryPeriodDropdownOpen(!historyPeriodDropdownOpen); },
                     className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
                   },
                     React.createElement('span', null, historyPeriodOptions.find(o => o.value === friendHistoryPeriod)?.label || 'Period'),
@@ -18356,23 +18496,61 @@ useEffect(() => {
                     historyPeriodOptions.map(option =>
                       React.createElement('button', {
                         key: option.value,
-                        onClick: () => {
+                        onClick: (e) => {
+                          e.stopPropagation();
                           setFriendHistoryPeriod(option.value);
                           setHistoryPeriodDropdownOpen(false);
                           if (friendHistoryTab === 'topTracks') loadFriendTopTracks(currentFriend, option.value);
                           else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend, option.value);
                           else if (friendHistoryTab === 'topArtists') loadFriendTopArtists(currentFriend, option.value);
                         },
-                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
                           friendHistoryPeriod === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
                         }`
-                      }, option.label)
+                      },
+                        option.label,
+                        friendHistoryPeriod === option.value && React.createElement('svg', {
+                          className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                        },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                        )
+                      )
                     )
                   )
-                )
-              ),
-              // Content
-              React.createElement('div', { className: 'p-6' },
+                ),
+              React.createElement('div', { className: 'flex-1' }),
+              // Pin/Unpin button on right side of filter bar
+              React.createElement('button', {
+                onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
+                className: `flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors ${
+                  pinnedFriendIds.includes(currentFriend.id)
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`
+              },
+                React.createElement('svg', {
+                  className: 'w-4 h-4',
+                  fill: pinnedFriendIds.includes(currentFriend.id) ? 'currentColor' : 'none',
+                  viewBox: '0 0 24 24',
+                  stroke: 'currentColor'
+                },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
+                ),
+                pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to Sidebar'
+              )
+            ),
+            // Scrollable content area
+            React.createElement('div', {
+              className: 'flex-1 overflow-y-auto scrollable-content p-6',
+              onScroll: (e) => {
+                const scrollTop = e.target.scrollTop;
+                if (scrollTop > 50 && !historyHeaderCollapsed) {
+                  setHistoryHeaderCollapsed(true);
+                } else if (scrollTop <= 50 && historyHeaderCollapsed) {
+                  setHistoryHeaderCollapsed(false);
+                }
+              }
+            },
                 // Loading state
                 friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12' },
                   React.createElement('div', { className: 'w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin' })
@@ -18622,7 +18800,6 @@ useEffect(() => {
                         )
                       )
                 )
-              )
             )
           );
         })(),
