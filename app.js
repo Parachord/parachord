@@ -4718,48 +4718,81 @@ const Parachord = () => {
 
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
-      try {
-        if (isPlaying) {
-          // Pausing - simple pause request
-          const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${spotifyToken}`
-            }
-          });
-
-          if (response.ok || response.status === 204) {
-            setIsPlaying(false);
-            console.log('Paused Spotify playback');
-          }
-        } else {
-          // Playing - check if we need to explicitly start this track
-          // (e.g., restored from saved queue, Spotify may have different track loaded)
-          if (trackNeedsExplicitStart.current) {
-            // Use handlePlay to properly start the track with device handling
-            // This ensures device discovery and wake-up logic is used
-            console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
-            trackNeedsExplicitStart.current = false;
-            handlePlay(currentTrack);
-            return;
-          } else {
-            // Normal resume
-            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+      const attemptSpotifyControl = async (token, isRetry = false) => {
+        try {
+          if (isPlaying) {
+            // Pausing - simple pause request
+            const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
               method: 'PUT',
               headers: {
-                'Authorization': `Bearer ${spotifyToken}`
+                'Authorization': `Bearer ${token}`
               }
             });
 
             if (response.ok || response.status === 204) {
-              setIsPlaying(true);
-              console.log('Resumed Spotify playback');
+              setIsPlaying(false);
+              console.log('Paused Spotify playback');
+              return true;
+            } else if (response.status === 401 && !isRetry) {
+              // Token expired - try to refresh
+              console.log('🔄 Spotify token expired on pause, attempting refresh...');
+              const newToken = await refreshSpotifyToken();
+              if (newToken) {
+                return attemptSpotifyControl(newToken, true);
+              }
+            }
+            // If we can't control Spotify, at least update UI to reflect user intent
+            // This prevents the "can't pause" issue
+            if (!isRetry) {
+              console.log('⚠️ Could not pause Spotify, updating UI state anyway');
+              setIsPlaying(false);
+              // Stop polling since we're trying to pause
+              if (playbackPollerRef.current) {
+                clearInterval(playbackPollerRef.current);
+                playbackPollerRef.current = null;
+              }
+            }
+          } else {
+            // Playing - check if we need to explicitly start this track
+            // (e.g., restored from saved queue, Spotify may have different track loaded)
+            if (trackNeedsExplicitStart.current) {
+              // Use handlePlay to properly start the track with device handling
+              // This ensures device discovery and wake-up logic is used
+              console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
+              trackNeedsExplicitStart.current = false;
+              handlePlay(currentTrack);
+              return true;
+            } else {
+              // Normal resume
+              const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+
+              if (response.ok || response.status === 204) {
+                setIsPlaying(true);
+                console.log('Resumed Spotify playback');
+                return true;
+              } else if (response.status === 401 && !isRetry) {
+                // Token expired - try to refresh
+                console.log('🔄 Spotify token expired on play, attempting refresh...');
+                const newToken = await refreshSpotifyToken();
+                if (newToken) {
+                  return attemptSpotifyControl(newToken, true);
+                }
+              }
             }
           }
+          return false;
+        } catch (error) {
+          console.error('Spotify play/pause error:', error);
+          return false;
         }
-      } catch (error) {
-        console.error('Spotify play/pause error:', error);
-      }
+      };
+
+      await attemptSpotifyControl(spotifyToken);
     } else {
       // Toggle local playback
       if (!audioContext) return;
