@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('electron', {
   // Proxy fetch - bypasses CORS for resolvers
   proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
 
+  // Crypto utilities for scrobbling
+  crypto: {
+    md5: (input) => ipcRenderer.invoke('crypto-md5', input)
+  },
+
   // Media key handlers
   onMediaKey: (callback) => {
     ipcRenderer.on('media-key', (event, action) => {

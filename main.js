@@ -435,6 +435,13 @@ app.on('window-all-closed', async () => {
   }
 });
 
+// Crypto utilities for scrobbling (Last.fm requires MD5 signatures)
+const crypto = require('crypto');
+
+ipcMain.handle('crypto-md5', (event, input) => {
+  return crypto.createHash('md5').update(input).digest('hex');
+});
+
 // IPC handlers for storage
 ipcMain.handle('store-get', (event, key) => {
   return store.get(key);
