@@ -12068,6 +12068,7 @@ useEffect(() => {
               key: friend.id,
               className: 'px-3 py-2 hover:bg-gray-100 rounded cursor-pointer group',
               draggable: true,
+              onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
                 e.dataTransfer.setData('friendIndex', index.toString());
                 e.dataTransfer.effectAllowed = 'move';
