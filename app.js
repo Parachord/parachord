@@ -627,19 +627,11 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
-  // Start as loaded if no album art (will show gradient placeholder immediately)
-  const [imageLoaded, setImageLoaded] = React.useState(!release.albumArt);
   const [imageFailed, setImageFailed] = React.useState(false);
 
-  // Reset image state when album art URL changes
+  // Reset image failed state when album art URL changes
   React.useEffect(() => {
-    if (release.albumArt) {
-      setImageLoaded(false);
-      setImageFailed(false);
-    } else {
-      // No album art - mark as loaded to show gradient placeholder
-      setImageLoaded(true);
-    }
+    setImageFailed(false);
   }, [release.albumArt]);
 
   const handleDragStart = (e) => {
@@ -702,20 +694,20 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     }
   },
     // Album art container
-    // States: 1) shimmer (loading image), 2) image (loaded), 3) gradient placeholder (no image/failed)
+    // States: shimmer (fetching), placeholder (no art/failed), image (has URL)
     React.createElement('div', {
-      className: release.albumArt && !imageLoaded ? 'animate-shimmer' : '',
+      className: release.albumArt === undefined ? 'animate-shimmer' : '',
       style: {
         width: '100%',
         aspectRatio: '1',
         borderRadius: '8px',
-        // Shimmer: gray gradient animating. Placeholder: purple gradient. Image loaded: transparent
-        background: release.albumArt && !imageLoaded
+        // Shimmer while fetching, purple placeholder if no art/failed, gray behind image
+        background: release.albumArt === undefined
           ? 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)'  // Shimmer gray
           : !release.albumArt || imageFailed
             ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'  // Purple gradient placeholder
-            : 'transparent',  // Image loaded successfully
-        backgroundSize: release.albumArt && !imageLoaded ? '200% 100%' : undefined,
+            : '#e5e7eb',  // Gray background behind image
+        backgroundSize: release.albumArt === undefined ? '200% 100%' : undefined,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -725,8 +717,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         position: 'relative'
       }
     },
-      // Album art image - hidden until loaded
-      release.albumArt && React.createElement('img', {
+      // Album art image
+      release.albumArt && !imageFailed && React.createElement('img', {
         src: release.albumArt,
         alt: release.title,
         style: {
@@ -736,18 +728,12 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           pointerEvents: 'none',
           position: 'absolute',
           top: 0,
-          left: 0,
-          opacity: imageLoaded && !imageFailed ? 1 : 0,
-          transition: 'opacity 0.2s ease-in-out'
+          left: 0
         },
-        onLoad: () => setImageLoaded(true),
-        onError: () => {
-          setImageLoaded(true);
-          setImageFailed(true);
-        }
+        onError: () => setImageFailed(true)
       }),
 
-      // Music icon placeholder (only show when no image)
+      // Music icon placeholder (only show when no image or failed)
       (!release.albumArt || imageFailed) && React.createElement('svg', {
         style: {
           width: '48px',
@@ -5798,7 +5784,10 @@ const Parachord = () => {
       // Pre-populate releases with cached album art
       const releasesWithCache = cachedData.releases.map(release => ({
         ...release,
-        albumArt: albumArtCache.current[release.id]?.url || null
+        // Use cached URL if available, undefined if needs fetch (shows shimmer), null handled by fetchAlbumArtLazy
+        albumArt: albumArtCache.current[release.id]?.url !== undefined
+          ? albumArtCache.current[release.id]?.url
+          : undefined
       }));
 
       setArtistReleases(releasesWithCache);
@@ -5987,7 +5976,10 @@ const Parachord = () => {
       // Pre-populate releases with cached album art
       const releasesWithCache = uniqueReleases.map(release => ({
         ...release,
-        albumArt: albumArtCache.current[release.id]?.url || null
+        // Use cached URL if available, undefined if needs fetch (shows shimmer)
+        albumArt: albumArtCache.current[release.id]?.url !== undefined
+          ? albumArtCache.current[release.id]?.url
+          : undefined
       }));
 
       // Show page immediately (with cached album art if available)
@@ -7228,9 +7220,25 @@ const Parachord = () => {
             )
           );
           loadedCount++;
+        } else {
+          // No art found - set to null to show placeholder instead of shimmer
+          setArtistReleases(prev =>
+            prev.map(r =>
+              r.id === release.id
+                ? { ...r, albumArt: null }
+                : r
+            )
+          );
         }
       } catch (error) {
-        // Silently continue to next release
+        // On error, set to null to show placeholder
+        setArtistReleases(prev =>
+          prev.map(r =>
+            r.id === release.id
+              ? { ...r, albumArt: null }
+              : r
+          )
+        );
       }
       
       // Small delay to avoid rate limiting
@@ -9078,8 +9086,9 @@ ${tracks}
     for (const album of albums) {
       const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
       const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
+      const hasArtUrl = cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url;
 
-      if (cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url) {
+      if (hasArtUrl) {
         // We have cached art - collect for batch update
         cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
       } else if (cachedReleaseId === null) {
@@ -10169,7 +10178,10 @@ ${tracks}
           setCurrentArtist(cachedData.artist);
           const releasesWithCache = cachedData.releases.map(release => ({
             ...release,
-            albumArt: albumArtCache.current[release.id]?.url || null
+            // Use cached URL if available, undefined if needs fetch (shows shimmer)
+            albumArt: albumArtCache.current[release.id]?.url !== undefined
+              ? albumArtCache.current[release.id]?.url
+              : undefined
           }));
           setArtistReleases(releasesWithCache);
           setSmartReleaseTypeFilter(releasesWithCache);
@@ -12942,10 +12954,12 @@ useEffect(() => {
               className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
             },
               React.createElement('div', {
-                className: 'h-3 rounded w-24 animate-pulse bg-gray-200'
+                className: 'h-3 rounded w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                style: { backgroundSize: '200% 100%' }
               }),
               React.createElement('div', {
-                className: 'h-6 rounded w-16 animate-pulse bg-gray-100'
+                className: 'h-6 rounded w-16 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                style: { backgroundSize: '200% 100%' }
               })
             ),
             // Two-column layout matching ReleasePage
@@ -12957,24 +12971,28 @@ useEffect(() => {
               },
                 // Album art (w-48 h-48 = 192px)
                 React.createElement('div', {
-                  className: 'w-48 h-48 rounded bg-gray-100 animate-pulse'
+                  className: 'w-48 h-48 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                  style: { backgroundSize: '200% 100%' }
                 }),
                 // Metadata below art
                 React.createElement('div', { className: 'mt-4 space-y-1' },
                   React.createElement('div', {
-                    className: 'h-5 rounded w-3/4 animate-pulse bg-gray-200'
+                    className: 'h-5 rounded w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%' }
                   }),
                   React.createElement('div', {
-                    className: 'h-4 rounded w-1/2 mt-1 animate-pulse bg-gray-100'
+                    className: 'h-4 rounded w-1/2 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%' }
                   }),
                   React.createElement('div', {
-                    className: 'h-4 rounded w-1/3 mt-1 animate-pulse bg-gray-100'
+                    className: 'h-4 rounded w-1/3 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%' }
                   })
                 )
               ),
               // Right column - track list skeleton
               React.createElement('div', { className: 'flex-1 min-w-0 space-y-0' },
-                Array.from({ length: 10 }).map((_, i) =>
+                [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
                   React.createElement('div', {
                     key: `track-skeleton-${i}`,
                     className: 'flex items-center gap-4 py-3 px-2',
@@ -12982,18 +13000,20 @@ useEffect(() => {
                   },
                     // Track number
                     React.createElement('div', {
-                      className: 'w-6 h-4 rounded animate-pulse bg-gray-100'
+                      className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                      style: { backgroundSize: '200% 100%' }
                     }),
                     // Track title
                     React.createElement('div', { className: 'flex-1' },
                       React.createElement('div', {
-                        className: 'h-4 rounded animate-pulse bg-gray-200',
-                        style: { width: `${50 + Math.random() * 30}%` }
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { width: `${width}%`, backgroundSize: '200% 100%' }
                       })
                     ),
                     // Duration
                     React.createElement('div', {
-                      className: 'w-10 h-4 rounded animate-pulse bg-gray-100'
+                      className: 'w-10 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                      style: { backgroundSize: '200% 100%' }
                     })
                   )
                 )
@@ -15360,12 +15380,14 @@ useEffect(() => {
                   onClick: () => openChartsAlbum(album)
                 },
                   // Album art with hover overlay
-                  // States: undefined = loading (shimmer), null/falsy = no art (placeholder), string = show image
+                  // States: shimmer (fetching URL), placeholder (no art), image (URL exists)
                   React.createElement('div', {
                     className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
                       album.albumArt === undefined
                         ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                        : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                        : album.albumArt === null
+                          ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                          : 'bg-gray-200'
                     }`,
                     style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                   },
@@ -15704,12 +15726,17 @@ useEffect(() => {
                 onClick: () => openCriticsPicksAlbum(album)
               },
                 // Album art with hover overlay
-                // States: undefined = loading (shimmer), null = no art (placeholder), string = show image
+                // States: shimmer (fetching URL), placeholder (no art found), image (URL exists)
                 React.createElement('div', {
                   className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
+                    // Shimmer while fetching URL
                     album.albumArt === undefined
                       ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                      : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                      // Purple gradient for failed lookups (null) - shows placeholder icon
+                      : album.albumArt === null
+                        ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                        // Has URL - gray background behind image while it loads
+                        : 'bg-gray-200'
                   }`,
                   style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                 },
@@ -16916,12 +16943,14 @@ useEffect(() => {
                       onClick: () => openTopAlbum(album)
                     },
                       // Album art with hover overlay
-                      // States: undefined = loading (shimmer), null/falsy = no art (placeholder), string = show image
+                      // States: shimmer (fetching URL), placeholder (no art), image (URL exists)
                       React.createElement('div', {
                         className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
                           album.image === undefined
                             ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                            : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                            : album.image === null || album.image === ''
+                              ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                              : 'bg-gray-200'
                         }`,
                         style: album.image === undefined ? { backgroundSize: '200% 100%' } : {}
                       },
