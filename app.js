@@ -20112,6 +20112,132 @@ useEffect(() => {
 
               // Settings sections
               React.createElement('div', { className: 'space-y-8' },
+                // AI Integration Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'AI Integration'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Connect AI services to generate playlists from natural language prompts')
+                  ),
+
+                  // AI Resolver cards
+                  React.createElement('div', { className: 'space-y-4' },
+                    allResolvers.filter(r => r.capabilities?.generate).map(resolver => {
+                      const config = resolverConfigs[resolver.id] || {};
+                      const isEnabled = resolver.enabled;
+
+                      return React.createElement('div', {
+                        key: resolver.id,
+                        className: `border rounded-lg transition-all ${isEnabled ? 'border-purple-200 bg-purple-50/30' : 'border-gray-200 bg-gray-50'}`
+                      },
+                        // Header row
+                        React.createElement('div', {
+                          className: 'flex items-center justify-between p-4'
+                        },
+                          React.createElement('div', { className: 'flex items-center gap-3' },
+                            React.createElement('span', {
+                              className: 'text-xl',
+                              style: { color: resolver.color }
+                            }, resolver.icon),
+                            React.createElement('div', null,
+                              React.createElement('span', { className: 'font-medium text-gray-900' }, resolver.name),
+                              React.createElement('p', { className: 'text-xs text-gray-500' }, resolver.description)
+                            )
+                          ),
+                          React.createElement('button', {
+                            onClick: () => {
+                              const newEnabled = !isEnabled;
+                              // Update resolver enabled state
+                              const updatedResolvers = allResolvers.map(r =>
+                                r.id === resolver.id ? { ...r, enabled: newEnabled } : r
+                              );
+                              setAllResolvers(updatedResolvers);
+                              // Persist config
+                              setResolverConfigs(prev => ({
+                                ...prev,
+                                [resolver.id]: { ...prev[resolver.id], enabled: newEnabled }
+                              }));
+                            },
+                            className: `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                              isEnabled
+                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                            }`
+                          }, isEnabled ? 'Enabled' : 'Disabled')
+                        ),
+
+                        // Config section (only when enabled)
+                        isEnabled && React.createElement('div', { className: 'px-4 pb-4 space-y-4 border-t border-gray-100 pt-4' },
+                          // API Key
+                          React.createElement('div', null,
+                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'API Key'),
+                            React.createElement('div', { className: 'relative' },
+                              React.createElement('input', {
+                                type: 'password',
+                                value: config.apiKey || '',
+                                onChange: (e) => {
+                                  setResolverConfigs(prev => ({
+                                    ...prev,
+                                    [resolver.id]: { ...prev[resolver.id], apiKey: e.target.value }
+                                  }));
+                                },
+                                placeholder: resolver.id === 'openai' ? 'sk-...' : 'AIza...',
+                                className: 'w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                              })
+                            ),
+                            React.createElement('a', {
+                              href: '#',
+                              onClick: (e) => {
+                                e.preventDefault();
+                                const url = resolver.id === 'openai'
+                                  ? 'https://platform.openai.com/api-keys'
+                                  : 'https://aistudio.google.com/app/apikey';
+                                window.electron?.shell?.openExternal?.(url);
+                              },
+                              className: 'text-xs text-purple-600 hover:text-purple-700 mt-1 inline-block'
+                            }, 'Get your API key →')
+                          ),
+
+                          // Model selector
+                          React.createElement('div', null,
+                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
+                            React.createElement('select', {
+                              value: config.model || (resolver.id === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'),
+                              onChange: (e) => {
+                                setResolverConfigs(prev => ({
+                                  ...prev,
+                                  [resolver.id]: { ...prev[resolver.id], model: e.target.value }
+                                }));
+                              },
+                              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+                            },
+                              resolver.id === 'openai' ? [
+                                React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                                React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                                React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                              ] : [
+                                React.createElement('option', { key: 'gemini-1.5-flash', value: 'gemini-1.5-flash' }, 'Gemini 1.5 Flash (Recommended)'),
+                                React.createElement('option', { key: 'gemini-1.5-pro', value: 'gemini-1.5-pro' }, 'Gemini 1.5 Pro')
+                              ]
+                            )
+                          )
+                        )
+                      );
+                    })
+                  ),
+
+                  // No AI resolvers message
+                  allResolvers.filter(r => r.capabilities?.generate).length === 0 &&
+                    React.createElement('p', { className: 'text-sm text-gray-500 italic' },
+                      'No AI plugins installed. AI plugins will appear here when available.'
+                    )
+                ),
+
                 // Cache Management Section
                 React.createElement('div', {
                   className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
