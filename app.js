@@ -137,7 +137,10 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
         track.albumArt && React.createElement('img', {
           src: track.albumArt,
           alt: track.album,
-          className: 'absolute inset-0 w-full h-full object-cover',
+          className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+          style: { opacity: 0 },
+          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+          onLoad: (e) => { e.target.style.opacity = '1'; },
           onError: (e) => { e.target.style.display = 'none'; }
         }),
         React.createElement(Music)
@@ -384,7 +387,10 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       !imageLoading && imageUrl && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'w-full h-full object-cover'
+        className: 'w-full h-full object-cover transition-opacity duration-300',
+        style: { opacity: 0 },
+        ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+        onLoad: (e) => { e.target.style.opacity = '1'; }
       }),
       !imageLoading && !imageUrl && React.createElement('div', {
         className: 'w-full h-full flex items-center justify-center text-gray-300'
@@ -403,14 +409,22 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, itemWidth }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
+  const [imageReady, setImageReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const loadImage = async () => {
       setImageLoading(true);
+      setImageReady(false);
       const result = await getArtistImage(artist.name);
       if (!cancelled && result?.url) {
         setImageUrl(result.url);
+        // Preload the image
+        const img = new Image();
+        img.onload = () => {
+          if (!cancelled) setImageReady(true);
+        };
+        img.src = result.url;
       }
       if (!cancelled) {
         setImageLoading(false);
@@ -454,10 +468,10 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
       style: { width: imageSize, height: imageSize }
     },
       React.createElement('div', {
-        className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
-          imageUrl ? '' : imageLoading ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
+        className: `w-full h-full group-hover:scale-110 transition-all duration-300 ${
+          imageReady ? '' : imageLoading ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer' : 'bg-gradient-to-br from-purple-500 to-pink-500'
         }`,
-        style: imageUrl ? {
+        style: imageReady ? {
           backgroundImage: `url(${imageUrl})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center'
@@ -515,11 +529,14 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       }`,
       style: imageUrl === null ? {} : { backgroundSize: '200% 100%' }
     },
-      // Show image when URL exists (shimmer continues behind until image renders)
+      // Show image when URL exists (fades in when loaded)
       imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'w-full h-full object-cover'
+        className: 'w-full h-full object-cover transition-opacity duration-300',
+        style: { opacity: 0 },
+        ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+        onLoad: (e) => { e.target.style.opacity = '1'; }
       }),
       // Placeholder icon when no image found
       imageUrl === null && React.createElement('svg', {
@@ -585,11 +602,14 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
           ? { background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)' }
           : { backgroundSize: '200% 100%' }
       },
-        // Show image when URL exists (shimmer continues behind until image renders)
+        // Show image when URL exists (fades in when loaded)
         imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
           src: imageUrl,
           alt: album.title,
-          className: 'w-full h-full object-cover',
+          className: 'w-full h-full object-cover transition-opacity duration-300',
+          style: { opacity: 0 },
+          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+          onLoad: (e) => { e.target.style.opacity = '1'; },
           onError: (e) => { e.target.style.display = 'none'; }
         }),
         // Placeholder icon when no art found
@@ -877,11 +897,14 @@ const ReleasePage = ({
           transition: 'width 300ms ease, height 300ms ease'
         }
       },
-        // Image (absolute positioned, hides on error)
+        // Image (absolute positioned, fades in on load, hides on error)
         release.albumArt && React.createElement('img', {
           src: release.albumArt,
           alt: release.title,
           className: 'absolute inset-0 w-full h-full object-cover',
+          style: { opacity: 0, transition: 'opacity 300ms ease' },
+          ref: (el) => { if (el && el.complete) el.style.opacity = '1'; },
+          onLoad: (e) => { e.target.style.opacity = '1'; },
           onError: (e) => { e.target.style.display = 'none'; }
         }),
         // Placeholder icon (always behind)
@@ -1327,6 +1350,8 @@ const Parachord = () => {
     topArtists: []
   });
   const [friendHistoryPeriod, setFriendHistoryPeriod] = useState('7day');
+  const [friendHistorySort, setFriendHistorySort] = useState('recent');
+  const [friendHistorySortDropdownOpen, setFriendHistorySortDropdownOpen] = useState(false);
   const [friendHistoryLoading, setFriendHistoryLoading] = useState(false);
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
   const [addFriendInput, setAddFriendInput] = useState('');
@@ -1459,6 +1484,15 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [historySortDropdownOpen]);
+
+  // Close friend history sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setFriendHistorySortDropdownOpen(false);
+    if (friendHistorySortDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [friendHistorySortDropdownOpen]);
 
   // Close artist sort dropdown when clicking outside
   useEffect(() => {
@@ -1882,6 +1916,17 @@ const Parachord = () => {
     { value: 'artist', label: 'Artist A-Z' },
     { value: 'title', label: 'Title A-Z' }
   ];
+
+  // Sort friend history
+  const sortFriendHistory = useCallback((items) => {
+    const sorted = [...items];
+    switch (friendHistorySort) {
+      case 'recent': return sorted; // Keep original order (most recent first)
+      case 'artist': return sorted.sort((a, b) => a.artist.localeCompare(b.artist));
+      case 'title': return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      default: return sorted;
+    }
+  }, [friendHistorySort]);
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, file: '' });
@@ -4287,7 +4332,10 @@ const Parachord = () => {
 
     if (resolverId === 'spotify' && config.token) {
       const trackUri = track.spotifyUri || track.uri;
-      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval)... trackUri=${trackUri}`);
+      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval)...`);
+      console.log(`   Track: ${track.title} by ${track.artist}`);
+      console.log(`   Expected URI: ${trackUri}`);
+      console.log(`   spotifyUri: ${track.spotifyUri}, uri: ${track.uri}`);
 
       if (!trackUri) {
         console.warn('⚠️ No Spotify URI found on track, auto-advance may not work');
@@ -4297,8 +4345,11 @@ const Parachord = () => {
       let lastTrackUri = trackUri; // Track what we started playing
       let stuckAtZeroCount = 0; // Track how many times we've been stuck at 0% with is_playing=false
       const MAX_STUCK_AT_ZERO = 3; // After 15 seconds (3 * 5s polls) of being stuck at 0%, give up
+      let pollCount = 0; // Track poll number for first-poll grace period
+      let pendingTrackChange = null; // Track URI from potential external change, needs confirmation
 
       const pollInterval = setInterval(async () => {
+        pollCount++; // Increment poll counter
         try {
           const response = await fetch('https://api.spotify.com/v1/me/player', {
             headers: {
@@ -4390,16 +4441,47 @@ const Parachord = () => {
             } else {
               // Playing normally - reset stuck counter and log progress periodically
               stuckAtZeroCount = 0;
+              pendingTrackChange = null; // Clear any pending track change since we're on the right track
               // Log every poll to confirm polling is working
               console.log(`▶️ Spotify playing: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
             }
           } else {
             // Track changed - Spotify advanced on its own or user changed track
-            // Advance to our next track to stay in sync
-            console.log('🔄 Spotify track changed externally, advancing our queue...');
-            clearInterval(pollInterval);
-            playbackPollerRef.current = null;
-            if (handleNextRef.current) handleNextRef.current();
+            // But wait! On the first few polls, Spotify might not have caught up yet
+            // Give it a grace period before assuming the track truly changed
+            console.log(`🔄 Detected potential track change (poll #${pollCount})...`);
+            console.log(`   Expected URI: ${lastTrackUri}`);
+            console.log(`   Current URI:  ${currentUri}`);
+            console.log(`   Spotify says: ${data.item?.name} by ${data.item?.artists?.[0]?.name}`);
+
+            // If this is one of the first 2 polls, check if Spotify is still catching up
+            if (pollCount <= 2) {
+              // Check if Spotify is playing the track we intended (by comparing track IDs)
+              const expectedId = lastTrackUri?.split(':').pop();
+              const currentId = currentUri?.split(':').pop();
+
+              if (pendingTrackChange === null) {
+                // First time seeing a mismatch - store it and wait for confirmation
+                console.log(`   ⏳ First mismatch on poll #${pollCount}, waiting for confirmation...`);
+                pendingTrackChange = currentUri;
+              } else if (pendingTrackChange === currentUri) {
+                // Confirmed - the track really changed
+                console.log(`   ✅ Track change confirmed after grace period`);
+                clearInterval(pollInterval);
+                playbackPollerRef.current = null;
+                if (handleNextRef.current) handleNextRef.current();
+              } else {
+                // Different URI than pending - reset and wait
+                console.log(`   🔄 URI changed again, resetting confirmation...`);
+                pendingTrackChange = currentUri;
+              }
+            } else {
+              // After grace period, trust the mismatch and advance
+              console.log(`   ✅ Track change detected after grace period, advancing queue...`);
+              clearInterval(pollInterval);
+              playbackPollerRef.current = null;
+              if (handleNextRef.current) handleNextRef.current();
+            }
           }
         } catch (error) {
           console.error('Spotify polling error:', error);
@@ -11983,8 +12065,14 @@ useEffect(() => {
     if (hours < 24) return `${hours}h ago`;
     if (days < 7) return `${days}d ago`;
 
-    // For older, show date
+    // For older, show date with year
     const date = new Date(timestamp);
+    const currentYear = new Date().getFullYear();
+    const dateYear = date.getFullYear();
+    // Show year if it's not the current year
+    if (dateYear !== currentYear) {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
@@ -12193,7 +12281,18 @@ useEffect(() => {
               }
             }
           },
-          React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+          React.createElement('div', { className: 'px-3 py-2 flex items-center justify-between' },
+            React.createElement('span', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+            React.createElement('button', {
+              onClick: (e) => { e.stopPropagation(); setAddFriendModalOpen(true); },
+              className: 'w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors rounded hover:bg-gray-200',
+              title: 'Add friend'
+            },
+              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+              )
+            )
+          ),
           // Show drop hint when dragging but no friends pinned yet
           friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
             className: 'px-3 py-4 text-sm text-purple-600 text-center'
@@ -13005,11 +13104,31 @@ useEffect(() => {
                   },
                     // Album art with hover overlay
                     React.createElement('div', {
-                      className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
+                      className: 'aspect-square rounded-lg overflow-hidden mb-3 relative'
                     },
-                      // Placeholder always rendered behind
+                      // Shimmering skeleton (shows while waiting for albumArt or while image loads)
                       React.createElement('div', {
-                        className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                        className: 'absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { backgroundSize: '200% 100%' }
+                      }),
+                      // Image with fade-in (hides shimmer when loaded)
+                      album.albumArt && React.createElement('img', {
+                        src: album.albumArt,
+                        alt: album.title,
+                        className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                        style: { opacity: 0 },
+                        ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                        onLoad: (e) => { e.target.style.opacity = '1'; },
+                        onError: (e) => {
+                          e.target.style.display = 'none';
+                          const fallback = e.target.nextElementSibling;
+                          if (fallback) fallback.style.display = 'flex';
+                        }
+                      }),
+                      // Fallback placeholder (hidden until image error)
+                      album.albumArt && React.createElement('div', {
+                        className: 'absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 items-center justify-center text-white/60',
+                        style: { display: 'none' }
                       },
                         React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
                           React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
@@ -13017,12 +13136,6 @@ useEffect(() => {
                           React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                         )
                       ),
-                      album.albumArt && React.createElement('img', {
-                        src: album.albumArt,
-                        alt: album.title,
-                        className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
-                        onError: (e) => { e.target.style.display = 'none'; }
-                      }),
                       // Hover overlay with Add to Queue button
                       React.createElement('div', {
                         className: 'absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
@@ -13484,7 +13597,7 @@ useEffect(() => {
                 },
                   // Album art with rounded corners - this is the draggable part
                   React.createElement('div', {
-                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 bg-gradient-to-br from-purple-500 to-pink-500 relative flex items-center justify-center cursor-grab active:cursor-grabbing',
+                    className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative cursor-grab active:cursor-grabbing',
                     draggable: true,
                     onClick: () => handlePlay(track),
                     onDragStart: (e) => {
@@ -13521,16 +13634,34 @@ useEffect(() => {
                       }
                     }
                   },
-                    // Placeholder icon always rendered behind
-                    React.createElement('svg', { className: 'w-10 h-10 text-white/60', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                    ),
+                    // Shimmering skeleton (shows while waiting for albumArt or while image loads)
+                    React.createElement('div', {
+                      className: 'absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                      style: { backgroundSize: '200% 100%' }
+                    }),
+                    // Image with fade-in (hides shimmer when loaded)
                     track.albumArt && React.createElement('img', {
                       src: track.albumArt,
                       alt: track.album,
-                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
-                      onError: (e) => { e.target.style.display = 'none'; }
-                    })
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                      style: { opacity: 0 },
+                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                      onLoad: (e) => { e.target.style.opacity = '1'; },
+                      onError: (e) => {
+                        e.target.style.display = 'none';
+                        const fallback = e.target.nextElementSibling;
+                        if (fallback) fallback.style.display = 'flex';
+                      }
+                    }),
+                    // Fallback placeholder (hidden until image error)
+                    track.albumArt && React.createElement('div', {
+                      className: 'absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 items-center justify-center text-white/60',
+                      style: { display: 'none' }
+                    },
+                      React.createElement('svg', { className: 'w-10 h-10', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                      )
+                    )
                   ),
                   // Track info - not draggable
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, track.title),
@@ -13633,21 +13764,38 @@ useEffect(() => {
                   }
                 },
                   // Album art with rounded corners and hover effect (matches Critics Picks style)
-                  React.createElement('div', { className: 'w-full aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative' },
-                    // Placeholder always rendered behind
-                    React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/60' },
+                  React.createElement('div', { className: 'w-full aspect-square rounded-lg overflow-hidden mb-3 relative' },
+                    // Shimmering skeleton (shows while waiting for albumArt or while image loads)
+                    React.createElement('div', {
+                      className: 'absolute inset-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                      style: { backgroundSize: '200% 100%' }
+                    }),
+                    // Image with fade-in (hides shimmer when loaded)
+                    album.albumArt && React.createElement('img', {
+                      src: album.albumArt,
+                      alt: album.title,
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                      style: { opacity: 0 },
+                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                      onLoad: (e) => { e.target.style.opacity = '1'; },
+                      onError: (e) => {
+                        // On error, show the fallback placeholder
+                        e.target.style.display = 'none';
+                        const fallback = e.target.nextElementSibling;
+                        if (fallback) fallback.style.display = 'flex';
+                      }
+                    }),
+                    // Fallback placeholder (hidden until image error)
+                    album.albumArt && React.createElement('div', {
+                      className: 'absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 items-center justify-center text-white/60',
+                      style: { display: 'none' }
+                    },
                       React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
                         React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
                         React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
                         React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                       )
-                    ),
-                    album.albumArt && React.createElement('img', {
-                      src: album.albumArt,
-                      alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
-                      onError: (e) => { e.target.style.display = 'none'; }
-                    })
+                    )
                   ),
                   // Album info
                   React.createElement('div', { className: 'text-sm font-medium text-gray-900 truncate' }, album.title),
@@ -16706,7 +16854,10 @@ useEffect(() => {
                     album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
                       src: album.albumArt,
                       alt: album.title,
-                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                      className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                      style: { opacity: 0 },
+                      ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                      onLoad: (e) => { e.target.style.opacity = '1'; },
                       onError: (e) => { e.target.style.display = 'none'; }
                     }),
                     // Rank badge
@@ -17052,7 +17203,10 @@ useEffect(() => {
                   album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
                     src: album.albumArt,
                     alt: album.title,
-                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                    style: { opacity: 0 },
+                    ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                    onLoad: (e) => { e.target.style.opacity = '1'; },
                     onError: (e) => { e.target.style.display = 'none'; }
                   }),
                   // Metacritic score badge
@@ -18171,24 +18325,25 @@ useEffect(() => {
                       }
                     },
                       React.createElement('div', {
-                        className: 'relative w-36 h-36 rounded-full overflow-hidden'
+                        className: 'relative w-36 h-36 rounded-full overflow-hidden bg-gradient-to-br from-purple-500 to-pink-500'
                       },
+                        // Placeholder always rendered behind
                         React.createElement('div', {
-                          className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${artist.image ? '' : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'}`,
-                          style: {
-                            backgroundImage: artist.image ? `url(${artist.image})` : 'none',
-                            backgroundSize: artist.image ? 'cover' : '200% 100%',
-                            backgroundPosition: 'center'
-                          }
+                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
                         },
-                          !artist.image && React.createElement('div', {
-                            className: 'w-full h-full flex items-center justify-center text-gray-400'
-                          },
-                            React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                            )
+                          React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
                           )
                         ),
+                        artist.image && React.createElement('img', {
+                          src: artist.image,
+                          alt: artist.name,
+                          className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-all duration-300',
+                          style: { opacity: 0 },
+                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                          onLoad: (e) => { e.target.style.opacity = '1'; },
+                          onError: (e) => { e.target.style.display = 'none'; }
+                        }),
                         // Rank badge
                         React.createElement('div', {
                           className: 'absolute top-0 right-0 px-2 py-1 rounded bg-black/70 text-white text-xs font-bold'
@@ -18266,7 +18421,10 @@ useEffect(() => {
                         album.image && typeof album.image === 'string' && React.createElement('img', {
                           src: album.image,
                           alt: album.name,
-                          className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+                          className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-all duration-300',
+                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                          style: { opacity: 0 },
+                          onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => { e.target.style.display = 'none'; }
                         }),
                         // Rank badge
@@ -18476,9 +18634,43 @@ useEffect(() => {
               className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
               style: { flexShrink: 0 }
             },
-              // Period dropdown for top charts, empty spacer for recent
+              // Sort dropdown for recent, period dropdown for top charts
               friendHistoryTab === 'recent' ?
-                React.createElement('div', { className: 'flex-1' })
+                React.createElement('div', { className: 'relative' },
+                  React.createElement('button', {
+                    onClick: (e) => { e.stopPropagation(); setFriendHistorySortDropdownOpen(!friendHistorySortDropdownOpen); },
+                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+                  },
+                    React.createElement('span', null, historySortOptions.find(o => o.value === friendHistorySort)?.label || 'Sort'),
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                    )
+                  ),
+                  friendHistorySortDropdownOpen && React.createElement('div', {
+                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  },
+                    historySortOptions.map(option =>
+                      React.createElement('button', {
+                        key: option.value,
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          setFriendHistorySort(option.value);
+                          setFriendHistorySortDropdownOpen(false);
+                        },
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                          friendHistorySort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        }`
+                      },
+                        option.label,
+                        friendHistorySort === option.value && React.createElement('svg', {
+                          className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                        },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                        )
+                      )
+                    )
+                  )
+                )
               :
                 React.createElement('div', { className: 'relative' },
                   React.createElement('button', {
@@ -18556,32 +18748,35 @@ useEffect(() => {
                   React.createElement('div', { className: 'w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin' })
                 ),
                 // Recent tab content - matching History page layout
-                !friendHistoryLoading && friendHistoryTab === 'recent' && React.createElement('div', { className: 'space-y-0' },
-                  friendHistoryData.recent.length === 0
-                    ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No recent listens')
-                    : friendHistoryData.recent.map((track, index) => {
-                        const hasResolved = Object.keys(track.sources || {}).length > 0;
-                        const isResolving = Object.keys(track.sources || {}).length === 0;
+                !friendHistoryLoading && friendHistoryTab === 'recent' && (() => {
+                  const sorted = sortFriendHistory(friendHistoryData.recent);
+                  if (sorted.length === 0) {
+                    return React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No recent listens');
+                  }
+                  return React.createElement('div', { className: 'space-y-0' },
+                    ...sorted.map((track, index) => {
+                      const hasResolved = Object.keys(track.sources || {}).length > 0;
+                      const isResolving = Object.keys(track.sources || {}).length === 0;
 
-                        return React.createElement('div', {
-                          key: track.id || index,
-                          draggable: true,
-                          onDragStart: (e) => {
-                            setDraggingTrackForPlaylist(track);
-                            e.dataTransfer.effectAllowed = 'copy';
-                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
-                          },
-                          onDragEnd: () => {
-                            setDraggingTrackForPlaylist(null);
-                            setDropTargetPlaylistId(null);
-                            setDropTargetNewPlaylist(false);
-                          },
-                          className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
-                          onClick: () => {
-                            const tracksAfter = friendHistoryData.recent.slice(index + 1);
-                            setCurrentQueue(tracksAfter);
-                            handlePlay(track);
-                          },
+                      return React.createElement('div', {
+                        key: track.id || index,
+                        draggable: true,
+                        onDragStart: (e) => {
+                          setDraggingTrackForPlaylist(track);
+                          e.dataTransfer.effectAllowed = 'copy';
+                          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
+                        },
+                        onDragEnd: () => {
+                          setDraggingTrackForPlaylist(null);
+                          setDropTargetPlaylistId(null);
+                          setDropTargetNewPlaylist(false);
+                        },
+                        className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
+                        onClick: () => {
+                          const tracksAfter = sorted.slice(index + 1);
+                          setCurrentQueue(tracksAfter);
+                          handlePlay(track);
+                        },
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
@@ -18639,9 +18834,10 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                           )
-                        );
-                      })
-                ),
+                      );
+                    })
+                  );
+                })(),
                 // Top tracks tab content - matching History page layout
                 !friendHistoryLoading && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
@@ -18737,20 +18933,22 @@ useEffect(() => {
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
                           onClick: () => fetchArtistData(album.artist)
                         },
-                          React.createElement('div', { className: 'aspect-square bg-gray-100 relative' },
-                            album.image
-                              ? React.createElement('img', {
-                                  src: album.image,
-                                  alt: album.name,
-                                  className: 'w-full h-full object-cover'
-                                })
-                              : React.createElement('div', {
-                                  className: 'w-full h-full flex items-center justify-center text-gray-300'
-                                },
-                                  React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                                  )
-                                ),
+                          React.createElement('div', { className: 'aspect-square bg-gradient-to-br from-purple-500 to-pink-500 relative' },
+                            // Placeholder always rendered behind
+                            React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/60' },
+                              React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                              )
+                            ),
+                            album.image && React.createElement('img', {
+                              src: album.image,
+                              alt: album.name,
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              style: { opacity: 0 },
+                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                              onLoad: (e) => { e.target.style.opacity = '1'; },
+                              onError: (e) => { e.target.style.display = 'none'; }
+                            }),
                             React.createElement('div', {
                               className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium'
                             }, `#${album.rank}`)
@@ -18775,20 +18973,22 @@ useEffect(() => {
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
                           onClick: () => fetchArtistData(artist.name)
                         },
-                          React.createElement('div', { className: 'aspect-square bg-gray-100 relative' },
-                            artist.image
-                              ? React.createElement('img', {
-                                  src: artist.image,
-                                  alt: artist.name,
-                                  className: 'w-full h-full object-cover'
-                                })
-                              : React.createElement('div', {
-                                  className: 'w-full h-full flex items-center justify-center text-gray-300'
-                                },
-                                  React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                                  )
-                                ),
+                          React.createElement('div', { className: 'aspect-square bg-gradient-to-br from-purple-500 to-pink-500 relative' },
+                            // Placeholder always rendered behind
+                            React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/60' },
+                              React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                              )
+                            ),
+                            artist.image && React.createElement('img', {
+                              src: artist.image,
+                              alt: artist.name,
+                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              style: { opacity: 0 },
+                              onLoad: (e) => { e.target.style.opacity = '1'; },
+                              onError: (e) => { e.target.style.display = 'none'; }
+                            }),
                             React.createElement('div', {
                               className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium'
                             }, `#${artist.rank}`)
