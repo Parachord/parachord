@@ -1201,6 +1201,52 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
+  // Add friend-specific menu items
+  if (data.type === 'friend') {
+    menuItems.push({
+      label: 'View History',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'view-friend-history',
+          friend: data.friend
+        });
+      }
+    });
+
+    if (data.isPinned) {
+      menuItems.push({
+        label: 'Unpin from Sidebar',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'unpin-friend',
+            friendId: data.friend.id
+          });
+        }
+      });
+    } else {
+      menuItems.push({
+        label: 'Pin to Sidebar',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'pin-friend',
+            friendId: data.friend.id
+          });
+        }
+      });
+    }
+
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Remove Friend',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'remove-friend',
+          friendId: data.friend.id
+        });
+      }
+    });
+  }
+
   const menu = Menu.buildFromTemplate(menuItems);
 
   menu.popup({ window: mainWindow });

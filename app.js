@@ -1972,7 +1972,6 @@ const Parachord = () => {
   const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
-  const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, items: [] }); // Custom context menu state
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
@@ -2025,6 +2024,11 @@ const Parachord = () => {
   const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
+  // Friend function refs (for use in early useEffects before functions are defined)
+  const navigateToFriendRef = useRef(null);
+  const pinFriendRef = useRef(null);
+  const unpinFriendRef = useRef(null);
+  const removeFriendRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
@@ -3326,32 +3330,6 @@ const Parachord = () => {
     setToast({ message, type });
   }, []);
 
-  // Show custom context menu
-  const showContextMenu = useCallback((x, y, items) => {
-    // Adjust position to keep menu on screen
-    const menuWidth = 200;
-    const menuHeight = items.length * 36;
-    const adjustedX = Math.min(x, window.innerWidth - menuWidth - 10);
-    const adjustedY = Math.min(y, window.innerHeight - menuHeight - 10);
-    setContextMenu({ show: true, x: adjustedX, y: adjustedY, items });
-  }, []);
-
-  // Hide context menu
-  const hideContextMenu = useCallback(() => {
-    setContextMenu({ show: false, x: 0, y: 0, items: [] });
-  }, []);
-
-  // Close context menu on Escape key
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape' && contextMenu.show) {
-        hideContextMenu();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [contextMenu.show, hideContextMenu]);
-
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
     if (window.electron?.collection?.save) {
@@ -3561,6 +3539,14 @@ const Parachord = () => {
           } else if (data.type === 'artist' && data.artist) {
             addArtistToCollection(data.artist);
           }
+        } else if (data.action === 'view-friend-history' && data.friend) {
+          if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
+        } else if (data.action === 'pin-friend' && data.friendId) {
+          if (pinFriendRef.current) pinFriendRef.current(data.friendId);
+        } else if (data.action === 'unpin-friend' && data.friendId) {
+          if (unpinFriendRef.current) unpinFriendRef.current(data.friendId);
+        } else if (data.action === 'remove-friend' && data.friendId) {
+          if (removeFriendRef.current) removeFriendRef.current(data.friendId);
         }
       });
     }
@@ -9370,6 +9356,7 @@ ${tracks}
     setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     showToast('Friend removed');
   };
+  removeFriendRef.current = removeFriend;
 
   // Pin a friend to the sidebar
   const pinFriend = (friendId) => {
@@ -9381,6 +9368,7 @@ ${tracks}
       }
     }
   };
+  pinFriendRef.current = pinFriend;
 
   // Unpin a friend from the sidebar
   const unpinFriend = (friendId) => {
@@ -9390,6 +9378,7 @@ ${tracks}
       showToast(`${friend.displayName} unpinned from sidebar`);
     }
   };
+  unpinFriendRef.current = unpinFriend;
 
   // Reorder pinned friends in sidebar (for drag-drop)
   const reorderPinnedFriends = (fromIndex, toIndex) => {
@@ -9735,6 +9724,7 @@ ${tracks}
     navigateTo('friendHistory');
     loadFriendRecentTracks(friend);
   };
+  navigateToFriendRef.current = navigateToFriend;
 
   // Resolve top tracks using the resolver pipeline
   const resolveTopTracks = async (tracks) => {
@@ -12340,12 +12330,13 @@ useEffect(() => {
               },
               onContextMenu: (e) => {
                 e.preventDefault();
-                showContextMenu(e.clientX, e.clientY, [
-                  { label: 'View History', action: () => navigateToFriend(friend) },
-                  { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) },
-                  { type: 'separator' },
-                  { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
-                ]);
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'friend',
+                    friend: friend,
+                    isPinned: true
+                  });
+                }
               }
             },
               React.createElement('div', { className: 'flex items-center gap-2' },
@@ -12451,37 +12442,6 @@ useEffect(() => {
           toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
         }`
       }, toast.message),
-
-      // Custom context menu
-      contextMenu.show && React.createElement('div', {
-        className: 'fixed inset-0 z-[100]',
-        onClick: hideContextMenu,
-        onContextMenu: (e) => { e.preventDefault(); hideContextMenu(); }
-      },
-        React.createElement('div', {
-          className: 'absolute bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[180px]',
-          style: { left: contextMenu.x, top: contextMenu.y },
-          onClick: (e) => e.stopPropagation()
-        },
-          contextMenu.items.map((item, index) =>
-            item.type === 'separator'
-              ? React.createElement('div', {
-                  key: `sep-${index}`,
-                  className: 'border-t border-gray-200 my-1'
-                })
-              : React.createElement('button', {
-                  key: item.label,
-                  onClick: () => {
-                    hideContextMenu();
-                    if (item.action) item.action();
-                  },
-                  className: `w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                    item.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700'
-                  }`
-                }, item.label)
-          )
-        )
-      ),
 
       // Main content area
       React.createElement('div', {
@@ -16546,14 +16506,13 @@ useEffect(() => {
                       onClick: () => navigateToFriend(friend),
                       onContextMenu: (e) => {
                         e.preventDefault();
-                        showContextMenu(e.clientX, e.clientY, [
-                          { label: 'View History', action: () => navigateToFriend(friend) },
-                          isPinned
-                            ? { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) }
-                            : { label: 'Pin to Sidebar', action: () => pinFriend(friend.id) },
-                          { type: 'separator' },
-                          { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
-                        ]);
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'friend',
+                            friend: friend,
+                            isPinned: isPinned
+                          });
+                        }
                       }
                     },
                       // Hexagonal avatar
