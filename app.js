@@ -5657,6 +5657,96 @@ const Parachord = () => {
     console.log('🗑️ Cleared queue');
   };
 
+  // AI Playlist Generation
+  const handleAiGenerate = async (prompt) => {
+    const aiResolvers = getAiResolvers();
+    if (aiResolvers.length === 0) {
+      setAiError('No AI plugins configured. Enable OpenAI or Gemini in Settings → General.');
+      return;
+    }
+
+    // Use selected resolver or first available
+    const resolver = selectedAiResolver
+      ? aiResolvers.find(r => r.id === selectedAiResolver) || aiResolvers[0]
+      : aiResolvers[0];
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      // Get resolver config from stored configs
+      const config = resolverConfigs[resolver.id] || {};
+
+      // Call the resolver's generate function
+      const tracks = await resolver.generate(prompt, config);
+
+      if (!tracks || tracks.length === 0) {
+        throw new Error('No tracks returned. Try a different prompt.');
+      }
+
+      // Open results sidebar with the generated tracks
+      setResultsSidebar({
+        title: '✨ AI Playlist',
+        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+        tracks: tracks.map((t, i) => ({
+          id: `ai-${Date.now()}-${i}`,
+          title: t.title,
+          artist: t.artist,
+          album: t.album || '',
+          sources: {} // Will be resolved when added to queue
+        })),
+        source: 'ai',
+        prompt: prompt
+      });
+
+      // Close prompt input
+      setAiPromptOpen(false);
+      setAiPrompt('');
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError(error.message || 'Failed to generate playlist');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Handle adding AI results to queue
+  const handleAiAddToQueue = () => {
+    if (!resultsSidebar?.tracks) return;
+    addToQueue(resultsSidebar.tracks);
+    setResultsSidebar(null);
+    showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
+  };
+
+  // Handle saving AI results as playlist
+  const handleAiSavePlaylist = async () => {
+    if (!resultsSidebar?.tracks) return;
+
+    const playlistName = resultsSidebar.prompt
+      ? `AI: ${resultsSidebar.prompt.substring(0, 40)}${resultsSidebar.prompt.length > 40 ? '...' : ''}`
+      : 'AI Generated Playlist';
+
+    const playlistId = `ai-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: playlistName,
+      creator: 'AI',
+      tracks: resultsSidebar.tracks,
+      createdAt: new Date().toISOString()
+    };
+
+    // Add to playlists state
+    setPlaylists(prev => [...prev, newPlaylist]);
+
+    // Save to disk
+    const filename = `${playlistId}.xspf`;
+    const xspfContent = buildXSPF(newPlaylist);
+    await window.electron.playlists.save(filename, xspfContent);
+
+    setResultsSidebar(null);
+    showToast(`Saved playlist: ${playlistName}`);
+  };
+
   const addToQueue = (tracks) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
     setCurrentQueue(prev => [...prev, ...tracksArray]);
