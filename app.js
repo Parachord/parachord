@@ -12148,7 +12148,7 @@ useEffect(() => {
                 // Name and track info
                 React.createElement('div', { className: 'flex-1 min-w-0' },
                   React.createElement('div', {
-                    className: 'text-sm text-gray-700 truncate font-medium'
+                    className: 'text-sm text-gray-600 truncate'
                   }, friend.displayName),
                   onAir && friend.cachedRecentTrack && React.createElement('div', {
                     className: 'text-xs text-gray-400 truncate hover:text-purple-600 cursor-pointer',
@@ -15528,7 +15528,7 @@ useEffect(() => {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
+        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'friends' ? 'Friends' :
@@ -18227,9 +18227,9 @@ useEffect(() => {
                   isOnAir(currentFriend) && currentFriend.cachedRecentTrack && React.createElement('p', {
                     className: 'text-white/80 text-sm mb-3'
                   }, `Now playing: ${currentFriend.cachedRecentTrack.name} - ${currentFriend.cachedRecentTrack.artist}`),
-                  // Tabs
+                  // Tabs - matching Collection style
                   React.createElement('div', {
-                    className: 'flex items-center gap-4 text-white/80',
+                    className: 'flex items-center gap-1',
                     style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                   },
                     [
@@ -18238,7 +18238,7 @@ useEffect(() => {
                       { key: 'topAlbums', label: 'Top Albums' },
                       { key: 'topArtists', label: 'Top Artists' }
                     ].map((tab, index) => [
-                      index > 0 && React.createElement('span', { key: `sep-${tab.key}`, className: 'text-white/50' }, '|'),
+                      index > 0 && React.createElement('span', { key: `sep-${tab.key}`, className: 'text-white/50 mx-2' }, '|'),
                       React.createElement('button', {
                         key: tab.key,
                         onClick: () => {
@@ -18295,15 +18295,18 @@ useEffect(() => {
                     className: 'w-2 h-2 bg-green-400 rounded-full'
                   })
                 ),
-                // Tabs in collapsed mode
-                React.createElement('div', { className: 'flex items-center gap-2' },
+                // Tabs in collapsed mode - matching Collection style
+                React.createElement('div', {
+                  className: 'flex items-center gap-1',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                },
                   [
                     { key: 'recent', label: 'Recent' },
                     { key: 'topTracks', label: 'Top Tracks' },
                     { key: 'topAlbums', label: 'Top Albums' },
                     { key: 'topArtists', label: 'Top Artists' }
                   ].map((tab, index) => [
-                    index > 0 && React.createElement('span', { key: `csep-${tab.key}`, className: 'text-white/50' }, '|'),
+                    index > 0 && React.createElement('span', { key: `csep-${tab.key}`, className: 'text-white/50 mx-2' }, '|'),
                     React.createElement('button', {
                       key: `c-${tab.key}`,
                       onClick: () => {
