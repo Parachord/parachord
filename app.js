@@ -7829,7 +7829,7 @@ ${tracks}
             link: link,
             description: description,
             pubDate: pubDate ? new Date(pubDate) : null,
-            albumArt: null // Will be fetched separately
+            albumArt: undefined // undefined = loading, null = no art found, string = art URL
           });
         }
       });
@@ -9073,6 +9073,7 @@ ${tracks}
     // First pass: check cache for all albums (instant, no network)
     const albumsNeedingFetch = [];
     const cachedUpdates = [];
+    const failedAlbumIds = [];
 
     for (const album of albums) {
       const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
@@ -9081,19 +9082,23 @@ ${tracks}
       if (cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url) {
         // We have cached art - collect for batch update
         cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
-      } else if (cachedReleaseId !== null) {
+      } else if (cachedReleaseId === null) {
+        // Previously failed to find this album - mark as null to show placeholder
+        failedAlbumIds.push(album.id);
+      } else {
         // No cached art or release ID not yet looked up - need to fetch
         albumsNeedingFetch.push(album);
       }
-      // If cachedReleaseId === null, we previously failed to find this album, skip it
     }
 
-    // Apply cached updates immediately
-    if (cachedUpdates.length > 0) {
-      console.log(`📰 Using cached art for ${cachedUpdates.length} Critic's Picks albums`);
+    // Apply cached updates immediately (both successes and known failures)
+    if (cachedUpdates.length > 0 || failedAlbumIds.length > 0) {
+      console.log(`📰 Using cached art for ${cachedUpdates.length} Critic's Picks albums, ${failedAlbumIds.length} known failures`);
       setCriticsPicks(prev => prev.map(a => {
         const cached = cachedUpdates.find(u => u.id === a.id);
-        return cached ? { ...a, albumArt: cached.albumArt } : a;
+        if (cached) return { ...a, albumArt: cached.albumArt };
+        if (failedAlbumIds.includes(a.id)) return { ...a, albumArt: null };
+        return a;
       }));
     }
 
@@ -9101,13 +9106,16 @@ ${tracks}
     for (const album of albumsNeedingFetch) {
       try {
         const artUrl = await getAlbumArt(album.artist, album.title);
-        if (artUrl) {
-          setCriticsPicks(prev => prev.map(a =>
-            a.id === album.id ? { ...a, albumArt: artUrl } : a
-          ));
-        }
+        // Set to artUrl if found, or null if not (to show placeholder instead of shimmer)
+        setCriticsPicks(prev => prev.map(a =>
+          a.id === album.id ? { ...a, albumArt: artUrl || null } : a
+        ));
       } catch (error) {
         console.log(`Could not fetch art for: ${album.artist} - ${album.title}`);
+        // Set to null on error to show placeholder
+        setCriticsPicks(prev => prev.map(a =>
+          a.id === album.id ? { ...a, albumArt: null } : a
+        ));
       }
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -9321,8 +9329,27 @@ ${tracks}
     if (albumToReleaseIdCache.current[lookupKey] !== undefined) {
       const releaseId = albumToReleaseIdCache.current[lookupKey];
       if (releaseId === null) return null; // Previously failed lookup
-      // Return from the shared albumArtCache
-      return albumArtCache.current[releaseId]?.url || null;
+
+      // If we have cached art, return it
+      if (albumArtCache.current[releaseId]?.url) {
+        return albumArtCache.current[releaseId].url;
+      }
+
+      // We have a release ID but no cached art - try to fetch cover art
+      try {
+        const caaResponse = await fetch(
+          `https://coverartarchive.org/release/${releaseId}/front-250`,
+          { redirect: 'follow' }
+        );
+        if (caaResponse.ok) {
+          const artUrl = caaResponse.url;
+          albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
+          return artUrl;
+        }
+      } catch (error) {
+        console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
+      }
+      return null; // No art available for this release
     }
 
     try {
@@ -15333,11 +15360,17 @@ useEffect(() => {
                   onClick: () => openChartsAlbum(album)
                 },
                   // Album art with hover overlay
+                  // States: undefined = loading (shimmer), null/falsy = no art (placeholder), string = show image
                   React.createElement('div', {
-                    className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
+                    className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
+                      album.albumArt === undefined
+                        ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                        : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                    }`,
+                    style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                   },
-                    // Placeholder always rendered behind
-                    React.createElement('div', {
+                    // Placeholder - only show when no art (null or missing)
+                    !album.albumArt && album.albumArt !== undefined && React.createElement('div', {
                       className: 'absolute inset-0 flex items-center justify-center text-white/60'
                     },
                       React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
@@ -15346,7 +15379,7 @@ useEffect(() => {
                         React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                       )
                     ),
-                    album.albumArt && React.createElement('img', {
+                    album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
                       src: album.albumArt,
                       alt: album.title,
                       className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
@@ -15671,11 +15704,17 @@ useEffect(() => {
                 onClick: () => openCriticsPicksAlbum(album)
               },
                 // Album art with hover overlay
+                // States: undefined = loading (shimmer), null = no art (placeholder), string = show image
                 React.createElement('div', {
-                  className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
+                  className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
+                    album.albumArt === undefined
+                      ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                      : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                  }`,
+                  style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                 },
-                  // Placeholder always rendered behind
-                  React.createElement('div', {
+                  // Placeholder - only show when art fetch completed with no result (null)
+                  album.albumArt === null && React.createElement('div', {
                     className: 'absolute inset-0 flex items-center justify-center text-white/60'
                   },
                     React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
@@ -15684,7 +15723,7 @@ useEffect(() => {
                       React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                     )
                   ),
-                  album.albumArt && React.createElement('img', {
+                  album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
                     src: album.albumArt,
                     alt: album.title,
                     className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
@@ -16877,11 +16916,17 @@ useEffect(() => {
                       onClick: () => openTopAlbum(album)
                     },
                       // Album art with hover overlay
+                      // States: undefined = loading (shimmer), null/falsy = no art (placeholder), string = show image
                       React.createElement('div', {
-                        className: 'aspect-square rounded-lg overflow-hidden mb-3 bg-gradient-to-br from-purple-500 to-pink-500 relative'
+                        className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
+                          album.image === undefined
+                            ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                            : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                        }`,
+                        style: album.image === undefined ? { backgroundSize: '200% 100%' } : {}
                       },
-                        // Placeholder always rendered behind
-                        React.createElement('div', {
+                        // Placeholder - only show when no art (null or empty string)
+                        !album.image && album.image !== undefined && React.createElement('div', {
                           className: 'absolute inset-0 flex items-center justify-center text-white/60'
                         },
                           React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
@@ -16890,7 +16935,7 @@ useEffect(() => {
                             React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                           )
                         ),
-                        album.image && React.createElement('img', {
+                        album.image && typeof album.image === 'string' && React.createElement('img', {
                           src: album.image,
                           alt: album.name,
                           className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
