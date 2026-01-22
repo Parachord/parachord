@@ -3,59 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body {
-      width: 280px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
+    * {
       margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: #f3f4f6;
+      color: #111827;
     }
 
     .header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       margin-bottom: 16px;
       padding-bottom: 12px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid #e5e7eb;
     }
 
-    .header img {
-      width: 24px;
-      height: 24px;
+    .header-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #9333ea 0%, #ec4899 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .header-icon svg {
+      width: 18px;
+      height: 18px;
+      fill: white;
     }
 
     .header h1 {
       margin: 0;
-      font-size: 16px;
+      font-size: 18px;
       font-weight: 600;
+      color: #111827;
     }
 
     .status {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 12px;
-      background: #1e293b;
-      border-radius: 8px;
+      gap: 10px;
+      padding: 14px;
+      background: white;
+      border-radius: 12px;
       margin-bottom: 12px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }
 
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: #ef4444;
+      flex-shrink: 0;
     }
 
     .status-dot.connected {
       background: #22c55e;
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
     }
 
     .status-text {
       font-size: 13px;
-      color: #94a3b8;
+      color: #6b7280;
+      font-weight: 500;
     }
 
     .status-text.connected {
@@ -69,74 +92,121 @@
     }
 
     button {
-      background: #3b82f6;
+      background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
       color: white;
       border: none;
-      padding: 10px 16px;
-      border-radius: 6px;
+      padding: 12px 16px;
+      border-radius: 10px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(147, 51, 234, 0.2);
     }
 
     button:hover {
-      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
     }
 
     button:disabled {
-      background: #475569;
+      background: #d1d5db;
       cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
     }
 
-    .info {
-      margin-top: 16px;
-      padding-top: 12px;
-      border-top: 1px solid #334155;
-      font-size: 11px;
-      color: #64748b;
-      text-align: center;
+    button svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
     }
 
     .settings {
       margin-top: 16px;
-      padding-top: 12px;
-      border-top: 1px solid #334155;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
     }
 
     .settings-title {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
-      color: #94a3b8;
-      margin-bottom: 10px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
     }
 
     .setting-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 0;
+      padding: 10px 14px;
+      background: white;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .setting-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .setting-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .setting-icon.spotify {
+      background: #1DB954;
+    }
+
+    .setting-icon.applemusic {
+      background: linear-gradient(135deg, #fc3c44 0%, #fa2d49 100%);
+    }
+
+    .setting-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: white;
+    }
+
+    .setting-text {
+      display: flex;
+      flex-direction: column;
     }
 
     .setting-label {
-      font-size: 12px;
-      color: #cbd5e1;
+      font-size: 13px;
+      font-weight: 500;
+      color: #111827;
     }
 
     .setting-sublabel {
-      font-size: 10px;
-      color: #64748b;
-      margin-top: 2px;
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 1px;
     }
 
     .toggle {
       position: relative;
-      width: 36px;
-      height: 20px;
+      width: 44px;
+      height: 24px;
       flex-shrink: 0;
     }
 
@@ -153,35 +223,59 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: #475569;
-      transition: 0.2s;
-      border-radius: 20px;
+      background-color: #d1d5db;
+      transition: 0.2s ease;
+      border-radius: 24px;
     }
 
     .toggle-slider:before {
       position: absolute;
       content: "";
-      height: 14px;
-      width: 14px;
+      height: 18px;
+      width: 18px;
       left: 3px;
       bottom: 3px;
       background-color: white;
-      transition: 0.2s;
+      transition: 0.2s ease;
       border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
 
     .toggle input:checked + .toggle-slider {
-      background-color: #22c55e;
+      background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
     }
 
     .toggle input:checked + .toggle-slider:before {
-      transform: translateX(16px);
+      transform: translateX(20px);
+    }
+
+    .info {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    .info a {
+      color: #9333ea;
+      text-decoration: none;
+    }
+
+    .info a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <img src="icons/icon48.png" alt="Parachord">
+    <div class="header-icon">
+      <!-- Parachord logo - play button style -->
+      <svg viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7L8 5z"/>
+      </svg>
+    </div>
     <h1>Parachord</h1>
   </div>
 
@@ -192,7 +286,10 @@
 
   <div class="actions">
     <button id="send-url" disabled>
-      <span>Send URL to Parachord</span>
+      <svg viewBox="0 0 24 24">
+        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+      </svg>
+      <span>Add to Queue</span>
     </button>
   </div>
 
@@ -200,9 +297,16 @@
     <div class="settings-title">Link Interception</div>
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label">Spotify</div>
-        <div class="setting-sublabel">Intercept "Open in Spotify" links</div>
+      <div class="setting-info">
+        <div class="setting-icon spotify">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+          </svg>
+        </div>
+        <div class="setting-text">
+          <div class="setting-label">Spotify</div>
+          <div class="setting-sublabel">Intercept app links</div>
+        </div>
       </div>
       <label class="toggle">
         <input type="checkbox" id="spotify-intercept" checked>
@@ -211,9 +315,16 @@
     </div>
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label">Apple Music</div>
-        <div class="setting-sublabel">Intercept "Open in Music" links</div>
+      <div class="setting-info">
+        <div class="setting-icon applemusic">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+          </svg>
+        </div>
+        <div class="setting-text">
+          <div class="setting-label">Apple Music</div>
+          <div class="setting-sublabel">Intercept app links</div>
+        </div>
       </div>
       <label class="toggle">
         <input type="checkbox" id="applemusic-intercept" checked>
@@ -223,7 +334,7 @@
   </div>
 
   <div class="info">
-    Make sure Parachord desktop is running
+    Make sure <a href="#">Parachord</a> desktop is running
   </div>
 
   <script src="popup.js"></script>
