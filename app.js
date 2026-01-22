@@ -672,13 +672,23 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     return () => { cancelled = true; };
   }, [track.name, track.artist, track.album, track.albumArt]);
 
-  // Check if text overflows container
+  // Check if text overflows container (after render completes)
   useEffect(() => {
-    if (textRef.current && containerRef.current) {
-      const textWidth = textRef.current.scrollWidth;
-      const containerWidth = containerRef.current.clientWidth;
-      setIsOverflowing(textWidth > containerWidth);
-    }
+    // Use requestAnimationFrame to ensure DOM is fully rendered and measured
+    const checkOverflow = () => {
+      if (textRef.current && containerRef.current) {
+        const textWidth = textRef.current.scrollWidth;
+        const containerWidth = containerRef.current.clientWidth;
+        setIsOverflowing(textWidth > containerWidth);
+      }
+    };
+
+    // Run after paint to get accurate measurements
+    const rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(checkOverflow);
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [track.name, track.artist]);
 
   return React.createElement('div', {
@@ -12542,7 +12552,7 @@ useEffect(() => {
 
             return React.createElement('div', {
               key: friend.id,
-              className: `px-3 py-1.5 rounded cursor-pointer group transition-colors ${
+              className: `px-3 py-1.5 rounded cursor-pointer group transition-colors flex items-center ${
                 isSelected ? 'bg-gray-200 text-gray-900' : 'hover:bg-gray-100'
               }`,
               style: { minHeight: '52px' },  // Fixed height to prevent layout shift when mini playbar appears
