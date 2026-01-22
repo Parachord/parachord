@@ -20988,6 +20988,97 @@ useEffect(() => {
       )
     ),
 
+    // AI Prompt Input Panel (floating above playbar)
+    aiPromptOpen && React.createElement('div', {
+      className: 'fixed bottom-24 right-8 z-50 bg-gray-800/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-2xl p-4',
+      style: { width: '380px' }
+    },
+      // Header
+      React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('span', { className: 'text-purple-400' }, '✨'),
+          React.createElement('span', { className: 'text-sm font-medium text-white' }, 'Generate Playlist')
+        ),
+        React.createElement('button', {
+          onClick: () => {
+            setAiPromptOpen(false);
+            setAiPrompt('');
+            setAiError(null);
+          },
+          className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+        },
+          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+          )
+        )
+      ),
+
+      // Input
+      React.createElement('div', { className: 'relative' },
+        React.createElement('input', {
+          type: 'text',
+          value: aiPrompt,
+          onChange: (e) => setAiPrompt(e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
+              handleAiGenerate(aiPrompt.trim());
+            }
+            if (e.key === 'Escape') {
+              setAiPromptOpen(false);
+              setAiPrompt('');
+              setAiError(null);
+            }
+          },
+          placeholder: 'What do you want to listen to?',
+          disabled: aiLoading,
+          autoFocus: true,
+          className: 'w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 disabled:opacity-50'
+        }),
+        React.createElement('button', {
+          onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()),
+          disabled: !aiPrompt.trim() || aiLoading,
+          className: 'absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-purple-600 hover:bg-purple-500 text-white'
+        },
+          aiLoading
+            ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
+                React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
+              )
+            : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
+              )
+        )
+      ),
+
+      // Provider selector (only if multiple AI resolvers)
+      (() => {
+        const aiResolvers = getAiResolvers();
+        if (aiResolvers.length <= 1) return null;
+        return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
+          React.createElement('span', { className: 'text-xs text-gray-500' }, 'Provider:'),
+          React.createElement('select', {
+            value: selectedAiResolver || aiResolvers[0]?.id || '',
+            onChange: (e) => setSelectedAiResolver(e.target.value),
+            className: 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-purple-500'
+          },
+            aiResolvers.map(r =>
+              React.createElement('option', { key: r.id, value: r.id }, r.name)
+            )
+          )
+        );
+      })(),
+
+      // Error message
+      aiError && React.createElement('div', { className: 'mt-3 p-2 bg-red-500/20 border border-red-500/30 rounded-lg' },
+        React.createElement('p', { className: 'text-xs text-red-300' }, aiError)
+      ),
+
+      // Hint
+      !aiError && React.createElement('p', { className: 'mt-3 text-xs text-gray-500' },
+        'Try: "upbeat 90s hip hop" or "relaxing jazz for studying"'
+      )
+    ),
+
     // Import Playlist Dialog Modal
     showUrlImportDialog && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
