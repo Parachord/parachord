@@ -2975,6 +2975,27 @@ const Parachord = () => {
     initResolvers();
   }, []);
 
+  // Initialize scrobblers (ListenBrainz, Last.fm, Libre.fm)
+  useEffect(() => {
+    const initScrobblers = async () => {
+      if (typeof window.initializeScrobblers === 'function') {
+        try {
+          // TODO: Load Last.fm API credentials from settings if configured
+          await window.initializeScrobblers({
+            // lastfmApiKey: 'your-api-key',
+            // lastfmApiSecret: 'your-api-secret'
+          });
+          console.log('[App] Scrobblers initialized');
+        } catch (error) {
+          console.error('[App] Failed to initialize scrobblers:', error);
+        }
+      } else {
+        console.log('[App] Scrobbler loader not available');
+      }
+    };
+    initScrobblers();
+  }, []);
+
   // Keep ref updated with latest resolver list
   useEffect(() => {
     loadedResolversRef.current = loadedResolvers;
@@ -3447,6 +3468,10 @@ const Parachord = () => {
           if (handleNextRef.current) handleNextRef.current();
         } else {
           setProgress(elapsed);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(elapsed);
+          }
         }
       }, 100);
       return () => clearInterval(interval);
@@ -3476,6 +3501,10 @@ const Parachord = () => {
           // Don't exceed track duration and don't go backwards
           if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
             setProgress(interpolatedProgress);
+            // Notify scrobble manager of progress for scrobble threshold checking
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
+            }
           }
         }
       }, 1000); // Update every second for smooth progress bar
@@ -4197,7 +4226,12 @@ const Parachord = () => {
         audioRef.current = new Audio();
         audioRef.current.addEventListener('timeupdate', () => {
           if (audioRef.current) {
-            setProgress(audioRef.current.currentTime);
+            const currentTime = audioRef.current.currentTime;
+            setProgress(currentTime);
+            // Notify scrobble manager of progress for scrobble threshold checking
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onProgressUpdate(currentTime);
+            }
           }
         });
         audioRef.current.addEventListener('loadedmetadata', () => {
@@ -4281,6 +4315,11 @@ const Parachord = () => {
         trackNeedsExplicitStart.current = false;
 
         console.log('✅ Local file playing');
+
+        // Notify scrobble manager of track start
+        if (window.scrobbleManager) {
+          window.scrobbleManager.onTrackStart(trackToSet);
+        }
 
         // If audio element has duration now, update the track
         const audioDuration = audioRef.current?.duration;
@@ -4419,6 +4458,12 @@ const Parachord = () => {
         trackNeedsExplicitStart.current = false;
         // Reset baseline for smooth progress interpolation
         spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+
+        // Notify scrobble manager of track start
+        if (window.scrobbleManager) {
+          window.scrobbleManager.onTrackStart(trackToSet);
+        }
+
         if (audioContext) {
           setStartTime(audioContext.currentTime);
         }
@@ -4468,6 +4513,12 @@ const Parachord = () => {
             setProgress(0);
             // Reset baseline for smooth progress interpolation
             spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+
+            // Notify scrobble manager of track start
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onTrackStart(trackToSet);
+            }
+
             if (audioContext) {
               setStartTime(audioContext.currentTime);
             }
@@ -5158,6 +5209,11 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // Notify scrobble manager that current track is ending
+    if (window.scrobbleManager) {
+      window.scrobbleManager.onTrackEnd();
+    }
+
     // Stop browser extension playback if active (YouTube external browser)
     if (browserPlaybackActive && activeExtensionTabId) {
       console.log('⏹️ Stopping browser playback before next track');
@@ -5244,6 +5300,11 @@ const Parachord = () => {
     const track = currentTrackRef.current;
 
     if (!track) return;
+
+    // Notify scrobble manager that current track is ending
+    if (window.scrobbleManager) {
+      window.scrobbleManager.onTrackEnd();
+    }
 
     // Stop browser playback if active
     if (browserPlaybackActive && activeExtensionTabId) {
