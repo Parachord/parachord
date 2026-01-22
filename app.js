@@ -327,7 +327,7 @@ const ResolverCard = React.memo(({
 });
 
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
-const ScrobblerSettingsCard = ({ scrobbler, config, onConfigChange }) => {
+const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange }) => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [tokenInput, setTokenInput] = useState('');
@@ -373,14 +373,24 @@ const ScrobblerSettingsCard = ({ scrobbler, config, onConfigChange }) => {
   };
 
   const handleDisconnect = async () => {
-    await scrobbler.disconnect();
-    onConfigChange(scrobbler.id, {});
+    setError(null);
+    try {
+      await scrobbler.disconnect();
+      onConfigChange(scrobbler.id, {});
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const handleToggleEnabled = async () => {
-    const newConfig = { ...config, enabled: !config?.enabled };
-    await scrobbler.setConfig(newConfig);
-    onConfigChange(scrobbler.id, newConfig);
+    setError(null);
+    try {
+      const newConfig = { ...config, enabled: !config?.enabled };
+      await scrobbler.setConfig(newConfig);
+      onConfigChange(scrobbler.id, newConfig);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   // Get scrobbler-specific styling
@@ -476,7 +486,7 @@ const ScrobblerSettingsCard = ({ scrobbler, config, onConfigChange }) => {
       }, 'Disconnect')
     )
   );
-};
+});
 
 // RelatedArtistCard component - Shows artist image with name below
 const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
@@ -1578,6 +1588,7 @@ const Parachord = () => {
   const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
 
   // Scrobbler settings state
+  const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
   const [scrobblerConfigs, setScrobblerConfigs] = useState({});
   const [scrobblingEnabled, setScrobblingEnabled] = useState(true);
 
@@ -3142,6 +3153,7 @@ const Parachord = () => {
             // lastfmApiSecret: 'your-api-secret'
           });
           console.log('[App] Scrobblers initialized');
+          setScrobblersInitialized(true);
         } catch (error) {
           console.error('[App] Failed to initialize scrobblers:', error);
         }
@@ -3152,10 +3164,10 @@ const Parachord = () => {
     initScrobblers();
   }, []);
 
-  // Load scrobbler configurations
+  // Load scrobbler configurations (runs after scrobblers are initialized)
   useEffect(() => {
     const loadScrobblerConfigs = async () => {
-      if (!window.scrobblers) return;
+      if (!scrobblersInitialized || !window.scrobblers) return;
 
       const configs = {};
       for (const scrobbler of window.scrobblers) {
@@ -3170,7 +3182,7 @@ const Parachord = () => {
       }
     };
     loadScrobblerConfigs();
-  }, []);
+  }, [scrobblersInitialized]);
 
   // Keep ref updated with latest resolver list
   useEffect(() => {
