@@ -5586,7 +5586,7 @@ const Parachord = () => {
       // Load last active view
       const savedLastView = await window.electron.store.get('last_active_view');
       if (savedLastView) {
-        const validViews = ['library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'new-releases'];
+        const validViews = ['library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
           if (savedLastView.view === 'artist' && savedLastView.artistName) {
@@ -15464,12 +15464,12 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['library', 'discover', 'critics-picks', 'recommendations', 'history'].includes(activeView)
+          ['library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history'].includes(activeView) ? '' : 'p-6'
+          ['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -18098,19 +18098,42 @@ useEffect(() => {
 
         // Friend History View
         activeView === 'friendHistory' && currentFriend && (() => {
-          return React.createElement('div', { className: 'flex-1 flex flex-col overflow-hidden' },
-            // Collapsible header
+          return React.createElement('div', {
+            className: 'flex-1 flex flex-col h-full',
+            style: { overflow: 'hidden', minHeight: 0 }
+          },
+            // Header section (outside scrollable area) - matching History pattern
             React.createElement('div', {
-              className: `relative overflow-hidden transition-all duration-300 ${
-                historyHeaderCollapsed ? 'h-16' : 'h-48'
-              }`,
+              className: 'relative',
               style: {
-                background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 50%, #e11d48 100%)'
+                height: historyHeaderCollapsed ? '80px' : '320px',
+                flexShrink: 0,
+                transition: 'height 300ms ease-out',
+                overflow: 'hidden'
               }
             },
-              // Expanded header content
+              // Gradient background - purple/magenta theme for friends
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 50%, #e11d48 100%)'
+                }
+              }),
+              // Background pattern - hexagon pattern for friends
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  opacity: 0.1,
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpolygon fill=\'none\' stroke=\'%23ffffff\' stroke-width=\'1.5\' points=\'30,5 55,20 55,50 30,65 5,50 5,20\'/%3E%3C/svg%3E")'
+                }
+              }),
+              // EXPANDED STATE - Content
               !historyHeaderCollapsed && React.createElement('div', {
-                className: 'absolute inset-0 flex items-center px-8'
+                className: 'absolute inset-0 flex items-center px-8 z-10',
+                style: {
+                  opacity: historyHeaderCollapsed ? 0 : 1,
+                  transition: 'opacity 300ms ease-out'
+                }
               },
                 // Hexagonal avatar
                 React.createElement('div', {
@@ -18192,9 +18215,13 @@ useEffect(() => {
                   }
                 }, pinnedFriendIds.includes(currentFriend.id) ? 'Pinned' : 'Pin to Sidebar')
               ),
-              // Collapsed header
+              // COLLAPSED STATE - Inline layout
               historyHeaderCollapsed && React.createElement('div', {
-                className: 'h-full flex items-center px-6 justify-between'
+                className: 'absolute inset-0 flex items-center px-6 justify-between z-10',
+                style: {
+                  opacity: historyHeaderCollapsed ? 1 : 0,
+                  transition: 'opacity 300ms ease-out'
+                }
               },
                 React.createElement('div', { className: 'flex items-center gap-3' },
                   React.createElement('div', {
