@@ -9046,12 +9046,19 @@ ${tracks}
 
   // Fetch ListenBrainz user info
   const fetchListenbrainzUserInfo = async (username) => {
-    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}`;
+    // Use listen-count endpoint to validate user exists (the /1/user/{username} endpoint doesn't work)
+    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/listen-count`;
     const response = await fetch(url);
 
     if (!response.ok) {
       if (response.status === 404) throw new Error('User not found on ListenBrainz');
       throw new Error(`ListenBrainz API error: ${response.status}`);
+    }
+
+    // Verify response has valid data
+    const data = await response.json();
+    if (data.payload?.count === undefined) {
+      throw new Error('User not found on ListenBrainz');
     }
 
     // ListenBrainz doesn't have avatars, return username only
