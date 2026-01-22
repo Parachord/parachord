@@ -690,9 +690,9 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     }
   },
     // Album art container
-    // States: shimmer (fetching or loading image), placeholder (no art/failed)
+    // States: shimmer (fetching = undefined, or loading image = URL), placeholder (no art found = null, or failed)
     React.createElement('div', {
-      className: !release.albumArt && release.albumArt !== null ? '' : (release.albumArt === null || imageFailed ? '' : 'animate-shimmer'),
+      className: release.albumArt === null || imageFailed ? '' : 'animate-shimmer',
       style: {
         width: '100%',
         aspectRatio: '1',
@@ -727,8 +727,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         onError: () => setImageFailed(true)
       }),
 
-      // Music icon placeholder (only show when no image or failed)
-      (!release.albumArt || imageFailed) && React.createElement('svg', {
+      // Music icon placeholder (only show when no image found = null, or failed - NOT during loading = undefined)
+      (release.albumArt === null || imageFailed) && React.createElement('svg', {
         style: {
           width: '48px',
           height: '48px',
