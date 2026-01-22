@@ -640,6 +640,88 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
   );
 };
 
+// FriendMiniPlaybar component - shows friend's current track with album art lookup
+const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
+  // States: undefined (fetching), null (no art found), string (URL)
+  const [artUrl, setArtUrl] = useState(track.albumArt || undefined);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const textRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    // If we already have art from the service, use it
+    if (track.albumArt) {
+      setArtUrl(track.albumArt);
+      return;
+    }
+
+    // No art provided - try to fetch via our cache system
+    if (!track.album || !track.artist) {
+      setArtUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadArt = async () => {
+      const fetchedArt = await getAlbumArt(track.artist, track.album);
+      if (!cancelled) {
+        setArtUrl(fetchedArt || null);
+      }
+    };
+    loadArt();
+    return () => { cancelled = true; };
+  }, [track.name, track.artist, track.album, track.albumArt]);
+
+  // Check if text overflows container
+  useEffect(() => {
+    if (textRef.current && containerRef.current) {
+      const textWidth = textRef.current.scrollWidth;
+      const containerWidth = containerRef.current.clientWidth;
+      setIsOverflowing(textWidth > containerWidth);
+    }
+  }, [track.name, track.artist]);
+
+  return React.createElement('div', {
+    className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors',
+    style: { maxWidth: '160px', height: '20px' },
+    onClick: onPlay,
+    onContextMenu: onContextMenu
+  },
+    // Mini album art
+    React.createElement('div', {
+      className: 'flex-shrink-0',
+      style: { width: '20px', height: '20px' }
+    },
+      artUrl
+        ? React.createElement('img', {
+            src: artUrl,
+            alt: '',
+            className: 'w-full h-full object-cover rounded-l'
+          })
+        : React.createElement('div', {
+            className: 'w-full h-full bg-gray-600 rounded-l flex items-center justify-center'
+          },
+            React.createElement('span', { className: 'text-gray-400', style: { fontSize: '8px' } }, '\u266A')
+          )
+    ),
+    // Track info - only scrolls if overflowing
+    React.createElement('div', {
+      ref: containerRef,
+      className: `flex-1 min-w-0 px-1.5 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
+      style: { overflow: 'hidden', height: '100%' }
+    },
+      React.createElement('span', {
+        ref: textRef,
+        className: `whitespace-nowrap inline-block ${isOverflowing ? 'animate-marquee' : ''}`,
+        style: { fontSize: '10px', lineHeight: '20px' }
+      },
+        React.createElement('span', { className: 'text-white font-medium' }, track.name),
+        React.createElement('span', { className: 'text-gray-400' }, ` - ${track.artist}`)
+      )
+    )
+  );
+};
+
 // ReleaseCard component - FRESH START - Ultra simple, no complications
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
@@ -1291,6 +1373,9 @@ const Parachord = () => {
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
   const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
   const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
+  const [skipUnsavedFriendWarning, setSkipUnsavedFriendWarning] = useState(false); // "Don't show again" for unsaved friend unpin warning
+  const [unsavedFriendWarningOpen, setUnsavedFriendWarningOpen] = useState(false); // Warning dialog state
+  const [pendingUnpinFriend, setPendingUnpinFriend] = useState(null); // Friend being unpinned (for warning dialog)
   const [rememberQueue, setRememberQueue] = useState(false); // Remember queue on app close/reopen
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
@@ -2029,6 +2114,8 @@ const Parachord = () => {
   const pinFriendRef = useRef(null);
   const unpinFriendRef = useRef(null);
   const removeFriendRef = useRef(null);
+  const saveFriendToCollectionRef = useRef(null);
+  const removeFriendFromCollectionRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
@@ -3438,6 +3525,24 @@ const Parachord = () => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           addToQueue(data.tracks);
+        } else if (data.action === 'add-to-queue' && data.track) {
+          // Single track from friend's now playing
+          addToQueue([data.track]);
+        } else if (data.action === 'add-to-playlist' && data.track) {
+          // Single track from friend's now playing
+          setAddToPlaylistPanel({
+            open: true,
+            tracks: [data.track],
+            sourceName: `${data.track.artist} - ${data.track.title}`,
+            sourceType: 'track'
+          });
+          setSelectedPlaylistsForAdd([]);
+        } else if (data.action === 'add-track-to-collection' && data.track) {
+          // Add single track to collection
+          addTrackToCollection(data.track);
+        } else if (data.action === 'go-to-artist' && data.artistName) {
+          // Navigate to artist page
+          fetchArtistData(data.artistName);
         } else if (data.action === 'add-to-playlist' && data.tracks) {
           // Open the Add to Playlist panel
           console.log(`📋 Add to Playlist: ${data.tracks.length} track(s) - "${data.sourceName}" (type: ${data.sourceType})`);
@@ -3547,6 +3652,10 @@ const Parachord = () => {
           if (unpinFriendRef.current) unpinFriendRef.current(data.friendId);
         } else if (data.action === 'remove-friend' && data.friendId) {
           if (removeFriendRef.current) removeFriendRef.current(data.friendId);
+        } else if (data.action === 'save-friend-to-collection' && data.friendId) {
+          if (saveFriendToCollectionRef.current) saveFriendToCollectionRef.current(data.friendId);
+        } else if (data.action === 'remove-friend-from-collection' && data.friendId) {
+          if (removeFriendFromCollectionRef.current) removeFriendFromCollectionRef.current(data.friendId);
         }
       });
     }
@@ -5661,6 +5770,13 @@ const Parachord = () => {
       if (savedSkipExternalPrompt !== undefined) {
         setSkipExternalPrompt(savedSkipExternalPrompt);
         console.log('📦 Loaded skip external prompt preference:', savedSkipExternalPrompt);
+      }
+
+      // Load skip unsaved friend warning preference
+      const savedSkipUnsavedFriendWarning = await window.electron.store.get('skip_unsaved_friend_warning');
+      if (savedSkipUnsavedFriendWarning !== undefined) {
+        setSkipUnsavedFriendWarning(savedSkipUnsavedFriendWarning);
+        console.log('📦 Loaded skip unsaved friend warning preference:', savedSkipUnsavedFriendWarning);
       }
 
       // Load remember queue preference
@@ -9238,6 +9354,7 @@ ${tracks}
         return {
           name: track.name,
           artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
+          album: track.album?.['#text'] || null,
           timestamp: timestamp,
           albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null
         };
@@ -9253,8 +9370,9 @@ ${tracks}
         return {
           name: listen.track_metadata?.track_name || 'Unknown Track',
           artist: listen.track_metadata?.artist_name || 'Unknown Artist',
+          album: listen.track_metadata?.release_name || null,
           timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
-          albumArt: null // ListenBrainz doesn't provide album art in listens
+          albumArt: null // ListenBrainz doesn't provide album art in listens - will be fetched via getAlbumArt
         };
       }
       return null;
@@ -9318,7 +9436,7 @@ ${tracks}
         return;
       }
 
-      // Create friend object
+      // Create friend object (not saved to collection by default - temporary listening)
       const newFriend = {
         id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         username: userInfo.username,
@@ -9327,13 +9445,16 @@ ${tracks}
         avatarUrl: userInfo.avatarUrl,
         addedAt: Date.now(),
         lastFetched: Date.now(),
-        cachedRecentTrack: null
+        cachedRecentTrack: null,
+        savedToCollection: false  // Friends start as temporary until explicitly saved
       };
 
       // Fetch recent track for initial on-air status
       const recentTrack = await fetchFriendRecentTrack(newFriend);
       if (recentTrack) {
         newFriend.cachedRecentTrack = recentTrack;
+        // Resolve the track in background for instant playback
+        resolveFriendTrack(recentTrack);
       }
 
       setFriends(prev => [...prev, newFriend]);
@@ -9350,13 +9471,28 @@ ${tracks}
     }
   };
 
-  // Remove a friend
+  // Remove a friend completely (deletes from friends list and unpins)
   const removeFriend = (friendId) => {
+    const friend = friends.find(f => f.id === friendId);
     setFriends(prev => prev.filter(f => f.id !== friendId));
     setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
-    showToast('Friend removed');
+    if (friend) {
+      showToast(`${friend.displayName} removed`);
+    }
   };
   removeFriendRef.current = removeFriend;
+
+  // Remove friend from collection (keeps them as temporary, stays pinned if pinned)
+  const removeFriendFromCollection = (friendId) => {
+    setFriends(prev => prev.map(f =>
+      f.id === friendId ? { ...f, savedToCollection: false } : f
+    ));
+    const friend = friends.find(f => f.id === friendId);
+    if (friend) {
+      showToast(`${friend.displayName} removed from collection`);
+    }
+  };
+  removeFriendFromCollectionRef.current = removeFriendFromCollection;
 
   // Pin a friend to the sidebar
   const pinFriend = (friendId) => {
@@ -9370,15 +9506,46 @@ ${tracks}
   };
   pinFriendRef.current = pinFriend;
 
-  // Unpin a friend from the sidebar
+  // Unpin a friend from the sidebar (with warning for unsaved friends)
   const unpinFriend = (friendId) => {
-    setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     const friend = friends.find(f => f.id === friendId);
+
+    // If friend is not saved to collection and warning not dismissed, show warning
+    if (friend && !friend.savedToCollection && !skipUnsavedFriendWarning) {
+      setPendingUnpinFriend(friend);
+      setUnsavedFriendWarningOpen(true);
+      return;
+    }
+
+    // Otherwise proceed with unpin
+    setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     if (friend) {
       showToast(`${friend.displayName} unpinned from sidebar`);
     }
   };
   unpinFriendRef.current = unpinFriend;
+
+  // Confirm unpin after warning dialog
+  const confirmUnpinFriend = () => {
+    if (pendingUnpinFriend) {
+      setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+      showToast(`${pendingUnpinFriend.displayName} unpinned from sidebar`);
+      setUnsavedFriendWarningOpen(false);
+      setPendingUnpinFriend(null);
+    }
+  };
+
+  // Save friend to collection
+  const saveFriendToCollection = (friendId) => {
+    setFriends(prev => prev.map(f =>
+      f.id === friendId ? { ...f, savedToCollection: true } : f
+    ));
+    const friend = friends.find(f => f.id === friendId);
+    if (friend) {
+      showToast(`${friend.displayName} saved to collection`);
+    }
+  };
+  saveFriendToCollectionRef.current = saveFriendToCollection;
 
   // Reorder pinned friends in sidebar (for drag-drop)
   const reorderPinnedFriends = (fromIndex, toIndex) => {
@@ -9390,6 +9557,62 @@ ${tracks}
     });
   };
 
+  // Resolve a friend's current track in background (for instant playback)
+  const resolveFriendTrack = async (track) => {
+    if (!track || !track.name || !track.artist) return;
+
+    const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+    const currentResolverHash = getResolverSettingsHash();
+
+    // Check if already cached and valid
+    const cachedData = trackSourcesCache.current[cacheKey];
+    if (cachedData &&
+        (Date.now() - cachedData.timestamp) < CACHE_TTL.trackSources &&
+        cachedData.resolverHash === currentResolverHash) {
+      console.log(`👥 Friend track already resolved: ${track.artist} - ${track.name}`);
+      return;
+    }
+
+    console.log(`👥 Resolving friend track: ${track.artist} - ${track.name}`);
+
+    const sources = {};
+
+    for (const resolverId of activeResolvers) {
+      // Yield to queue resolution if active
+      if (queueResolutionActiveRef.current) {
+        console.log(`⏸️ Pausing friend track resolution - queue has priority`);
+        while (queueResolutionActiveRef.current) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      const resolver = allResolvers.find(r => r.id === resolverId);
+      if (!resolver || !resolver.capabilities.resolve) continue;
+
+      try {
+        const config = await getResolverConfig(resolverId);
+        const resolved = await resolver.resolve(track.artist, track.name, null, config);
+
+        if (resolved) {
+          console.log(`  ✅ ${resolver.name}: Found match for friend track`);
+          sources[resolverId] = resolved;
+        }
+      } catch (error) {
+        console.error(`  ❌ ${resolver.name} resolve error:`, error);
+      }
+    }
+
+    // Cache the results
+    if (Object.keys(sources).length > 0) {
+      trackSourcesCache.current[cacheKey] = {
+        sources,
+        timestamp: Date.now(),
+        resolverHash: currentResolverHash
+      };
+      console.log(`👥 Friend track resolved with ${Object.keys(sources).length} sources`);
+    }
+  };
+
   // Refresh recent tracks for pinned friends (for polling)
   const refreshPinnedFriends = async () => {
     const pinnedFriends = friends.filter(f => pinnedFriendIds.includes(f.id));
@@ -9397,11 +9620,22 @@ ${tracks}
     for (const friend of pinnedFriends) {
       const recentTrack = await fetchFriendRecentTrack(friend);
       if (recentTrack) {
+        // Check if track changed before updating
+        const previousTrack = friend.cachedRecentTrack;
+        const trackChanged = !previousTrack ||
+          previousTrack.name !== recentTrack.name ||
+          previousTrack.artist !== recentTrack.artist;
+
         setFriends(prev => prev.map(f =>
           f.id === friend.id
             ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
             : f
         ));
+
+        // Resolve the track in background if it's new/changed and friend is on-air
+        if (trackChanged && recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000) {
+          resolveFriendTrack(recentTrack);
+        }
       }
     }
   };
@@ -12308,9 +12542,10 @@ useEffect(() => {
 
             return React.createElement('div', {
               key: friend.id,
-              className: `px-3 py-2 rounded cursor-pointer group transition-colors ${
+              className: `px-3 py-1.5 rounded cursor-pointer group transition-colors ${
                 isSelected ? 'bg-gray-200 text-gray-900' : 'hover:bg-gray-100'
               }`,
+              style: { minHeight: '52px' },  // Fixed height to prevent layout shift when mini playbar appears
               draggable: true,
               onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
@@ -12334,7 +12569,8 @@ useEffect(() => {
                   window.electron.contextMenu.showTrackMenu({
                     type: 'friend',
                     friend: friend,
-                    isPinned: true
+                    isPinned: true,
+                    isSavedToCollection: friend.savedToCollection
                   });
                 }
               }
@@ -12374,20 +12610,44 @@ useEffect(() => {
                   React.createElement('div', {
                     className: 'text-sm text-gray-600 truncate'
                   }, friend.displayName),
-                  onAir && friend.cachedRecentTrack && React.createElement('div', {
-                    className: 'text-xs text-gray-400 truncate hover:text-purple-600 cursor-pointer',
-                    onClick: (e) => {
+                  // Mini playbar showing friend's current track
+                  onAir && friend.cachedRecentTrack && React.createElement(FriendMiniPlaybar, {
+                    track: friend.cachedRecentTrack,
+                    getAlbumArt: getAlbumArt,
+                    onPlay: (e) => {
                       e.stopPropagation();
-                      // Play the track (listen along)
+                      // Get cached sources for instant playback
+                      const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+                      const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                       const track = {
                         title: friend.cachedRecentTrack.name,
                         artist: friend.cachedRecentTrack.artist,
+                        album: friend.cachedRecentTrack.album,
                         albumArt: friend.cachedRecentTrack.albumArt,
-                        sources: {}
+                        sources: cachedSources
                       };
-                      playTrack(track);
+                      handlePlay(track);
+                    },
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (window.electron?.contextMenu?.showTrackMenu) {
+                        // Get cached sources for context menu actions too
+                        const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+                        const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'friend-track',
+                          track: {
+                            title: friend.cachedRecentTrack.name,
+                            artist: friend.cachedRecentTrack.artist,
+                            album: friend.cachedRecentTrack.album,
+                            albumArt: friend.cachedRecentTrack.albumArt,
+                            sources: cachedSources
+                          }
+                        });
+                      }
                     }
-                  }, `${friend.cachedRecentTrack.name} - ${friend.cachedRecentTrack.artist}`)
+                  })
                 )
               )
             );
@@ -12570,6 +12830,84 @@ useEffect(() => {
             onClick: handleSkipExternalTrack,
             className: 'flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium transition-colors'
           }, 'Skip')
+        )
+      )
+    ),
+
+    // Unsaved friend unpin warning dialog
+    unsavedFriendWarningOpen && pendingUnpinFriend && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      onClick: (e) => {
+        if (e.target === e.currentTarget) {
+          setUnsavedFriendWarningOpen(false);
+          setPendingUnpinFriend(null);
+        }
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden',
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header
+        React.createElement('div', { className: 'px-6 pt-6 pb-4 text-center' },
+          React.createElement('div', {
+            className: 'w-12 h-12 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center'
+          },
+            React.createElement('svg', {
+              className: 'w-6 h-6 text-amber-600',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor'
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                strokeWidth: 2,
+                d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'
+              })
+            )
+          ),
+          React.createElement('h3', {
+            className: 'text-lg font-semibold text-gray-900 mb-2'
+          }, 'Friend Not Saved'),
+          React.createElement('p', {
+            className: 'text-sm text-gray-600'
+          }, `${pendingUnpinFriend.displayName} isn't saved to your collection. If you unpin them, you'll need to add them again to pin them later.`)
+        ),
+        // "Don't show again" checkbox
+        React.createElement('label', {
+          className: 'flex items-center justify-center gap-2 px-6 pb-4 cursor-pointer select-none'
+        },
+          React.createElement('input', {
+            type: 'checkbox',
+            className: 'w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer',
+            onChange: async (e) => {
+              const checked = e.target.checked;
+              setSkipUnsavedFriendWarning(checked);
+              if (window.electron?.store) {
+                await window.electron.store.set('skip_unsaved_friend_warning', checked);
+              }
+            }
+          }),
+          React.createElement('span', { className: 'text-xs text-gray-500' }, "Don't show this again")
+        ),
+        // Buttons
+        React.createElement('div', { className: 'px-6 pb-6 flex gap-3' },
+          React.createElement('button', {
+            onClick: () => {
+              // Save to collection, then unpin
+              saveFriendToCollection(pendingUnpinFriend.id);
+              setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+              showToast(`${pendingUnpinFriend.displayName} saved and unpinned`);
+              setUnsavedFriendWarningOpen(false);
+              setPendingUnpinFriend(null);
+            },
+            className: 'flex-1 bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-xl font-medium transition-colors'
+          }, 'Save & Unpin'),
+          React.createElement('button', {
+            onClick: confirmUnpinFriend,
+            className: 'flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium transition-colors'
+          }, 'Just Unpin')
         )
       )
     ),
@@ -16422,8 +16760,11 @@ useEffect(() => {
 
             // Friends tab
             collectionTab === 'friends' && (() => {
-              // Sort and filter friends
-              const sortedFriends = [...friends].sort((a, b) => {
+              // Only show friends saved to collection (savedToCollection !== false for backwards compatibility)
+              const savedFriends = friends.filter(f => f.savedToCollection !== false);
+
+              // Sort friends
+              const sortedFriends = [...savedFriends].sort((a, b) => {
                 const sort = collectionSort.friends;
                 if (sort === 'alpha-asc') return a.displayName.localeCompare(b.displayName);
                 if (sort === 'alpha-desc') return b.displayName.localeCompare(a.displayName);
@@ -16470,13 +16811,13 @@ useEffect(() => {
                 );
               }
 
-              if (friends.length === 0) {
+              if (savedFriends.length === 0) {
                 return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
                   React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
                   ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400 mb-4' }, 'Add friends by their Last.fm or ListenBrainz username'),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends in collection'),
+                  React.createElement('p', { className: 'text-sm text-gray-400 mb-4' }, 'Add friends to your collection to see them here'),
                   React.createElement('button', {
                     onClick: () => setAddFriendModalOpen(true),
                     className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
@@ -16499,15 +16840,18 @@ useEffect(() => {
                     'Add Friend'
                   )
                 ),
-                // Grid of friend cards
-                React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
+                // Grid of friend cards - matching Related Artists style
+                React.createElement('div', {
+                  className: 'grid gap-x-4 gap-y-8',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                },
                   displayFriends.map(friend => {
                     const onAir = isOnAir(friend);
                     const isPinned = pinnedFriendIds.includes(friend.id);
 
                     return React.createElement('div', {
                       key: friend.id,
-                      className: 'bg-white rounded-xl p-4 hover:shadow-lg transition-all cursor-pointer group border border-gray-100',
+                      className: 'flex flex-col items-center cursor-pointer group',
                       draggable: true,
                       onDragStart: (e) => {
                         e.dataTransfer.setData('friendId', friend.id);
@@ -16520,60 +16864,57 @@ useEffect(() => {
                           window.electron.contextMenu.showTrackMenu({
                             type: 'friend',
                             friend: friend,
-                            isPinned: isPinned
+                            isPinned: isPinned,
+                            isSavedToCollection: friend.savedToCollection
                           });
                         }
                       }
                     },
-                      // Hexagonal avatar
-                      React.createElement('div', { className: 'flex justify-center mb-3' },
-                        React.createElement('div', { className: 'relative' },
-                          React.createElement('div', {
-                            className: 'w-20 h-20 bg-gray-200 overflow-hidden',
-                            style: {
-                              clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
-                            }
-                          },
-                            friend.avatarUrl
-                              ? React.createElement('img', {
-                                  src: friend.avatarUrl,
-                                  alt: friend.displayName,
-                                  className: 'w-full h-full object-cover'
-                                })
-                              : React.createElement('div', {
-                                  className: 'w-full h-full flex items-center justify-center text-2xl font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
-                                }, friend.displayName.charAt(0).toUpperCase())
-                          ),
-                          // On-air indicator
-                          onAir && React.createElement('div', {
-                            className: 'absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white'
-                          }),
-                          // Pin indicator
-                          isPinned && React.createElement('div', {
-                            className: 'absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center'
-                          },
-                            React.createElement('svg', { className: 'w-3 h-3 text-white', fill: 'currentColor', viewBox: '0 0 20 20' },
-                              React.createElement('path', { d: 'M5 5a2 2 0 012-2h6a2 2 0 012 2v2H5V5zm0 4h10v7a2 2 0 01-2 2H7a2 2 0 01-2-2V9z' })
-                            )
-                          )
-                        )
-                      ),
-                      // Name
-                      React.createElement('div', { className: 'text-center' },
-                        React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, friend.displayName),
-                        // Service badge
+                      // Hexagonal avatar with zoom on hover
+                      React.createElement('div', { className: 'relative' },
                         React.createElement('div', {
-                          className: `inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs ${
-                            friend.service === 'lastfm' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
-                          }`
-                        }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
-                        // Current track if on-air
-                        onAir && friend.cachedRecentTrack && React.createElement('div', {
-                          className: 'mt-2 text-xs text-gray-500 truncate'
+                          className: 'w-36 h-36 overflow-hidden',
+                          style: {
+                            clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          }
                         },
-                          React.createElement('span', { className: 'text-green-600' }, '\u266A '),
-                          `${friend.cachedRecentTrack.name}`
-                        )
+                          React.createElement('div', {
+                            className: `w-full h-full group-hover:scale-110 transition-transform duration-300 ${
+                              friend.avatarUrl ? '' : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                            }`,
+                            style: friend.avatarUrl ? {
+                              backgroundImage: `url(${friend.avatarUrl})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center'
+                            } : {}
+                          },
+                            // Show initial if no avatar
+                            !friend.avatarUrl && React.createElement('div', {
+                              className: 'w-full h-full flex items-center justify-center text-3xl font-medium text-white'
+                            }, friend.displayName.charAt(0).toUpperCase())
+                          )
+                        ),
+                        // On-air indicator
+                        onAir && React.createElement('div', {
+                          className: 'absolute -bottom-1 right-4 w-5 h-5 bg-green-500 rounded-full border-2 border-white'
+                        })
+                      ),
+                      // Name and info
+                      React.createElement('span', {
+                        className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
+                      }, friend.displayName),
+                      // Service badge
+                      React.createElement('div', {
+                        className: `inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs ${
+                          friend.service === 'lastfm' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                        }`
+                      }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
+                      // Current track if on-air
+                      onAir && friend.cachedRecentTrack && React.createElement('div', {
+                        className: 'mt-1 text-xs text-gray-500 truncate text-center max-w-full'
+                      },
+                        React.createElement('span', { className: 'text-green-600' }, '\u266A '),
+                        `${friend.cachedRecentTrack.name}`
                       )
                     );
                   })
@@ -19520,23 +19861,65 @@ useEffect(() => {
                       })
                     )
                   ),
-                  // Reset prompts button (only shown when skipExternalPrompt is true)
-                  skipExternalPrompt && React.createElement('div', { className: 'mt-4 pt-4 border-t border-gray-100' },
-                    React.createElement('button', {
-                      onClick: async () => {
-                        setSkipExternalPrompt(false);
-                        if (window.electron?.store) {
-                          await window.electron.store.set('skip_external_prompt', false);
-                        }
-                      },
-                      className: 'inline-flex items-center gap-2 px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors'
-                    },
-                      React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                ),
+
+                // Dialogs Section - Reset "Don't show again" preferences
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Dialogs'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Manage confirmation dialogs and prompts')
+                  ),
+                  // List of dismissed dialogs
+                  React.createElement('div', { className: 'space-y-3 mb-5' },
+                    // External track prompt
+                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50' },
+                      React.createElement('div', null,
+                        React.createElement('p', { className: 'text-sm text-gray-900' }, 'Open in Browser prompt'),
+                        React.createElement('p', { className: 'text-xs text-gray-500' }, 'Confirmation before opening external tracks')
                       ),
-                      'Show prompts again'
+                      React.createElement('div', {
+                        className: `px-2 py-0.5 rounded text-xs font-medium ${skipExternalPrompt ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`
+                      }, skipExternalPrompt ? 'Hidden' : 'Showing')
+                    ),
+                    // Unsaved friend unpin warning
+                    React.createElement('div', { className: 'flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50' },
+                      React.createElement('div', null,
+                        React.createElement('p', { className: 'text-sm text-gray-900' }, 'Unsaved friend warning'),
+                        React.createElement('p', { className: 'text-xs text-gray-500' }, 'Warning when unpinning friends not saved to collection')
+                      ),
+                      React.createElement('div', {
+                        className: `px-2 py-0.5 rounded text-xs font-medium ${skipUnsavedFriendWarning ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`
+                      }, skipUnsavedFriendWarning ? 'Hidden' : 'Showing')
                     )
-                  )
+                  ),
+                  // Reset all button
+                  (skipExternalPrompt || skipUnsavedFriendWarning) && React.createElement('button', {
+                    onClick: async () => {
+                      setSkipExternalPrompt(false);
+                      setSkipUnsavedFriendWarning(false);
+                      if (window.electron?.store) {
+                        await window.electron.store.set('skip_external_prompt', false);
+                        await window.electron.store.set('skip_unsaved_friend_warning', false);
+                      }
+                      showToast('All dialog preferences reset');
+                    },
+                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                    ),
+                    'Reset All Dialogs'
+                  ),
+                  // All dialogs showing message
+                  (!skipExternalPrompt && !skipUnsavedFriendWarning) && React.createElement('p', {
+                    className: 'text-sm text-gray-500 italic'
+                  }, 'All confirmation dialogs are currently enabled.')
                 ),
 
                 // Queue Settings Section

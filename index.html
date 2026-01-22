@@ -104,6 +104,28 @@
       background-size: 200% 100% !important;
     }
 
+    /* Marquee scrolling animation for long text */
+    @keyframes marquee-scroll {
+      0% { transform: translateX(0); }
+      10% { transform: translateX(0); }
+      90% { transform: translateX(calc(-100% + 100px)); }
+      100% { transform: translateX(calc(-100% + 100px)); }
+    }
+
+    .animate-marquee {
+      animation: marquee-scroll 8s linear infinite;
+      animation-delay: 1s;
+    }
+
+    .marquee-container {
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .marquee-container:hover .animate-marquee {
+      animation-play-state: paused;
+    }
+
     /* Queue track drop animation - track slides down into player */
     @keyframes queue-track-drop {
       0% {

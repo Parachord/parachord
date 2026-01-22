@@ -1235,13 +1235,82 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       });
     }
 
-    menuItems.push({ type: 'separator' });
+    // Show "Add to Collection" for unsaved friends, "Remove from Collection" for saved friends
+    // Note: undefined/null treated as saved (backwards compatibility for friends added before this feature)
+    const isSaved = data.isSavedToCollection !== false;
+    if (!isSaved) {
+      menuItems.push({
+        label: 'Add to Collection',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'save-friend-to-collection',
+            friendId: data.friend.id
+          });
+        }
+      });
+    } else {
+      menuItems.push({
+        label: 'Remove from Collection',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'remove-friend-from-collection',
+            friendId: data.friend.id
+          });
+        }
+      });
+    }
+
+    // Only show "Remove Friend" if saved to collection (for unsaved+pinned friends, Unpin handles removal)
+    if (isSaved) {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'Remove Friend',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'remove-friend',
+            friendId: data.friend.id
+          });
+        }
+      });
+    }
+  }
+
+  // Friend's now-playing track context menu
+  if (data.type === 'friend-track') {
     menuItems.push({
-      label: 'Remove Friend',
+      label: 'Add to Queue',
       click: () => {
         mainWindow.webContents.send('track-context-menu-action', {
-          action: 'remove-friend',
-          friendId: data.friend.id
+          action: 'add-to-queue',
+          track: data.track
+        });
+      }
+    });
+    menuItems.push({
+      label: 'Add to Playlist',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'add-to-playlist',
+          track: data.track
+        });
+      }
+    });
+    menuItems.push({
+      label: 'Add to Collection',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'add-track-to-collection',
+          track: data.track
+        });
+      }
+    });
+    menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Go to Artist',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'go-to-artist',
+          artistName: data.track.artist
         });
       }
     });
