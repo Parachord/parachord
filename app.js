@@ -1458,6 +1458,18 @@ const Parachord = () => {
   });
   // Per-track volume adjustments (trackId -> dB offset from resolver default)
   const trackVolumeAdjustments = useRef({});
+
+  // AI Playlist Generation state
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [selectedAiResolver, setSelectedAiResolver] = useState(null);
+
+  // Results sidebar state (generic/reusable)
+  const [resultsSidebar, setResultsSidebar] = useState(null);
+  // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
     artists: [],
