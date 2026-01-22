@@ -1,10 +1,16 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#9333ea"/>
-      <stop offset="100%" style="stop-color:#ec4899"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
     </linearGradient>
   </defs>
-  <rect width="128" height="128" rx="28" fill="url(#gradient)"/>
-  <path d="M48 34V94L96 64L48 34Z" fill="white"/>
+  <!-- Background -->
+  <rect width="128" height="128" rx="28" fill="url(#bg-gradient)"/>
+  <!-- Stylized 'p' from parachord logo - the circular part with stem -->
+  <circle cx="64" cy="58" r="28" stroke="white" stroke-width="12" fill="none"/>
+  <rect x="80" y="44" width="12" height="54" fill="white"/>
+  <!-- Red parachute/play triangle - signature element -->
+  <path d="M38 110L18 124V96L38 110Z" fill="#FF0000"/>
+  <line x1="18.5" y1="124" x2="31" y2="116" stroke="white" stroke-width="1.5"/>
 </svg>
