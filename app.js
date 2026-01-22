@@ -1138,6 +1138,7 @@ const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
   const [isPlaying, setIsPlaying] = useState(false);
+  const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
@@ -3740,6 +3741,7 @@ const Parachord = () => {
 
   const handlePlay = async (trackOrSource) => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
+    setTrackLoading(true); // Show loading state in playbar
 
     // Determine if we were passed a track with multiple sources or a specific source
     let resolverId;
@@ -3788,6 +3790,7 @@ const Parachord = () => {
         availableResolvers = Object.keys(trackOrSource.sources);
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
+          setTrackLoading(false); // Clear loading state
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -3822,6 +3825,7 @@ const Parachord = () => {
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track');
+        setTrackLoading(false); // Clear loading state
         return;
       }
 
@@ -3840,6 +3844,7 @@ const Parachord = () => {
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
       else {
         console.error('❌ Could not determine resolver for source');
+        setTrackLoading(false); // Clear loading state
         return;
       }
     }
@@ -3847,6 +3852,7 @@ const Parachord = () => {
     const resolver = allResolvers.find(r => r.id === resolverId);
     if (!resolver) {
       console.error(`❌ Resolver ${resolverId} not found`);
+      setTrackLoading(false); // Clear loading state
       return;
     }
 
@@ -3961,6 +3967,7 @@ const Parachord = () => {
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
+        setTrackLoading(false); // Clear loading state
         streamingPlaybackActiveRef.current = false;
         setBrowserPlaybackActive(false);
         setIsExternalPlayback(false);
@@ -3998,6 +4005,7 @@ const Parachord = () => {
         }
 
         localFileFallbackInProgressRef.current = false;
+        setTrackLoading(false); // Clear loading state on error
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -4045,6 +4053,7 @@ const Parachord = () => {
         sourceToPlay;
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
+      setTrackLoading(false); // Clear loading state when showing prompt
       // Clear explicit start flag since we're playing a new track
       trackNeedsExplicitStart.current = false;
       showExternalTrackPromptUI(trackToSet);
@@ -4099,6 +4108,7 @@ const Parachord = () => {
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
+        setTrackLoading(false); // Clear loading state on success
         // Clear explicit start flag since we're playing a new track
         trackNeedsExplicitStart.current = false;
         // Reset baseline for smooth progress interpolation
@@ -4114,6 +4124,7 @@ const Parachord = () => {
       }
 
       if (!success) {
+        setTrackLoading(false); // Clear loading state on failure
         console.error(`❌ ${resolver.name} playback failed`);
 
         // For Spotify, retry once after a short delay (device may need to wake up)
@@ -4179,6 +4190,7 @@ const Parachord = () => {
       }
     } catch (error) {
       console.error(`❌ Error playing with ${resolver.name}:`, error);
+      setTrackLoading(false); // Clear loading state on error
 
       // On error, also try to re-resolve
       if (sourceToPlay.artist && sourceToPlay.title) {
@@ -18018,25 +18030,25 @@ useEffect(() => {
           ] : React.createElement(React.Fragment, null,
             // Skeleton album art
             React.createElement('div', {
-              className: 'flex-shrink-0 rounded bg-gray-700',
-              style: { width: '61px', height: '61px' }
+              className: `flex-shrink-0 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+              style: { width: '61px', height: '61px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
             }),
             // Skeleton track info
             React.createElement('div', { className: 'min-w-0 space-y-2' },
               // Track title skeleton
               React.createElement('div', {
-                className: 'h-4 rounded bg-gray-700',
-                style: { width: '200px' }
+                className: `h-4 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                style: { width: '200px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
               // Artist skeleton
               React.createElement('div', {
-                className: 'h-3 rounded bg-gray-700',
-                style: { width: '140px' }
+                className: `h-3 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                style: { width: '140px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
               // Source skeleton
               React.createElement('div', {
-                className: 'h-3 rounded bg-gray-700',
-                style: { width: '80px' }
+                className: `h-3 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                style: { width: '80px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               })
             )
           )
