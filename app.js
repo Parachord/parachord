@@ -326,6 +326,158 @@ const ResolverCard = React.memo(({
   );
 });
 
+// ScrobblerSettingsCard component - Settings card for individual scrobbler services
+const ScrobblerSettingsCard = ({ scrobbler, config, onConfigChange }) => {
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState(null);
+  const [tokenInput, setTokenInput] = useState('');
+
+  const isConnected = config?.enabled && (config?.sessionKey || config?.userToken);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    setError(null);
+
+    try {
+      if (scrobbler.id === 'listenbrainz') {
+        // Token-based auth
+        await scrobbler.connect(tokenInput);
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+        setTokenInput('');
+      } else {
+        // OAuth flow (Last.fm, Libre.fm)
+        const { authUrl } = await scrobbler.startAuth();
+        window.electron.shell.openExternal(authUrl);
+        // Update config to show pending state
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleCompleteAuth = async () => {
+    setConnecting(true);
+    setError(null);
+
+    try {
+      await scrobbler.completeAuth();
+      onConfigChange(scrobbler.id, await scrobbler.getConfig());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    await scrobbler.disconnect();
+    onConfigChange(scrobbler.id, {});
+  };
+
+  const handleToggleEnabled = async () => {
+    const newConfig = { ...config, enabled: !config?.enabled };
+    await scrobbler.setConfig(newConfig);
+    onConfigChange(scrobbler.id, newConfig);
+  };
+
+  // Get scrobbler-specific styling
+  const getScrobblerColor = () => {
+    switch (scrobbler.id) {
+      case 'lastfm': return 'bg-red-500';
+      case 'listenbrainz': return 'bg-orange-500';
+      case 'librefm': return 'bg-green-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  return React.createElement('div', {
+    className: 'bg-white rounded-xl p-4 shadow-sm border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all'
+  },
+    // Header row with icon, name, and toggle
+    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+      React.createElement('div', { className: 'flex items-center gap-3' },
+        // Service icon
+        React.createElement('div', {
+          className: `w-10 h-10 rounded-lg flex items-center justify-center ${getScrobblerColor()}`
+        },
+          React.createElement('span', { className: 'text-white text-lg font-bold' },
+            scrobbler.name[0]
+          )
+        ),
+        // Service name and connection status
+        React.createElement('div', null,
+          React.createElement('h3', { className: 'font-medium text-gray-900' }, scrobbler.name),
+          isConnected && config?.username && React.createElement('p', {
+            className: 'text-sm text-gray-500'
+          }, `Connected as ${config.username}`)
+        )
+      ),
+      // Enabled toggle (only when connected)
+      isConnected && React.createElement('button', {
+        onClick: handleToggleEnabled,
+        className: `relative w-11 h-6 rounded-full transition-colors ${config?.enabled ? 'bg-purple-600' : 'bg-gray-300'}`
+      },
+        React.createElement('span', {
+          className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${config?.enabled ? 'translate-x-5' : 'translate-x-0'}`
+        })
+      )
+    ),
+
+    // Error message
+    error && React.createElement('div', {
+      className: 'mb-3 p-2 bg-red-50 text-red-600 text-sm rounded-lg'
+    }, error),
+
+    // Connection UI
+    !isConnected ? React.createElement('div', { className: 'space-y-3' },
+      // ListenBrainz token input
+      scrobbler.id === 'listenbrainz' && React.createElement('div', null,
+        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' },
+          'User Token',
+          React.createElement('a', {
+            href: '#',
+            onClick: (e) => {
+              e.preventDefault();
+              window.electron.shell.openExternal('https://listenbrainz.org/settings/');
+            },
+            className: 'ml-2 text-purple-600 hover:underline'
+          }, 'Get token')
+        ),
+        React.createElement('input', {
+          type: 'text',
+          value: tokenInput,
+          onChange: (e) => setTokenInput(e.target.value),
+          placeholder: 'Enter your ListenBrainz token',
+          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+        })
+      ),
+
+      // Connect button
+      React.createElement('button', {
+        onClick: handleConnect,
+        disabled: connecting || (scrobbler.id === 'listenbrainz' && !tokenInput),
+        className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+      }, connecting ? 'Connecting...' : 'Connect'),
+
+      // Complete Authorization button (for OAuth services with pending token)
+      config?.pendingToken && React.createElement('button', {
+        onClick: handleCompleteAuth,
+        disabled: connecting,
+        className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
+      }, connecting ? 'Completing...' : 'Complete Authorization')
+    ) : (
+      // Disconnect button (when connected)
+      React.createElement('button', {
+        onClick: handleDisconnect,
+        className: 'w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors'
+      }, 'Disconnect')
+    )
+  );
+};
+
 // RelatedArtistCard component - Shows artist image with name below
 const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
   const [imageUrl, setImageUrl] = useState(null);
@@ -1424,6 +1576,10 @@ const Parachord = () => {
   const [listenbrainzUsernameInput, setListenbrainzUsernameInput] = useState(''); // Input field value
   const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
   const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
+
+  // Scrobbler settings state
+  const [scrobblerConfigs, setScrobblerConfigs] = useState({});
+  const [scrobblingEnabled, setScrobblingEnabled] = useState(true);
 
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState('');
@@ -2994,6 +3150,26 @@ const Parachord = () => {
       }
     };
     initScrobblers();
+  }, []);
+
+  // Load scrobbler configurations
+  useEffect(() => {
+    const loadScrobblerConfigs = async () => {
+      if (!window.scrobblers) return;
+
+      const configs = {};
+      for (const scrobbler of window.scrobblers) {
+        configs[scrobbler.id] = await scrobbler.getConfig();
+      }
+      setScrobblerConfigs(configs);
+
+      // Load global scrobbling enabled state
+      if (window.electron?.store) {
+        const enabled = await window.electron.store.get('scrobbling-enabled');
+        setScrobblingEnabled(enabled !== false);
+      }
+    };
+    loadScrobblerConfigs();
   }, []);
 
   // Keep ref updated with latest resolver list
@@ -20104,6 +20280,76 @@ useEffect(() => {
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  )
+                ),
+
+                // Scrobbling Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2'
+                    },
+                      // Music note icon
+                      React.createElement('svg', {
+                        className: 'w-4 h-4',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        viewBox: '0 0 24 24'
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          strokeWidth: 2,
+                          d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+                        })
+                      ),
+                      'Scrobbling'
+                    ),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Report your listening history to scrobbling services')
+                  ),
+
+                  // Global enable/disable toggle
+                  React.createElement('div', { className: 'flex items-center justify-between py-3 mb-4 px-3 bg-gray-50 rounded-lg' },
+                    React.createElement('div', null,
+                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                        'Enable Scrobbling'
+                      ),
+                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                        'Send your listening activity to connected services'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !scrobblingEnabled;
+                        setScrobblingEnabled(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('scrobbling-enabled', newValue);
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${scrobblingEnabled ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${scrobblingEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  ),
+
+                  // Scrobbler cards
+                  React.createElement('div', { className: 'space-y-4' },
+                    window.scrobblers && window.scrobblers.map(scrobbler =>
+                      React.createElement(ScrobblerSettingsCard, {
+                        key: scrobbler.id,
+                        scrobbler: scrobbler,
+                        config: scrobblerConfigs[scrobbler.id],
+                        onConfigChange: (id, newConfig) => {
+                          setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                        }
                       })
                     )
                   )
