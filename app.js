@@ -3147,11 +3147,15 @@ const Parachord = () => {
     const initScrobblers = async () => {
       if (typeof window.initializeScrobblers === 'function') {
         try {
-          // TODO: Load Last.fm API credentials from settings if configured
-          await window.initializeScrobblers({
-            // lastfmApiKey: 'your-api-key',
-            // lastfmApiSecret: 'your-api-secret'
-          });
+          // Load Last.fm API credentials from main process environment
+          let config = {};
+          if (window.electron?.getScrobblerConfig) {
+            config = await window.electron.getScrobblerConfig();
+            if (config.lastfmApiKey) {
+              console.log('[App] Last.fm API credentials loaded from environment');
+            }
+          }
+          await window.initializeScrobblers(config);
           console.log('[App] Scrobblers initialized');
           setScrobblersInitialized(true);
         } catch (error) {

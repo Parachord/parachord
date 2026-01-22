@@ -442,6 +442,16 @@ ipcMain.handle('crypto-md5', (event, input) => {
   return crypto.createHash('md5').update(input).digest('hex');
 });
 
+// Scrobbler config - expose Last.fm API credentials from environment
+// This provides a dedicated API for scrobbler initialization, returning both key and secret together.
+// The secret supports a fallback to LASTFM_SHARED_SECRET for compatibility with different env var naming.
+ipcMain.handle('get-scrobbler-config', () => {
+  return {
+    lastfmApiKey: process.env.LASTFM_API_KEY,
+    lastfmApiSecret: process.env.LASTFM_API_SECRET || process.env.LASTFM_SHARED_SECRET
+  };
+});
+
 // IPC handlers for storage
 ipcMain.handle('store-get', (event, key) => {
   return store.get(key);
@@ -459,7 +469,7 @@ ipcMain.handle('store-delete', (event, key) => {
 
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
-const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'QOBUZ_APP_ID'];
+const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID'];
 ipcMain.handle('config-get', (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
     return process.env[key] || null;

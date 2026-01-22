@@ -161,5 +161,8 @@ contextBridge.exposeInMainWorld('electron', {
   // Config - expose select environment variables to renderer
   config: {
     get: (key) => ipcRenderer.invoke('config-get', key)
-  }
+  },
+
+  // Scrobbler config - get Last.fm API credentials from main process
+  getScrobblerConfig: () => ipcRenderer.invoke('get-scrobbler-config')
 });
