@@ -9107,6 +9107,155 @@ ${tracks}
     return friend.cachedRecentTrack.timestamp > tenMinutesAgo;
   };
 
+  // Add a friend from username or URL
+  const addFriend = async (input) => {
+    setAddFriendLoading(true);
+
+    try {
+      const { service, username } = parseFriendInput(input);
+
+      if (!username) {
+        showToast('Please enter a username or profile URL', 'error');
+        return;
+      }
+
+      let userInfo = null;
+      let finalService = service;
+
+      if (service === 'lastfm') {
+        userInfo = await fetchLastfmUserInfo(username);
+        finalService = 'lastfm';
+      } else if (service === 'listenbrainz') {
+        userInfo = await fetchListenbrainzUserInfo(username);
+        finalService = 'listenbrainz';
+      } else {
+        // Try Last.fm first, then ListenBrainz
+        try {
+          userInfo = await fetchLastfmUserInfo(username);
+          finalService = 'lastfm';
+        } catch (lfmError) {
+          console.log(`User not found on Last.fm, trying ListenBrainz...`);
+          try {
+            userInfo = await fetchListenbrainzUserInfo(username);
+            finalService = 'listenbrainz';
+          } catch (lbError) {
+            throw new Error('User not found on Last.fm or ListenBrainz');
+          }
+        }
+      }
+
+      // Check if already added
+      const existingFriend = friends.find(f =>
+        f.username.toLowerCase() === userInfo.username.toLowerCase() &&
+        f.service === finalService
+      );
+      if (existingFriend) {
+        showToast(`${userInfo.displayName} is already in your friends list`, 'error');
+        return;
+      }
+
+      // Create friend object
+      const newFriend = {
+        id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        username: userInfo.username,
+        service: finalService,
+        displayName: userInfo.displayName,
+        avatarUrl: userInfo.avatarUrl,
+        addedAt: Date.now(),
+        lastFetched: Date.now(),
+        cachedRecentTrack: null
+      };
+
+      // Fetch recent track for initial on-air status
+      const recentTrack = await fetchFriendRecentTrack(newFriend);
+      if (recentTrack) {
+        newFriend.cachedRecentTrack = recentTrack;
+      }
+
+      setFriends(prev => [...prev, newFriend]);
+      setAddFriendModalOpen(false);
+      setAddFriendInput('');
+      showToast(`Added ${newFriend.displayName} from ${finalService === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+
+      console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
+    } catch (error) {
+      console.error('Failed to add friend:', error);
+      showToast(error.message || 'Failed to add friend', 'error');
+    } finally {
+      setAddFriendLoading(false);
+    }
+  };
+
+  // Remove a friend
+  const removeFriend = (friendId) => {
+    setFriends(prev => prev.filter(f => f.id !== friendId));
+    setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    showToast('Friend removed');
+  };
+
+  // Pin a friend to the sidebar
+  const pinFriend = (friendId) => {
+    if (!pinnedFriendIds.includes(friendId)) {
+      setPinnedFriendIds(prev => [...prev, friendId]);
+      const friend = friends.find(f => f.id === friendId);
+      if (friend) {
+        showToast(`${friend.displayName} pinned to sidebar`);
+      }
+    }
+  };
+
+  // Unpin a friend from the sidebar
+  const unpinFriend = (friendId) => {
+    setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    const friend = friends.find(f => f.id === friendId);
+    if (friend) {
+      showToast(`${friend.displayName} unpinned from sidebar`);
+    }
+  };
+
+  // Reorder pinned friends in sidebar (for drag-drop)
+  const reorderPinnedFriends = (fromIndex, toIndex) => {
+    setPinnedFriendIds(prev => {
+      const newOrder = [...prev];
+      const [removed] = newOrder.splice(fromIndex, 1);
+      newOrder.splice(toIndex, 0, removed);
+      return newOrder;
+    });
+  };
+
+  // Refresh recent tracks for pinned friends (for polling)
+  const refreshPinnedFriends = async () => {
+    const pinnedFriends = friends.filter(f => pinnedFriendIds.includes(f.id));
+
+    for (const friend of pinnedFriends) {
+      const recentTrack = await fetchFriendRecentTrack(friend);
+      if (recentTrack) {
+        setFriends(prev => prev.map(f =>
+          f.id === friend.id
+            ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
+            : f
+        ));
+      }
+    }
+  };
+
+  // Poll pinned friends every 2 minutes for on-air status
+  useEffect(() => {
+    if (pinnedFriendIds.length > 0) {
+      // Initial refresh
+      refreshPinnedFriends();
+
+      // Set up polling interval
+      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, 2 * 60 * 1000);
+
+      return () => {
+        if (friendPollIntervalRef.current) {
+          clearInterval(friendPollIntervalRef.current);
+        }
+      };
+    }
+  }, [pinnedFriendIds.length]);
+
   // Resolve top tracks using the resolver pipeline
   const resolveTopTracks = async (tracks) => {
     console.log(`📊 Resolving ${tracks.length} top tracks...`);
