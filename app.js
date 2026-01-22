@@ -9256,6 +9256,281 @@ ${tracks}
     }
   }, [pinnedFriendIds.length]);
 
+  // Load friend's recent listening history
+  const loadFriendRecentTracks = async (friend) => {
+    setFriendHistoryLoading(true);
+
+    try {
+      let tracks = [];
+
+      if (friend.service === 'lastfm') {
+        const apiKey = lastfmApiKey.current;
+        if (!apiKey) throw new Error('Last.fm API key not configured');
+
+        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch recent tracks: ${response.status}`);
+
+        const data = await response.json();
+        const recentTracks = data.recenttracks?.track || [];
+
+        tracks = recentTracks.map((track, index) => ({
+          id: `friend-recent-${index}-${track.name}`.replace(/\s+/g, '-'),
+          title: track.name,
+          artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
+          album: track.album?.['#text'] || null,
+          albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null,
+          timestamp: track.date?.uts ? parseInt(track.date.uts) * 1000 : Date.now(),
+          nowPlaying: track['@attr']?.nowplaying === 'true',
+          sources: {}
+        }));
+      } else if (friend.service === 'listenbrainz') {
+        const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch listens: ${response.status}`);
+
+        const data = await response.json();
+        const listens = data.payload?.listens || [];
+
+        tracks = listens.map((listen, index) => ({
+          id: `friend-recent-${index}-${listen.track_metadata?.track_name}`.replace(/\s+/g, '-'),
+          title: listen.track_metadata?.track_name || 'Unknown Track',
+          artist: listen.track_metadata?.artist_name || 'Unknown Artist',
+          album: listen.track_metadata?.release_name || null,
+          albumArt: null,
+          timestamp: listen.listened_at ? listen.listened_at * 1000 : Date.now(),
+          nowPlaying: false,
+          sources: {}
+        }));
+      }
+
+      setFriendHistoryData(prev => ({ ...prev, recent: tracks }));
+
+      // Resolve tracks in background (if resolveHistoryTracks exists)
+      if (tracks.length > 0 && typeof resolveHistoryTracks === 'function') {
+        resolveHistoryTracks(tracks);
+      }
+    } catch (error) {
+      console.error('Failed to load friend recent tracks:', error);
+      showToast('Failed to load listening history', 'error');
+    } finally {
+      setFriendHistoryLoading(false);
+    }
+  };
+
+  // Load friend's top tracks
+  const loadFriendTopTracks = async (friend, period = friendHistoryPeriod) => {
+    if (friend.service !== 'lastfm') {
+      return loadFriendTopTracksListenBrainz(friend, period);
+    }
+
+    setFriendHistoryLoading(true);
+
+    try {
+      const apiKey = lastfmApiKey.current;
+      if (!apiKey) throw new Error('Last.fm API key not configured');
+
+      const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
+
+      const data = await response.json();
+      const topTracksList = data.toptracks?.track || [];
+
+      const tracks = topTracksList.map((track, index) => ({
+        id: `friend-top-track-${index}-${track.name}`.replace(/\s+/g, '-'),
+        title: track.name,
+        artist: track.artist?.name || 'Unknown Artist',
+        albumArt: track.image?.[2]?.['#text'] || null,
+        playCount: parseInt(track.playcount) || 0,
+        rank: index + 1,
+        sources: {}
+      }));
+
+      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
+
+      if (tracks.length > 0 && typeof resolveTopTracks === 'function') {
+        resolveTopTracks(tracks);
+      }
+    } catch (error) {
+      console.error('Failed to load friend top tracks:', error);
+      showToast('Failed to load top tracks', 'error');
+    } finally {
+      setFriendHistoryLoading(false);
+    }
+  };
+
+  // ListenBrainz version
+  const loadFriendTopTracksListenBrainz = async (friend, period) => {
+    setFriendHistoryLoading(true);
+
+    try {
+      const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
+      const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=${range}&count=50`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch top recordings: ${response.status}`);
+
+      const data = await response.json();
+      const recordings = data.payload?.recordings || [];
+
+      const tracks = recordings.map((rec, index) => ({
+        id: `friend-top-track-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
+        title: rec.track_name || 'Unknown Track',
+        artist: rec.artist_name || 'Unknown Artist',
+        albumArt: null,
+        playCount: rec.listen_count || 0,
+        rank: index + 1,
+        sources: {}
+      }));
+
+      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
+    } catch (error) {
+      console.error('Failed to load friend top tracks:', error);
+      showToast('Failed to load top tracks', 'error');
+    } finally {
+      setFriendHistoryLoading(false);
+    }
+  };
+
+  // Load friend's top artists
+  const loadFriendTopArtists = async (friend, period = friendHistoryPeriod) => {
+    setFriendHistoryLoading(true);
+
+    try {
+      let artists = [];
+
+      if (friend.service === 'lastfm') {
+        const apiKey = lastfmApiKey.current;
+        if (!apiKey) throw new Error('Last.fm API key not configured');
+
+        const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
+
+        const data = await response.json();
+        const topArtistsList = data.topartists?.artist || [];
+
+        artists = topArtistsList.map((artist, index) => ({
+          id: `friend-top-artist-${index}-${artist.name}`.replace(/\s+/g, '-'),
+          name: artist.name,
+          image: null,
+          playCount: parseInt(artist.playcount) || 0,
+          rank: index + 1
+        }));
+      } else {
+        const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
+        const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=${range}&count=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
+
+        const data = await response.json();
+        const artistList = data.payload?.artists || [];
+
+        artists = artistList.map((artist, index) => ({
+          id: `friend-top-artist-${index}-${artist.artist_name}`.replace(/\s+/g, '-'),
+          name: artist.artist_name || 'Unknown Artist',
+          image: null,
+          playCount: artist.listen_count || 0,
+          rank: index + 1
+        }));
+      }
+
+      setFriendHistoryData(prev => ({ ...prev, topArtists: artists }));
+
+      // Fetch artist images in background
+      if (artists.length > 0) {
+        resolveFriendTopArtistImages(artists);
+      }
+    } catch (error) {
+      console.error('Failed to load friend top artists:', error);
+      showToast('Failed to load top artists', 'error');
+    } finally {
+      setFriendHistoryLoading(false);
+    }
+  };
+
+  // Resolve friend top artist images
+  const resolveFriendTopArtistImages = async (artists) => {
+    for (const artist of artists) {
+      try {
+        const result = await getArtistImage(artist.name);
+        if (result?.url) {
+          setFriendHistoryData(prev => ({
+            ...prev,
+            topArtists: prev.topArtists.map(a =>
+              a.id === artist.id ? { ...a, image: result.url } : a
+            )
+          }));
+        }
+      } catch (err) {
+        console.error(`Error fetching image for ${artist.name}:`, err);
+      }
+    }
+  };
+
+  // Load friend's top albums
+  const loadFriendTopAlbums = async (friend, period = friendHistoryPeriod) => {
+    setFriendHistoryLoading(true);
+
+    try {
+      let albums = [];
+
+      if (friend.service === 'lastfm') {
+        const apiKey = lastfmApiKey.current;
+        if (!apiKey) throw new Error('Last.fm API key not configured');
+
+        const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch top albums: ${response.status}`);
+
+        const data = await response.json();
+        const topAlbumsList = data.topalbums?.album || [];
+
+        albums = topAlbumsList.map((album, index) => ({
+          id: `friend-top-album-${index}-${album.name}`.replace(/\s+/g, '-'),
+          name: album.name,
+          artist: album.artist?.name || 'Unknown Artist',
+          image: album.image?.[3]?.['#text'] || album.image?.[2]?.['#text'] || null,
+          playCount: parseInt(album.playcount) || 0,
+          rank: index + 1
+        }));
+      } else {
+        const range = period === 'overall' ? 'all_time' : period === '7day' ? 'week' : period === '1month' ? 'month' : period === '3month' ? 'quarter' : period === '6month' ? 'half_yearly' : 'year';
+        const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/releases?range=${range}&count=50`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch top releases: ${response.status}`);
+
+        const data = await response.json();
+        const releaseList = data.payload?.releases || [];
+
+        albums = releaseList.map((release, index) => ({
+          id: `friend-top-album-${index}-${release.release_name}`.replace(/\s+/g, '-'),
+          name: release.release_name || 'Unknown Album',
+          artist: release.artist_name || 'Unknown Artist',
+          image: null,
+          playCount: release.listen_count || 0,
+          rank: index + 1
+        }));
+      }
+
+      setFriendHistoryData(prev => ({ ...prev, topAlbums: albums }));
+    } catch (error) {
+      console.error('Failed to load friend top albums:', error);
+      showToast('Failed to load top albums', 'error');
+    } finally {
+      setFriendHistoryLoading(false);
+    }
+  };
+
+  // Navigate to friend's history view
+  const navigateToFriend = (friend) => {
+    setCurrentFriend(friend);
+    setFriendHistoryTab('recent');
+    setFriendHistoryData({ recent: [], topTracks: [], topAlbums: [], topArtists: [] });
+    navigateTo('friendHistory');
+    loadFriendRecentTracks(friend);
+  };
+
   // Resolve top tracks using the resolver pipeline
   const resolveTopTracks = async (tracks) => {
     console.log(`📊 Resolving ${tracks.length} top tracks...`);
