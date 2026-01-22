@@ -823,20 +823,29 @@ ipcMain.handle('playback-window-toggle', async () => {
 ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   console.log('=== Proxy Fetch ===');
   console.log('URL:', url);
+  console.log('Method:', options.method || 'GET');
 
   try {
-    const response = await fetch(url, {
+    const fetchOptions = {
       method: options.method || 'GET',
       headers: options.headers || {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
       }
-    });
+    };
+
+    // Include body for POST/PUT requests
+    if (options.body) {
+      fetchOptions.body = options.body;
+    }
+
+    const response = await fetch(url, fetchOptions);
 
     console.log('Proxy fetch response status:', response.status);
 
     if (!response.ok) {
       console.log('Proxy fetch failed with status:', response.status);
-      return { success: false, status: response.status, error: `HTTP ${response.status}` };
+      const errorText = await response.text();
+      return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText };
     }
 
     const text = await response.text();

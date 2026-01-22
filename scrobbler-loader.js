@@ -315,9 +315,8 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`ListenBrainz API error: ${response.status} - ${error}`);
+    if (!response.success) {
+      throw new Error(`ListenBrainz API error: ${response.status || 'unknown'} - ${response.error || response.text}`);
     }
 
     return true;
@@ -356,9 +355,8 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`ListenBrainz API error: ${response.status} - ${error}`);
+    if (!response.success) {
+      throw new Error(`ListenBrainz API error: ${response.status || 'unknown'} - ${response.error || response.text}`);
     }
 
     return true;
@@ -372,11 +370,11 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       }
     });
 
-    if (!response.ok) {
+    if (!response.success) {
       return { valid: false, error: 'Invalid token' };
     }
 
-    const data = await response.json();
+    const data = JSON.parse(response.text);
     return {
       valid: data.valid,
       username: data.user_name,
@@ -475,7 +473,11 @@ class LastFmScrobbler extends BaseScrobbler {
       body: body.toString()
     });
 
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Last.fm API request failed: ${response.error || response.status}`);
+    }
+
+    const data = JSON.parse(response.text);
 
     if (data.error) {
       throw new Error(`Last.fm API error ${data.error}: ${data.message}`);
@@ -510,7 +512,10 @@ class LastFmScrobbler extends BaseScrobbler {
     const response = await window.electron.proxyFetch(
       `${this.apiBase}?method=auth.getToken&api_key=${this.apiKey}&format=json`
     );
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Failed to get auth token: ${response.error || response.status}`);
+    }
+    const data = JSON.parse(response.text);
     if (data.error) {
       throw new Error(`Failed to get auth token: ${data.message}`);
     }
@@ -534,7 +539,10 @@ class LastFmScrobbler extends BaseScrobbler {
     const response = await window.electron.proxyFetch(
       `${this.apiBase}?method=auth.getSession&api_key=${this.apiKey}&token=${token}&api_sig=${sig}&format=json`
     );
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Failed to get session: ${response.error || response.status}`);
+    }
+    const data = JSON.parse(response.text);
 
     if (data.error) {
       throw new Error(`Failed to get session: ${data.message}`);
@@ -626,7 +634,11 @@ class LibreFmScrobbler extends LastFmScrobbler {
       body: body.toString()
     });
 
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Libre.fm auth request failed: ${response.error || response.status}`);
+    }
+
+    const data = JSON.parse(response.text);
 
     if (data.error) {
       throw new Error(`Libre.fm auth failed: ${data.message}`);
@@ -653,7 +665,10 @@ class LibreFmScrobbler extends LastFmScrobbler {
     const response = await window.electron.proxyFetch(
       `${this.apiBase}?method=auth.getToken&api_key=${this.apiKey}&format=json`
     );
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Failed to get auth token: ${response.error || response.status}`);
+    }
+    const data = JSON.parse(response.text);
 
     if (data.error) {
       throw new Error(`Failed to get auth token: ${data.message}`);
