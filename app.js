@@ -1303,7 +1303,7 @@ const Parachord = () => {
   const [watchFolders, setWatchFolders] = useState([]);
 
   // Collection page state
-  const [collectionTab, setCollectionTab] = useState('tracks'); // 'artists' | 'albums' | 'tracks'
+  const [collectionTab, setCollectionTab] = useState('tracks'); // 'artists' | 'albums' | 'tracks' | 'friends'
   const [collectionHeaderCollapsed, setCollectionHeaderCollapsed] = useState(false);
   const [collectionSearchOpen, setCollectionSearchOpen] = useState(false);
   const [collectionSearch, setCollectionSearch] = useState('');
@@ -1313,6 +1313,24 @@ const Parachord = () => {
     albums: 'recent',
     tracks: 'recent'
   });
+
+  // Friends state
+  const [friends, setFriends] = useState([]);
+  const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
+  const [currentFriend, setCurrentFriend] = useState(null);
+  const [friendHistoryTab, setFriendHistoryTab] = useState('recent');
+  const [friendHistoryData, setFriendHistoryData] = useState({
+    recent: [],
+    topTracks: [],
+    topAlbums: [],
+    topArtists: []
+  });
+  const [friendHistoryPeriod, setFriendHistoryPeriod] = useState('7day');
+  const [friendHistoryLoading, setFriendHistoryLoading] = useState(false);
+  const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
+  const [addFriendInput, setAddFriendInput] = useState('');
+  const [addFriendLoading, setAddFriendLoading] = useState(false);
+  const friendPollIntervalRef = useRef(null);
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
