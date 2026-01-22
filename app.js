@@ -19787,7 +19787,7 @@ useEffect(() => {
                 )
               ),
 
-              // Meta Services Section
+              // Meta Services Section - using same card style as resolvers
               metaServices.length > 0 && React.createElement('div', null,
                 React.createElement('div', { className: 'mb-4' },
                   React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider' }, 'Meta Services'),
@@ -19795,45 +19795,42 @@ useEffect(() => {
                     'Connected services for recommendations and metadata'
                   )
                 ),
-                // Meta services grid
+                // Meta services grid - matching resolver card layout
                 React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                  className: 'flex flex-wrap gap-6'
                 },
                   metaServices.map(service => {
                     const config = metaServiceConfigs[service.id];
                     const requiresAuth = service.settings?.requiresAuth !== false;
-                    const isConnected = service.id === 'lastfm' ? !!config?.username : !!config;
-
-                    // Determine status text
-                    let statusText = null;
-                    let statusClass = 'text-gray-400';
-                    if (requiresAuth) {
-                      if (isConnected) {
-                        statusText = service.id === 'lastfm' ? `Connected as ${config.username}` : 'Connected';
-                        statusClass = 'text-green-600';
-                      } else {
-                        statusText = 'Not configured';
-                      }
-                    }
+                    const isConnected = service.id === 'lastfm'
+                      ? !!config?.username
+                      : service.id === 'listenbrainz'
+                        ? !!config?.username
+                        : !!config;
 
                     return React.createElement('div', {
                       key: service.id,
-                      onClick: () => setSelectedResolver(service),
-                      className: 'relative bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:shadow-md transition-all hover:border-gray-300'
+                      className: 'flex flex-col items-center'
                     },
-                      // Service icon
+                      // Card with colored background - matching resolver style
                       React.createElement('div', {
-                        className: 'w-12 h-12 rounded-lg flex items-center justify-center text-2xl mb-3',
-                        style: { backgroundColor: service.color + '20' }
-                      }, service.icon),
-                      // Service name
-                      React.createElement('h4', { className: 'font-medium text-gray-900 text-sm' }, service.name),
-                      // Connection status (only show if requires auth)
-                      statusText && React.createElement('p', { className: `text-xs mt-1 ${statusClass}` }, statusText),
-                      // Connected indicator dot
-                      isConnected && React.createElement('div', {
-                        className: 'absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full'
-                      })
+                        className: 'relative w-32 h-32 rounded-xl flex items-center justify-center cursor-pointer transition-all hover:scale-105 hover:shadow-lg',
+                        style: { backgroundColor: service.color || '#6B7280' },
+                        onClick: () => setSelectedResolver(service)
+                      },
+                        // Centered emoji icon
+                        React.createElement('span', {
+                          className: 'text-5xl text-white drop-shadow-md'
+                        }, service.icon),
+                        // Connected indicator (top-right checkmark)
+                        isConnected && React.createElement('div', {
+                          className: 'absolute top-2 right-2 w-6 h-6 bg-white rounded-full flex items-center justify-center text-xs text-green-600'
+                        }, '✓')
+                      ),
+                      // Name below card
+                      React.createElement('span', {
+                        className: 'mt-3 text-sm text-gray-900 font-medium text-center truncate w-32'
+                      }, service.name)
                     );
                   })
                 )
