@@ -14540,7 +14540,12 @@ useEffect(() => {
                               ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
                               : 'bg-gradient-to-br from-purple-400 to-pink-400'
                           }`
-                        }, React.createElement(Music, { size: 48, className: 'text-white/80' })),
+                        },
+                          // Playlist icon
+                          React.createElement('svg', { className: 'w-12 h-12 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1.5 },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5m7.5-5.25v5.25m0 0l-2.25-2.25m2.25 2.25l2.25-2.25' })
+                          )
+                        ),
 
                       // Hosted indicator
                       playlist.sourceUrl && React.createElement('div', {
