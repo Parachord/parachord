@@ -16042,6 +16042,168 @@ useEffect(() => {
                   );
                 })
               );
+            })(),
+
+            // Friends tab
+            collectionTab === 'friends' && (() => {
+              // Sort and filter friends
+              const sortedFriends = [...friends].sort((a, b) => {
+                const sort = collectionSort.friends;
+                if (sort === 'alpha-asc') return a.displayName.localeCompare(b.displayName);
+                if (sort === 'alpha-desc') return b.displayName.localeCompare(a.displayName);
+                if (sort === 'recent') return b.addedAt - a.addedAt;
+                if (sort === 'on-air') {
+                  const aOnAir = isOnAir(a);
+                  const bOnAir = isOnAir(b);
+                  if (aOnAir && !bOnAir) return -1;
+                  if (!aOnAir && bOnAir) return 1;
+                  // Secondary sort by most recent activity
+                  const aTime = a.cachedRecentTrack?.timestamp || 0;
+                  const bTime = b.cachedRecentTrack?.timestamp || 0;
+                  return bTime - aTime;
+                }
+                return 0;
+              });
+
+              // Filter by search
+              const filtered = collectionSearch
+                ? sortedFriends.filter(f =>
+                    f.displayName.toLowerCase().includes(collectionSearch.toLowerCase()) ||
+                    f.username.toLowerCase().includes(collectionSearch.toLowerCase())
+                  )
+                : sortedFriends;
+
+              // Filter to only on-air if that sort is selected
+              const displayFriends = collectionSort.friends === 'on-air'
+                ? filtered.filter(f => isOnAir(f))
+                : filtered;
+
+              if (displayFriends.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No friends match your search')
+                );
+              }
+
+              if (displayFriends.length === 0 && collectionSort.friends === 'on-air') {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
+                  ),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends on air right now'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Check back later to see who\'s listening')
+                );
+              }
+
+              if (friends.length === 0) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
+                  ),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400 mb-4' }, 'Add friends by their Last.fm or ListenBrainz username'),
+                  React.createElement('button', {
+                    onClick: () => setAddFriendModalOpen(true),
+                    className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
+                  }, 'Add Friend')
+                );
+              }
+
+              return React.createElement('div', null,
+                // Add Friend button
+                React.createElement('div', { className: 'mb-4 flex justify-end' },
+                  React.createElement('button', {
+                    onClick: () => setAddFriendModalOpen(true),
+                    className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+                    ),
+                    'Add Friend'
+                  )
+                ),
+                // Grid of friend cards
+                React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
+                  displayFriends.map(friend => {
+                    const onAir = isOnAir(friend);
+                    const isPinned = pinnedFriendIds.includes(friend.id);
+
+                    return React.createElement('div', {
+                      key: friend.id,
+                      className: 'bg-white rounded-xl p-4 hover:shadow-lg transition-all cursor-pointer group border border-gray-100',
+                      draggable: true,
+                      onDragStart: (e) => {
+                        e.dataTransfer.setData('friendId', friend.id);
+                        e.dataTransfer.effectAllowed = 'copy';
+                      },
+                      onClick: () => navigateToFriend(friend),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (typeof showContextMenu === 'function') {
+                          showContextMenu(e.clientX, e.clientY, [
+                            { label: 'View History', action: () => navigateToFriend(friend) },
+                            isPinned
+                              ? { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) }
+                              : { label: 'Pin to Sidebar', action: () => pinFriend(friend.id) },
+                            { type: 'separator' },
+                            { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
+                          ]);
+                        }
+                      }
+                    },
+                      // Hexagonal avatar
+                      React.createElement('div', { className: 'flex justify-center mb-3' },
+                        React.createElement('div', { className: 'relative' },
+                          React.createElement('div', {
+                            className: 'w-20 h-20 bg-gray-200 overflow-hidden',
+                            style: {
+                              clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                            }
+                          },
+                            friend.avatarUrl
+                              ? React.createElement('img', {
+                                  src: friend.avatarUrl,
+                                  alt: friend.displayName,
+                                  className: 'w-full h-full object-cover'
+                                })
+                              : React.createElement('div', {
+                                  className: 'w-full h-full flex items-center justify-center text-2xl font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
+                                }, friend.displayName.charAt(0).toUpperCase())
+                          ),
+                          // On-air indicator
+                          onAir && React.createElement('div', {
+                            className: 'absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white'
+                          }),
+                          // Pin indicator
+                          isPinned && React.createElement('div', {
+                            className: 'absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center'
+                          },
+                            React.createElement('svg', { className: 'w-3 h-3 text-white', fill: 'currentColor', viewBox: '0 0 20 20' },
+                              React.createElement('path', { d: 'M5 5a2 2 0 012-2h6a2 2 0 012 2v2H5V5zm0 4h10v7a2 2 0 01-2 2H7a2 2 0 01-2-2V9z' })
+                            )
+                          )
+                        )
+                      ),
+                      // Name
+                      React.createElement('div', { className: 'text-center' },
+                        React.createElement('div', { className: 'font-medium text-gray-900 truncate' }, friend.displayName),
+                        // Service badge
+                        React.createElement('div', {
+                          className: `inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs ${
+                            friend.service === 'lastfm' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                          }`
+                        }, friend.service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'),
+                        // Current track if on-air
+                        onAir && friend.cachedRecentTrack && React.createElement('div', {
+                          className: 'mt-2 text-xs text-gray-500 truncate'
+                        },
+                          React.createElement('span', { className: 'text-green-600' }, '\u266A '),
+                          `${friend.cachedRecentTrack.name}`
+                        )
+                      )
+                    );
+                  })
+                )
+              );
             })()
             )
           )
