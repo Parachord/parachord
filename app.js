@@ -14541,9 +14541,12 @@ useEffect(() => {
                               : 'bg-gradient-to-br from-purple-400 to-pink-400'
                           }`
                         },
-                          // Playlist icon
-                          React.createElement('svg', { className: 'w-12 h-12 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1.5 },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5m7.5-5.25v5.25m0 0l-2.25-2.25m2.25 2.25l2.25-2.25' })
+                          // Playlist icon (three lines with play triangle)
+                          React.createElement('svg', { className: 'w-12 h-12 text-white/80', viewBox: '0 0 24 24', fill: 'currentColor' },
+                            React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+                            React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+                            React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+                            React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                           )
                         ),
 
@@ -14656,9 +14659,12 @@ useEffect(() => {
                             : 'bg-gradient-to-br from-purple-400 to-pink-400'
                         }`
                       },
-                        // Playlist icon (queue/list with music note)
-                        React.createElement('svg', { className: 'w-5 h-5 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1.5 },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5m7.5-5.25v5.25m0 0l-2.25-2.25m2.25 2.25l2.25-2.25' })
+                        // Playlist icon (three lines with play triangle)
+                        React.createElement('svg', { className: 'w-5 h-5 text-white/80', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+                          React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+                          React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+                          React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                         )
                       )
                   ),
