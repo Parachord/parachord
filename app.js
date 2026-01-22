@@ -698,20 +698,18 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     }
   },
     // Album art container
-    // States: shimmer (fetching), placeholder (no art/failed), image (has URL)
+    // States: shimmer (fetching or loading image), placeholder (no art/failed)
     React.createElement('div', {
-      className: release.albumArt === undefined ? 'animate-shimmer' : '',
+      className: !release.albumArt && release.albumArt !== null ? '' : (release.albumArt === null || imageFailed ? '' : 'animate-shimmer'),
       style: {
         width: '100%',
         aspectRatio: '1',
         borderRadius: '8px',
-        // Shimmer while fetching, purple placeholder if no art/failed, gray behind image
-        background: release.albumArt === undefined
-          ? 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)'  // Shimmer gray
-          : !release.albumArt || imageFailed
-            ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'  // Purple gradient placeholder
-            : '#e5e7eb',  // Gray background behind image
-        backgroundSize: release.albumArt === undefined ? '200% 100%' : undefined,
+        // Purple placeholder if no art/failed, otherwise shimmer until image loads
+        background: release.albumArt === null || imageFailed
+          ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'  // Purple gradient placeholder
+          : 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)',  // Shimmer gray
+        backgroundSize: release.albumArt === null || imageFailed ? undefined : '200% 100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -15384,16 +15382,16 @@ useEffect(() => {
                   onClick: () => openChartsAlbum(album)
                 },
                   // Album art with hover overlay
-                  // States: shimmer (fetching URL), placeholder (no art), image (URL exists)
+                  // States: shimmer (fetching or loading image), placeholder (no art)
                   React.createElement('div', {
                     className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
-                      album.albumArt === undefined
-                        ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                        : album.albumArt === null
-                          ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-                          : 'bg-gray-200'
+                      // Purple gradient for failed lookups (null) - shows placeholder icon
+                      album.albumArt === null
+                        ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                        // Shimmer while fetching OR while image loads from URL
+                        : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
                     }`,
-                    style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
+                    style: album.albumArt === null ? {} : { backgroundSize: '200% 100%' }
                   },
                     // Placeholder - only show when no art (null or missing)
                     !album.albumArt && album.albumArt !== undefined && React.createElement('div', {
@@ -15733,16 +15731,13 @@ useEffect(() => {
                 // States: shimmer (fetching URL), placeholder (no art found), image (URL exists)
                 React.createElement('div', {
                   className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
-                    // Shimmer while fetching URL
-                    album.albumArt === undefined
-                      ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                      // Purple gradient for failed lookups (null) - shows placeholder icon
-                      : album.albumArt === null
-                        ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-                        // Has URL - gray background behind image while it loads
-                        : 'bg-gray-200'
+                    // Purple gradient for failed lookups (null) - shows placeholder icon
+                    album.albumArt === null
+                      ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                      // Shimmer while fetching OR while image loads from URL
+                      : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
                   }`,
-                  style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
+                  style: album.albumArt === null ? {} : { backgroundSize: '200% 100%' }
                 },
                   // Placeholder - only show when art fetch completed with no result (null)
                   album.albumArt === null && React.createElement('div', {
@@ -16947,16 +16942,16 @@ useEffect(() => {
                       onClick: () => openTopAlbum(album)
                     },
                       // Album art with hover overlay
-                      // States: shimmer (fetching URL), placeholder (no art), image (URL exists)
+                      // States: shimmer (fetching or loading image), placeholder (no art)
                       React.createElement('div', {
                         className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
-                          album.image === undefined
-                            ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
-                            : album.image === null || album.image === ''
-                              ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-                              : 'bg-gray-200'
+                          // Purple gradient for failed lookups (null or empty) - shows placeholder icon
+                          album.image === null || album.image === ''
+                            ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+                            // Shimmer while fetching OR while image loads from URL
+                            : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
                         }`,
-                        style: album.image === undefined ? { backgroundSize: '200% 100%' } : {}
+                        style: album.image === null || album.image === '' ? {} : { backgroundSize: '200% 100%' }
                       },
                         // Placeholder - only show when no art (null or empty string)
                         !album.image && album.image !== undefined && React.createElement('div', {
