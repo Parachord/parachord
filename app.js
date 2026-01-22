@@ -13,7 +13,11 @@ const Icons = typeof lucideReact !== 'undefined' ? lucideReact : {
   SkipBack: () => React.createElement('span', null, '⏮'),
   Volume2: () => React.createElement('span', null, '🔊'),
   Music: () => React.createElement('span', null, '♫'),
-  List: () => React.createElement('span', null, '☰'),
+  List: ({ size = 24 }) => React.createElement('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+    React.createElement('line', { x1: 4, y1: 6, x2: 20, y2: 6 }),
+    React.createElement('line', { x1: 4, y1: 12, x2: 20, y2: 12 }),
+    React.createElement('line', { x1: 4, y1: 18, x2: 20, y2: 18 })
+  ),
   Users: () => React.createElement('span', null, '👥'),
   Radio: () => React.createElement('span', null, '📻'),
   Heart: () => React.createElement('span', null, '♥'),
@@ -17701,7 +17705,8 @@ useEffect(() => {
           React.createElement('button', {
             onClick: handlePrevious,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
           }, React.createElement(SkipBack, { size: 18 })),
           React.createElement('button', {
             onClick: handlePlayPause,
@@ -17712,15 +17717,17 @@ useEffect(() => {
           React.createElement('button', {
             onClick: handleNext,
             disabled: !currentTrack,
-            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`
+            className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
           }, React.createElement(SkipForward, { size: 18 })),
           // Queue button (hamburger style)
           React.createElement('button', {
             onClick: () => setQueueDrawerOpen(!queueDrawerOpen),
             className: `relative p-2 ml-1 rounded hover:bg-white/10 transition-colors ${queueDrawerOpen ? 'bg-white/20 text-white' : 'text-gray-400'} ${queueAnimating ? 'queue-pulse' : ''}`,
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
             title: `Queue (${currentQueue.length} tracks)`
           },
-            React.createElement(List, { size: 18 }),
+            React.createElement(List, { size: 15 }),
             currentQueue.length > 0 && React.createElement('span', {
               className: `absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[10px] font-medium ${queueAnimating ? 'badge-flash' : ''}`
             }, currentQueue.length > 99 ? '99+' : currentQueue.length)
@@ -17730,7 +17737,7 @@ useEffect(() => {
         // CENTER: Track info (album art + metadata)
         React.createElement('div', {
           className: 'flex items-center gap-3 relative',
-          style: { width: '280px', flexShrink: 0 },
+          style: { width: '340px', flexShrink: 0 },
           onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
           onDragOver: (e) => handleDragOver(e, 'now-playing'),
           onDragLeave: handleDragLeave,
@@ -17826,7 +17833,31 @@ useEffect(() => {
                 return null;
               })()
             )
-          ] : React.createElement('div', { className: 'text-sm text-gray-500' }, 'No track playing')
+          ] : React.createElement(React.Fragment, null,
+            // Skeleton album art
+            React.createElement('div', {
+              className: 'flex-shrink-0 rounded bg-gray-700',
+              style: { width: '61px', height: '61px' }
+            }),
+            // Skeleton track info
+            React.createElement('div', { className: 'min-w-0 space-y-2' },
+              // Track title skeleton
+              React.createElement('div', {
+                className: 'h-4 rounded bg-gray-700',
+                style: { width: '200px' }
+              }),
+              // Artist skeleton
+              React.createElement('div', {
+                className: 'h-3 rounded bg-gray-700',
+                style: { width: '140px' }
+              }),
+              // Source skeleton
+              React.createElement('div', {
+                className: 'h-3 rounded bg-gray-700',
+                style: { width: '80px' }
+              })
+            )
+          )
         ),
 
         // RIGHT: Heart + Progress bar + Shuffle + Repeat + Volume
@@ -17877,12 +17908,12 @@ useEffect(() => {
           // Progress section
           React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
             React.createElement('span', {
-              className: 'text-xs text-gray-400 w-10 text-right tabular-nums',
-              style: { lineHeight: '1', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }
+              className: 'text-xs text-gray-400 tabular-nums',
+              style: { width: '36px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
             },
               currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
             ),
-            React.createElement('div', { className: 'flex-1 w-24' },
+            React.createElement('div', { className: 'flex-1 w-24 flex items-center' },
               (() => {
                 // Check if current track is Spotify (seeking not supported)
                 const isSpotifyTrack = currentTrack && (currentTrack.sources?.spotify || currentTrack.spotifyUri || currentTrack.resolver === 'spotify');
@@ -17908,8 +17939,8 @@ useEffect(() => {
               })()
             ),
             React.createElement('span', {
-              className: 'text-xs text-gray-400 w-10 text-left tabular-nums',
-              style: { lineHeight: '1', display: 'flex', alignItems: 'center' }
+              className: 'text-xs text-gray-400 tabular-nums',
+              style: { width: '36px', textAlign: 'left', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
             },
               currentTrack ? formatTime(currentTrack.duration) : '0:00'
             )
