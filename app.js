@@ -486,19 +486,16 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
 
 // CollectionArtistCard component - for Collection view artist grid with lazy image loading
 const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  // States: undefined (fetching), null (no image found), string (URL)
+  const [imageUrl, setImageUrl] = useState(undefined);
 
   useEffect(() => {
     let cancelled = false;
     const loadImage = async () => {
-      setImageLoading(true);
+      setImageUrl(undefined); // Loading state
       const result = await getArtistImage(artist.name);
-      if (!cancelled && result?.url) {
-        setImageUrl(result.url);
-      }
       if (!cancelled) {
-        setImageLoading(false);
+        setImageUrl(result?.url || null); // null if not found
       }
     };
     loadImage();
@@ -509,23 +506,23 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     onClick: onNavigate,
     className: 'group text-left p-4 rounded-xl bg-white border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all'
   },
-    // Artist image (circular)
+    // Artist image (circular) - shimmer while fetching OR loading image, purple placeholder if no image
     React.createElement('div', {
-      className: 'w-full aspect-square rounded-full bg-gradient-to-br from-purple-500 to-pink-500 mb-3 flex items-center justify-center overflow-hidden'
+      className: `w-full aspect-square rounded-full mb-3 flex items-center justify-center overflow-hidden ${
+        imageUrl === null
+          ? 'bg-gradient-to-br from-purple-500 to-pink-500'
+          : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+      }`,
+      style: imageUrl === null ? {} : { backgroundSize: '200% 100%' }
     },
-      imageLoading && React.createElement('div', {
-        className: 'w-full h-full flex items-center justify-center'
-      },
-        React.createElement('div', {
-          className: 'w-8 h-8 border-2 border-white/30 border-t-white/70 rounded-full animate-spin'
-        })
-      ),
-      !imageLoading && imageUrl && React.createElement('img', {
+      // Show image when URL exists (shimmer continues behind until image renders)
+      imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
         className: 'w-full h-full object-cover'
       }),
-      !imageLoading && !imageUrl && React.createElement('svg', {
+      // Placeholder icon when no image found
+      imageUrl === null && React.createElement('svg', {
         className: 'w-12 h-12 text-white/70',
         fill: 'none',
         viewBox: '0 0 24 24',
@@ -547,26 +544,22 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 
 // CollectionAlbumCard component - for Collection view album grid with lazy image loading
 const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
-  const [imageUrl, setImageUrl] = useState(album.art || null);
-  const [imageLoading, setImageLoading] = useState(!album.art);
+  // States: undefined (fetching), null (no art found), string (URL)
+  const [imageUrl, setImageUrl] = useState(album.art || undefined);
 
   useEffect(() => {
     // If we already have embedded art, don't fetch
     if (album.art) {
       setImageUrl(album.art);
-      setImageLoading(false);
       return;
     }
 
     let cancelled = false;
     const loadImage = async () => {
-      setImageLoading(true);
+      setImageUrl(undefined); // Loading state
       const artUrl = await getAlbumArt(album.artist, album.title);
-      if (!cancelled && artUrl) {
-        setImageUrl(artUrl);
-      }
       if (!cancelled) {
-        setImageLoading(false);
+        setImageUrl(artUrl || null); // null if not found
       }
     };
     loadImage();
@@ -581,27 +574,26 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
     React.createElement('div', {
       className: 'p-4 rounded-xl bg-white border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all'
     },
-      // Album art
+      // Album art - shimmer while fetching OR loading image, purple placeholder if no art
       React.createElement('div', {
-        className: 'w-full aspect-square rounded-lg mb-3 overflow-hidden',
-        style: {
-          background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'
-        }
+        className: `w-full aspect-square rounded-lg mb-3 overflow-hidden ${
+          imageUrl === null
+            ? ''
+            : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+        }`,
+        style: imageUrl === null
+          ? { background: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)' }
+          : { backgroundSize: '200% 100%' }
       },
-        imageLoading && React.createElement('div', {
-          className: 'w-full h-full flex items-center justify-center'
-        },
-          React.createElement('div', {
-            className: 'w-8 h-8 border-2 border-white/30 border-t-white/70 rounded-full animate-spin'
-          })
-        ),
-        !imageLoading && imageUrl && React.createElement('img', {
+        // Show image when URL exists (shimmer continues behind until image renders)
+        imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
           src: imageUrl,
           alt: album.title,
           className: 'w-full h-full object-cover',
           onError: (e) => { e.target.style.display = 'none'; }
         }),
-        !imageLoading && !imageUrl && React.createElement('div', { className: 'w-full h-full flex items-center justify-center' },
+        // Placeholder icon when no art found
+        imageUrl === null && React.createElement('div', { className: 'w-full h-full flex items-center justify-center' },
           React.createElement('svg', { className: 'w-12 h-12 text-white/50', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
           )
@@ -1327,6 +1319,7 @@ const Parachord = () => {
   const [playlistsSearch, setPlaylistsSearch] = useState('');
   const [playlistsSortDropdownOpen, setPlaylistsSortDropdownOpen] = useState(false);
   const [playlistsSort, setPlaylistsSort] = useState('recent');
+  const [playlistsViewMode, setPlaylistsViewMode] = useState('grid'); // 'grid' | 'table'
 
   // Charts (Pop of the Tops) page state
   const [chartsHeaderCollapsed, setChartsHeaderCollapsed] = useState(false);
@@ -5501,6 +5494,13 @@ const Parachord = () => {
         console.log('📦 Loaded remember queue preference:', savedRememberQueue);
       }
 
+      // Load playlists view mode preference
+      const savedPlaylistsViewMode = await window.electron.store.get('playlists_view_mode');
+      if (savedPlaylistsViewMode) {
+        setPlaylistsViewMode(savedPlaylistsViewMode);
+        console.log('📦 Loaded playlists view mode:', savedPlaylistsViewMode);
+      }
+
       // Load saved queue if remember queue is enabled
       if (savedRememberQueue) {
         const savedQueue = await window.electron.store.get('saved_queue');
@@ -5645,6 +5645,9 @@ const Parachord = () => {
 
       // Save volume normalization offsets
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
+
+      // Save playlists view mode
+      await window.electron.store.set('playlists_view_mode', playlistsViewMode);
 
       // Note: Meta service configs are saved immediately when changed, not in periodic save
 
@@ -14350,6 +14353,30 @@ useEffect(() => {
             )
           ),
           React.createElement('div', { className: 'flex-1' }),
+          // View mode toggle (grid/table)
+          React.createElement('div', { className: 'flex items-center gap-1 mr-4' },
+            React.createElement('button', {
+              onClick: () => setPlaylistsViewMode('grid'),
+              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'grid' ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600'}`,
+              title: 'Grid view'
+            },
+              React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('rect', { x: 3, y: 3, width: 7, height: 7, rx: 1 }),
+                React.createElement('rect', { x: 14, y: 3, width: 7, height: 7, rx: 1 }),
+                React.createElement('rect', { x: 3, y: 14, width: 7, height: 7, rx: 1 }),
+                React.createElement('rect', { x: 14, y: 14, width: 7, height: 7, rx: 1 })
+              )
+            ),
+            React.createElement('button', {
+              onClick: () => setPlaylistsViewMode('table'),
+              className: `p-1.5 rounded transition-colors ${playlistsViewMode === 'table' ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600'}`,
+              title: 'Table view'
+            },
+              React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h16' })
+              )
+            )
+          ),
           // Search
           React.createElement('div', { className: 'flex items-center' },
             playlistsSearchOpen ?
@@ -14448,10 +14475,122 @@ useEffect(() => {
               }, 'No playlists yet. Import a playlist to get started!');
             }
 
-            return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
-              sorted.map(playlist => {
+            // Grid view
+            if (playlistsViewMode === 'grid') {
+              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6' },
+                sorted.map(playlist => {
+                  const covers = allPlaylistCovers[playlist.id] || [];
+                  const hasCachedCovers = covers.length > 0;
+
+                  return React.createElement('div', {
+                    key: playlist.id,
+                    onClick: (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      loadPlaylist(playlist);
+                    },
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      if (window.electron?.contextMenu?.showTrackMenu) {
+                        const tracksWithIds = (playlist.tracks || []).map((track, idx) => {
+                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return { ...track, id: trackId, sources: {} };
+                        });
+                        window.electron.contextMenu.showTrackMenu({
+                          type: 'playlist',
+                          playlistId: playlist.id,
+                          name: playlist.title,
+                          tracks: tracksWithIds
+                        });
+                      }
+                    },
+                    className: 'group cursor-pointer'
+                  },
+                    // Album art mosaic or placeholder
+                    React.createElement('div', {
+                      className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow'
+                    },
+                      hasCachedCovers ?
+                        React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                          [0, 1, 2, 3].map(idx => {
+                            const gradients = [
+                              'bg-gradient-to-br from-violet-400 to-purple-500',
+                              'bg-gradient-to-br from-rose-400 to-pink-500',
+                              'bg-gradient-to-br from-amber-400 to-orange-500',
+                              'bg-gradient-to-br from-emerald-400 to-teal-500'
+                            ];
+                            return covers[idx] ?
+                              React.createElement('img', {
+                                key: idx,
+                                src: covers[idx],
+                                alt: '',
+                                className: 'w-full h-full object-cover'
+                              })
+                            :
+                              React.createElement('div', {
+                                key: idx,
+                                className: `w-full h-full ${gradients[idx]} flex items-center justify-center`
+                              }, React.createElement(Music, { size: 20, className: 'text-white/70' }));
+                          })
+                        )
+                      :
+                        React.createElement('div', {
+                          className: `w-full h-full flex items-center justify-center ${
+                            playlist.sourceUrl
+                              ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
+                              : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                          }`
+                        }, React.createElement(Music, { size: 48, className: 'text-white/80' })),
+
+                      // Hosted indicator
+                      playlist.sourceUrl && React.createElement('div', {
+                        className: 'absolute top-2 right-2 flex items-center gap-1'
+                      },
+                        React.createElement('span', {
+                          className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
+                          title: 'Hosted playlist'
+                        }, '🌐 Hosted'),
+                        React.createElement('button', {
+                          onClick: async (e) => {
+                            e.stopPropagation();
+                            setRefreshingPlaylist(playlist.id);
+                            await refreshHostedPlaylist(playlist.id);
+                            setRefreshingPlaylist(null);
+                          },
+                          className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                          title: 'Refresh playlist'
+                        },
+                          React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                          )
+                        )
+                      ),
+
+                      // Hover play overlay
+                      React.createElement('div', {
+                        className: 'absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center'
+                      },
+                        React.createElement('div', {
+                          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg'
+                        }, React.createElement(Play, { size: 24, className: 'text-gray-800 ml-1' }))
+                      )
+                    ),
+                    // Playlist info
+                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
+                    React.createElement('div', { className: 'text-sm text-gray-500 truncate' },
+                      playlist.creator || `${playlist.tracks?.length || 0} Songs`
+                    )
+                  );
+                })
+              );
+            }
+
+            // Table view
+            return React.createElement('div', { className: 'space-y-0' },
+              sorted.map((playlist, index) => {
                 const covers = allPlaylistCovers[playlist.id] || [];
                 const hasCachedCovers = covers.length > 0;
+                const trackCount = playlist.tracks?.length || 0;
 
                 return React.createElement('div', {
                   key: playlist.id,
@@ -14475,11 +14614,11 @@ useEffect(() => {
                       });
                     }
                   },
-                  className: 'group cursor-pointer'
+                  className: `group flex items-center gap-4 py-3 px-4 cursor-pointer hover:bg-gray-50 transition-colors ${index > 0 ? 'border-t border-gray-100' : ''}`
                 },
-                  // Album art mosaic or placeholder
+                  // Thumbnail (small mosaic or placeholder)
                   React.createElement('div', {
-                    className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow'
+                    className: 'relative w-12 h-12 rounded overflow-hidden flex-shrink-0'
                   },
                     hasCachedCovers ?
                       React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
@@ -14500,8 +14639,8 @@ useEffect(() => {
                           :
                             React.createElement('div', {
                               key: idx,
-                              className: `w-full h-full ${gradients[idx]} flex items-center justify-center`
-                            }, React.createElement(Music, { size: 20, className: 'text-white/70' }));
+                              className: `w-full h-full ${gradients[idx]}`
+                            });
                         })
                       )
                     :
@@ -14511,45 +14650,49 @@ useEffect(() => {
                             ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
                             : 'bg-gradient-to-br from-purple-400 to-pink-400'
                         }`
-                      }, React.createElement(Music, { size: 48, className: 'text-white/80' })),
-
-                    // Hosted indicator
-                    playlist.sourceUrl && React.createElement('div', {
-                      className: 'absolute top-2 right-2 flex items-center gap-1'
-                    },
-                      React.createElement('span', {
-                        className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
-                        title: 'Hosted playlist'
-                      }, '🌐 Hosted'),
-                      React.createElement('button', {
-                        onClick: async (e) => {
-                          e.stopPropagation();
-                          setRefreshingPlaylist(playlist.id);
-                          await refreshHostedPlaylist(playlist.id);
-                          setRefreshingPlaylist(null);
-                        },
-                        className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                        title: 'Refresh playlist'
                       },
-                        React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                        // Playlist icon (queue/list with music note)
+                        React.createElement('svg', { className: 'w-5 h-5 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1.5 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5m7.5-5.25v5.25m0 0l-2.25-2.25m2.25 2.25l2.25-2.25' })
                         )
                       )
-                    ),
-
-                    // Hover play overlay
-                    React.createElement('div', {
-                      className: 'absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center'
-                    },
-                      React.createElement('div', {
-                        className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg'
-                      }, React.createElement(Play, { size: 24, className: 'text-gray-800 ml-1' }))
-                    )
                   ),
-                  // Playlist info
-                  React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
-                  React.createElement('div', { className: 'text-sm text-gray-500 truncate' },
-                    playlist.creator || `${playlist.tracks?.length || 0} Songs`
+                  // Playlist name
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
+                    playlist.creator && React.createElement('div', { className: 'text-sm text-gray-500 truncate' }, playlist.creator)
+                  ),
+                  // Hosted badge
+                  playlist.sourceUrl && React.createElement('span', {
+                    className: 'text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded-full font-medium flex-shrink-0',
+                    title: 'Hosted playlist'
+                  }, '🌐 Hosted'),
+                  // Track count
+                  React.createElement('div', { className: 'text-sm text-gray-500 flex-shrink-0 w-20 text-right' },
+                    `${trackCount} song${trackCount !== 1 ? 's' : ''}`
+                  ),
+                  // Play icon on hover
+                  React.createElement('div', {
+                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 cursor-pointer hover:scale-110 transition-transform',
+                    onClick: (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // Play the playlist starting from first track
+                      const tracks = playlist.tracks || [];
+                      if (tracks.length > 0) {
+                        // Create track objects with IDs matching the playlist view format
+                        const tracksWithIds = tracks.map(track => {
+                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return { ...track, id: trackId, sources: {} };
+                        });
+                        // Set all tracks after first as queue
+                        setCurrentQueue(tracksWithIds.slice(1));
+                        // Play first track
+                        handlePlay(tracksWithIds[0]);
+                      }
+                    }
+                  },
+                    React.createElement(Play, { size: 20, className: 'text-purple-600 fill-purple-600' })
                   )
                 );
               })
