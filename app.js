@@ -644,10 +644,12 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
 const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true }) => {
   const year = release.date ? release.date.split('-')[0] : 'Unknown';
   const [imageFailed, setImageFailed] = React.useState(false);
+  const [imageLoaded, setImageLoaded] = React.useState(false);
 
-  // Reset image failed state when album art URL changes
+  // Reset image states when album art URL changes
   React.useEffect(() => {
     setImageFailed(false);
+    setImageLoaded(false);
   }, [release.albumArt]);
 
   const handleDragStart = (e) => {
@@ -710,9 +712,9 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     }
   },
     // Album art container
-    // States: shimmer (fetching = undefined, or loading image = URL), placeholder (no art found = null, or failed)
+    // States: shimmer (fetching = undefined, or loading image = URL but not loaded), placeholder (no art found = null, or failed)
     React.createElement('div', {
-      className: release.albumArt === null || imageFailed ? '' : 'animate-shimmer',
+      className: (release.albumArt === null || imageFailed || imageLoaded) ? '' : 'animate-shimmer',
       style: {
         width: '100%',
         aspectRatio: '1',
@@ -720,8 +722,10 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         // Purple placeholder if no art/failed, otherwise shimmer until image loads
         background: release.albumArt === null || imageFailed
           ? 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)'  // Purple gradient placeholder
-          : 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)',  // Shimmer gray
-        backgroundSize: release.albumArt === null || imageFailed ? undefined : '200% 100%',
+          : imageLoaded
+            ? 'transparent'  // No background once image loaded
+            : 'linear-gradient(to right, #e5e7eb, #f3f4f6, #e5e7eb)',  // Shimmer gray
+        backgroundSize: (release.albumArt === null || imageFailed || imageLoaded) ? undefined : '200% 100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -731,7 +735,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         position: 'relative'
       }
     },
-      // Album art image
+      // Album art image with fade-in
       release.albumArt && !imageFailed && React.createElement('img', {
         src: release.albumArt,
         alt: release.title,
@@ -742,8 +746,17 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           pointerEvents: 'none',
           position: 'absolute',
           top: 0,
-          left: 0
+          left: 0,
+          opacity: imageLoaded ? 1 : 0,
+          transition: 'opacity 0.3s ease-in-out'
         },
+        ref: (el) => {
+          // Handle cached images that are already loaded
+          if (el && el.complete && el.naturalWidth > 0 && !imageLoaded) {
+            setImageLoaded(true);
+          }
+        },
+        onLoad: () => setImageLoaded(true),
         onError: () => setImageFailed(true)
       }),
 
