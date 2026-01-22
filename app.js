@@ -3636,6 +3636,20 @@ const Parachord = () => {
     return () => clearTimeout(timeoutId);
   }, [currentTrack, currentQueue, rememberQueue]);
 
+  // Persist friends to storage
+  useEffect(() => {
+    if (friends.length > 0 || window.electron?.store) {
+      window.electron?.store?.set('friends', friends);
+    }
+  }, [friends]);
+
+  // Persist pinned friend IDs to storage
+  useEffect(() => {
+    if (pinnedFriendIds.length > 0 || window.electron?.store) {
+      window.electron?.store?.set('pinnedFriendIds', pinnedFriendIds);
+    }
+  }, [pinnedFriendIds]);
+
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
     prefetchedReleasesRef.current = prefetchedReleases;
@@ -5501,6 +5515,19 @@ const Parachord = () => {
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
         console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
+      }
+
+      // Load friends from storage
+      const savedFriends = await window.electron.store.get('friends');
+      if (savedFriends && Array.isArray(savedFriends)) {
+        setFriends(savedFriends);
+        console.log(`👥 Loaded ${savedFriends.length} friends from storage`);
+      }
+
+      const savedPinnedFriendIds = await window.electron.store.get('pinnedFriendIds');
+      if (savedPinnedFriendIds && Array.isArray(savedPinnedFriendIds)) {
+        setPinnedFriendIds(savedPinnedFriendIds);
+        console.log(`📌 Loaded ${savedPinnedFriendIds.length} pinned friends from storage`);
       }
 
       // Load volume normalization offsets
