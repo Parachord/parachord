@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot = document.getElementById('status-dot');
   const statusText = document.getElementById('status-text');
   const sendUrlBtn = document.getElementById('send-url');
+  const spotifyInterceptToggle = document.getElementById('spotify-intercept');
+  const appleMusicInterceptToggle = document.getElementById('applemusic-intercept');
 
   // Check connection status
   async function updateStatus() {
@@ -87,4 +89,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Refresh status every 2 seconds
   setInterval(updateStatus, 2000);
+
+  // Load intercept settings
+  chrome.storage.local.get(
+    ['spotifyInterceptEnabled', 'appleMusicInterceptEnabled'],
+    (result) => {
+      // Default to true if not set
+      spotifyInterceptToggle.checked = result.spotifyInterceptEnabled !== false;
+      appleMusicInterceptToggle.checked = result.appleMusicInterceptEnabled !== false;
+    }
+  );
+
+  // Save Spotify intercept setting
+  spotifyInterceptToggle.addEventListener('change', () => {
+    chrome.storage.local.set({
+      spotifyInterceptEnabled: spotifyInterceptToggle.checked
+    });
+    console.log('[Popup] Spotify intercept:', spotifyInterceptToggle.checked);
+  });
+
+  // Save Apple Music intercept setting
+  appleMusicInterceptToggle.addEventListener('change', () => {
+    chrome.storage.local.set({
+      appleMusicInterceptEnabled: appleMusicInterceptToggle.checked
+    });
+    console.log('[Popup] Apple Music intercept:', appleMusicInterceptToggle.checked);
+  });
 });

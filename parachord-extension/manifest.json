@@ -8,7 +8,8 @@
     "scripting",
     "alarms",
     "tabs",
-    "contextMenus"
+    "contextMenus",
+    "storage"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
@@ -38,6 +39,22 @@
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://open.spotify.com/*"
+      ],
+      "js": ["content-spotify.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://music.apple.com/*"
+      ],
+      "js": ["content-applemusic.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "icons": {

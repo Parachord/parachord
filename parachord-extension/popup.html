@@ -101,6 +101,82 @@
       color: #64748b;
       text-align: center;
     }
+
+    .settings {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #334155;
+    }
+
+    .settings-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+
+    .setting-label {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .setting-sublabel {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #475569;
+      transition: 0.2s;
+      border-radius: 20px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+
+    .toggle input:checked + .toggle-slider {
+      background-color: #22c55e;
+    }
+
+    .toggle input:checked + .toggle-slider:before {
+      transform: translateX(16px);
+    }
   </style>
 </head>
 <body>
@@ -118,6 +194,32 @@
     <button id="send-url" disabled>
       <span>Send URL to Parachord</span>
     </button>
+  </div>
+
+  <div class="settings">
+    <div class="settings-title">Link Interception</div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Spotify</div>
+        <div class="setting-sublabel">Intercept "Open in Spotify" links</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="spotify-intercept" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Apple Music</div>
+        <div class="setting-sublabel">Intercept "Open in Music" links</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="applemusic-intercept" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
   </div>
 
   <div class="info">
