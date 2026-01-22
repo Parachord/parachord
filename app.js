@@ -18033,21 +18033,21 @@ useEffect(() => {
               className: `flex-shrink-0 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
               style: { width: '61px', height: '61px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
             }),
-            // Skeleton track info
-            React.createElement('div', { className: 'min-w-0 space-y-2' },
-              // Track title skeleton
+            // Skeleton track info - matches actual track info layout
+            React.createElement('div', { className: 'min-w-0' },
+              // Track title skeleton (text-sm = 14px, but skeleton slightly smaller)
               React.createElement('div', {
-                className: `h-4 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3.5 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
                 style: { width: '200px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
-              // Artist skeleton
+              // Artist skeleton (text-xs = 12px)
               React.createElement('div', {
-                className: `h-3 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3 rounded mt-1 ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
                 style: { width: '140px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               }),
-              // Source skeleton
+              // Source skeleton (text-xs with mt-0.5)
               React.createElement('div', {
-                className: `h-3 rounded ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
+                className: `h-3 rounded mt-1 ${trackLoading ? 'bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 animate-shimmer' : 'bg-gray-700'}`,
                 style: { width: '80px', ...(trackLoading ? { backgroundSize: '200% 100%' } : {}) }
               })
             )
