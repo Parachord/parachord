@@ -11823,6 +11823,24 @@ useEffect(() => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return '';
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+
+    // For older, show date
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return React.createElement('div', {
     className: 'h-screen bg-gray-100 text-gray-900 flex flex-col'
   },
@@ -18324,41 +18342,175 @@ useEffect(() => {
                 friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12' },
                   React.createElement('div', { className: 'w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin' })
                 ),
-                // Recent tab content
-                !friendHistoryLoading && friendHistoryTab === 'recent' && React.createElement('div', { className: 'space-y-1' },
+                // Recent tab content - matching History page layout
+                !friendHistoryLoading && friendHistoryTab === 'recent' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.recent.length === 0
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No recent listens')
-                    : friendHistoryData.recent.map((track, index) =>
-                        React.createElement(TrackRow, {
+                    : friendHistoryData.recent.map((track, index) => {
+                        const hasResolved = Object.keys(track.sources || {}).length > 0;
+                        const isResolving = Object.keys(track.sources || {}).length === 0;
+
+                        return React.createElement('div', {
                           key: track.id || index,
-                          track: track,
-                          index: index,
-                          isPlaying: currentTrack?.title === track.title && currentTrack?.artist === track.artist && isPlaying,
-                          isCurrentTrack: currentTrack?.title === track.title && currentTrack?.artist === track.artist,
-                          onPlay: () => playTrack(track),
-                          onContextMenu: (e) => handleTrackContextMenu(e, track, index),
-                          showTimestamp: true,
-                          timestamp: track.timestamp
-                        })
-                      )
+                          draggable: true,
+                          onDragStart: (e) => {
+                            setDraggingTrackForPlaylist(track);
+                            e.dataTransfer.effectAllowed = 'copy';
+                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
+                          },
+                          onDragEnd: () => {
+                            setDraggingTrackForPlaylist(null);
+                            setDropTargetPlaylistId(null);
+                            setDropTargetNewPlaylist(false);
+                          },
+                          className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
+                          onClick: () => {
+                            const tracksAfter = friendHistoryData.recent.slice(index + 1);
+                            setCurrentQueue(tracksAfter);
+                            handlePlay(track);
+                          },
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+                            }
+                          }
+                        },
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                            style: { pointerEvents: 'none', width: '32px' }
+                          }, String(index + 1).padStart(2, '0')),
+                          React.createElement('span', {
+                            className: `text-sm font-medium truncate transition-colors ${hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
+                            style: { pointerEvents: 'none', width: '360px', flexShrink: 0 }
+                          }, track.nowPlaying ? `▶ ${track.title}` : track.title),
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                            style: { width: '240px', flexShrink: 0 },
+                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                          }, track.artist),
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-400 truncate',
+                            style: { pointerEvents: 'none', width: '150px', flexShrink: 0 }
+                          }, track.album || ''),
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-400 text-right tabular-nums',
+                            style: { pointerEvents: 'none', width: '80px', flexShrink: 0, marginLeft: 'auto' }
+                          }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
+                          React.createElement('div', {
+                            className: 'flex items-center gap-1 justify-end',
+                            style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                          },
+                            isResolving ?
+                              React.createElement('div', { className: 'flex items-center gap-1' },
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
+                              )
+                            : hasResolved ?
+                              Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => { e.stopPropagation(); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}`
+                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                              })
+                            :
+                              React.createElement('div', { className: 'flex items-center gap-1' },
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
+                              )
+                          )
+                        );
+                      })
                 ),
-                // Top tracks tab content
-                !friendHistoryLoading && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-1' },
+                // Top tracks tab content - matching History page layout
+                !friendHistoryLoading && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
-                    : friendHistoryData.topTracks.map((track, index) =>
-                        React.createElement(TrackRow, {
+                    : friendHistoryData.topTracks.map((track, index) => {
+                        const hasResolved = Object.keys(track.sources || {}).length > 0;
+                        const isResolving = Object.keys(track.sources || {}).length === 0;
+
+                        return React.createElement('div', {
                           key: track.id || index,
-                          track: track,
-                          index: index,
-                          isPlaying: currentTrack?.title === track.title && currentTrack?.artist === track.artist && isPlaying,
-                          isCurrentTrack: currentTrack?.title === track.title && currentTrack?.artist === track.artist,
-                          onPlay: () => playTrack(track),
-                          onContextMenu: (e) => handleTrackContextMenu(e, track, index),
-                          showPlayCount: true,
-                          playCount: track.playCount
-                        })
-                      )
+                          draggable: true,
+                          onDragStart: (e) => {
+                            setDraggingTrackForPlaylist(track);
+                            e.dataTransfer.effectAllowed = 'copy';
+                            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
+                          },
+                          onDragEnd: () => {
+                            setDraggingTrackForPlaylist(null);
+                            setDropTargetPlaylistId(null);
+                            setDropTargetNewPlaylist(false);
+                          },
+                          className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
+                          onClick: () => {
+                            const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
+                            setCurrentQueue(tracksAfter);
+                            handlePlay(track);
+                          },
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+                            }
+                          }
+                        },
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-500 font-medium flex-shrink-0 text-right',
+                            style: { width: '32px' }
+                          }, `#${track.rank || index + 1}`),
+                          React.createElement('span', {
+                            className: `text-sm font-medium truncate transition-colors ${hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
+                            style: { width: '360px', flexShrink: 0 }
+                          }, track.title),
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                            style: { width: '240px', flexShrink: 0 },
+                            onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
+                          }, track.artist),
+                          React.createElement('span', {
+                            className: 'text-sm text-gray-400 text-right tabular-nums',
+                            style: { width: '80px', flexShrink: 0, marginLeft: 'auto' }
+                          }, `${track.playCount} plays`),
+                          React.createElement('div', {
+                            className: 'flex items-center gap-1 justify-end',
+                            style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                          },
+                            isResolving ?
+                              React.createElement('div', { className: 'flex items-center gap-1' },
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
+                              )
+                            : hasResolved ?
+                              Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => { e.stopPropagation(); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}`
+                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                              })
+                            :
+                              React.createElement('div', { className: 'flex items-center gap-1' },
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', title: 'Resolving track...' }),
+                                React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
+                              )
+                          )
+                        );
+                      })
                 ),
                 // Top albums tab content
                 !friendHistoryLoading && friendHistoryTab === 'topAlbums' && React.createElement('div', {
