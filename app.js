@@ -11994,6 +11994,103 @@ useEffect(() => {
           )
         ),
 
+        // FRIENDS section (only show if there are pinned friends)
+        pinnedFriendIds.length > 0 && React.createElement('div', { className: 'mb-4' },
+          React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+          pinnedFriendIds.map((friendId, index) => {
+            const friend = friends.find(f => f.id === friendId);
+            if (!friend) return null;
+            const onAir = isOnAir(friend);
+
+            return React.createElement('div', {
+              key: friend.id,
+              className: 'px-3 py-2 hover:bg-gray-100 rounded cursor-pointer group',
+              draggable: true,
+              onDragStart: (e) => {
+                e.dataTransfer.setData('friendIndex', index.toString());
+                e.dataTransfer.effectAllowed = 'move';
+              },
+              onDragOver: (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              },
+              onDrop: (e) => {
+                e.preventDefault();
+                const fromIndex = parseInt(e.dataTransfer.getData('friendIndex'));
+                if (!isNaN(fromIndex) && fromIndex !== index) {
+                  reorderPinnedFriends(fromIndex, index);
+                }
+              },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, [
+                  { label: 'View History', action: () => navigateToFriend(friend) },
+                  { label: 'Unpin from Sidebar', action: () => unpinFriend(friend.id) },
+                  { type: 'separator' },
+                  { label: 'Remove Friend', action: () => removeFriend(friend.id), danger: true }
+                ]);
+              }
+            },
+              React.createElement('div', { className: 'flex items-center gap-2' },
+                // Hexagonal avatar with on-air indicator
+                React.createElement('div', {
+                  className: 'relative flex-shrink-0',
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    navigateToFriend(friend);
+                  }
+                },
+                  React.createElement('div', {
+                    className: 'w-8 h-8 bg-gray-200 overflow-hidden',
+                    style: {
+                      clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                    }
+                  },
+                    friend.avatarUrl
+                      ? React.createElement('img', {
+                          src: friend.avatarUrl,
+                          alt: friend.displayName,
+                          className: 'w-full h-full object-cover'
+                        })
+                      : React.createElement('div', {
+                          className: 'w-full h-full flex items-center justify-center text-gray-500 text-xs font-medium bg-gradient-to-br from-purple-400 to-pink-400 text-white'
+                        }, friend.displayName.charAt(0).toUpperCase())
+                  ),
+                  // On-air indicator dot
+                  onAir && React.createElement('div', {
+                    className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-50'
+                  })
+                ),
+                // Name and track info
+                React.createElement('div', { className: 'flex-1 min-w-0' },
+                  React.createElement('div', {
+                    className: 'text-sm text-gray-700 truncate font-medium'
+                  }, friend.displayName),
+                  onAir && friend.cachedRecentTrack && React.createElement('div', {
+                    className: 'text-xs text-gray-400 truncate hover:text-purple-600 cursor-pointer',
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      // Play the track (listen along)
+                      const track = {
+                        title: friend.cachedRecentTrack.name,
+                        artist: friend.cachedRecentTrack.artist,
+                        albumArt: friend.cachedRecentTrack.albumArt,
+                        sources: {}
+                      };
+                      playTrack(track);
+                    }
+                  }, `${friend.cachedRecentTrack.name} - ${friend.cachedRecentTrack.artist}`)
+                )
+              )
+            );
+          })
+        ),
+
+        // Empty state hint for Friends when no friends pinned but friends exist
+        friends.length > 0 && pinnedFriendIds.length === 0 && React.createElement('div', {
+          className: 'mb-4 px-3 py-2 text-xs text-gray-400 italic'
+        }, 'Drag friends here to pin'),
+
         // Settings button at bottom of sidebar
         React.createElement('div', { className: 'p-4 border-t border-gray-200' },
           React.createElement('button', {
