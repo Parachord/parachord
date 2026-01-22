@@ -20902,6 +20902,36 @@ useEffect(() => {
               React.createElement('path', { d: 'M17.5,1.5l-8.6,7l-8.4-7v14.9l8.3-6.9l8.8,7.1V1.5z M1.5,14.2V3.6l6.4,5.3L1.5,14.2z M16.5,14.4L9.8,9l6.7-5.4V14.4z' })
             )
           ),
+          // AI Playlist Generation button
+          (() => {
+            const aiResolvers = getAiResolvers();
+            const hasAiResolvers = aiResolvers.length > 0;
+            return React.createElement('button', {
+              onClick: () => setAiPromptOpen(!aiPromptOpen),
+              disabled: !hasAiResolvers,
+              className: `p-2 rounded transition-colors ${
+                aiPromptOpen
+                  ? 'bg-purple-500/30 text-purple-300'
+                  : hasAiResolvers
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 cursor-not-allowed'
+              }`,
+              title: hasAiResolvers
+                ? 'Generate playlist with AI'
+                : 'Enable an AI plugin in Settings → General'
+            },
+              React.createElement('svg', {
+                className: 'w-4 h-4',
+                viewBox: '0 0 24 24',
+                fill: 'currentColor'
+              },
+                // Sparkle/magic wand icon
+                React.createElement('path', {
+                  d: 'M12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2Z'
+                })
+              )
+            );
+          })(),
           // Repeat button (placeholder) - disabled for now
           // React.createElement('button', {
           //   disabled: true,
