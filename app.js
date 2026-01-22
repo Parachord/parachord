@@ -9387,6 +9387,13 @@ ${tracks}
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch top recordings: ${response.status}`);
 
+      // Handle 204 No Content (no stats available for this period)
+      if (response.status === 204) {
+        setFriendHistoryData(prev => ({ ...prev, topTracks: [] }));
+        setFriendHistoryLoading(false);
+        return;
+      }
+
       const data = await response.json();
       const recordings = data.payload?.recordings || [];
 
@@ -9439,6 +9446,13 @@ ${tracks}
         const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=${range}&count=50`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
+
+        // Handle 204 No Content (no stats available for this period)
+        if (response.status === 204) {
+          setFriendHistoryData(prev => ({ ...prev, topArtists: [] }));
+          setFriendHistoryLoading(false);
+          return;
+        }
 
         const data = await response.json();
         const artistList = data.payload?.artists || [];
@@ -9516,6 +9530,13 @@ ${tracks}
         const url = `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/releases?range=${range}&count=50`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to fetch top releases: ${response.status}`);
+
+        // Handle 204 No Content (no stats available for this period)
+        if (response.status === 204) {
+          setFriendHistoryData(prev => ({ ...prev, topAlbums: [] }));
+          setFriendHistoryLoading(false);
+          return;
+        }
 
         const data = await response.json();
         const releaseList = data.payload?.releases || [];
