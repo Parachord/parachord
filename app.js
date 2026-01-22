@@ -12150,7 +12150,7 @@ useEffect(() => {
 
         // Empty state hint for Friends when no friends pinned but friends exist
         friends.length > 0 && pinnedFriendIds.length === 0 && !friendDragOverSidebar && React.createElement('div', {
-          className: 'mb-4 px-3 py-2 text-xs text-gray-400 italic rounded-lg transition-colors',
+          className: 'mb-4 rounded-lg transition-colors',
           onDragOver: (e) => {
             if (e.dataTransfer.types.includes('friendid')) {
               e.preventDefault();
@@ -12167,7 +12167,10 @@ useEffect(() => {
               pinFriend(friendId);
             }
           }
-        }, 'Drag friends here to pin'),
+        },
+          React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+          React.createElement('div', { className: 'px-3 py-2 text-xs text-gray-400 italic' }, 'Drag friends here to pin')
+        ),
 
         // Settings button at bottom of sidebar
         React.createElement('div', { className: 'p-4 border-t border-gray-200' },
