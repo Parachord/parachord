@@ -19828,8 +19828,8 @@ useEffect(() => {
                         style: { backgroundColor: service.color || '#6B7280' },
                         onClick: () => setSelectedResolver(service)
                       },
-                        // Centered emoji icon
-                        React.createElement('span', {
+                        // Centered logo or emoji fallback
+                        SERVICE_LOGOS[service.id] ? SERVICE_LOGOS[service.id] : React.createElement('span', {
                           className: 'text-5xl text-white drop-shadow-md'
                         }, service.icon),
                         // Connected indicator (top-right checkmark)
