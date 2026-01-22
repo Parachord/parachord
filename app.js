@@ -8990,6 +8990,123 @@ ${tracks}
     }
   };
 
+  // Parse friend input to extract service and username
+  const parseFriendInput = (input) => {
+    const trimmed = input.trim();
+
+    // Check for Last.fm URL
+    const lastfmMatch = trimmed.match(/last\.fm\/user\/([^\/\?]+)/i);
+    if (lastfmMatch) {
+      return { service: 'lastfm', username: lastfmMatch[1] };
+    }
+
+    // Check for ListenBrainz URL
+    const listenbrainzMatch = trimmed.match(/listenbrainz\.org\/user\/([^\/\?]+)/i);
+    if (listenbrainzMatch) {
+      return { service: 'listenbrainz', username: listenbrainzMatch[1] };
+    }
+
+    // Plain username - will try Last.fm first, then ListenBrainz
+    return { service: null, username: trimmed };
+  };
+
+  // Fetch Last.fm user info (avatar, display name)
+  const fetchLastfmUserInfo = async (username) => {
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) throw new Error('Last.fm API key not configured');
+
+    const url = `https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      if (response.status === 404) throw new Error('User not found on Last.fm');
+      throw new Error(`Last.fm API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.message || 'User not found on Last.fm');
+
+    const user = data.user;
+    return {
+      username: user.name,
+      displayName: user.realname || user.name,
+      avatarUrl: user.image?.[2]?.['#text'] || user.image?.[1]?.['#text'] || null
+    };
+  };
+
+  // Fetch ListenBrainz user info
+  const fetchListenbrainzUserInfo = async (username) => {
+    const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      if (response.status === 404) throw new Error('User not found on ListenBrainz');
+      throw new Error(`ListenBrainz API error: ${response.status}`);
+    }
+
+    // ListenBrainz doesn't have avatars, return username only
+    return {
+      username: username,
+      displayName: username,
+      avatarUrl: null // Will use generated avatar fallback
+    };
+  };
+
+  // Fetch friend's most recent track (for on-air status)
+  const fetchFriendRecentTrack = async (friend) => {
+    try {
+      if (friend.service === 'lastfm') {
+        const apiKey = lastfmApiKey.current;
+        if (!apiKey) return null;
+
+        const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        const track = data.recenttracks?.track?.[0];
+        if (!track) return null;
+
+        // Check if currently playing (no date means currently playing)
+        const isNowPlaying = track['@attr']?.nowplaying === 'true';
+        const timestamp = isNowPlaying ? Date.now() : (track.date?.uts ? parseInt(track.date.uts) * 1000 : null);
+
+        return {
+          name: track.name,
+          artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
+          timestamp: timestamp,
+          albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null
+        };
+      } else if (friend.service === 'listenbrainz') {
+        const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=1`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        const listen = data.payload?.listens?.[0];
+        if (!listen) return null;
+
+        return {
+          name: listen.track_metadata?.track_name || 'Unknown Track',
+          artist: listen.track_metadata?.artist_name || 'Unknown Artist',
+          timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
+          albumArt: null // ListenBrainz doesn't provide album art in listens
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error fetching recent track for ${friend.username}:`, error);
+      return null;
+    }
+  };
+
+  // Check if friend is "on air" (listened within last 10 minutes)
+  const isOnAir = (friend) => {
+    if (!friend.cachedRecentTrack?.timestamp) return false;
+    const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+    return friend.cachedRecentTrack.timestamp > tenMinutesAgo;
+  };
+
   // Resolve top tracks using the resolver pipeline
   const resolveTopTracks = async (tracks) => {
     console.log(`📊 Resolving ${tracks.length} top tracks...`);
