@@ -1331,6 +1331,7 @@ const Parachord = () => {
   const [addFriendModalOpen, setAddFriendModalOpen] = useState(false);
   const [addFriendInput, setAddFriendInput] = useState('');
   const [addFriendLoading, setAddFriendLoading] = useState(false);
+  const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
 
   // Playlists page state
@@ -12003,9 +12004,36 @@ useEffect(() => {
           )
         ),
 
-        // FRIENDS section (only show if there are pinned friends)
-        pinnedFriendIds.length > 0 && React.createElement('div', { className: 'mb-4' },
+        // FRIENDS section (only show if there are pinned friends OR dragging a friend over)
+        (pinnedFriendIds.length > 0 || friendDragOverSidebar) && React.createElement('div', {
+          className: `mb-4 rounded-lg transition-colors ${friendDragOverSidebar ? 'bg-purple-50 ring-2 ring-purple-300 ring-inset' : ''}`,
+          onDragOver: (e) => {
+            if (e.dataTransfer.types.includes('friendid')) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              setFriendDragOverSidebar(true);
+            }
+          },
+          onDragLeave: (e) => {
+            // Only reset if leaving the section entirely
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              setFriendDragOverSidebar(false);
+            }
+          },
+          onDrop: (e) => {
+            e.preventDefault();
+            setFriendDragOverSidebar(false);
+            const friendId = e.dataTransfer.getData('friendId');
+            if (friendId && !pinnedFriendIds.includes(friendId)) {
+              pinFriend(friendId);
+            }
+          }
+        },
           React.createElement('div', { className: 'px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'Friends'),
+          // Show drop hint when dragging but no friends pinned yet
+          friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
+            className: 'px-3 py-4 text-sm text-purple-600 text-center'
+          }, 'Drop to pin'),
           pinnedFriendIds.map((friendId, index) => {
             const friend = friends.find(f => f.id === friendId);
             if (!friend) return null;
@@ -12096,8 +12124,24 @@ useEffect(() => {
         ),
 
         // Empty state hint for Friends when no friends pinned but friends exist
-        friends.length > 0 && pinnedFriendIds.length === 0 && React.createElement('div', {
-          className: 'mb-4 px-3 py-2 text-xs text-gray-400 italic'
+        friends.length > 0 && pinnedFriendIds.length === 0 && !friendDragOverSidebar && React.createElement('div', {
+          className: 'mb-4 px-3 py-2 text-xs text-gray-400 italic rounded-lg transition-colors',
+          onDragOver: (e) => {
+            if (e.dataTransfer.types.includes('friendid')) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              setFriendDragOverSidebar(true);
+            }
+          },
+          onDragLeave: () => setFriendDragOverSidebar(false),
+          onDrop: (e) => {
+            e.preventDefault();
+            setFriendDragOverSidebar(false);
+            const friendId = e.dataTransfer.getData('friendId');
+            if (friendId && !pinnedFriendIds.includes(friendId)) {
+              pinFriend(friendId);
+            }
+          }
         }, 'Drag friends here to pin'),
 
         // Settings button at bottom of sidebar
