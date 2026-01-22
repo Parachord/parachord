@@ -3042,6 +3042,11 @@ const Parachord = () => {
     playlistCover: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
 
+  // Get resolvers with AI generation capability
+  const getAiResolvers = () => {
+    return allResolvers.filter(r => r.capabilities?.generate && r.enabled);
+  };
+
   // Generate a hash of current resolver settings for cache invalidation
   const getResolverSettingsHash = () => {
     const sortedActive = [...activeResolvers].sort().join(',');
