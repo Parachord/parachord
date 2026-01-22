@@ -15946,6 +15946,7 @@ useEffect(() => {
           // Scrollable content area
           React.createElement('div', {
             className: 'flex-1 overflow-y-auto scrollable-content',
+            style: { minHeight: 0 },
             onScroll: (e) => {
               const scrollTop = e.target.scrollTop;
               if (scrollTop > 50 && !collectionHeaderCollapsed) {
@@ -16066,7 +16067,8 @@ useEffect(() => {
               }
 
               return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4',
+                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map(artist =>
                   React.createElement(CollectionArtistCard, {
@@ -16100,7 +16102,10 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
+              return React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4',
+                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
+              },
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
                     key: `${album.title}-${album.artist}-${index}`,
@@ -16204,7 +16209,10 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', { className: 'space-y-0' },
+              return React.createElement('div', {
+                className: 'space-y-0',
+                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
+              },
                 sorted.map((track, index) => {
                   // Use track's own sources (updated by resolution)
                   const effectiveSources = track.sources || {};
@@ -16476,7 +16484,9 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', null,
+              return React.createElement('div', {
+                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
+              },
                 // Add Friend button
                 React.createElement('div', { className: 'mb-4 flex justify-end' },
                   React.createElement('button', {
