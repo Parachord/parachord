@@ -3646,19 +3646,19 @@ const Parachord = () => {
     return () => clearTimeout(timeoutId);
   }, [currentTrack, currentQueue, rememberQueue]);
 
-  // Persist friends to storage
+  // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
-    if (friends.length > 0 || window.electron?.store) {
-      window.electron?.store?.set('friends', friends);
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('friends', friends);
     }
-  }, [friends]);
+  }, [friends, cacheLoaded]);
 
-  // Persist pinned friend IDs to storage
+  // Persist pinned friend IDs to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
-    if (pinnedFriendIds.length > 0 || window.electron?.store) {
-      window.electron?.store?.set('pinnedFriendIds', pinnedFriendIds);
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('pinnedFriendIds', pinnedFriendIds);
     }
-  }, [pinnedFriendIds]);
+  }, [pinnedFriendIds, cacheLoaded]);
 
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
