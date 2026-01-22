@@ -1311,7 +1311,8 @@ const Parachord = () => {
   const [collectionSort, setCollectionSort] = useState({
     artists: 'alpha-asc',
     albums: 'recent',
-    tracks: 'recent'
+    tracks: 'recent',
+    friends: 'alpha-asc'
   });
 
   // Friends state
@@ -1709,6 +1710,14 @@ const Parachord = () => {
         { value: 'year-new', label: 'Year (Newest)' },
         { value: 'year-old', label: 'Year (Oldest)' },
         { value: 'recent', label: 'Recently Added' }
+      ];
+    }
+    if (tab === 'friends') {
+      return [
+        { value: 'alpha-asc', label: 'A-Z' },
+        { value: 'alpha-desc', label: 'Z-A' },
+        { value: 'recent', label: 'Recently Added' },
+        { value: 'on-air', label: 'On Air Now' }
       ];
     }
     return [
@@ -15485,7 +15494,8 @@ useEffect(() => {
                   [
                     { key: 'artists', label: `${collectionData.artists.length} Artists` },
                     { key: 'albums', label: `${collectionData.albums.length} Albums` },
-                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
+                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` },
+                    { key: 'friends', label: `${friends.length} Friends` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-expanded-${tab.key}`,
@@ -15537,7 +15547,8 @@ useEffect(() => {
                   [
                     { key: 'artists', label: `${collectionData.artists.length} Artists` },
                     { key: 'albums', label: `${collectionData.albums.length} Albums` },
-                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` }
+                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` },
+                    { key: 'friends', label: `${friends.length} Friends` }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-collapsed-${tab.key}`,
