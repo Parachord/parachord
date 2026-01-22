@@ -2432,9 +2432,11 @@ const Parachord = () => {
   const resolveTracksInBackground = async (tracks) => {
     console.log(`🔍 Background resolution: resolving ${tracks.length} tracks across all sources...`);
 
+    // Use ref to avoid stale closure issues
+    const currentResolvers = loadedResolversRef.current;
     const enabledResolvers = resolverOrder
       .filter(id => activeResolvers.includes(id))
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(r => r && r.capabilities.resolve);
 
     // Process tracks in batches to avoid overwhelming APIs
@@ -2547,9 +2549,11 @@ const Parachord = () => {
 
       // Now resolve across all enabled resolvers for playable sources
       console.log(`🔍 Resolving playable sources...`);
+      // Use ref to avoid stale closure issues when called from extension message handler
+      const currentResolvers = loadedResolversRef.current;
       const enabledResolvers = resolverOrder
         .filter(id => activeResolvers.includes(id))
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(r => r && r.capabilities.resolve);
 
       const resolvePromises = enabledResolvers.map(async (resolver) => {
@@ -4041,6 +4045,9 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
+    // Use ref to avoid stale closure issues when called from extension message handler
+    const currentResolvers = loadedResolversRef.current;
+
     // Determine if we were passed a track with multiple sources or a specific source
     let resolverId;
     let sourceToPlay = trackOrSource;
@@ -4055,7 +4062,7 @@ const Parachord = () => {
 
         const enabledResolvers = resolverOrder
           .filter(id => activeResolvers.includes(id))
-          .map(id => allResolvers.find(r => r.id === id))
+          .map(id => currentResolvers.find(r => r.id === id))
           .filter(Boolean);
 
         const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -4147,9 +4154,10 @@ const Parachord = () => {
       }
     }
 
-    const resolver = allResolvers.find(r => r.id === resolverId);
+    const resolver = currentResolvers.find(r => r.id === resolverId);
     if (!resolver) {
       console.error(`❌ Resolver ${resolverId} not found`);
+      console.error(`   Available resolvers:`, currentResolvers.map(r => r.id));
       setTrackLoading(false); // Clear loading state
       return;
     }
