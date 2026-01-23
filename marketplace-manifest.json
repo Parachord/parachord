@@ -41,8 +41,8 @@
       },
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/bandcamp.axe",
-      "category": "purchase",
-      "tags": ["purchase", "independent", "discovery"]
+      "category": "streaming",
+      "tags": ["streaming", "purchase", "independent", "discovery"]
     },
     {
       "id": "qobuz",
@@ -165,5 +165,5 @@
       "tags": ["ai", "playlist", "generation", "google", "gemini"]
     }
   ],
-  "categories": ["streaming", "purchase", "metadata", "local", "ai"]
+  "categories": ["streaming", "metadata", "local", "ai"]
 }
