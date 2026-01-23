@@ -1469,6 +1469,8 @@ const Parachord = () => {
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
+  const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
+  const [aiSavePlaylistName, setAiSavePlaylistName] = useState('');
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
@@ -5868,6 +5870,21 @@ const Parachord = () => {
     setAiLoading(true);
     setAiError(null);
 
+    // Open sidebar immediately with loading state
+    setResultsSidebar({
+      title: '✨ AI Playlist',
+      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+      tracks: [],
+      source: 'ai',
+      prompt: prompt,
+      provider: { id: service.id, name: service.name },
+      loading: true
+    });
+
+    // Close prompt input immediately
+    setAiPromptOpen(false);
+    setAiPrompt('');
+
     try {
       // Get service config from metaServiceConfigs
       const config = metaServiceConfigs[service.id] || {};
@@ -5888,7 +5905,7 @@ const Parachord = () => {
         throw new Error('No tracks returned. Try a different prompt.');
       }
 
-      // Open results sidebar with the generated tracks
+      // Update sidebar with the generated tracks
       setResultsSidebar({
         title: '✨ AI Playlist',
         subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
@@ -5900,15 +5917,16 @@ const Parachord = () => {
           sources: {} // Will be resolved when added to queue
         })),
         source: 'ai',
-        prompt: prompt
+        prompt: prompt,
+        provider: { id: service.id, name: service.name },
+        loading: false
       });
-
-      // Close prompt input
-      setAiPromptOpen(false);
-      setAiPrompt('');
     } catch (error) {
       console.error('AI generation error:', error);
       setAiError(error.message || 'Failed to generate playlist');
+      // Close sidebar on error, reopen prompt
+      setResultsSidebar(null);
+      setAiPromptOpen(true);
     } finally {
       setAiLoading(false);
     }
@@ -5921,36 +5939,6 @@ const Parachord = () => {
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
-
-  // Handle saving AI results as playlist
-  const handleAiSavePlaylist = async () => {
-    if (!resultsSidebar?.tracks) return;
-
-    const playlistName = resultsSidebar.prompt
-      ? `AI: ${resultsSidebar.prompt.substring(0, 40)}${resultsSidebar.prompt.length > 40 ? '...' : ''}`
-      : 'AI Generated Playlist';
-
-    const playlistId = `ai-${Date.now()}`;
-    const newPlaylist = {
-      id: playlistId,
-      title: playlistName,
-      creator: 'AI',
-      tracks: resultsSidebar.tracks,
-      createdAt: new Date().toISOString()
-    };
-
-    // Add to playlists state
-    setPlaylists(prev => [...prev, newPlaylist]);
-
-    // Save to disk
-    const filename = `${playlistId}.xspf`;
-    const xspfContent = buildXSPF(newPlaylist);
-    await window.electron.playlists.save(filename, xspfContent);
-
-    setResultsSidebar(null);
-    showToast(`Saved playlist: ${playlistName}`);
-  };
-
   const addToQueue = (tracks) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
@@ -8824,6 +8812,48 @@ const Parachord = () => {
 ${tracks}
   </trackList>
 </playlist>`;
+  };
+
+  // Open save dialog for AI playlist
+  const handleAiSavePlaylist = () => {
+    if (!resultsSidebar?.tracks) return;
+
+    // Set default name based on prompt
+    const defaultName = resultsSidebar.prompt
+      ? resultsSidebar.prompt.substring(0, 50)
+      : 'AI Generated Playlist';
+
+    setAiSavePlaylistName(defaultName);
+    setAiSaveDialogOpen(true);
+  };
+
+  // Actually save the AI playlist with the chosen name
+  const handleAiSavePlaylistConfirm = async () => {
+    if (!resultsSidebar?.tracks || !aiSavePlaylistName.trim()) return;
+
+    const playlistId = `ai-${Date.now()}`;
+    const providerName = resultsSidebar.provider?.name || 'AI';
+
+    const newPlaylist = {
+      id: playlistId,
+      title: aiSavePlaylistName.trim(),
+      creator: providerName,
+      tracks: resultsSidebar.tracks,
+      createdAt: new Date().toISOString()
+    };
+
+    // Add to playlists state
+    setPlaylists(prev => [...prev, newPlaylist]);
+
+    // Save to disk
+    const filename = `${playlistId}.xspf`;
+    const xspfContent = generateXSPF(newPlaylist);
+    await window.electron.playlists.save(filename, xspfContent);
+
+    // Close dialogs
+    setAiSaveDialogOpen(false);
+    setResultsSidebar(null);
+    showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
   };
 
   // Save playlist to disk
@@ -21546,42 +21576,66 @@ useEffect(() => {
           }, resultsSidebar.subtitle)
         ),
 
-        // Track list
+        // Track list or loading skeletons
         React.createElement('div', { className: 'flex-1 overflow-y-auto p-2' },
-          resultsSidebar.tracks.map((track, index) =>
-            React.createElement('div', {
-              key: track.id || index,
-              className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
-            },
-              // Track number
-              React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
-
-              // Track info
-              React.createElement('div', { className: 'flex-1 min-w-0' },
-                React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
-                React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
-              ),
-
-              // Remove button
-              React.createElement('button', {
-                onClick: () => {
-                  setResultsSidebar(prev => ({
-                    ...prev,
-                    tracks: prev.tracks.filter((_, i) => i !== index)
-                  }));
+          // Loading skeletons
+          resultsSidebar.loading
+            ? Array.from({ length: 12 }).map((_, index) =>
+                React.createElement('div', {
+                  key: `skeleton-${index}`,
+                  className: 'flex items-center gap-3 p-2'
                 },
-                className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
-              },
-                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                  // Skeleton track number
+                  React.createElement('div', {
+                    className: 'w-6 h-4 bg-gray-700 rounded animate-pulse'
+                  }),
+                  // Skeleton track info
+                  React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+                    React.createElement('div', {
+                      className: 'h-4 bg-gray-700 rounded animate-pulse',
+                      style: { width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gray-700/60 rounded animate-pulse',
+                      style: { width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                    })
+                  )
                 )
               )
-            )
-          )
+            : resultsSidebar.tracks.map((track, index) =>
+                React.createElement('div', {
+                  key: track.id || index,
+                  className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
+                },
+                  // Track number
+                  React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
+
+                  // Track info
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
+                    React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
+                  ),
+
+                  // Remove button
+                  React.createElement('button', {
+                    onClick: () => {
+                      setResultsSidebar(prev => ({
+                        ...prev,
+                        tracks: prev.tracks.filter((_, i) => i !== index)
+                      }));
+                    },
+                    className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              )
         ),
 
-        // Empty state
-        resultsSidebar.tracks.length === 0 && React.createElement('div', {
+        // Empty state (only show when not loading and no tracks)
+        !resultsSidebar.loading && resultsSidebar.tracks.length === 0 && React.createElement('div', {
           className: 'flex-1 flex items-center justify-center p-4'
         },
           React.createElement('p', { className: 'text-sm text-gray-500' }, 'No tracks remaining')
@@ -21591,14 +21645,80 @@ useEffect(() => {
         React.createElement('div', { className: 'p-4 border-t border-gray-700 space-y-2' },
           React.createElement('button', {
             onClick: handleAiAddToQueue,
-            disabled: resultsSidebar.tracks.length === 0,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
             className: 'w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
-          }, `Add ${resultsSidebar.tracks.length} to Queue`),
+          }, resultsSidebar.loading ? 'Generating...' : `Add ${resultsSidebar.tracks.length} to Queue`),
           React.createElement('button', {
             onClick: handleAiSavePlaylist,
-            disabled: resultsSidebar.tracks.length === 0,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
             className: 'w-full py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
           }, 'Save as Playlist')
+        )
+      )
+    ),
+
+    // AI Save Playlist Dialog
+    aiSaveDialogOpen && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      onClick: (e) => {
+        if (e.target === e.currentTarget) {
+          setAiSaveDialogOpen(false);
+        }
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl border border-gray-700'
+      },
+        // Header
+        React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+          React.createElement('h2', { className: 'text-lg font-semibold text-white' }, 'Save Playlist'),
+          React.createElement('button', {
+            onClick: () => setAiSaveDialogOpen(false),
+            className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+          },
+            React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+              React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+
+        // Provider info
+        resultsSidebar?.provider && React.createElement('p', {
+          className: 'text-xs text-gray-500 mb-4'
+        }, `Generated by ${resultsSidebar.provider.name}`),
+
+        // Name input
+        React.createElement('div', { className: 'mb-4' },
+          React.createElement('label', {
+            htmlFor: 'playlist-name',
+            className: 'block text-sm text-gray-400 mb-2'
+          }, 'Playlist Name'),
+          React.createElement('input', {
+            id: 'playlist-name',
+            type: 'text',
+            value: aiSavePlaylistName,
+            onChange: (e) => setAiSavePlaylistName(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter' && aiSavePlaylistName.trim()) {
+                handleAiSavePlaylistConfirm();
+              }
+            },
+            autoFocus: true,
+            className: 'w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+          })
+        ),
+
+        // Actions
+        React.createElement('div', { className: 'flex gap-3' },
+          React.createElement('button', {
+            onClick: () => setAiSaveDialogOpen(false),
+            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
+          }, 'Cancel'),
+          React.createElement('button', {
+            onClick: handleAiSavePlaylistConfirm,
+            disabled: !aiSavePlaylistName.trim(),
+            className: 'flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save')
         )
       )
     ),
