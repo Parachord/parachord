@@ -5745,6 +5745,91 @@ const Parachord = () => {
     console.log('🗑️ Cleared queue');
   };
 
+  // Fetch listening context from Last.fm or ListenBrainz for AI prompt enrichment
+  const fetchListeningContext = async () => {
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+
+    // Try Last.fm first
+    if (lastfmConfig?.username) {
+      const apiKey = lastfmApiKey.current;
+      if (apiKey) {
+        try {
+          console.log('🎵 Fetching listening context from Last.fm...');
+
+          // Fetch top artists (10) and top tracks (25) in parallel
+          const [artistsRes, tracksRes] = await Promise.all([
+            fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=3month&limit=10`),
+            fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=3month&limit=25`)
+          ]);
+
+          if (artistsRes.ok && tracksRes.ok) {
+            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+
+            const topArtists = (artistsData.topartists?.artist || []).map(a => a.name);
+            const topTracks = (tracksData.toptracks?.track || []).map(t => ({
+              artist: t.artist?.name || 'Unknown',
+              title: t.name
+            }));
+
+            console.log(`🎵 Got ${topArtists.length} artists and ${topTracks.length} tracks from Last.fm`);
+
+            return {
+              source: 'Last.fm',
+              window: 'last_3_months',
+              top_artists: topArtists,
+              top_tracks: topTracks
+            };
+          }
+        } catch (err) {
+          console.error('Failed to fetch Last.fm context:', err);
+        }
+      }
+    }
+
+    // Fall back to ListenBrainz
+    if (listenbrainzConfig?.username) {
+      try {
+        console.log('🎵 Fetching listening context from ListenBrainz...');
+
+        // Fetch top artists (10) and top tracks (25) in parallel
+        const [artistsRes, tracksRes] = await Promise.all([
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=quarter&count=10`),
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=quarter&count=25`)
+        ]);
+
+        // Handle 204 No Content
+        if (artistsRes.status === 204 || tracksRes.status === 204) {
+          console.log('🎵 No ListenBrainz stats available for this period');
+          return null;
+        }
+
+        if (artistsRes.ok && tracksRes.ok) {
+          const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+
+          const topArtists = (artistsData.payload?.artists || []).map(a => a.artist_name);
+          const topTracks = (tracksData.payload?.recordings || []).map(t => ({
+            artist: t.artist_name || 'Unknown',
+            title: t.track_name
+          }));
+
+          console.log(`🎵 Got ${topArtists.length} artists and ${topTracks.length} tracks from ListenBrainz`);
+
+          return {
+            source: 'ListenBrainz',
+            window: 'last_3_months',
+            top_artists: topArtists,
+            top_tracks: topTracks
+          };
+        }
+      } catch (err) {
+        console.error('Failed to fetch ListenBrainz context:', err);
+      }
+    }
+
+    return null;
+  };
+
   // AI Playlist Generation
   const handleAiGenerate = async (prompt) => {
     const aiServices = getAiServices();
