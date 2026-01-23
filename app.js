@@ -20367,6 +20367,66 @@ useEffect(() => {
                   React.createElement('p', {
                     className: 'text-xs text-gray-500 mt-4 text-center'
                   }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
+                ),
+
+                // Reset Application Section
+                React.createElement('div', {
+                  className: 'bg-white border border-red-200 rounded-xl p-6 hover:shadow-sm hover:border-red-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-red-700 uppercase tracking-wider'
+                    }, 'Reset Application'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Clear all data and start fresh')
+                  ),
+                  React.createElement('p', {
+                    className: 'text-sm text-gray-600 mb-5 leading-relaxed'
+                  }, 'This will permanently delete all your data including your collection, playlists, friends, listening history, connected accounts, and all settings. The app will restart as if it was freshly installed.'),
+                  React.createElement('button', {
+                    onClick: async () => {
+                      // Show confirmation dialog
+                      const confirmed = window.confirm(
+                        'Are you sure you want to reset the application?\n\n' +
+                        'This will permanently delete:\n' +
+                        '• Your music collection\n' +
+                        '• All playlists\n' +
+                        '• Friends list\n' +
+                        '• Connected accounts (Spotify, Last.fm, etc.)\n' +
+                        '• All settings and preferences\n' +
+                        '• Cached data\n\n' +
+                        'This action cannot be undone.'
+                      );
+
+                      if (confirmed) {
+                        try {
+                          // Clear electron store (all persisted data)
+                          if (window.electron?.store?.clear) {
+                            await window.electron.store.clear();
+                          }
+
+                          // Clear in-memory caches
+                          artistImageCache.current = {};
+                          albumArtCache.current = {};
+                          artistDataCache.current = {};
+                          albumToReleaseIdCache.current = {};
+
+                          // Reload the app
+                          window.location.reload();
+                        } catch (error) {
+                          console.error('Failed to reset application:', error);
+                          alert('Failed to reset application. Please try again.');
+                        }
+                      }
+                    },
+                    className: 'inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
+                    ),
+                    'Reset Application'
+                  )
                 )
               ) // Close space-y-8 wrapper
             ),
