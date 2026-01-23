@@ -1458,6 +1458,18 @@ const Parachord = () => {
   });
   // Per-track volume adjustments (trackId -> dB offset from resolver default)
   const trackVolumeAdjustments = useRef({});
+
+  // AI Playlist Generation state
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [selectedAiResolver, setSelectedAiResolver] = useState(null);
+
+  // Results sidebar state (generic/reusable)
+  const [resultsSidebar, setResultsSidebar] = useState(null);
+  // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
     artists: [],
@@ -3030,6 +3042,15 @@ const Parachord = () => {
     playlistCover: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
 
+  // Get meta services with AI generation capability
+  const getAiServices = () => {
+    // AI services are meta-services loaded into the resolver loader
+    if (!resolverLoaderRef.current) return [];
+    return resolverLoaderRef.current.getAllResolvers().filter(r =>
+      r.capabilities?.generate
+    );
+  };
+
   // Generate a hash of current resolver settings for cache invalidation
   const getResolverSettingsHash = () => {
     const sortedActive = [...activeResolvers].sort().join(',');
@@ -3100,8 +3121,12 @@ const Parachord = () => {
         const metaServicesWithUrlLookup = metaServiceAxes.filter(axe =>
           axe.capabilities?.urlLookup && axe.urlPatterns?.length > 0
         );
+        // Meta services with generate capability need implementation functions loaded
+        const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
+          axe.capabilities?.generate && axe.implementation?.generate
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -3113,6 +3138,12 @@ const Parachord = () => {
         if (metaServicesWithUrlLookup.length > 0) {
           await resolverLoader.current.loadResolvers(metaServicesWithUrlLookup);
           console.log(`📎 Loaded ${metaServicesWithUrlLookup.length} meta service(s) with URL lookup:`, metaServicesWithUrlLookup.map(s => s.manifest.name).join(', '));
+        }
+
+        // Load meta services with generate capability (AI playlist generation)
+        if (metaServicesWithGenerate.length > 0) {
+          const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
+          console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
         }
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
@@ -4116,6 +4147,7 @@ const Parachord = () => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
+
 
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
@@ -5640,6 +5672,102 @@ const Parachord = () => {
     console.log('🗑️ Cleared queue');
   };
 
+  // AI Playlist Generation
+  const handleAiGenerate = async (prompt) => {
+    const aiServices = getAiServices();
+    // Filter to only enabled services with API keys
+    const enabledServices = aiServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      return config.enabled && config.apiKey;
+    });
+
+    if (enabledServices.length === 0) {
+      setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
+      return;
+    }
+
+    // Use selected service or first available
+    const service = selectedAiResolver
+      ? enabledServices.find(s => s.id === selectedAiResolver) || enabledServices[0]
+      : enabledServices[0];
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      // Get service config from metaServiceConfigs
+      const config = metaServiceConfigs[service.id] || {};
+
+      // Call the service's generate function
+      const tracks = await service.generate(prompt, config);
+
+      if (!tracks || tracks.length === 0) {
+        throw new Error('No tracks returned. Try a different prompt.');
+      }
+
+      // Open results sidebar with the generated tracks
+      setResultsSidebar({
+        title: '✨ AI Playlist',
+        subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+        tracks: tracks.map((t, i) => ({
+          id: `ai-${Date.now()}-${i}`,
+          title: t.title,
+          artist: t.artist,
+          album: t.album || '',
+          sources: {} // Will be resolved when added to queue
+        })),
+        source: 'ai',
+        prompt: prompt
+      });
+
+      // Close prompt input
+      setAiPromptOpen(false);
+      setAiPrompt('');
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError(error.message || 'Failed to generate playlist');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Handle adding AI results to queue
+  const handleAiAddToQueue = () => {
+    if (!resultsSidebar?.tracks) return;
+    addToQueue(resultsSidebar.tracks);
+    setResultsSidebar(null);
+    showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
+  };
+
+  // Handle saving AI results as playlist
+  const handleAiSavePlaylist = async () => {
+    if (!resultsSidebar?.tracks) return;
+
+    const playlistName = resultsSidebar.prompt
+      ? `AI: ${resultsSidebar.prompt.substring(0, 40)}${resultsSidebar.prompt.length > 40 ? '...' : ''}`
+      : 'AI Generated Playlist';
+
+    const playlistId = `ai-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: playlistName,
+      creator: 'AI',
+      tracks: resultsSidebar.tracks,
+      createdAt: new Date().toISOString()
+    };
+
+    // Add to playlists state
+    setPlaylists(prev => [...prev, newPlaylist]);
+
+    // Save to disk
+    const filename = `${playlistId}.xspf`;
+    const xspfContent = buildXSPF(newPlaylist);
+    await window.electron.playlists.save(filename, xspfContent);
+
+    setResultsSidebar(null);
+    showToast(`Saved playlist: ${playlistName}`);
+  };
+
   const addToQueue = (tracks) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
     setCurrentQueue(prev => [...prev, ...tracksArray]);
@@ -6084,7 +6212,7 @@ const Parachord = () => {
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
-      // Load meta service configs (Last.fm, etc.)
+      // Load meta service configs (Last.fm, AI services, etc.)
       const savedMetaServiceConfigs = await window.electron.store.get('meta_service_configs');
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
@@ -20005,6 +20133,118 @@ useEffect(() => {
 
               // Settings sections
               React.createElement('div', { className: 'space-y-8' },
+                // AI Integration Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'AI Integration'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Connect AI services to generate playlists from natural language prompts')
+                  ),
+
+                  // AI Service cards (meta services with generate capability)
+                  React.createElement('div', { className: 'space-y-4' },
+                    metaServices.filter(s => s.capabilities?.generate).map(service => {
+                      const config = metaServiceConfigs[service.id] || {};
+                      const isEnabled = config.enabled;
+
+                      return React.createElement('div', {
+                        key: service.id,
+                        className: `border rounded-lg transition-all ${isEnabled ? 'border-purple-200 bg-purple-50/30' : 'border-gray-200 bg-gray-50'}`
+                      },
+                        // Header row
+                        React.createElement('div', {
+                          className: 'flex items-center justify-between p-4'
+                        },
+                          React.createElement('div', { className: 'flex items-center gap-3' },
+                            React.createElement('span', {
+                              className: 'text-xl',
+                              style: { color: service.color }
+                            }, service.icon),
+                            React.createElement('div', null,
+                              React.createElement('span', { className: 'font-medium text-gray-900' }, service.name),
+                              React.createElement('p', { className: 'text-xs text-gray-500' }, service.description)
+                            )
+                          ),
+                          React.createElement('button', {
+                            onClick: () => {
+                              const newEnabled = !isEnabled;
+                              // Persist config to metaServiceConfigs
+                              saveMetaServiceConfig(service.id, { ...config, enabled: newEnabled });
+                            },
+                            className: `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                              isEnabled
+                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                            }`
+                          }, isEnabled ? 'Enabled' : 'Disabled')
+                        ),
+
+                        // Config section (only when enabled)
+                        isEnabled && React.createElement('div', { className: 'px-4 pb-4 space-y-4 border-t border-gray-100 pt-4' },
+                          // API Key
+                          React.createElement('div', null,
+                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'API Key'),
+                            React.createElement('div', { className: 'relative' },
+                              React.createElement('input', {
+                                type: 'password',
+                                value: config.apiKey || '',
+                                onChange: (e) => {
+                                  saveMetaServiceConfig(service.id, { ...config, apiKey: e.target.value });
+                                },
+                                placeholder: service.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                                className: 'w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+                              })
+                            ),
+                            React.createElement('a', {
+                              href: '#',
+                              onClick: (e) => {
+                                e.preventDefault();
+                                const url = service.id === 'chatgpt'
+                                  ? 'https://platform.openai.com/api-keys'
+                                  : 'https://aistudio.google.com/app/apikey';
+                                window.electron?.shell?.openExternal?.(url);
+                              },
+                              className: 'text-xs text-purple-600 hover:text-purple-700 mt-1 inline-block'
+                            }, 'Get your API key →')
+                          ),
+
+                          // Model selector
+                          React.createElement('div', null,
+                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
+                            React.createElement('select', {
+                              value: config.model || (service.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                              onChange: (e) => {
+                                saveMetaServiceConfig(service.id, { ...config, model: e.target.value });
+                              },
+                              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+                            },
+                              service.id === 'chatgpt' ? [
+                                React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                                React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                                React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                              ] : [
+                                React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                                React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                              ]
+                            )
+                          )
+                        )
+                      );
+                    })
+                  ),
+
+                  // No AI services message
+                  metaServices.filter(s => s.capabilities?.generate).length === 0 &&
+                    React.createElement('p', { className: 'text-sm text-gray-500 italic' },
+                      'No AI plugins installed. AI plugins will appear here when available.'
+                    )
+                ),
+
                 // Cache Management Section
                 React.createElement('div', {
                   className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
@@ -20571,7 +20811,40 @@ useEffect(() => {
             currentQueue.length > 0 && React.createElement('span', {
               className: `absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[10px] font-medium ${queueAnimating ? 'badge-flash' : ''}`
             }, currentQueue.length > 99 ? '99+' : currentQueue.length)
-          )
+          ),
+          // AI Playlist Generation button (sparkle icon)
+          (() => {
+            const aiResolvers = getAiServices();
+            const hasEnabledAi = aiResolvers.some(s => {
+              const config = metaServiceConfigs[s.id] || {};
+              return config.enabled && config.apiKey;
+            });
+            return React.createElement('button', {
+              onClick: () => setAiPromptOpen(!aiPromptOpen),
+              disabled: !hasEnabledAi,
+              className: `p-2 ml-1 rounded transition-colors ${
+                aiPromptOpen
+                  ? 'bg-purple-500/30 text-purple-300'
+                  : hasEnabledAi
+                    ? 'text-gray-400 hover:bg-white/10 hover:text-white'
+                    : 'text-gray-600 cursor-not-allowed'
+              }`,
+              title: hasEnabledAi
+                ? 'Generate playlist with AI'
+                : 'Enable an AI plugin in Settings → Plug-ins'
+            },
+              React.createElement('svg', {
+                className: 'w-4 h-4',
+                viewBox: '0 0 56 56',
+                fill: 'currentColor'
+              },
+                // Sparkle icon
+                React.createElement('path', {
+                  d: 'M 26.6875 12.6602 C 26.9687 12.6602 27.1094 12.4961 27.1797 12.2383 C 27.9062 8.3242 27.8594 8.2305 31.9375 7.4570 C 32.2187 7.4102 32.3828 7.2461 32.3828 6.9648 C 32.3828 6.6836 32.2187 6.5195 31.9375 6.4726 C 27.8828 5.6524 28.0000 5.5586 27.1797 1.6914 C 27.1094 1.4336 26.9687 1.2695 26.6875 1.2695 C 26.4062 1.2695 26.2656 1.4336 26.1953 1.6914 C 25.3750 5.5586 25.5156 5.6524 21.4375 6.4726 C 21.1797 6.5195 20.9922 6.6836 20.9922 6.9648 C 20.9922 7.2461 21.1797 7.4102 21.4375 7.4570 C 25.5156 8.2774 25.4687 8.3242 26.1953 12.2383 C 26.2656 12.4961 26.4062 12.6602 26.6875 12.6602 Z M 15.3438 28.7852 C 15.7891 28.7852 16.0938 28.5039 16.1406 28.0821 C 16.9844 21.8242 17.1953 21.8242 23.6641 20.5821 C 24.0860 20.5117 24.3906 20.2305 24.3906 19.7852 C 24.3906 19.3633 24.0860 19.0586 23.6641 18.9883 C 17.1953 18.0977 16.9609 17.8867 16.1406 11.5117 C 16.0938 11.0899 15.7891 10.7852 15.3438 10.7852 C 14.9219 10.7852 14.6172 11.0899 14.5703 11.5352 C 13.7969 17.8164 13.4687 17.7930 7.0469 18.9883 C 6.6250 19.0821 6.3203 19.3633 6.3203 19.7852 C 6.3203 20.2539 6.6250 20.5117 7.1406 20.5821 C 13.5156 21.6133 13.7969 21.7774 14.5703 28.0352 C 14.6172 28.5039 14.9219 28.7852 15.3438 28.7852 Z M 31.2344 54.7305 C 31.8438 54.7305 32.2891 54.2852 32.4062 53.6524 C 34.0703 40.8086 35.8750 38.8633 48.5781 37.4570 C 49.2344 37.3867 49.6797 36.8945 49.6797 36.2852 C 49.6797 35.6758 49.2344 35.2070 48.5781 35.1133 C 35.8750 33.7070 34.0703 31.7617 32.4062 18.9180 C 32.2891 18.2852 31.8438 17.8633 31.2344 17.8633 C 30.6250 17.8633 30.1797 18.2852 30.0860 18.9180 C 28.4219 31.7617 26.5938 33.7070 13.9140 35.1133 C 13.2344 35.2070 12.7891 35.6758 12.7891 36.2852 C 12.7891 36.8945 13.2344 37.3867 13.9140 37.4570 C 26.5703 39.1211 28.3281 40.8321 30.0860 53.6524 C 30.1797 54.2852 30.6250 54.7305 31.2344 54.7305 Z'
+                })
+              )
+            );
+          })()
         ),
 
         // CENTER: Track info (album art + metadata)
@@ -20851,6 +21124,188 @@ useEffect(() => {
       )
     ),
 
+    // AI Prompt Input Panel (floating above playbar, aligned with AI button on left)
+    aiPromptOpen && React.createElement('div', {
+      className: 'fixed bottom-24 left-4 z-50 bg-gray-800/95 backdrop-blur-xl border border-gray-700 rounded-xl shadow-2xl p-4',
+      style: { width: '380px' }
+    },
+      // Header
+      React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('span', { className: 'text-purple-400' }, '✨'),
+          React.createElement('span', { className: 'text-sm font-medium text-white' }, 'Generate Playlist')
+        ),
+        React.createElement('button', {
+          onClick: () => {
+            setAiPromptOpen(false);
+            setAiPrompt('');
+            setAiError(null);
+          },
+          className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+        },
+          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+          )
+        )
+      ),
+
+      // Input
+      React.createElement('div', { className: 'relative' },
+        React.createElement('input', {
+          type: 'text',
+          value: aiPrompt,
+          onChange: (e) => setAiPrompt(e.target.value),
+          onKeyDown: (e) => {
+            if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
+              handleAiGenerate(aiPrompt.trim());
+            }
+            if (e.key === 'Escape') {
+              setAiPromptOpen(false);
+              setAiPrompt('');
+              setAiError(null);
+            }
+          },
+          placeholder: 'What do you want to listen to?',
+          disabled: aiLoading,
+          autoFocus: true,
+          className: 'w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 disabled:opacity-50'
+        }),
+        React.createElement('button', {
+          onClick: () => aiPrompt.trim() && !aiLoading && handleAiGenerate(aiPrompt.trim()),
+          disabled: !aiPrompt.trim() || aiLoading,
+          className: 'absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-purple-600 hover:bg-purple-500 text-white'
+        },
+          aiLoading
+            ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
+                React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
+              )
+            : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
+              )
+        )
+      ),
+
+      // Provider selector (only if multiple AI resolvers)
+      (() => {
+        const aiResolvers = getAiServices();
+        if (aiResolvers.length <= 1) return null;
+        return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
+          React.createElement('span', { className: 'text-xs text-gray-500' }, 'Provider:'),
+          React.createElement('select', {
+            value: selectedAiResolver || aiResolvers[0]?.id || '',
+            onChange: (e) => setSelectedAiResolver(e.target.value),
+            className: 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-purple-500'
+          },
+            aiResolvers.map(r =>
+              React.createElement('option', { key: r.id, value: r.id }, r.name)
+            )
+          )
+        );
+      })(),
+
+      // Error message
+      aiError && React.createElement('div', { className: 'mt-3 p-2 bg-red-500/20 border border-red-500/30 rounded-lg' },
+        React.createElement('p', { className: 'text-xs text-red-300' }, aiError)
+      ),
+
+      // Hint
+      !aiError && React.createElement('p', { className: 'mt-3 text-xs text-gray-500' },
+        'Try: "upbeat 90s hip hop" or "relaxing jazz for studying"'
+      )
+    ),
+
+    // Results Sidebar (slides in from right, above playbar)
+    resultsSidebar && React.createElement('div', {
+      className: 'fixed top-0 right-0 z-40 flex',
+      style: { bottom: '80px' } // Leave room for playbar
+    },
+      // Backdrop (click to close)
+      React.createElement('div', {
+        className: 'flex-1 bg-black/30 backdrop-blur-sm',
+        onClick: () => setResultsSidebar(null)
+      }),
+
+      // Sidebar panel
+      React.createElement('div', {
+        className: 'w-80 bg-gray-900 border-l border-gray-700 flex flex-col shadow-2xl',
+        style: { animation: 'slideInRight 0.2s ease-out' }
+      },
+        // Header
+        React.createElement('div', { className: 'p-4 border-b border-gray-700' },
+          React.createElement('div', { className: 'flex items-center justify-between' },
+            React.createElement('h3', { className: 'text-lg font-semibold text-white' }, resultsSidebar.title),
+            React.createElement('button', {
+              onClick: () => setResultsSidebar(null),
+              className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+            },
+              React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+              )
+            )
+          ),
+          resultsSidebar.subtitle && React.createElement('p', {
+            className: 'text-sm text-gray-400 mt-1 truncate'
+          }, resultsSidebar.subtitle)
+        ),
+
+        // Track list
+        React.createElement('div', { className: 'flex-1 overflow-y-auto p-2' },
+          resultsSidebar.tracks.map((track, index) =>
+            React.createElement('div', {
+              key: track.id || index,
+              className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
+            },
+              // Track number
+              React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
+
+              // Track info
+              React.createElement('div', { className: 'flex-1 min-w-0' },
+                React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
+                React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
+              ),
+
+              // Remove button
+              React.createElement('button', {
+                onClick: () => {
+                  setResultsSidebar(prev => ({
+                    ...prev,
+                    tracks: prev.tracks.filter((_, i) => i !== index)
+                  }));
+                },
+                className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                )
+              )
+            )
+          )
+        ),
+
+        // Empty state
+        resultsSidebar.tracks.length === 0 && React.createElement('div', {
+          className: 'flex-1 flex items-center justify-center p-4'
+        },
+          React.createElement('p', { className: 'text-sm text-gray-500' }, 'No tracks remaining')
+        ),
+
+        // Actions
+        React.createElement('div', { className: 'p-4 border-t border-gray-700 space-y-2' },
+          React.createElement('button', {
+            onClick: handleAiAddToQueue,
+            disabled: resultsSidebar.tracks.length === 0,
+            className: 'w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, `Add ${resultsSidebar.tracks.length} to Queue`),
+          React.createElement('button', {
+            onClick: handleAiSavePlaylist,
+            disabled: resultsSidebar.tracks.length === 0,
+            className: 'w-full py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save as Playlist')
+        )
+      )
+    ),
+
     // Import Playlist Dialog Modal
     showUrlImportDialog && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
@@ -21083,7 +21538,8 @@ useEffect(() => {
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
                   recommendations: 'Recommendations',
-                  metadata: 'Metadata'
+                  metadata: 'Metadata',
+                  generate: 'AI Playlist Generation'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
@@ -21385,6 +21841,76 @@ useEffect(() => {
                 )
           ),
 
+          // AI Service configuration (ChatGPT and Gemini)
+          (selectedResolver.id === 'chatgpt' || selectedResolver.id === 'gemini') && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('span', { className: 'font-medium text-gray-900' }, 'API Configuration'),
+            React.createElement('p', { className: 'text-xs text-gray-500 mt-1 mb-4' },
+              selectedResolver.id === 'chatgpt'
+                ? 'Enter your OpenAI API key to enable AI playlist generation.'
+                : 'Enter your Google API key to enable AI playlist generation.'
+            ),
+            // API Key input
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'API Key'),
+              React.createElement('input', {
+                type: 'password',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    apiKey: e.target.value,
+                    enabled: !!e.target.value
+                  });
+                },
+                placeholder: selectedResolver.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  const url = selectedResolver.id === 'chatgpt'
+                    ? 'https://platform.openai.com/api-keys'
+                    : 'https://aistudio.google.com/app/apikey';
+                  window.electron?.shell?.openExternal?.(url);
+                },
+                className: 'text-xs text-purple-600 hover:text-purple-700 mt-1 inline-block'
+              }, 'Get your API key →')
+            ),
+            // Model selector
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
+              React.createElement('select', {
+                value: metaServiceConfigs[selectedResolver.id]?.model || (selectedResolver.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    model: e.target.value
+                  });
+                },
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+              },
+                selectedResolver.id === 'chatgpt' ? [
+                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                ] : [
+                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                ]
+              )
+            ),
+            // Connection status
+            metaServiceConfigs[selectedResolver.id]?.apiKey && React.createElement('div', {
+              className: 'flex items-center gap-2 text-green-600 text-sm'
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'API key configured')
+            )
+          ),
+
           // Libre.fm scrobbling section
           selectedResolver.id === 'librefm' && React.createElement('div', {
             className: 'py-3 border-t border-gray-100'
@@ -21598,7 +22124,8 @@ useEffect(() => {
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
                   recommendations: 'Recommendations',
-                  metadata: 'Metadata'
+                  metadata: 'Metadata',
+                  generate: 'AI Playlist Generation'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
@@ -21617,6 +22144,64 @@ useEffect(() => {
             }, selectedMarketplaceItem.category)
           ),
 
+          // API Key Configuration (for AI services with generate capability)
+          selectedMarketplaceItem.capabilities?.generate && React.createElement('div', {
+            className: 'border-t border-gray-100 pt-4'
+          },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-3' }, 'Configuration'),
+            // API Key input
+            React.createElement('div', { className: 'space-y-2' },
+              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'API Key'),
+              React.createElement('input', {
+                type: 'password',
+                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedMarketplaceItem.id, {
+                    ...metaServiceConfigs[selectedMarketplaceItem.id],
+                    apiKey: e.target.value,
+                    enabled: true
+                  });
+                },
+                placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  const url = selectedMarketplaceItem.id === 'chatgpt'
+                    ? 'https://platform.openai.com/api-keys'
+                    : 'https://aistudio.google.com/app/apikey';
+                  window.electron?.shell?.openExternal?.(url);
+                },
+                className: 'text-xs text-purple-600 hover:text-purple-700 inline-block'
+              }, 'Get your API key →')
+            ),
+            // Model selector
+            React.createElement('div', { className: 'mt-4 space-y-2' },
+              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'Model'),
+              React.createElement('select', {
+                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model || (selectedMarketplaceItem.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedMarketplaceItem.id, {
+                    ...metaServiceConfigs[selectedMarketplaceItem.id],
+                    model: e.target.value
+                  });
+                },
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+              },
+                selectedMarketplaceItem.id === 'chatgpt' ? [
+                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                ] : [
+                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                ]
+              )
+            )
+          ),
+
           // Update available notice (only when installed and update exists)
           selectedMarketplaceItem.isInstalled &&
             selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
@@ -21629,45 +22214,60 @@ useEffect(() => {
         ),
         // Modal footer with action buttons
         React.createElement('div', {
-          className: 'px-6 py-4 bg-gray-50 flex items-center justify-end gap-2'
+          className: 'px-6 py-4 bg-gray-50 flex items-center justify-between'
         },
           selectedMarketplaceItem.isInstalled
             ? React.createElement(React.Fragment, null,
-                // Update button if newer version available
-                selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                // Remove button on the left (disabled for built-in)
+                React.createElement('button', {
+                  onClick: async () => {
+                    await handleUninstallResolver(selectedMarketplaceItem.id);
+                    setSelectedMarketplaceItem(null);
+                  },
+                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id),
+                  className: 'px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id)
+                    ? 'Built-in plug-ins cannot be removed'
+                    : 'Remove this plug-in'
+                }, 'Remove'),
+                // Right side buttons
+                React.createElement('div', { className: 'flex items-center gap-2' },
+                  // Update button if newer version available
+                  selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                    React.createElement('button', {
+                      onClick: async () => {
+                        await handleInstallFromMarketplace(selectedMarketplaceItem);
+                        setSelectedMarketplaceItem(null);
+                      },
+                      disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                      className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
+                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
+                  // Done button
+                  React.createElement('button', {
+                    onClick: () => setSelectedMarketplaceItem(null),
+                    className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors'
+                  }, 'Done')
+                )
+              )
+            : React.createElement(React.Fragment, null,
+                // Empty left side for non-installed
+                React.createElement('div', null),
+                // Right side with Install and Done buttons
+                React.createElement('div', { className: 'flex items-center gap-2' },
                   React.createElement('button', {
                     onClick: async () => {
                       await handleInstallFromMarketplace(selectedMarketplaceItem);
                       setSelectedMarketplaceItem(null);
                     },
                     disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                    className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
-                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
-                // Uninstall button (always shown, disabled for built-in)
-                React.createElement('button', {
-                  onClick: async () => {
-                    await handleUninstallResolver(selectedMarketplaceItem.id);
-                    setSelectedMarketplaceItem(null);
-                  },
-                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id),
-                  className: 'px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id)
-                    ? 'Built-in plug-ins cannot be uninstalled'
-                    : 'Uninstall this plug-in'
-                }, 'Uninstall')
+                    className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
+                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
+                  React.createElement('button', {
+                    onClick: () => setSelectedMarketplaceItem(null),
+                    className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors'
+                  }, 'Done')
+                )
               )
-            : React.createElement('button', {
-                onClick: async () => {
-                  await handleInstallFromMarketplace(selectedMarketplaceItem);
-                  setSelectedMarketplaceItem(null);
-                },
-                disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
-              }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
-          React.createElement('button', {
-            onClick: () => setSelectedMarketplaceItem(null),
-            className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
-          }, 'Done')
         )
       )
     ),
