@@ -5868,6 +5868,20 @@ const Parachord = () => {
     setAiLoading(true);
     setAiError(null);
 
+    // Open sidebar immediately with loading state
+    setResultsSidebar({
+      title: '✨ AI Playlist',
+      subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
+      tracks: [],
+      source: 'ai',
+      prompt: prompt,
+      loading: true
+    });
+
+    // Close prompt input immediately
+    setAiPromptOpen(false);
+    setAiPrompt('');
+
     try {
       // Get service config from metaServiceConfigs
       const config = metaServiceConfigs[service.id] || {};
@@ -5888,7 +5902,7 @@ const Parachord = () => {
         throw new Error('No tracks returned. Try a different prompt.');
       }
 
-      // Open results sidebar with the generated tracks
+      // Update sidebar with the generated tracks
       setResultsSidebar({
         title: '✨ AI Playlist',
         subtitle: `"${prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt}"`,
@@ -5900,15 +5914,15 @@ const Parachord = () => {
           sources: {} // Will be resolved when added to queue
         })),
         source: 'ai',
-        prompt: prompt
+        prompt: prompt,
+        loading: false
       });
-
-      // Close prompt input
-      setAiPromptOpen(false);
-      setAiPrompt('');
     } catch (error) {
       console.error('AI generation error:', error);
       setAiError(error.message || 'Failed to generate playlist');
+      // Close sidebar on error, reopen prompt
+      setResultsSidebar(null);
+      setAiPromptOpen(true);
     } finally {
       setAiLoading(false);
     }
@@ -21546,42 +21560,66 @@ useEffect(() => {
           }, resultsSidebar.subtitle)
         ),
 
-        // Track list
+        // Track list or loading skeletons
         React.createElement('div', { className: 'flex-1 overflow-y-auto p-2' },
-          resultsSidebar.tracks.map((track, index) =>
-            React.createElement('div', {
-              key: track.id || index,
-              className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
-            },
-              // Track number
-              React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
-
-              // Track info
-              React.createElement('div', { className: 'flex-1 min-w-0' },
-                React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
-                React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
-              ),
-
-              // Remove button
-              React.createElement('button', {
-                onClick: () => {
-                  setResultsSidebar(prev => ({
-                    ...prev,
-                    tracks: prev.tracks.filter((_, i) => i !== index)
-                  }));
+          // Loading skeletons
+          resultsSidebar.loading
+            ? Array.from({ length: 12 }).map((_, index) =>
+                React.createElement('div', {
+                  key: `skeleton-${index}`,
+                  className: 'flex items-center gap-3 p-2'
                 },
-                className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
-              },
-                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                  // Skeleton track number
+                  React.createElement('div', {
+                    className: 'w-6 h-4 bg-gray-700 rounded animate-pulse'
+                  }),
+                  // Skeleton track info
+                  React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+                    React.createElement('div', {
+                      className: 'h-4 bg-gray-700 rounded animate-pulse',
+                      style: { width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gray-700/60 rounded animate-pulse',
+                      style: { width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                    })
+                  )
                 )
               )
-            )
-          )
+            : resultsSidebar.tracks.map((track, index) =>
+                React.createElement('div', {
+                  key: track.id || index,
+                  className: 'group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors'
+                },
+                  // Track number
+                  React.createElement('span', { className: 'w-6 text-center text-xs text-gray-500' }, index + 1),
+
+                  // Track info
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('div', { className: 'text-sm text-white truncate' }, track.title),
+                    React.createElement('div', { className: 'text-xs text-gray-400 truncate' }, track.artist)
+                  ),
+
+                  // Remove button
+                  React.createElement('button', {
+                    onClick: () => {
+                      setResultsSidebar(prev => ({
+                        ...prev,
+                        tracks: prev.tracks.filter((_, i) => i !== index)
+                      }));
+                    },
+                    className: 'opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-all'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              )
         ),
 
-        // Empty state
-        resultsSidebar.tracks.length === 0 && React.createElement('div', {
+        // Empty state (only show when not loading and no tracks)
+        !resultsSidebar.loading && resultsSidebar.tracks.length === 0 && React.createElement('div', {
           className: 'flex-1 flex items-center justify-center p-4'
         },
           React.createElement('p', { className: 'text-sm text-gray-500' }, 'No tracks remaining')
@@ -21591,12 +21629,12 @@ useEffect(() => {
         React.createElement('div', { className: 'p-4 border-t border-gray-700 space-y-2' },
           React.createElement('button', {
             onClick: handleAiAddToQueue,
-            disabled: resultsSidebar.tracks.length === 0,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
             className: 'w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
-          }, `Add ${resultsSidebar.tracks.length} to Queue`),
+          }, resultsSidebar.loading ? 'Generating...' : `Add ${resultsSidebar.tracks.length} to Queue`),
           React.createElement('button', {
             onClick: handleAiSavePlaylist,
-            disabled: resultsSidebar.tracks.length === 0,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
             className: 'w-full py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
           }, 'Save as Playlist')
         )
