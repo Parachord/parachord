@@ -20064,6 +20064,7 @@ useEffect(() => {
                   [
                     { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
+                    { value: 'purchase', label: 'Purchase' },
                     { value: 'metadata', label: 'Metadata' },
                     { value: 'ai', label: 'AI' },
                     { value: 'local', label: 'Local' }
@@ -20103,8 +20104,10 @@ useEffect(() => {
                         const matchesAuthor = resolver.author.toLowerCase().includes(query);
                         if (!matchesName && !matchesDesc && !matchesAuthor) return false;
                       }
-                      if (marketplaceCategory !== 'all' && resolver.category !== marketplaceCategory) {
-                        return false;
+                      if (marketplaceCategory !== 'all') {
+                        const matchesCategory = resolver.category === marketplaceCategory;
+                        const matchesTag = resolver.tags && resolver.tags.includes(marketplaceCategory);
+                        if (!matchesCategory && !matchesTag) return false;
                       }
                       return true;
                     })
