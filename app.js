@@ -5732,11 +5732,24 @@ const Parachord = () => {
   };
 
   // Handle adding AI results to queue
-  const handleAiAddToQueue = () => {
-    if (!resultsSidebar?.tracks) return;
-    addToQueue(resultsSidebar.tracks);
+  const handleAiAddToQueue = async () => {
+    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
+    const tracks = resultsSidebar.tracks;
+    const wasEmpty = !currentTrack;
+    addToQueue(tracks);
     setResultsSidebar(null);
-    showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
+    showToast(`Added ${tracks.length} tracks to queue`);
+
+    // Auto-play first track if nothing is currently playing
+    if (wasEmpty && tracks.length > 0) {
+      // Small delay to ensure queue is updated
+      setTimeout(() => {
+        const firstTrack = tracks[0];
+        if (firstTrack) {
+          handlePlay(firstTrack);
+        }
+      }, 100);
+    }
   };
 
   // Handle saving AI results as playlist
@@ -20217,7 +20230,7 @@ useEffect(() => {
                           React.createElement('div', null,
                             React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
                             React.createElement('select', {
-                              value: config.model || (service.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-1.5-flash'),
+                              value: config.model || (service.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
                               onChange: (e) => {
                                 saveMetaServiceConfig(service.id, { ...config, model: e.target.value });
                               },
@@ -20228,8 +20241,8 @@ useEffect(() => {
                                 React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
                                 React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
                               ] : [
-                                React.createElement('option', { key: 'gemini-1.5-flash', value: 'gemini-1.5-flash' }, 'Gemini 1.5 Flash (Recommended)'),
-                                React.createElement('option', { key: 'gemini-1.5-pro', value: 'gemini-1.5-pro' }, 'Gemini 1.5 Pro')
+                                React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                                React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
                               ]
                             )
                           )
@@ -21212,9 +21225,10 @@ useEffect(() => {
       )
     ),
 
-    // Results Sidebar (slides in from right)
+    // Results Sidebar (slides in from right, above playbar)
     resultsSidebar && React.createElement('div', {
-      className: 'fixed top-0 right-0 bottom-0 z-40 flex'
+      className: 'fixed top-0 right-0 z-40 flex',
+      style: { bottom: '80px' } // Leave room for playbar
     },
       // Backdrop (click to close)
       React.createElement('div', {
@@ -21534,7 +21548,8 @@ useEffect(() => {
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
                   recommendations: 'Recommendations',
-                  metadata: 'Metadata'
+                  metadata: 'Metadata',
+                  generate: 'AI Playlist Generation'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
@@ -21836,6 +21851,76 @@ useEffect(() => {
                 )
           ),
 
+          // AI Service configuration (ChatGPT and Gemini)
+          (selectedResolver.id === 'chatgpt' || selectedResolver.id === 'gemini') && React.createElement('div', {
+            className: 'py-3 border-t border-gray-100'
+          },
+            React.createElement('span', { className: 'font-medium text-gray-900' }, 'API Configuration'),
+            React.createElement('p', { className: 'text-xs text-gray-500 mt-1 mb-4' },
+              selectedResolver.id === 'chatgpt'
+                ? 'Enter your OpenAI API key to enable AI playlist generation.'
+                : 'Enter your Google API key to enable AI playlist generation.'
+            ),
+            // API Key input
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'API Key'),
+              React.createElement('input', {
+                type: 'password',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    apiKey: e.target.value,
+                    enabled: !!e.target.value
+                  });
+                },
+                placeholder: selectedResolver.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  const url = selectedResolver.id === 'chatgpt'
+                    ? 'https://platform.openai.com/api-keys'
+                    : 'https://aistudio.google.com/app/apikey';
+                  window.electron?.shell?.openExternal?.(url);
+                },
+                className: 'text-xs text-purple-600 hover:text-purple-700 mt-1 inline-block'
+              }, 'Get your API key →')
+            ),
+            // Model selector
+            React.createElement('div', { className: 'mb-4' },
+              React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
+              React.createElement('select', {
+                value: metaServiceConfigs[selectedResolver.id]?.model || (selectedResolver.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    model: e.target.value
+                  });
+                },
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+              },
+                selectedResolver.id === 'chatgpt' ? [
+                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                ] : [
+                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                ]
+              )
+            ),
+            // Connection status
+            metaServiceConfigs[selectedResolver.id]?.apiKey && React.createElement('div', {
+              className: 'flex items-center gap-2 text-green-600 text-sm'
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'API key configured')
+            )
+          ),
+
           // Libre.fm scrobbling section
           selectedResolver.id === 'librefm' && React.createElement('div', {
             className: 'py-3 border-t border-gray-100'
@@ -22049,7 +22134,8 @@ useEffect(() => {
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
                   recommendations: 'Recommendations',
-                  metadata: 'Metadata'
+                  metadata: 'Metadata',
+                  generate: 'AI Playlist Generation'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
@@ -22068,6 +22154,64 @@ useEffect(() => {
             }, selectedMarketplaceItem.category)
           ),
 
+          // API Key Configuration (for AI services with generate capability)
+          selectedMarketplaceItem.capabilities?.generate && React.createElement('div', {
+            className: 'border-t border-gray-100 pt-4'
+          },
+            React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-3' }, 'Configuration'),
+            // API Key input
+            React.createElement('div', { className: 'space-y-2' },
+              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'API Key'),
+              React.createElement('input', {
+                type: 'password',
+                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedMarketplaceItem.id, {
+                    ...metaServiceConfigs[selectedMarketplaceItem.id],
+                    apiKey: e.target.value,
+                    enabled: true
+                  });
+                },
+                placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  const url = selectedMarketplaceItem.id === 'chatgpt'
+                    ? 'https://platform.openai.com/api-keys'
+                    : 'https://aistudio.google.com/app/apikey';
+                  window.electron?.shell?.openExternal?.(url);
+                },
+                className: 'text-xs text-purple-600 hover:text-purple-700 inline-block'
+              }, 'Get your API key →')
+            ),
+            // Model selector
+            React.createElement('div', { className: 'mt-4 space-y-2' },
+              React.createElement('label', { className: 'block text-sm text-gray-600' }, 'Model'),
+              React.createElement('select', {
+                defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.model || (selectedMarketplaceItem.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedMarketplaceItem.id, {
+                    ...metaServiceConfigs[selectedMarketplaceItem.id],
+                    model: e.target.value
+                  });
+                },
+                className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
+              },
+                selectedMarketplaceItem.id === 'chatgpt' ? [
+                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                ] : [
+                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                ]
+              )
+            )
+          ),
+
           // Update available notice (only when installed and update exists)
           selectedMarketplaceItem.isInstalled &&
             selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
@@ -22080,45 +22224,60 @@ useEffect(() => {
         ),
         // Modal footer with action buttons
         React.createElement('div', {
-          className: 'px-6 py-4 bg-gray-50 flex items-center justify-end gap-2'
+          className: 'px-6 py-4 bg-gray-50 flex items-center justify-between'
         },
           selectedMarketplaceItem.isInstalled
             ? React.createElement(React.Fragment, null,
-                // Update button if newer version available
-                selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                // Remove button on the left (disabled for built-in)
+                React.createElement('button', {
+                  onClick: async () => {
+                    await handleUninstallResolver(selectedMarketplaceItem.id);
+                    setSelectedMarketplaceItem(null);
+                  },
+                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id),
+                  className: 'px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id)
+                    ? 'Built-in plug-ins cannot be removed'
+                    : 'Remove this plug-in'
+                }, 'Remove'),
+                // Right side buttons
+                React.createElement('div', { className: 'flex items-center gap-2' },
+                  // Update button if newer version available
+                  selectedMarketplaceItem.installedResolver?.version !== selectedMarketplaceItem.version &&
+                    React.createElement('button', {
+                      onClick: async () => {
+                        await handleInstallFromMarketplace(selectedMarketplaceItem);
+                        setSelectedMarketplaceItem(null);
+                      },
+                      disabled: installingResolvers.has(selectedMarketplaceItem.id),
+                      className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
+                    }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
+                  // Done button
+                  React.createElement('button', {
+                    onClick: () => setSelectedMarketplaceItem(null),
+                    className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors'
+                  }, 'Done')
+                )
+              )
+            : React.createElement(React.Fragment, null,
+                // Empty left side for non-installed
+                React.createElement('div', null),
+                // Right side with Install and Done buttons
+                React.createElement('div', { className: 'flex items-center gap-2' },
                   React.createElement('button', {
                     onClick: async () => {
                       await handleInstallFromMarketplace(selectedMarketplaceItem);
                       setSelectedMarketplaceItem(null);
                     },
                     disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                    className: 'px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50'
-                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Updating...' : 'Update'),
-                // Uninstall button (always shown, disabled for built-in)
-                React.createElement('button', {
-                  onClick: async () => {
-                    await handleUninstallResolver(selectedMarketplaceItem.id);
-                    setSelectedMarketplaceItem(null);
-                  },
-                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id),
-                  className: 'px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic'].includes(selectedMarketplaceItem.id)
-                    ? 'Built-in plug-ins cannot be uninstalled'
-                    : 'Uninstall this plug-in'
-                }, 'Uninstall')
+                    className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
+                  }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
+                  React.createElement('button', {
+                    onClick: () => setSelectedMarketplaceItem(null),
+                    className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors'
+                  }, 'Done')
+                )
               )
-            : React.createElement('button', {
-                onClick: async () => {
-                  await handleInstallFromMarketplace(selectedMarketplaceItem);
-                  setSelectedMarketplaceItem(null);
-                },
-                disabled: installingResolvers.has(selectedMarketplaceItem.id),
-                className: 'px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50'
-              }, installingResolvers.has(selectedMarketplaceItem.id) ? 'Installing...' : 'Install'),
-          React.createElement('button', {
-            onClick: () => setSelectedMarketplaceItem(null),
-            className: 'px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors'
-          }, 'Done')
         )
       )
     ),

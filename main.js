@@ -1,6 +1,16 @@
 // Load environment variables from .env file
 require('dotenv').config();
 
+// Handle EPIPE errors gracefully (occurs when console.log writes to closed pipe)
+process.on('uncaughtException', (error) => {
+  if (error.code === 'EPIPE') {
+    // Ignore EPIPE errors - these happen when stdout pipe closes
+    return;
+  }
+  // Re-throw other errors
+  console.error('Uncaught exception:', error);
+});
+
 // Debug: Log environment variables on startup
 console.log('=== Environment Variables Check ===');
 console.log('Working directory:', __dirname);
