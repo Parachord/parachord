@@ -12445,10 +12445,10 @@ const playOnSpotifyConnect = async (track) => {
       console.log(`📱 Using active device: "${activeDevice.name}" (${activeDevice.type})`);
     }
     
-    // If device is not active, wake it up by transferring playback with play:true
-    // This is more reliable than transferring then playing separately
+    // If device is not active, wake it up by transferring playback
+    // Use play: false to avoid briefly playing the previous track
     if (!activeDevice.is_active) {
-      console.log('Device not active, waking device and starting playback...');
+      console.log('Device not active, waking device...');
       const transferResponse = await fetch('https://api.spotify.com/v1/me/player', {
         method: 'PUT',
         headers: {
@@ -12457,7 +12457,7 @@ const playOnSpotifyConnect = async (track) => {
         },
         body: JSON.stringify({
           device_ids: [activeDevice.id],
-          play: true // Wake device AND start playing
+          play: false // Wake device but don't resume previous track
         })
       });
 
