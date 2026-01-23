@@ -6094,8 +6094,17 @@ const Parachord = () => {
       // Load friends from storage
       const savedFriends = await window.electron.store.get('friends');
       if (savedFriends && Array.isArray(savedFriends)) {
-        setFriends(savedFriends);
-        console.log(`👥 Loaded ${savedFriends.length} friends from storage`);
+        // Migrate friends that have savedToCollection: false to true
+        const migratedFriends = savedFriends.map(f =>
+          f.savedToCollection === false ? { ...f, savedToCollection: true } : f
+        );
+        // Save migrated friends back if any were changed
+        if (migratedFriends.some((f, i) => f !== savedFriends[i])) {
+          await window.electron.store.set('friends', migratedFriends);
+          console.log('👥 Migrated friends to savedToCollection: true');
+        }
+        setFriends(migratedFriends);
+        console.log(`👥 Loaded ${migratedFriends.length} friends from storage`);
       }
 
       const savedPinnedFriendIds = await window.electron.store.get('pinnedFriendIds');
