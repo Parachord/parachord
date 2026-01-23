@@ -138,6 +138,47 @@ const tracks = await resolver.generate(prompt, config, listeningContext);
 - `/1/stats/user/{username}/artists?range=quarter&count=10`
 - `/1/stats/user/{username}/recordings?range=quarter&count=25`
 
+## Error Handling
+
+### HTTP Error Codes
+
+| HTTP Code | Meaning | User Message |
+|-----------|---------|--------------|
+| `401` | Invalid API key | "Invalid API key. Check your settings." |
+| `403` | Billing disabled / access denied | "API access denied. You may need to enable billing on your account." |
+| `429` | Rate limit / quota exceeded | See provider-specific messages below |
+| `500`/`503` | Service error | "AI service temporarily unavailable. Try again later." |
+
+### Provider-Specific Rate Limit Messages
+
+**OpenAI (429):**
+> "Rate limit exceeded. OpenAI's API is pay-as-you-go after trial credits expire. Please wait a moment and try again, or check your billing at platform.openai.com."
+
+**Gemini (429):**
+> "Daily quota exceeded. Gemini's free tier allows ~25-50 requests/day. Try again tomorrow or upgrade to a paid plan at ai.google.dev."
+
+### Free Tier Limits (as of January 2026)
+
+**OpenAI:**
+- No permanent free tier
+- New accounts may receive ~$5 trial credits (limited time)
+- After trial: pay-as-you-go billing required
+- GPT-4o-mini is the most cost-effective option (~$0.15/1M input tokens)
+
+**Google Gemini:**
+- Free tier available (no credit card required)
+- Gemini 2.5 Pro: ~25 requests/day, 5 RPM
+- Gemini 2.5 Flash: ~20-50 requests/day
+- Limits were reduced 50-80% in December 2025
+- Resets at midnight Pacific Time
+
+### Implementation
+
+Both plugins currently handle `401` and `429`. Add handling for:
+
+1. **`403` errors** - Add explicit check for billing/access issues
+2. **Quota-specific Gemini messaging** - Differentiate rate limit (per-minute) from quota exhausted (daily)
+
 ## Future Enhancements (V2+)
 
 These are explicitly out of scope for V1 but worth noting:
