@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-01-17T16:00:00Z",
+  "lastUpdated": "2026-01-23T12:00:00Z",
   "resolvers": [
     {
       "id": "spotify",
@@ -127,7 +127,43 @@
       "builtin": true,
       "category": "local",
       "tags": ["local", "files", "library", "offline", "free"]
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Generate playlists using ChatGPT. Requires your own API key from OpenAI.",
+      "icon": "🤖",
+      "color": "#10a37f",
+      "homepage": "https://platform.openai.com",
+      "capabilities": {
+        "generate": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/chatgpt.axe",
+      "category": "ai",
+      "tags": ["ai", "playlist", "generation", "openai", "chatgpt"]
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Generate playlists using Google Gemini. Requires your own API key from Google AI Studio.",
+      "icon": "✦",
+      "color": "#4285f4",
+      "homepage": "https://ai.google.dev",
+      "capabilities": {
+        "generate": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/gemini.axe",
+      "category": "ai",
+      "tags": ["ai", "playlist", "generation", "google", "gemini"]
     }
   ],
-  "categories": ["streaming", "purchase", "metadata", "local"]
+  "categories": ["streaming", "purchase", "metadata", "local", "ai"]
 }
