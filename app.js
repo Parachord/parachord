@@ -4859,6 +4859,7 @@ const Parachord = () => {
       let pollCount = 0; // Track poll number for first-poll grace period
       let pendingTrackChange = null; // Track URI from potential external change, needs confirmation
       let lastProgressMs = 0; // Track previous progress to detect track-end-then-reset scenario
+      let lastKnownDurationMs = 0; // Track the duration when we last had valid progress
 
       const pollInterval = setInterval(async () => {
         pollCount++; // Increment poll counter
@@ -4929,7 +4930,10 @@ const Parachord = () => {
               // Track is paused - could be user pause or playback never started
               if (progressMs === 0) {
                 // Check if we were previously near the end - this means track finished and reset
-                const lastPercentComplete = durationMs > 0 ? (lastProgressMs / durationMs) * 100 : 0;
+                // Use lastKnownDurationMs if available (more reliable than current durationMs which might be stale)
+                const effectiveDuration = lastKnownDurationMs > 0 ? lastKnownDurationMs : durationMs;
+                const lastPercentComplete = effectiveDuration > 0 ? (lastProgressMs / effectiveDuration) * 100 : 0;
+                console.log(`🔍 Track at 0%: lastProgressMs=${lastProgressMs}, effectiveDuration=${effectiveDuration}, lastPercentComplete=${lastPercentComplete.toFixed(1)}%`);
                 if (lastProgressMs > 0 && lastPercentComplete >= 90) {
                   // We were at 90%+ and now at 0% - track finished naturally
                   console.log(`🎵 Track finished (was at ${lastPercentComplete.toFixed(1)}%, now reset to 0%), auto-advancing to next...`);
@@ -4959,12 +4963,14 @@ const Parachord = () => {
                 // User paused mid-playback (progress > 0) - reset stuck counter
                 stuckAtZeroCount = 0;
                 lastProgressMs = progressMs; // Track progress even when paused
+                lastKnownDurationMs = durationMs; // Track duration for accurate percentage calculation
                 console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
               }
             } else {
               // Playing normally - reset stuck counter and log progress periodically
               stuckAtZeroCount = 0;
               lastProgressMs = progressMs; // Track progress for end-of-track detection
+              lastKnownDurationMs = durationMs; // Track duration for accurate percentage calculation
               pendingTrackChange = null; // Clear any pending track change since we're on the right track
               // Log every poll to confirm polling is working
               console.log(`▶️ Spotify playing: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
