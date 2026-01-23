@@ -20064,10 +20064,9 @@ useEffect(() => {
                   [
                     { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
-                    { value: 'purchase', label: 'Purchase' },
                     { value: 'metadata', label: 'Metadata' },
                     { value: 'ai', label: 'AI' },
-                    { value: 'radio', label: 'Radio' }
+                    { value: 'local', label: 'Local' }
                   ].map(({ value, label }) =>
                     React.createElement('button', {
                       key: value,
