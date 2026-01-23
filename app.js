@@ -21434,19 +21434,40 @@ useEffect(() => {
 
       // Listening history toggle (only if scrobbler connected)
       hasScrobblerConnected() && React.createElement('div', {
-        className: 'mt-3 flex items-center gap-2'
+        className: 'mt-3 flex items-center justify-between'
       },
-        React.createElement('input', {
-          type: 'checkbox',
-          id: 'ai-include-history',
-          checked: aiIncludeHistory,
-          onChange: (e) => setAiIncludeHistory(e.target.checked),
-          className: 'w-4 h-4 rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer'
-        }),
         React.createElement('label', {
           htmlFor: 'ai-include-history',
           className: 'text-xs text-gray-400 cursor-pointer select-none'
-        }, `Include my ${getScrobblerName()} history`)
+        }, `Use my ${getScrobblerName()} history`),
+        React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+          React.createElement('input', {
+            type: 'checkbox',
+            id: 'ai-include-history',
+            checked: aiIncludeHistory,
+            onChange: (e) => setAiIncludeHistory(e.target.checked),
+            className: 'sr-only peer'
+          }),
+          React.createElement('div', {
+            className: 'w-full h-full bg-gray-600 rounded-full peer-checked:bg-purple-600 transition-colors'
+          }),
+          React.createElement('div', {
+            className: 'absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5'
+          })
+        )
+      ),
+
+      // Surprise Me button (only if listening history is enabled)
+      hasScrobblerConnected() && aiIncludeHistory && React.createElement('button', {
+        onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'),
+        disabled: aiLoading,
+        className: 'mt-3 w-full py-2 px-3 rounded-lg text-sm font-medium transition-colors ' +
+          (aiLoading ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white')
+      },
+        React.createElement('span', { className: 'flex items-center justify-center gap-2' },
+          '🎲',
+          'Surprise Me'
+        )
       ),
 
       // Error message
