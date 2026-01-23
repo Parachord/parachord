@@ -1103,8 +1103,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   const menuItems = [];
 
-  // Only add queue/playlist options for non-artist types
-  if (data.type !== 'artist') {
+  // Only add queue/playlist options for types that have playable tracks
+  if (data.type !== 'artist' && data.type !== 'friend') {
     menuItems.push({
       label: menuLabel,
       enabled: enabled,
