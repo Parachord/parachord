@@ -834,12 +834,14 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   console.log('=== Proxy Fetch ===');
   console.log('URL:', url);
   console.log('Method:', options.method || 'GET');
+  console.log('Headers:', JSON.stringify(options.headers || {}, null, 2));
 
   try {
     const fetchOptions = {
       method: options.method || 'GET',
-      headers: options.headers || {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        ...options.headers
       }
     };
 
@@ -855,6 +857,7 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
     if (!response.ok) {
       console.log('Proxy fetch failed with status:', response.status);
       const errorText = await response.text();
+      console.log('Error response body:', errorText.substring(0, 500));
       return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText };
     }
 
