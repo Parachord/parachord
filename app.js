@@ -20060,11 +20060,12 @@ useEffect(() => {
                   })
                 ),
                 // Category filter pills
-                React.createElement('div', { className: 'flex gap-2' },
+                React.createElement('div', { className: 'flex gap-2 flex-wrap' },
                   [
                     { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'purchase', label: 'Purchase' },
+                    { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
                     { value: 'ai', label: 'AI' },
                     { value: 'local', label: 'Local' }
