@@ -163,7 +163,64 @@
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/gemini.axe",
       "category": "ai",
       "tags": ["ai", "playlist", "generation", "google", "gemini"]
+    },
+    {
+      "id": "lastfm",
+      "name": "Last.fm",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Personalized music recommendations powered by your Last.fm listening history.",
+      "icon": "🎧",
+      "color": "#D51007",
+      "homepage": "https://last.fm",
+      "capabilities": {
+        "recommendations": true,
+        "metadata": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/lastfm.axe",
+      "category": "social",
+      "tags": ["social", "scrobbling", "recommendations", "metadata"]
+    },
+    {
+      "id": "listenbrainz",
+      "name": "ListenBrainz",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Open-source music listening data and recommendations powered by your ListenBrainz history.",
+      "icon": "🎵",
+      "color": "#353070",
+      "homepage": "https://listenbrainz.org",
+      "capabilities": {
+        "recommendations": true,
+        "metadata": true,
+        "listeningHistory": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/listenbrainz.axe",
+      "category": "social",
+      "tags": ["social", "scrobbling", "recommendations", "open-source", "metadata"]
+    },
+    {
+      "id": "librefm",
+      "name": "Libre.fm",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Open-source scrobbling service - a free alternative to Last.fm.",
+      "icon": "🎵",
+      "color": "#4CAF50",
+      "homepage": "https://libre.fm",
+      "capabilities": {
+        "scrobbling": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/librefm.axe",
+      "category": "social",
+      "tags": ["social", "scrobbling", "open-source", "free"]
     }
   ],
-  "categories": ["streaming", "purchase", "metadata", "local", "ai"]
+  "categories": ["streaming", "purchase", "metadata", "social", "local", "ai"]
 }
