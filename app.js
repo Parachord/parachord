@@ -20066,6 +20066,7 @@ useEffect(() => {
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'purchase', label: 'Purchase' },
                     { value: 'metadata', label: 'Metadata' },
+                    { value: 'ai', label: 'AI' },
                     { value: 'radio', label: 'Radio' }
                   ].map(({ value, label }) =>
                     React.createElement('button', {
