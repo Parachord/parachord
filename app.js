@@ -3232,6 +3232,38 @@ const Parachord = () => {
     loadScrobblerConfigs();
   }, [scrobblersInitialized]);
 
+  // Sync meta service configs with scrobblers when both are available
+  // This ensures Last.fm API credentials and ListenBrainz tokens are applied to scrobblers
+  useEffect(() => {
+    const syncScrobblersWithMetaServices = async () => {
+      if (!scrobblersInitialized || !window.scrobblers || Object.keys(metaServiceConfigs).length === 0) return;
+
+      // Sync Last.fm API credentials
+      const lastfmConfig = metaServiceConfigs.lastfm;
+      if (lastfmConfig?.apiKey && lastfmConfig?.apiSecret && window.lastfmScrobbler) {
+        window.lastfmScrobbler.setApiCredentials(lastfmConfig.apiKey, lastfmConfig.apiSecret);
+        console.log('[App] Synced Last.fm API credentials with scrobbler');
+      }
+
+      // Sync ListenBrainz token if scrobbler isn't already enabled
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+      if (listenbrainzConfig?.userToken && window.listenbrainzScrobbler) {
+        const scrobblerConfig = await window.listenbrainzScrobbler.getConfig();
+        if (!scrobblerConfig?.enabled) {
+          try {
+            await window.listenbrainzScrobbler.connect(listenbrainzConfig.userToken);
+            const newConfig = await window.listenbrainzScrobbler.getConfig();
+            setScrobblerConfigs(prev => ({ ...prev, listenbrainz: newConfig }));
+            console.log('[App] Auto-connected ListenBrainz scrobbler from meta service token');
+          } catch (err) {
+            console.warn('[App] Failed to auto-connect ListenBrainz scrobbler:', err.message);
+          }
+        }
+      }
+    };
+    syncScrobblersWithMetaServices();
+  }, [scrobblersInitialized, metaServiceConfigs]);
+
   // Keep ref updated with latest resolver list
   useEffect(() => {
     loadedResolversRef.current = loadedResolvers;
@@ -4826,6 +4858,7 @@ const Parachord = () => {
       const MAX_STUCK_AT_ZERO = 3; // After 15 seconds (3 * 5s polls) of being stuck at 0%, give up
       let pollCount = 0; // Track poll number for first-poll grace period
       let pendingTrackChange = null; // Track URI from potential external change, needs confirmation
+      let lastProgressMs = 0; // Track previous progress to detect track-end-then-reset scenario
 
       const pollInterval = setInterval(async () => {
         pollCount++; // Increment poll counter
@@ -4895,31 +4928,43 @@ const Parachord = () => {
             } else if (!isPlaying) {
               // Track is paused - could be user pause or playback never started
               if (progressMs === 0) {
-                // Stuck at 0% - playback may have failed to start
-                stuckAtZeroCount++;
-                if (stuckAtZeroCount >= MAX_STUCK_AT_ZERO) {
-                  // Been stuck at 0% for too long - playback failed to start
-                  console.error(`❌ Spotify playback stuck at 0% for ${stuckAtZeroCount * 5}s - device may not be active`);
+                // Check if we were previously near the end - this means track finished and reset
+                const lastPercentComplete = durationMs > 0 ? (lastProgressMs / durationMs) * 100 : 0;
+                if (lastProgressMs > 0 && lastPercentComplete >= 90) {
+                  // We were at 90%+ and now at 0% - track finished naturally
+                  console.log(`🎵 Track finished (was at ${lastPercentComplete.toFixed(1)}%, now reset to 0%), auto-advancing to next...`);
                   clearInterval(pollInterval);
                   playbackPollerRef.current = null;
-
-                  // Check if queue has more tracks and advance
-                  const queue = currentQueueRef.current;
-                  if (queue && queue.length > 0) {
-                    console.log('⏭️ Auto-advancing to next track due to playback failure...');
-                    if (handleNextRef.current) handleNextRef.current();
-                  }
+                  if (handleNextRef.current) handleNextRef.current();
                 } else {
-                  console.log(`⏸️ Spotify playback paused at 0% (${stuckAtZeroCount}/${MAX_STUCK_AT_ZERO}), waiting for playback to start...`);
+                  // Stuck at 0% - playback may have failed to start
+                  stuckAtZeroCount++;
+                  if (stuckAtZeroCount >= MAX_STUCK_AT_ZERO) {
+                    // Been stuck at 0% for too long - playback failed to start
+                    console.error(`❌ Spotify playback stuck at 0% for ${stuckAtZeroCount * 5}s - device may not be active`);
+                    clearInterval(pollInterval);
+                    playbackPollerRef.current = null;
+
+                    // Check if queue has more tracks and advance
+                    const queue = currentQueueRef.current;
+                    if (queue && queue.length > 0) {
+                      console.log('⏭️ Auto-advancing to next track due to playback failure...');
+                      if (handleNextRef.current) handleNextRef.current();
+                    }
+                  } else {
+                    console.log(`⏸️ Spotify playback paused at 0% (${stuckAtZeroCount}/${MAX_STUCK_AT_ZERO}), waiting for playback to start...`);
+                  }
                 }
               } else {
                 // User paused mid-playback (progress > 0) - reset stuck counter
                 stuckAtZeroCount = 0;
+                lastProgressMs = progressMs; // Track progress even when paused
                 console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
               }
             } else {
               // Playing normally - reset stuck counter and log progress periodically
               stuckAtZeroCount = 0;
+              lastProgressMs = progressMs; // Track progress for end-of-track detection
               pendingTrackChange = null; // Clear any pending track change since we're on the right track
               // Log every poll to confirm polling is working
               console.log(`▶️ Spotify playing: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
@@ -5446,10 +5491,26 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // FIRST: Clean up any active polling to prevent race conditions
+    // This must happen BEFORE any async operations to prevent duplicate handleNext calls
+    if (playbackPollerRef.current) {
+      clearInterval(playbackPollerRef.current);
+      playbackPollerRef.current = null;
+    }
+    if (pollingRecoveryRef.current) {
+      clearInterval(pollingRecoveryRef.current);
+      pollingRecoveryRef.current = null;
+    }
+
     // Notify scrobble manager that current track is ending
     if (window.scrobbleManager) {
       window.scrobbleManager.onTrackEnd();
     }
+
+    // CRITICAL: Reset streaming playback flag when advancing tracks
+    // This ensures browser extension events are not ignored when switching
+    // from a streaming track (Spotify) to a browser track (YouTube/Bandcamp)
+    streamingPlaybackActiveRef.current = false;
 
     // Stop browser extension playback if active (YouTube external browser)
     if (browserPlaybackActive && activeExtensionTabId) {
@@ -5470,15 +5531,7 @@ const Parachord = () => {
       await window.electron.playbackWindow.close();
     }
 
-    // Clean up any active polling or timeouts
-    if (playbackPollerRef.current) {
-      clearInterval(playbackPollerRef.current);
-      playbackPollerRef.current = null;
-    }
-    if (pollingRecoveryRef.current) {
-      clearInterval(pollingRecoveryRef.current);
-      pollingRecoveryRef.current = null;
-    }
+    // Clean up external track timeouts
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
       externalTrackTimeoutRef.current = null;
@@ -5542,6 +5595,9 @@ const Parachord = () => {
     if (window.scrobbleManager) {
       window.scrobbleManager.onTrackEnd();
     }
+
+    // CRITICAL: Reset streaming playback flag when changing tracks
+    streamingPlaybackActiveRef.current = false;
 
     // Stop browser playback if active
     if (browserPlaybackActive && activeExtensionTabId) {
@@ -5773,6 +5829,10 @@ const Parachord = () => {
 
   const addToQueue = (tracks) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
+
+    // Check if nothing is currently playing BEFORE updating queue
+    const nothingPlaying = !currentTrackRef.current;
+
     setCurrentQueue(prev => [...prev, ...tracksArray]);
     // Trigger queue animation
     setQueueAnimating(true);
@@ -5786,6 +5846,15 @@ const Parachord = () => {
     );
     if (tracksNeedingResolution.length > 0) {
       resolveQueueTracks(tracksNeedingResolution);
+    }
+
+    // If nothing is playing, auto-start the first track
+    if (nothingPlaying && tracksArray.length > 0) {
+      const firstTrack = tracksArray[0];
+      console.log(`▶️ Auto-starting playback: "${firstTrack.title}" by ${firstTrack.artist}`);
+      // Remove from queue and play
+      setCurrentQueue(prev => prev.slice(1));
+      handlePlay(firstTrack);
     }
   };
 
@@ -12354,6 +12423,13 @@ ${tracks}
       apiSecret: apiSecret?.trim() || null
     });
 
+    // Also set API credentials on the scrobbler for scrobbling support
+    // Note: Last.fm scrobbling also requires OAuth (sessionKey) which is done via ScrobblerSettingsCard
+    if (apiKey?.trim() && apiSecret?.trim() && window.lastfmScrobbler) {
+      window.lastfmScrobbler.setApiCredentials(apiKey.trim(), apiSecret.trim());
+      console.log('🎧 Last.fm scrobbler API credentials set');
+    }
+
     setLastfmConnecting(false);
     // Clear inputs after successful connection
     setLastfmUsernameInput('');
@@ -12433,6 +12509,20 @@ ${tracks}
       username: username.trim(),
       userToken: userToken?.trim() || null
     });
+
+    // Also connect the scrobbler if token is provided
+    if (userToken?.trim() && window.listenbrainzScrobbler) {
+      try {
+        await window.listenbrainzScrobbler.connect(userToken.trim());
+        // Update scrobbler configs state
+        const newConfig = await window.listenbrainzScrobbler.getConfig();
+        setScrobblerConfigs(prev => ({ ...prev, listenbrainz: newConfig }));
+        console.log('🎵 ListenBrainz scrobbler connected');
+      } catch (err) {
+        console.error('Failed to connect ListenBrainz scrobbler:', err);
+        // Non-fatal - meta service still works for recommendations
+      }
+    }
 
     setListenbrainzConnecting(false);
     // Clear inputs after successful connection
