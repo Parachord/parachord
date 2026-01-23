@@ -9782,7 +9782,7 @@ ${tracks}
         return;
       }
 
-      // Create friend object (not saved to collection by default - temporary listening)
+      // Create friend object
       const newFriend = {
         id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         username: userInfo.username,
@@ -9792,7 +9792,7 @@ ${tracks}
         addedAt: Date.now(),
         lastFetched: Date.now(),
         cachedRecentTrack: null,
-        savedToCollection: false  // Friends start as temporary until explicitly saved
+        savedToCollection: true  // Friends are saved to collection by default
       };
 
       // Fetch recent track for initial on-air status
