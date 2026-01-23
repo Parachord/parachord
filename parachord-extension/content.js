@@ -197,8 +197,83 @@
     return false;
   }
 
+  // YouTube Ad Skipper - automatically clicks "Skip Ad" button when it appears
+  function setupYouTubeAdSkipper() {
+    console.log('[Parachord] Setting up YouTube ad skipper...');
+
+    // Function to find and click skip button
+    function trySkipAd() {
+      // YouTube uses various skip button selectors
+      const skipButton = document.querySelector('.ytp-skip-ad-button') ||
+                         document.querySelector('.ytp-ad-skip-button') ||
+                         document.querySelector('.ytp-ad-skip-button-modern') ||
+                         document.querySelector('[class*="skip-button"]') ||
+                         document.querySelector('button.ytp-ad-skip-button-modern');
+
+      if (skipButton && skipButton.offsetParent !== null) { // Check if visible
+        console.log('[Parachord] 🚫 Found skip ad button, clicking...');
+        skipButton.click();
+        return true;
+      }
+
+      // Also check for "Skip Ads" text button (newer YouTube UI)
+      const skipButtons = document.querySelectorAll('button');
+      for (const btn of skipButtons) {
+        if (btn.textContent.includes('Skip') && btn.offsetParent !== null) {
+          const isAdSkip = btn.closest('.ytp-ad-module') ||
+                          btn.closest('.video-ads') ||
+                          btn.className.includes('ad');
+          if (isAdSkip) {
+            console.log('[Parachord] 🚫 Found skip button by text, clicking...');
+            btn.click();
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    // Check periodically for skip button (ads can appear at any time)
+    setInterval(trySkipAd, 500);
+
+    // Also use MutationObserver for faster detection
+    const adObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.addedNodes.length) {
+          // Check if any added node contains skip button
+          setTimeout(trySkipAd, 100); // Small delay for DOM to settle
+          break;
+        }
+      }
+    });
+
+    // Observe the player area for changes
+    const playerContainer = document.querySelector('#movie_player') ||
+                           document.querySelector('.html5-video-player') ||
+                           document.body;
+
+    if (playerContainer) {
+      adObserver.observe(playerContainer, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+      });
+    }
+
+    console.log('[Parachord] YouTube ad skipper active');
+  }
+
   // Initialize
-  if (site === 'bandcamp') {
+  if (site === 'youtube') {
+    // Set up ad skipper for YouTube
+    if (document.readyState === 'complete') {
+      setupYouTubeAdSkipper();
+    } else {
+      window.addEventListener('load', setupYouTubeAdSkipper);
+    }
+  } else if (site === 'bandcamp') {
     // For Bandcamp, start auto-play attempt after page is ready
     // The audio element may not exist until play is clicked
     console.log('[Parachord] Bandcamp detected, scheduling auto-play...');
