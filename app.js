@@ -5856,8 +5856,17 @@ const Parachord = () => {
       // Get service config from metaServiceConfigs
       const config = metaServiceConfigs[service.id] || {};
 
+      // Fetch listening context if toggle is enabled
+      let listeningContext = null;
+      if (aiIncludeHistory) {
+        listeningContext = await fetchListeningContext();
+        if (!listeningContext) {
+          console.log('🎵 No listening context available, proceeding without');
+        }
+      }
+
       // Call the service's generate function
-      const tracks = await service.generate(prompt, config);
+      const tracks = await service.generate(prompt, config, listeningContext);
 
       if (!tracks || tracks.length === 0) {
         throw new Error('No tracks returned. Try a different prompt.');
