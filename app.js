@@ -21414,32 +21414,49 @@ useEffect(() => {
         )
       ),
 
-      // Provider selector (only if multiple AI resolvers)
-      (() => {
-        const aiResolvers = getAiServices();
-        if (aiResolvers.length <= 1) return null;
-        return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
-          React.createElement('span', { className: 'text-xs text-gray-500' }, 'Provider:'),
-          React.createElement('select', {
-            value: selectedAiResolver || aiResolvers[0]?.id || '',
-            onChange: (e) => setSelectedAiResolver(e.target.value),
-            className: 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-purple-500'
-          },
-            aiResolvers.map(r =>
-              React.createElement('option', { key: r.id, value: r.id }, r.name)
+      // Row with Surprise Me button (left) and Provider selector (right)
+      React.createElement('div', { className: 'mt-3 flex items-center justify-between gap-2' },
+        // Surprise Me button (only if listening history is enabled)
+        hasScrobblerConnected() && aiIncludeHistory
+          ? React.createElement('button', {
+              onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'),
+              disabled: aiLoading,
+              className: 'py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ' +
+                (aiLoading ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white')
+            },
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                '🎲',
+                'Surprise Me'
+              )
             )
-          )
-        );
-      })(),
+          : React.createElement('div'), // Empty div for spacing
+        // Provider selector
+        (() => {
+          const aiResolvers = getAiServices();
+          if (aiResolvers.length <= 1) return null;
+          return React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('span', { className: 'text-xs text-gray-500' }, 'Provider:'),
+            React.createElement('select', {
+              value: selectedAiResolver || aiResolvers[0]?.id || '',
+              onChange: (e) => setSelectedAiResolver(e.target.value),
+              className: 'bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-purple-500'
+            },
+              aiResolvers.map(r =>
+                React.createElement('option', { key: r.id, value: r.id }, r.name)
+              )
+            )
+          );
+        })()
+      ),
 
-      // Listening history toggle (only if scrobbler connected)
+      // Listening history toggle (if scrobbler connected)
       hasScrobblerConnected() && React.createElement('div', {
         className: 'mt-3 flex items-center justify-between'
       },
         React.createElement('label', {
           htmlFor: 'ai-include-history',
           className: 'text-xs text-gray-400 cursor-pointer select-none'
-        }, `Use my ${getScrobblerName()} history`),
+        }, 'Use my listening history'),
         React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
           React.createElement('input', {
             type: 'checkbox',
@@ -21457,17 +21474,21 @@ useEffect(() => {
         )
       ),
 
-      // Surprise Me button (only if listening history is enabled)
-      hasScrobblerConnected() && aiIncludeHistory && React.createElement('button', {
-        onClick: () => !aiLoading && handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.'),
-        disabled: aiLoading,
-        className: 'mt-3 w-full py-2 px-3 rounded-lg text-sm font-medium transition-colors ' +
-          (aiLoading ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white')
+      // Scrobbler not connected - show link to marketplace
+      !hasScrobblerConnected() && React.createElement('div', {
+        className: 'mt-3 flex items-center justify-between'
       },
-        React.createElement('span', { className: 'flex items-center justify-center gap-2' },
-          '🎲',
-          'Surprise Me'
-        )
+        React.createElement('span', { className: 'text-xs text-gray-500' },
+          'Connect a scrobbler for personalized recommendations'
+        ),
+        React.createElement('button', {
+          onClick: () => {
+            setAiPromptOpen(false);
+            setActiveView('marketplace');
+            setMarketplaceCategory('scrobblers');
+          },
+          className: 'text-xs text-purple-400 hover:text-purple-300 transition-colors'
+        }, 'Browse →')
       ),
 
       // Error message
