@@ -3055,6 +3055,22 @@ const Parachord = () => {
     );
   };
 
+  // Check if a scrobbler service (Last.fm or ListenBrainz) is connected
+  const hasScrobblerConnected = () => {
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+    return !!(lastfmConfig?.username || listenbrainzConfig?.username);
+  };
+
+  // Get the name of the connected scrobbler service
+  const getScrobblerName = () => {
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    if (lastfmConfig?.username) return 'Last.fm';
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+    if (listenbrainzConfig?.username) return 'ListenBrainz';
+    return null;
+  };
+
   // Generate a hash of current resolver settings for cache invalidation
   const getResolverSettingsHash = () => {
     const sortedActive = [...activeResolvers].sort().join(',');
@@ -21415,6 +21431,23 @@ useEffect(() => {
           )
         );
       })(),
+
+      // Listening history toggle (only if scrobbler connected)
+      hasScrobblerConnected() && React.createElement('div', {
+        className: 'mt-3 flex items-center gap-2'
+      },
+        React.createElement('input', {
+          type: 'checkbox',
+          id: 'ai-include-history',
+          checked: aiIncludeHistory,
+          onChange: (e) => setAiIncludeHistory(e.target.checked),
+          className: 'w-4 h-4 rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer'
+        }),
+        React.createElement('label', {
+          htmlFor: 'ai-include-history',
+          className: 'text-xs text-gray-400 cursor-pointer select-none'
+        }, `Include my ${getScrobblerName()} history`)
+      ),
 
       // Error message
       aiError && React.createElement('div', { className: 'mt-3 p-2 bg-red-500/20 border border-red-500/30 rounded-lg' },
