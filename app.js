@@ -1466,6 +1466,7 @@ const Parachord = () => {
   const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
 
@@ -4218,6 +4219,13 @@ const Parachord = () => {
     }
   }, [pinnedFriendIds, cacheLoaded]);
 
+  // Persist AI include history preference (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('ai_include_history', aiIncludeHistory);
+    }
+  }, [aiIncludeHistory, cacheLoaded]);
+
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
     prefetchedReleasesRef.current = prefetchedReleases;
@@ -6352,6 +6360,13 @@ const Parachord = () => {
       if (savedPlaylistsViewMode) {
         setPlaylistsViewMode(savedPlaylistsViewMode);
         console.log('📦 Loaded playlists view mode:', savedPlaylistsViewMode);
+      }
+
+      // Load AI include history preference
+      const savedAiIncludeHistory = await window.electron.store.get('ai_include_history');
+      if (savedAiIncludeHistory !== undefined) {
+        setAiIncludeHistory(savedAiIncludeHistory);
+        console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
       }
 
       // Load saved queue if remember queue is enabled
