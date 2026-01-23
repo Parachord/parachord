@@ -5935,36 +5935,6 @@ const Parachord = () => {
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
-
-  // Handle saving AI results as playlist
-  const handleAiSavePlaylist = async () => {
-    if (!resultsSidebar?.tracks) return;
-
-    const playlistName = resultsSidebar.prompt
-      ? `AI: ${resultsSidebar.prompt.substring(0, 40)}${resultsSidebar.prompt.length > 40 ? '...' : ''}`
-      : 'AI Generated Playlist';
-
-    const playlistId = `ai-${Date.now()}`;
-    const newPlaylist = {
-      id: playlistId,
-      title: playlistName,
-      creator: 'AI',
-      tracks: resultsSidebar.tracks,
-      createdAt: new Date().toISOString()
-    };
-
-    // Add to playlists state
-    setPlaylists(prev => [...prev, newPlaylist]);
-
-    // Save to disk
-    const filename = `${playlistId}.xspf`;
-    const xspfContent = buildXSPF(newPlaylist);
-    await window.electron.playlists.save(filename, xspfContent);
-
-    setResultsSidebar(null);
-    showToast(`Saved playlist: ${playlistName}`);
-  };
-
   const addToQueue = (tracks) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
@@ -8838,6 +8808,35 @@ const Parachord = () => {
 ${tracks}
   </trackList>
 </playlist>`;
+  };
+
+  // Handle saving AI results as playlist
+  const handleAiSavePlaylist = async () => {
+    if (!resultsSidebar?.tracks) return;
+
+    const playlistName = resultsSidebar.prompt
+      ? `AI: ${resultsSidebar.prompt.substring(0, 40)}${resultsSidebar.prompt.length > 40 ? '...' : ''}`
+      : 'AI Generated Playlist';
+
+    const playlistId = `ai-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: playlistName,
+      creator: 'AI',
+      tracks: resultsSidebar.tracks,
+      createdAt: new Date().toISOString()
+    };
+
+    // Add to playlists state
+    setPlaylists(prev => [...prev, newPlaylist]);
+
+    // Save to disk
+    const filename = `${playlistId}.xspf`;
+    const xspfContent = generateXSPF(newPlaylist);
+    await window.electron.playlists.save(filename, xspfContent);
+
+    setResultsSidebar(null);
+    showToast(`Saved playlist: ${playlistName}`);
   };
 
   // Save playlist to disk
