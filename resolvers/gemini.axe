@@ -2,6 +2,7 @@
   "manifest": {
     "id": "gemini",
     "name": "Google Gemini",
+    "type": "meta-service",
     "version": "1.0.0",
     "author": "Parachord Team",
     "description": "Generate playlists using Google Gemini. Requires your own API key.",

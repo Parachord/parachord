@@ -1554,9 +1554,6 @@ const Parachord = () => {
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
-  // Resolver configs (API keys, settings for AI resolvers, etc.)
-  const [resolverConfigs, setResolverConfigs] = useState({});
-  const resolverConfigsRef = useRef({});
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
@@ -3045,9 +3042,13 @@ const Parachord = () => {
     playlistCover: 30 * 24 * 60 * 60 * 1000 // 30 days
   };
 
-  // Get resolvers with AI generation capability
-  const getAiResolvers = () => {
-    return allResolvers.filter(r => r.capabilities?.generate && r.enabled);
+  // Get meta services with AI generation capability
+  const getAiServices = () => {
+    // AI services are meta-services loaded into the resolver loader
+    if (!resolverLoaderRef.current) return [];
+    return resolverLoaderRef.current.getAllResolvers().filter(r =>
+      r.capabilities?.generate
+    );
   };
 
   // Generate a hash of current resolver settings for cache invalidation
@@ -3120,8 +3121,12 @@ const Parachord = () => {
         const metaServicesWithUrlLookup = metaServiceAxes.filter(axe =>
           axe.capabilities?.urlLookup && axe.urlPatterns?.length > 0
         );
+        // Meta services with generate capability need implementation functions loaded
+        const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
+          axe.capabilities?.generate && axe.implementation?.generate
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -3133,6 +3138,12 @@ const Parachord = () => {
         if (metaServicesWithUrlLookup.length > 0) {
           await resolverLoader.current.loadResolvers(metaServicesWithUrlLookup);
           console.log(`📎 Loaded ${metaServicesWithUrlLookup.length} meta service(s) with URL lookup:`, metaServicesWithUrlLookup.map(s => s.manifest.name).join(', '));
+        }
+
+        // Load meta services with generate capability (AI playlist generation)
+        if (metaServicesWithGenerate.length > 0) {
+          const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
+          console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
         }
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
@@ -4137,10 +4148,6 @@ const Parachord = () => {
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
 
-  // Keep resolverConfigsRef in sync
-  useEffect(() => {
-    resolverConfigsRef.current = resolverConfigs;
-  }, [resolverConfigs]);
 
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
@@ -5667,26 +5674,32 @@ const Parachord = () => {
 
   // AI Playlist Generation
   const handleAiGenerate = async (prompt) => {
-    const aiResolvers = getAiResolvers();
-    if (aiResolvers.length === 0) {
-      setAiError('No AI plugins configured. Enable OpenAI or Gemini in Settings → General.');
+    const aiServices = getAiServices();
+    // Filter to only enabled services with API keys
+    const enabledServices = aiServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      return config.enabled && config.apiKey;
+    });
+
+    if (enabledServices.length === 0) {
+      setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
       return;
     }
 
-    // Use selected resolver or first available
-    const resolver = selectedAiResolver
-      ? aiResolvers.find(r => r.id === selectedAiResolver) || aiResolvers[0]
-      : aiResolvers[0];
+    // Use selected service or first available
+    const service = selectedAiResolver
+      ? enabledServices.find(s => s.id === selectedAiResolver) || enabledServices[0]
+      : enabledServices[0];
 
     setAiLoading(true);
     setAiError(null);
 
     try {
-      // Get resolver config from stored configs
-      const config = resolverConfigs[resolver.id] || {};
+      // Get service config from metaServiceConfigs
+      const config = metaServiceConfigs[service.id] || {};
 
-      // Call the resolver's generate function
-      const tracks = await resolver.generate(prompt, config);
+      // Call the service's generate function
+      const tracks = await service.generate(prompt, config);
 
       if (!tracks || tracks.length === 0) {
         throw new Error('No tracks returned. Try a different prompt.');
@@ -6199,14 +6212,7 @@ const Parachord = () => {
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
-      // Load resolver configs (API keys, model settings for AI resolvers, etc.)
-      const savedResolverConfigs = await window.electron.store.get('resolver_configs');
-      if (savedResolverConfigs) {
-        setResolverConfigs(savedResolverConfigs);
-        console.log('📦 Loaded resolver configs:', Object.keys(savedResolverConfigs).join(', ') || 'none');
-      }
-
-      // Load meta service configs (Last.fm, etc.)
+      // Load meta service configs (Last.fm, AI services, etc.)
       const savedMetaServiceConfigs = await window.electron.store.get('meta_service_configs');
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
@@ -6421,7 +6427,6 @@ const Parachord = () => {
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
-      await window.electron.store.set('resolver_configs', resolverConfigsRef.current);
 
       // Save volume normalization offsets
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
@@ -20141,14 +20146,14 @@ useEffect(() => {
                     }, 'Connect AI services to generate playlists from natural language prompts')
                   ),
 
-                  // AI Resolver cards
+                  // AI Service cards (meta services with generate capability)
                   React.createElement('div', { className: 'space-y-4' },
-                    allResolvers.filter(r => r.capabilities?.generate).map(resolver => {
-                      const config = resolverConfigs[resolver.id] || {};
-                      const isEnabled = resolver.enabled;
+                    metaServices.filter(s => s.capabilities?.generate).map(service => {
+                      const config = metaServiceConfigs[service.id] || {};
+                      const isEnabled = config.enabled;
 
                       return React.createElement('div', {
-                        key: resolver.id,
+                        key: service.id,
                         className: `border rounded-lg transition-all ${isEnabled ? 'border-purple-200 bg-purple-50/30' : 'border-gray-200 bg-gray-50'}`
                       },
                         // Header row
@@ -20158,26 +20163,18 @@ useEffect(() => {
                           React.createElement('div', { className: 'flex items-center gap-3' },
                             React.createElement('span', {
                               className: 'text-xl',
-                              style: { color: resolver.color }
-                            }, resolver.icon),
+                              style: { color: service.color }
+                            }, service.icon),
                             React.createElement('div', null,
-                              React.createElement('span', { className: 'font-medium text-gray-900' }, resolver.name),
-                              React.createElement('p', { className: 'text-xs text-gray-500' }, resolver.description)
+                              React.createElement('span', { className: 'font-medium text-gray-900' }, service.name),
+                              React.createElement('p', { className: 'text-xs text-gray-500' }, service.description)
                             )
                           ),
                           React.createElement('button', {
                             onClick: () => {
                               const newEnabled = !isEnabled;
-                              // Update resolver enabled state
-                              const updatedResolvers = allResolvers.map(r =>
-                                r.id === resolver.id ? { ...r, enabled: newEnabled } : r
-                              );
-                              setAllResolvers(updatedResolvers);
-                              // Persist config
-                              setResolverConfigs(prev => ({
-                                ...prev,
-                                [resolver.id]: { ...prev[resolver.id], enabled: newEnabled }
-                              }));
+                              // Persist config to metaServiceConfigs
+                              saveMetaServiceConfig(service.id, { ...config, enabled: newEnabled });
                             },
                             className: `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                               isEnabled
@@ -20197,12 +20194,9 @@ useEffect(() => {
                                 type: 'password',
                                 value: config.apiKey || '',
                                 onChange: (e) => {
-                                  setResolverConfigs(prev => ({
-                                    ...prev,
-                                    [resolver.id]: { ...prev[resolver.id], apiKey: e.target.value }
-                                  }));
+                                  saveMetaServiceConfig(service.id, { ...config, apiKey: e.target.value });
                                 },
-                                placeholder: resolver.id === 'openai' ? 'sk-...' : 'AIza...',
+                                placeholder: service.id === 'chatgpt' ? 'sk-...' : 'AIza...',
                                 className: 'w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
                               })
                             ),
@@ -20210,7 +20204,7 @@ useEffect(() => {
                               href: '#',
                               onClick: (e) => {
                                 e.preventDefault();
-                                const url = resolver.id === 'openai'
+                                const url = service.id === 'chatgpt'
                                   ? 'https://platform.openai.com/api-keys'
                                   : 'https://aistudio.google.com/app/apikey';
                                 window.electron?.shell?.openExternal?.(url);
@@ -20223,16 +20217,13 @@ useEffect(() => {
                           React.createElement('div', null,
                             React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
                             React.createElement('select', {
-                              value: config.model || (resolver.id === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'),
+                              value: config.model || (service.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-1.5-flash'),
                               onChange: (e) => {
-                                setResolverConfigs(prev => ({
-                                  ...prev,
-                                  [resolver.id]: { ...prev[resolver.id], model: e.target.value }
-                                }));
+                                saveMetaServiceConfig(service.id, { ...config, model: e.target.value });
                               },
                               className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
                             },
-                              resolver.id === 'openai' ? [
+                              service.id === 'chatgpt' ? [
                                 React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
                                 React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
                                 React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
@@ -20247,8 +20238,8 @@ useEffect(() => {
                     })
                   ),
 
-                  // No AI resolvers message
-                  allResolvers.filter(r => r.capabilities?.generate).length === 0 &&
+                  // No AI services message
+                  metaServices.filter(s => s.capabilities?.generate).length === 0 &&
                     React.createElement('p', { className: 'text-sm text-gray-500 italic' },
                       'No AI plugins installed. AI plugins will appear here when available.'
                     )
@@ -21046,7 +21037,7 @@ useEffect(() => {
           ),
           // AI Playlist Generation button
           (() => {
-            const aiResolvers = getAiResolvers();
+            const aiResolvers = getAiServices();
             const hasAiResolvers = aiResolvers.length > 0;
             return React.createElement('button', {
               onClick: () => setAiPromptOpen(!aiPromptOpen),
@@ -21194,7 +21185,7 @@ useEffect(() => {
 
       // Provider selector (only if multiple AI resolvers)
       (() => {
-        const aiResolvers = getAiResolvers();
+        const aiResolvers = getAiServices();
         if (aiResolvers.length <= 1) return null;
         return React.createElement('div', { className: 'mt-3 flex items-center justify-end gap-2' },
           React.createElement('span', { className: 'text-xs text-gray-500' }, 'Provider:'),

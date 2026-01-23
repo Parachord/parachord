@@ -1,7 +1,8 @@
 {
   "manifest": {
-    "id": "openai",
-    "name": "OpenAI",
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "type": "meta-service",
     "version": "1.0.0",
     "author": "Parachord Team",
     "description": "Generate playlists using ChatGPT. Requires your own API key.",
