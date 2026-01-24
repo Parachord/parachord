@@ -11867,38 +11867,41 @@ ${tracks}
     }
 
     // Collect unique covers from tracks
-    const seenKeys = new Set(); // Track both albums and artists we've used
+    const seenAlbums = new Set(); // Albums we've already tried
+    const seenArtists = new Set(); // Artists we've already used for images
     const covers = [];
 
     for (const track of tracks) {
       if (covers.length >= 4) break;
 
+      let foundCover = false;
+
       // First try album art if we have album info
       if (track.album && track.artist) {
-        const albumKey = `album:${track.artist}-${track.album}`.toLowerCase();
-        if (!seenKeys.has(albumKey)) {
-          seenKeys.add(albumKey);
+        const albumKey = `${track.artist}-${track.album}`.toLowerCase();
+        if (!seenAlbums.has(albumKey)) {
+          seenAlbums.add(albumKey);
 
           // If track already has albumArt, use it
           if (track.albumArt) {
             covers.push(track.albumArt);
-            continue;
-          }
-
-          // Try to fetch album art
-          const artUrl = await getAlbumArt(track.artist, track.album);
-          if (artUrl) {
-            covers.push(artUrl);
-            continue;
+            foundCover = true;
+          } else {
+            // Try to fetch album art
+            const artUrl = await getAlbumArt(track.artist, track.album);
+            if (artUrl) {
+              covers.push(artUrl);
+              foundCover = true;
+            }
           }
         }
       }
 
-      // Fall back to artist image if no album art
-      if (track.artist) {
-        const artistKey = `artist:${track.artist}`.toLowerCase();
-        if (!seenKeys.has(artistKey)) {
-          seenKeys.add(artistKey);
+      // Fall back to artist image if no album art found for this track
+      if (!foundCover && track.artist) {
+        const artistKey = track.artist.toLowerCase();
+        if (!seenArtists.has(artistKey)) {
+          seenArtists.add(artistKey);
 
           const artistResult = await getArtistImage(track.artist);
           if (artistResult?.url) {
