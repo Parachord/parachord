@@ -7115,13 +7115,31 @@ const Parachord = () => {
         type: artist.type
       });
 
-      // Start fetching artist image early (non-blocking)
-      getArtistImage(artistName).then(result => {
-        if (result) {
-          setArtistImage(result.url);
-          setArtistImagePosition(result.facePosition || 'center 25%');
+      // Start fetching artist image early (non-blocking) with fallbacks
+      (async () => {
+        // Try Spotify first
+        const spotifyResult = await getArtistImage(artistName);
+        if (spotifyResult) {
+          setArtistImage(spotifyResult.url);
+          setArtistImagePosition(spotifyResult.facePosition || 'center 25%');
+          return;
         }
-      });
+
+        // Try Wikipedia fallback
+        const wikiImage = await getWikipediaArtistImage(artist.id);
+        if (wikiImage) {
+          setArtistImage(wikiImage);
+          setArtistImagePosition('center 25%');
+          return;
+        }
+
+        // Try Discogs fallback
+        const discogsImage = await getDiscogsArtistImage(artist.id, artistName);
+        if (discogsImage) {
+          setArtistImage(discogsImage);
+          setArtistImagePosition('center 25%');
+        }
+      })();
 
       // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
       // Using release-groups instead of releases to avoid duplicates (each album appears once)
