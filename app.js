@@ -9095,9 +9095,17 @@ ${tracks}
       items.forEach(item => {
         const titleText = item.querySelector('title')?.textContent || '';
         const link = item.querySelector('link')?.textContent || '';
-        const description = item.querySelector('description')?.textContent || '';
-        const score = item.querySelector('creator')?.textContent || ''; // dc:creator contains score
+        const descriptionRaw = item.querySelector('description')?.textContent || '';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
+
+        // Extract Spotify URL from description before stripping HTML
+        const spotifyMatch = descriptionRaw.match(/href="(https:\/\/open\.spotify\.com\/album\/[^"]+)"/);
+        const spotifyUrl = spotifyMatch ? spotifyMatch[1] : null;
+
+        // Strip HTML tags and remove any remaining Spotify URLs from the synopsis
+        let description = descriptionRaw.replace(/<[^>]*>/g, '').trim();
+        // Remove plain text Spotify URLs that might remain after HTML stripping
+        description = description.replace(/https:\/\/open\.spotify\.com\/album\/\S+/g, '').trim();
 
         // Parse "Album by Artist" format
         // Examples: "Valentine by Courtney Marie Andrews", "Tragic Magic by Julianna Barwick & Mary Lattimore"
@@ -9119,9 +9127,9 @@ ${tracks}
             id: `critics-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
             artist: artist,
             title: album,
-            score: parseInt(score) || null,
             link: link,
             description: description,
+            spotifyUrl: spotifyUrl,
             pubDate: pubDate ? new Date(pubDate) : null,
             albumArt: undefined // undefined = loading, null = no art found, string = art URL
           });
@@ -9245,7 +9253,7 @@ ${tracks}
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
-      const response = await fetch('https://fetchrss.com/rss/6749eb6afa8030e1220ad6736749eb5b3c110a8c250ae1c2.xml');
+      const response = await fetch('https://www.rssground.com/p/uncoveries');
       if (!response.ok) {
         throw new Error(`Failed to fetch RSS: ${response.status}`);
       }
@@ -18666,25 +18674,38 @@ React.createElement('div', {
           },
             // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
             (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'space-y-4 pb-6'
             },
-            Array.from({ length: 15 }).map((_, i) =>
-              React.createElement('div', { key: `skeleton-${i}` },
+            Array.from({ length: 8 }).map((_, i) =>
+              React.createElement('div', {
+                key: `skeleton-${i}`,
+                className: 'flex gap-5 p-4 bg-white rounded-xl border border-gray-100'
+              },
                 // Skeleton album art
                 React.createElement('div', {
-                  className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                  className: 'w-28 h-28 flex-shrink-0 rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
                   style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                 }),
-                // Skeleton title
-                React.createElement('div', { className: 'space-y-2' },
+                // Skeleton content
+                React.createElement('div', { className: 'flex-1 space-y-3 py-1' },
                   React.createElement('div', {
-                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                    className: 'h-5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/5 animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                   }),
                   React.createElement('div', {
-                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/4 animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  })
+                  }),
+                  React.createElement('div', { className: 'space-y-2 pt-2' },
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-full animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-4/5 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
+                    })
+                  )
                 )
               )
             )
@@ -18711,94 +18732,99 @@ React.createElement('div', {
             }
 
             return React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
+              className: 'space-y-4 pb-6'
             },
               sorted.map(album =>
               React.createElement('div', {
                 key: album.id,
-                className: 'group cursor-pointer',
+                className: 'group flex gap-5 p-4 bg-white rounded-xl border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing',
+                draggable: true,
+                onDragStart: (e) => {
+                  e.dataTransfer.effectAllowed = 'copy';
+                  const albumData = {
+                    type: 'album',
+                    album: {
+                      id: album.id,
+                      title: album.title,
+                      artist: album.artist,
+                      year: album.pubDate ? album.pubDate.getFullYear() : null,
+                      art: album.albumArt || null
+                    }
+                  };
+                  e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
+                },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
                 onClick: () => openCriticsPicksAlbum(album)
               },
-                // Album art with hover overlay
-                // States: shimmer (fetching URL), placeholder (no art found), image (URL exists)
+                // Album art - left column
+                // States: undefined = loading (shimmer), null = no art (placeholder), string = has art
                 React.createElement('div', {
-                  className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
-                    // Purple gradient for failed lookups (null) - shows placeholder icon
+                  className: `w-28 h-28 flex-shrink-0 rounded-lg overflow-hidden relative ${
                     album.albumArt === null
                       ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-                      // Shimmer while fetching OR while image loads from URL
-                      : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                      : album.albumArt === undefined
+                        ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                        : 'bg-gray-100'
                   }`,
-                  style: album.albumArt === null ? {} : { backgroundSize: '200% 100%' }
+                  style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                 },
-                  // Placeholder - only show when art fetch completed with no result (null)
+                  // Placeholder icon - only show when art fetch completed with no result (null)
                   album.albumArt === null && React.createElement('div', {
                     className: 'absolute inset-0 flex items-center justify-center text-white/60'
                   },
-                    React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                    React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
                       React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
                       React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
                       React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                     )
                   ),
-                  album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
+                  // Image - show when we have a URL string
+                  typeof album.albumArt === 'string' && React.createElement('img', {
                     src: album.albumArt,
                     alt: album.title,
-                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-all duration-300',
                     style: { opacity: 0 },
                     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                     onLoad: (e) => { e.target.style.opacity = '1'; },
                     onError: (e) => { e.target.style.display = 'none'; }
                   }),
-                  // Metacritic score badge
-                  album.score && React.createElement('div', {
-                    className: `absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold ${
-                      album.score >= 80 ? 'bg-green-500 text-white' :
-                      album.score >= 60 ? 'bg-yellow-500 text-black' :
-                      'bg-red-500 text-white'
-                    }`
-                  }, album.score),
-                  // Hover overlay with Add to Queue button
+                  // Play overlay on hover
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
                   },
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
                         addCriticsPicksToQueue(album);
                       },
-                      className: 'bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg'
+                      className: 'w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform'
                     },
                       React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
+                        className: 'w-5 h-5 text-gray-900 ml-0.5',
+                        fill: 'currentColor',
+                        viewBox: '0 0 24 24'
                       },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          strokeWidth: 2,
-                          d: 'M12 4v16m8-8H4'
-                        })
-                      ),
-                      'Add to Queue'
+                        React.createElement('path', { d: 'M8 5v14l11-7z' })
+                      )
                     )
                   )
                 ),
-                // Album info
-                React.createElement('div', { className: 'space-y-1' },
+                // Album info - right column
+                React.createElement('div', { className: 'flex-1 min-w-0 flex flex-col justify-center' },
                   React.createElement('div', {
-                    className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                    className: 'font-semibold text-gray-900 truncate group-hover:text-purple-600 transition-colors text-lg'
                   }, album.title),
                   React.createElement('div', {
-                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors mt-0.5',
                     onClick: (e) => {
                       e.stopPropagation();
                       fetchArtistData(album.artist);
                     }
-                  }, album.artist)
+                  }, album.artist),
+                  // Synopsis
+                  album.description && React.createElement('p', {
+                    className: 'text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed'
+                  }, album.description)
                 )
               )
             )
