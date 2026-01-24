@@ -11843,8 +11843,9 @@ ${tracks}
     console.log(`🎸 Finished fetching related artist images`);
   };
 
-  // Get 4 unique album covers for a playlist's 2x2 grid display
-  // Returns array of up to 4 album art URLs, using cache when available
+  // Get 4 unique covers for a playlist's 2x2 grid display
+  // Prioritizes album art, falls back to artist images
+  // Returns array of up to 4 image URLs, using cache when available
   const getPlaylistCovers = async (playlistId, tracks) => {
     // Check cache first
     const cached = playlistCoverCache.current[playlistId];
@@ -11852,29 +11853,44 @@ ${tracks}
       return cached.covers;
     }
 
-    // Collect unique album art URLs from tracks
-    const seenAlbums = new Set();
+    // Collect unique covers from tracks
+    const seenKeys = new Set(); // Track both albums and artists we've used
     const covers = [];
 
     for (const track of tracks) {
       if (covers.length >= 4) break;
 
-      // Create a unique key for the album to avoid duplicates
-      const albumKey = `${track.artist}-${track.album}`.toLowerCase();
-      if (seenAlbums.has(albumKey)) continue;
-      seenAlbums.add(albumKey);
+      // First try album art if we have album info
+      if (track.album && track.artist) {
+        const albumKey = `album:${track.artist}-${track.album}`.toLowerCase();
+        if (!seenKeys.has(albumKey)) {
+          seenKeys.add(albumKey);
 
-      // If track already has albumArt, use it
-      if (track.albumArt) {
-        covers.push(track.albumArt);
-        continue;
+          // If track already has albumArt, use it
+          if (track.albumArt) {
+            covers.push(track.albumArt);
+            continue;
+          }
+
+          // Try to fetch album art
+          const artUrl = await getAlbumArt(track.artist, track.album);
+          if (artUrl) {
+            covers.push(artUrl);
+            continue;
+          }
+        }
       }
 
-      // Otherwise try to fetch it
-      if (track.artist && track.album) {
-        const artUrl = await getAlbumArt(track.artist, track.album);
-        if (artUrl) {
-          covers.push(artUrl);
+      // Fall back to artist image if no album art
+      if (track.artist) {
+        const artistKey = `artist:${track.artist}`.toLowerCase();
+        if (!seenKeys.has(artistKey)) {
+          seenKeys.add(artistKey);
+
+          const artistResult = await getArtistImage(track.artist);
+          if (artistResult?.url) {
+            covers.push(artistResult.url);
+          }
         }
       }
     }
