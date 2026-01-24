@@ -2453,7 +2453,7 @@ const Parachord = () => {
 
     if (artistPageTab === 'biography' && !artistBio) {
       (async () => {
-        const bioData = await getArtistBio(currentArtist.name);
+        const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
         if (bioData) setArtistBio(bioData);
       })();
     }
@@ -11612,7 +11612,7 @@ ${tracks}
   }, [searchDetailCategory, searchPreviewItem?.id]);
 
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
-  const getArtistBio = async (artistName) => {
+  const getLastfmBio = async (artistName) => {
     if (!artistName) return null;
 
     const apiKey = lastfmApiKey.current;
@@ -11621,7 +11621,6 @@ ${tracks}
       return null;
     }
 
-    setLoadingBio(true);
     try {
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
 
@@ -11640,15 +11639,13 @@ ${tracks}
         // Also get the Last.fm URL for "Read more" link
         const lastfmUrl = data.artist.url || null;
 
-        return { bio: cleanBio, url: lastfmUrl };
+        return { bio: cleanBio, url: lastfmUrl, source: 'lastfm' };
       }
 
       return null;
     } catch (error) {
       console.error('Failed to fetch artist bio from Last.fm:', error);
       return null;
-    } finally {
-      setLoadingBio(false);
     }
   };
 
@@ -11811,6 +11808,43 @@ ${tracks}
     } catch (error) {
       console.error('📀 Failed to fetch Discogs bio:', error);
       return null;
+    }
+  };
+
+  // Fetch artist biography from all sources with priority: Wikipedia > Discogs > Last.fm
+  const getArtistBio = async (artistName, artistMbid) => {
+    if (!artistName) return null;
+
+    setLoadingBio(true);
+    try {
+      // Fetch from all sources in parallel
+      const [wikipediaBio, discogsBio, lastfmBio] = await Promise.all([
+        getWikipediaBio(artistMbid),
+        getDiscogsBio(artistMbid, artistName),
+        getLastfmBio(artistName)
+      ]);
+
+      // Store all sources for potential future use
+      const allSources = {};
+      if (wikipediaBio) allSources.wikipedia = wikipediaBio;
+      if (discogsBio) allSources.discogs = discogsBio;
+      if (lastfmBio) allSources.lastfm = lastfmBio;
+
+      // Select best bio based on priority: Wikipedia > Discogs > Last.fm
+      const selected = wikipediaBio ?? discogsBio ?? lastfmBio;
+
+      if (selected) {
+        console.log(`🎤 Selected bio from ${selected.source}`);
+        return { ...selected, allSources };
+      }
+
+      console.log('🎤 No biography found from any source');
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch artist bio:', error);
+      return null;
+    } finally {
+      setLoadingBio(false);
     }
   };
 
@@ -15338,7 +15372,7 @@ useEffect(() => {
                     setArtistPageTab(tab);
                     // Lazy load data when tab is first clicked
                     if (tab === 'biography' && !artistBio && currentArtist) {
-                      const bioData = await getArtistBio(currentArtist.name);
+                      const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
                       if (bioData) setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
@@ -15400,7 +15434,7 @@ useEffect(() => {
                   onClick: async () => {
                     setArtistPageTab(tab);
                     if (tab === 'biography' && !artistBio && currentArtist) {
-                      const bioData = await getArtistBio(currentArtist.name);
+                      const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
                       if (bioData) setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
@@ -15661,7 +15695,7 @@ React.createElement('div', {
                       if (artistReleases.length === 0) {
                         fetchArtistData(artistName);
                       }
-                      const bioData = await getArtistBio(artistName);
+                      const bioData = await getArtistBio(artistName, currentArtist?.mbid);
                       if (bioData) setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && artistName) {
