@@ -21426,10 +21426,9 @@ React.createElement('div', {
             },
               // Parachord Logo
               React.createElement('img', {
-                src: 'assets/logo-wordmark.png',
+                src: './assets/logo-wordmark.png',
                 alt: 'Parachord',
-                className: 'h-16 mb-6',
-                style: { filter: 'brightness(0)' } // Ensures black on light backgrounds
+                className: 'h-16 mb-6'
               }),
 
               // Version
