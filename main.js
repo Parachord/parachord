@@ -1421,45 +1421,21 @@ ipcMain.handle('marketplace-download-resolver', async (event, url) => {
   }
 });
 
-// Playlist handlers
+// Playlist handlers - all playlists stored in electron-store (local_playlists key)
 ipcMain.handle('playlists-load', async () => {
-  console.log('=== Load Playlists ===');
-  const fs = require('fs').promises;
-  const path = require('path');
-  
-  const playlistsDir = path.join(__dirname, 'playlists');
-  console.log('Loading playlists from:', playlistsDir);
-  
+  console.log('=== Load Playlists from electron-store ===');
+
   try {
-    // Create directory if it doesn't exist
-    await fs.mkdir(playlistsDir, { recursive: true });
-    
-    const files = await fs.readdir(playlistsDir);
-    const xspfFiles = files.filter(f => f.endsWith('.xspf'));
-    
-    console.log(`Found ${xspfFiles.length} .xspf file(s)`);
-    
-    const playlists = [];
-    
-    for (const filename of xspfFiles) {
-      const filepath = path.join(playlistsDir, filename);
-      try {
-        const content = await fs.readFile(filepath, 'utf8');
-        const id = filename.replace('.xspf', '');
-        
-        playlists.push({
-          id: id,
-          filename: filename,
-          xspf: content
-        });
-        
-        console.log(`  ✅ Loaded: ${filename}`);
-      } catch (error) {
-        console.error(`  ❌ Failed to load ${filename}:`, error.message);
-      }
-    }
-    
-    console.log(`✅ Loaded ${playlists.length} playlist(s)`);
+    const playlists = store.get('local_playlists') || [];
+
+    // Sort by addedAt descending (newest first) before returning
+    playlists.sort((a, b) => {
+      const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
+      const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
+      return bTime - aTime;
+    });
+
+    console.log(`✅ Loaded ${playlists.length} playlist(s) from electron-store`);
     return playlists;
   } catch (error) {
     console.error('Error loading playlists:', error.message);
@@ -1510,22 +1486,29 @@ ipcMain.handle('playlists-import', async () => {
   }
 });
 
-ipcMain.handle('playlists-save', async (event, filename, xspfContent) => {
-  console.log('=== Save Playlist ===');
-  console.log('  Filename:', filename);
-  
-  const fs = require('fs').promises;
-  const path = require('path');
-  
+ipcMain.handle('playlists-save', async (event, playlistData) => {
+  console.log('=== Save Playlist to electron-store ===');
+  console.log('  Playlist ID:', playlistData?.id);
+
   try {
-    const playlistsDir = path.join(__dirname, 'playlists');
-    await fs.mkdir(playlistsDir, { recursive: true });
-    
-    const filepath = path.join(playlistsDir, filename);
-    await fs.writeFile(filepath, xspfContent, 'utf8');
-    
-    console.log('  ✅ Saved to:', filepath);
-    return { success: true, filepath };
+    const playlists = store.get('local_playlists') || [];
+
+    // Check if playlist already exists
+    const existingIndex = playlists.findIndex(p => p.id === playlistData.id);
+
+    if (existingIndex >= 0) {
+      // Update existing playlist
+      playlists[existingIndex] = playlistData;
+      console.log('  ✅ Updated existing playlist');
+    } else {
+      // Add new playlist
+      playlists.push(playlistData);
+      console.log('  ✅ Added new playlist');
+    }
+
+    store.set('local_playlists', playlists);
+    console.log(`  ✅ Saved ${playlists.length} playlist(s) to electron-store`);
+    return { success: true };
   } catch (error) {
     console.error('  ❌ Save failed:', error.message);
     return { success: false, error: error.message };
@@ -1533,35 +1516,24 @@ ipcMain.handle('playlists-save', async (event, filename, xspfContent) => {
 });
 
 ipcMain.handle('playlists-delete', async (event, playlistId) => {
-  console.log('=== Delete Playlist ===');
+  console.log('=== Delete Playlist from electron-store ===');
   console.log('  Playlist ID:', playlistId);
 
-  const fs = require('fs').promises;
-  const path = require('path');
-
   try {
-    const playlistsDir = path.join(__dirname, 'playlists');
-    const files = await fs.readdir(playlistsDir);
-    const xspfFiles = files.filter(f => f.endsWith('.xspf'));
+    const playlists = store.get('local_playlists') || [];
+    const initialCount = playlists.length;
 
-    // Find the playlist file by ID
-    for (const filename of xspfFiles) {
-      const filepath = path.join(playlistsDir, filename);
-      const content = await fs.readFile(filepath, 'utf8');
+    // Filter out the playlist with matching ID
+    const filteredPlaylists = playlists.filter(p => p.id !== playlistId);
 
-      // Extract the ID from the XSPF content or filename
-      // ID is typically the filename without extension, or derived from content
-      const filenameId = filename.replace('.xspf', '');
-
-      if (filenameId === playlistId || content.includes(`<identifier>${playlistId}</identifier>`)) {
-        await fs.unlink(filepath);
-        console.log('  ✅ Deleted:', filepath);
-        return { success: true, deletedFile: filename };
-      }
+    if (filteredPlaylists.length === initialCount) {
+      console.log('  ❌ Playlist not found');
+      return { success: false, error: 'Playlist not found' };
     }
 
-    console.log('  ❌ Playlist not found');
-    return { success: false, error: 'Playlist not found' };
+    store.set('local_playlists', filteredPlaylists);
+    console.log('  ✅ Deleted playlist');
+    return { success: true };
   } catch (error) {
     console.error('  ❌ Delete failed:', error.message);
     return { success: false, error: error.message };

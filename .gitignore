@@ -32,9 +32,8 @@ yarn-error.log*
 # Electron
 .cache/
 
-# User data (don't commit personal playlists/settings)
-playlists/*.xspf
-!playlists/example-playlist.xspf
+# User data - playlists are now stored in electron-store (local user storage)
+playlists/
 
 # Resolvers - track default resolvers, but users can add/remove locally
 # (Default resolvers are committed so marketplace can download them)

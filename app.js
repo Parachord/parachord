@@ -1524,6 +1524,8 @@ const Parachord = () => {
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [draggedPlaylistTrack, setDraggedPlaylistTrack] = useState(null); // For playlist track reordering
   const [playlistDropTarget, setPlaylistDropTarget] = useState(null); // Index where track will be dropped
+  const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
+  const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -1671,7 +1673,7 @@ const Parachord = () => {
   const [playlistsSearchOpen, setPlaylistsSearchOpen] = useState(false);
   const [playlistsSearch, setPlaylistsSearch] = useState('');
   const [playlistsSortDropdownOpen, setPlaylistsSortDropdownOpen] = useState(false);
-  const [playlistsSort, setPlaylistsSort] = useState('recent');
+  const [playlistsSort, setPlaylistsSort] = useState('added');
   const [playlistsViewMode, setPlaylistsViewMode] = useState('grid'); // 'grid' | 'table'
 
   // Charts (Pop of the Tops) page state
@@ -2083,19 +2085,27 @@ const Parachord = () => {
   const sortPlaylists = useCallback((items) => {
     const sorted = [...items];
     switch (playlistsSort) {
-      case 'alpha-asc': return sorted.sort((a, b) => a.title.localeCompare(b.title));
-      case 'alpha-desc': return sorted.sort((a, b) => b.title.localeCompare(a.title));
-      case 'tracks': return sorted.sort((a, b) => (b.tracks?.length || 0) - (a.tracks?.length || 0));
-      case 'recent': return sorted; // Keep original order
+      case 'added':
+        // Sort by addedAt descending (newest first), fallback to lastModified, then createdAt
+        return sorted.sort((a, b) => {
+          const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
+          const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
+          return bTime - aTime; // Descending (newest first)
+        });
+      case 'created': return sorted.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+      case 'modified': return sorted.sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0));
+      case 'alpha-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      case 'alpha-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
       default: return sorted;
     }
   }, [playlistsSort]);
 
   const playlistsSortOptions = [
-    { value: 'recent', label: 'Recently Added' },
+    { value: 'added', label: 'Recently Added' },
+    { value: 'created', label: 'Date Created' },
+    { value: 'modified', label: 'Recently Modified' },
     { value: 'alpha-asc', label: 'A-Z' },
-    { value: 'alpha-desc', label: 'Z-A' },
-    { value: 'tracks', label: 'Most Tracks' }
+    { value: 'alpha-desc', label: 'Z-A' }
   ];
 
   // Filter artist releases by search query
@@ -3665,39 +3675,23 @@ const Parachord = () => {
     const context = new (window.AudioContext || window.webkitAudioContext)();
     setAudioContext(context);
     
-    // Load playlists from files
-    const loadPlaylistsFromFiles = async () => {
+    // Load playlists from electron-store
+    const loadPlaylistsFromStore = async () => {
       try {
         const loadedPlaylists = await window.electron.playlists.load();
-        console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from files`);
+        console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from local storage`);
 
         if (loadedPlaylists.length > 0) {
-          // Parse each playlist to get title, creator, and tracks
-          const parsedPlaylists = loadedPlaylists.map(playlist => {
-            const parsed = parseXSPF(playlist.xspf);
-            return {
-              ...playlist,
-              title: parsed?.title || playlist.id,
-              creator: parsed?.creator || 'Unknown',
-              tracks: parsed?.tracks || [],
-              createdAt: parsed?.date || playlist.createdAt || null, // Use XSPF date if available
-              lastModified: playlist.lastModified || null
-            };
-          });
-
-          setPlaylists(parsedPlaylists);
-          // Local playlists loaded - if no hosted playlists, we're done
-          const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
-          if (hostedPlaylistUrls.length === 0) {
-            setPlaylistsLoading(false);
-          }
+          // Playlists are already stored as full objects, just use them directly
+          setPlaylists(loadedPlaylists);
         } else {
-          console.log('📋 No playlists found - playlists/ folder is empty');
-          // Check if there are hosted playlists to load
-          const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
-          if (hostedPlaylistUrls.length === 0) {
-            setPlaylistsLoading(false);
-          }
+          console.log('📋 No playlists found in local storage');
+        }
+
+        // Check if there are hosted playlists to load
+        const hostedPlaylistUrls = await window.electron?.store?.get('hosted_playlists') || [];
+        if (hostedPlaylistUrls.length === 0) {
+          setPlaylistsLoading(false);
         }
       } catch (error) {
         console.error('Failed to load playlists:', error);
@@ -3705,7 +3699,7 @@ const Parachord = () => {
       }
     };
 
-    loadPlaylistsFromFiles();
+    loadPlaylistsFromStore();
 
     // Listen for local files library changes
     let libraryChangeCleanup = null;
@@ -4003,7 +3997,7 @@ const Parachord = () => {
                   lastModified: Date.now()
                 };
                 // Save to disk (async, non-blocking)
-                savePlaylistToDisk(updatedPlaylist);
+                savePlaylistToStore(updatedPlaylist);
                 return updatedPlaylist;
               }
               return p;
@@ -5794,12 +5788,25 @@ const Parachord = () => {
             lastModified: Date.now()
           };
           // Save to disk
-          savePlaylistToDisk(updatedPlaylist);
+          savePlaylistToStore(updatedPlaylist);
           return updatedPlaylist;
         }
         return p;
       }));
     }
+  };
+
+  // Move track in buffered edit data (for edit mode)
+  const moveInEditedPlaylist = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    setEditedPlaylistData(prev => {
+      if (!prev) return prev;
+      const newTracks = [...prev.tracks];
+      const [removed] = newTracks.splice(fromIndex, 1);
+      newTracks.splice(toIndex, 0, removed);
+      console.log(`🔀 Moved track in edit buffer from index ${fromIndex} to ${toIndex}`);
+      return { ...prev, tracks: newTracks };
+    });
   };
 
   const clearQueue = () => {
@@ -8883,16 +8890,16 @@ ${tracks}
       title: aiSavePlaylistName.trim(),
       creator: providerName,
       tracks: resultsSidebar.tracks,
-      createdAt: new Date().toISOString()
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
     };
 
-    // Add to playlists state
-    setPlaylists(prev => [...prev, newPlaylist]);
+    // Add to playlists state (prepend so it appears at top immediately)
+    setPlaylists(prev => [newPlaylist, ...prev]);
 
-    // Save to disk
-    const filename = `${playlistId}.xspf`;
-    const xspfContent = generateXSPF(newPlaylist);
-    await window.electron.playlists.save(filename, xspfContent);
+    // Save to unified local storage (electron-store)
+    await savePlaylistToStore(newPlaylist);
 
     // Close dialogs
     setAiSaveDialogOpen(false);
@@ -8900,8 +8907,8 @@ ${tracks}
     showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
   };
 
-  // Save playlist to disk
-  const savePlaylistToDisk = async (playlist) => {
+  // Save playlist to local storage (electron-store)
+  const savePlaylistToStore = async (playlist) => {
     if (!playlist || !playlist.id) return;
 
     // Don't save hosted playlists (they come from URLs)
@@ -8911,9 +8918,23 @@ ${tracks}
     }
 
     try {
+      // Generate XSPF content for the playlist
       const xspfContent = generateXSPF(playlist);
-      const filename = playlist.filename || `${playlist.id}.xspf`;
-      const result = await window.electron.playlists.save(filename, xspfContent);
+
+      // Create playlist data object for storage
+      const playlistData = {
+        id: playlist.id,
+        title: playlist.title,
+        creator: playlist.creator,
+        tracks: playlist.tracks,
+        xspf: xspfContent,
+        createdAt: playlist.createdAt || Date.now(),
+        addedAt: playlist.addedAt || Date.now(),
+        lastModified: Date.now(),
+        isAiPlaylist: playlist.isAiPlaylist || false
+      };
+
+      const result = await window.electron.playlists.save(playlistData);
 
       if (result.success) {
         console.log(`💾 Saved playlist: ${playlist.title}`);
@@ -12158,12 +12179,24 @@ ${tracks}
         return;
       }
       
-      // Generate ID from filename
-      const id = filename.replace('.xspf', '');
-      
-      // Save to playlists folder
-      const saveResult = await window.electron.playlists.save(filename, content);
-      
+      // Generate unique ID for imported playlist
+      const id = `imported-${Date.now()}`;
+
+      // Create playlist object
+      const newPlaylist = {
+        id: id,
+        title: parsed.title,
+        creator: parsed.creator,
+        tracks: parsed.tracks || [],
+        xspf: content,
+        createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
+        addedAt: Date.now(), // When added to library
+        lastModified: Date.now()
+      };
+
+      // Save to electron-store
+      const saveResult = await window.electron.playlists.save(newPlaylist);
+
       if (!saveResult.success) {
         showConfirmDialog({
           type: 'error',
@@ -12172,20 +12205,9 @@ ${tracks}
         });
         return;
       }
-      
-      // Add to state
-      const newPlaylist = {
-        id: id,
-        filename: filename,
-        title: parsed.title,
-        creator: parsed.creator,
-        tracks: parsed.tracks || [],
-        xspf: content,
-        createdAt: parsed.date || Date.now(), // Use XSPF date or import time
-        lastModified: Date.now()
-      };
 
-      setPlaylists(prev => [...prev, newPlaylist]);
+      // Add to state (prepend so it appears at top immediately)
+      setPlaylists(prev => [newPlaylist, ...prev]);
 
       // Fetch covers for the 2x2 grid display immediately
       fetchPlaylistCovers(id, parsed.tracks || []);
@@ -12208,7 +12230,7 @@ ${tracks}
 
   // Import playlist from URL (hosted XSPF)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false) => {
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -12265,11 +12287,13 @@ ${tracks}
         tracks: parsed.tracks || [],
         xspf: content,
         sourceUrl: url,  // Track the source URL for updates
-        createdAt: parsed.date || Date.now(), // Use XSPF date or import time
+        createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
+        addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
         lastModified: Date.now()
       };
 
-      setPlaylists(prev => [...prev, newPlaylist]);
+      // Add to state (prepend so it appears at top immediately, unless loading from storage)
+      setPlaylists(prev => skipStorageUpdate ? [...prev, newPlaylist] : [newPlaylist, ...prev]);
 
       // Fetch covers for the 2x2 grid display immediately
       fetchPlaylistCovers(id, parsed.tracks || []);
@@ -12413,10 +12437,10 @@ ${tracks}
 
       console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
 
-      for (const { url } of hostedPlaylistUrls) {
+      for (const { url, addedAt } of hostedPlaylistUrls) {
         try {
-          // Pass true to skip storage update (already in storage)
-          await handleImportPlaylistFromUrl(url, true);
+          // Pass true to skip storage update (already in storage), and stored addedAt to preserve order
+          await handleImportPlaylistFromUrl(url, true, addedAt);
         } catch (error) {
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
@@ -15370,28 +15394,33 @@ useEffect(() => {
             pointerEvents: 'auto'
           }
         },
-          // ALBUM DETAILS section header with Close button
+          // ALBUM DETAILS section header with breadcrumb
           React.createElement('div', {
             className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
           },
-            React.createElement('span', {
-              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
-            }, 'Album Details'),
-            React.createElement('button', {
-              onClick: () => {
-                // Clear the release view
-                setCurrentRelease(null);
-                // If artist releases aren't loaded, fetch full artist data
-                const artistName = currentRelease?.artist?.name || currentArtist?.name;
-                if (artistName && artistReleases.length === 0) {
-                  fetchArtistData(artistName);
-                }
-              },
-              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            // Breadcrumb navigation: Artist Name > Album Name
+            React.createElement('div', {
+              className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
             },
-              'CLOSE',
-              React.createElement('span', { className: 'text-gray-400' }, '×')
-            )
+              React.createElement('button', {
+                onClick: () => {
+                  // Clear the release view to go back to artist
+                  setCurrentRelease(null);
+                  // If artist releases aren't loaded, fetch full artist data
+                  const artistName = currentRelease?.artist?.name || currentArtist?.name;
+                  if (artistName && artistReleases.length === 0) {
+                    fetchArtistData(artistName);
+                  }
+                },
+                className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
+              }, currentArtist?.name || currentRelease?.artist?.name || 'Artist'),
+              React.createElement('span', { className: 'text-gray-300' }, '/'),
+              React.createElement('span', { className: 'text-gray-600 uppercase' },
+                currentRelease?.title || 'Album Details'
+              )
+            ),
+            // Empty div to maintain layout (no close button needed with breadcrumb)
+            React.createElement('div')
           ),
           // Two-column layout: album art + metadata on left, tracklist on right
           React.createElement(ReleasePage, {
@@ -15969,13 +15998,28 @@ useEffect(() => {
             pointerEvents: 'auto'
           }
         },
-          // PLAYLIST DETAILS sticky bar (same as loaded state)
+          // PLAYLIST DETAILS sticky bar with breadcrumb (same as loaded state)
           React.createElement('div', {
             className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
           },
-            React.createElement('span', {
-              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
-            }, 'Playlist Details'),
+            // Breadcrumb navigation: Playlists > Playlist Name
+            React.createElement('div', {
+              className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
+            },
+              React.createElement('button', {
+                onClick: () => {
+                  setPendingPlaylistLoad(null);
+                  setActiveView('playlists');
+                  setViewHistory(['library', 'playlists']);
+                },
+                className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
+              }, 'Playlists'),
+              React.createElement('span', { className: 'text-gray-300' }, '/'),
+              React.createElement('span', { className: 'text-gray-600 uppercase' },
+                pendingPlaylistLoad?.title || 'Loading'
+              )
+            ),
+            // Close button
             React.createElement('button', {
               onClick: () => {
                 setPendingPlaylistLoad(null);
@@ -16122,24 +16166,88 @@ useEffect(() => {
             pointerEvents: 'auto'
           }
         },
-          // PLAYLIST DETAILS section header with Close button
+          // PLAYLIST DETAILS section header with breadcrumb and Edit buttons
           React.createElement('div', {
             className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
           },
-            React.createElement('span', {
-              className: 'text-xs font-medium tracking-widest text-gray-400 uppercase'
-            }, 'Playlist Details'),
-            React.createElement('button', {
-              onClick: () => {
-                setSelectedPlaylist(null);
-                setPlaylistTracks([]);
-                setPlaylistCoverArt([]);
-                navigateTo('playlists');
-              },
-              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            // Breadcrumb navigation: Playlists > Playlist Name
+            React.createElement('div', {
+              className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
             },
-              'CLOSE',
-              React.createElement('span', { className: 'text-gray-400' }, '×')
+              React.createElement('button', {
+                onClick: () => {
+                  if (playlistEditMode) {
+                    setPlaylistEditMode(false);
+                    setEditedPlaylistData(null);
+                  }
+                  setSelectedPlaylist(null);
+                  setPlaylistTracks([]);
+                  setPlaylistCoverArt([]);
+                  navigateTo('playlists');
+                },
+                className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
+              }, 'Playlists'),
+              React.createElement('span', { className: 'text-gray-300' }, '/'),
+              React.createElement('span', { className: 'text-gray-600 uppercase' },
+                playlistEditMode ? 'Editing' : (selectedPlaylist.title || 'Playlist Details')
+              )
+            ),
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              // Edit / Cancel+Done buttons
+              playlistEditMode ? React.createElement(React.Fragment, null,
+                // Cancel button
+                React.createElement('button', {
+                  onClick: () => {
+                    setPlaylistEditMode(false);
+                    setEditedPlaylistData(null);
+                  },
+                  className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+                }, 'CANCEL'),
+                // Done button
+                React.createElement('button', {
+                  onClick: async () => {
+                    if (editedPlaylistData) {
+                      const updated = {
+                        ...selectedPlaylist,
+                        title: editedPlaylistData.title,
+                        creator: editedPlaylistData.creator,
+                        tracks: editedPlaylistData.tracks,
+                        lastModified: Date.now()
+                      };
+                      setSelectedPlaylist(updated);
+                      setPlaylistTracks(editedPlaylistData.tracks);
+                      setPlaylists(prev => prev.map(p => p.id === updated.id ? updated : p));
+                      await savePlaylistToStore(updated);
+                    }
+                    setPlaylistEditMode(false);
+                    setEditedPlaylistData(null);
+                  },
+                  className: 'flex items-center gap-1 px-3 py-1 text-xs text-white bg-fuchsia-600 hover:bg-fuchsia-700 rounded transition-colors no-drag'
+                }, 'DONE')
+              ) : React.createElement('button', {
+                onClick: () => {
+                  setPlaylistEditMode(true);
+                  setEditedPlaylistData({
+                    title: selectedPlaylist.title,
+                    creator: selectedPlaylist.creator || '',
+                    tracks: [...playlistTracks]
+                  });
+                },
+                className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+              }, 'EDIT'),
+              // Close button (hidden in edit mode since Cancel serves that purpose)
+              !playlistEditMode && React.createElement('button', {
+                onClick: () => {
+                  setSelectedPlaylist(null);
+                  setPlaylistTracks([]);
+                  setPlaylistCoverArt([]);
+                  navigateTo('playlists');
+                },
+                className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+              },
+                'CLOSE',
+                React.createElement('span', { className: 'text-gray-400' }, '×')
+              )
             )
           ),
 
@@ -16206,12 +16314,30 @@ useEffect(() => {
 
               // Playlist title and metadata
               React.createElement('div', { className: 'mt-4 space-y-1' },
-                React.createElement('h2', {
-                  className: 'font-bold text-gray-900 text-lg leading-tight'
-                }, selectedPlaylist.title),
-                React.createElement('p', {
-                  className: 'text-sm text-gray-500'
-                }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
+                // Title - editable in edit mode
+                playlistEditMode && editedPlaylistData
+                  ? React.createElement('input', {
+                      type: 'text',
+                      value: editedPlaylistData.title,
+                      onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, title: e.target.value })),
+                      className: 'font-bold text-gray-900 text-lg leading-tight bg-white border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent',
+                      placeholder: 'Playlist name'
+                    })
+                  : React.createElement('h2', {
+                      className: 'font-bold text-gray-900 text-lg leading-tight'
+                    }, selectedPlaylist.title),
+                // Creator - editable for imported and hosted playlists in edit mode
+                playlistEditMode && editedPlaylistData && (selectedPlaylist.id?.startsWith('imported-') || selectedPlaylist.sourceUrl)
+                  ? React.createElement('input', {
+                      type: 'text',
+                      value: editedPlaylistData.creator,
+                      onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, creator: e.target.value })),
+                      className: 'text-sm text-gray-500 bg-white border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent',
+                      placeholder: 'Creator name'
+                    })
+                  : React.createElement('p', {
+                      className: 'text-sm text-gray-500'
+                    }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
                 React.createElement('p', {
                   className: 'text-sm text-gray-500'
                 }, playlistTracks.length > 0
@@ -16226,61 +16352,94 @@ useEffect(() => {
                 // Last modified date
                 selectedPlaylist.lastModified && React.createElement('p', {
                   className: 'text-xs text-gray-400'
-                }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`)
+                }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
+                // Delete Playlist button (only in edit mode)
+                playlistEditMode && React.createElement('button', {
+                  onClick: () => {
+                    if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
+                      // Delete the playlist
+                      window.electron.playlists.delete(selectedPlaylist.id);
+                      setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
+                      // Clear cover cache for this playlist
+                      setAllPlaylistCovers(prev => {
+                        const newCovers = { ...prev };
+                        delete newCovers[selectedPlaylist.id];
+                        return newCovers;
+                      });
+                      // Exit edit mode and navigate back
+                      setPlaylistEditMode(false);
+                      setEditedPlaylistData(null);
+                      setSelectedPlaylist(null);
+                      setPlaylistTracks([]);
+                      setPlaylistCoverArt([]);
+                      navigateTo('playlists');
+                    }
+                  },
+                  className: 'mt-4 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
+                }, 'Delete Playlist')
               )
             ),
 
             // RIGHT COLUMN: Tracklist
             React.createElement('div', { className: 'flex-1 min-w-0' },
-              playlistTracks.length > 0 ?
+              // Use edited tracks when in edit mode, otherwise use playlistTracks
+              (() => {
+                const displayTracks = playlistEditMode && editedPlaylistData ? editedPlaylistData.tracks : playlistTracks;
+                return displayTracks.length > 0 ?
                 React.createElement('div', { className: 'space-y-0' },
-                  playlistTracks.map((track, index) => {
+                  displayTracks.map((track, index) => {
                     const hasResolved = Object.keys(track.sources || {}).length > 0;
                     const isResolving = Object.keys(track.sources || {}).length === 0;
-                    const isDraggedOver = playlistDropTarget === index;
-                    const isDragging = draggedPlaylistTrack === index;
+                    const isDraggedOver = playlistEditMode && playlistDropTarget === index;
+                    const isDragging = playlistEditMode && draggedPlaylistTrack === index;
 
                     return React.createElement('div', {
                       key: track.id || index,
                       draggable: true,
                       onDragStart: (e) => {
-                        setDraggedPlaylistTrack(index);
-                        setDraggingTrackForPlaylist(track); // Track for potential playlist drop
+                        // Always allow dragging to other playlists
+                        setDraggingTrackForPlaylist(track);
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
+                        // Only track index for reordering in edit mode
+                        if (playlistEditMode) {
+                          setDraggedPlaylistTrack(index);
+                        }
                       },
                       onDragEnd: () => {
-                        setDraggedPlaylistTrack(null);
-                        setPlaylistDropTarget(null);
                         setDraggingTrackForPlaylist(null);
                         setDropTargetPlaylistId(null);
                         setDropTargetNewPlaylist(false);
+                        if (playlistEditMode) {
+                          setDraggedPlaylistTrack(null);
+                          setPlaylistDropTarget(null);
+                        }
                         // Close panel if it was opened by drag and nothing was dropped
                         if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
                           setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
                         }
                       },
-                      onDragOver: (e) => {
+                      onDragOver: playlistEditMode ? (e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
                         if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
                           setPlaylistDropTarget(index);
                         }
-                      },
-                      onDragLeave: () => {
+                      } : undefined,
+                      onDragLeave: playlistEditMode ? () => {
                         setPlaylistDropTarget(null);
-                      },
-                      onDrop: (e) => {
+                      } : undefined,
+                      onDrop: playlistEditMode ? (e) => {
                         e.preventDefault();
                         if (draggedPlaylistTrack !== null && draggedPlaylistTrack !== index) {
-                          moveInPlaylist(draggedPlaylistTrack, index);
+                          moveInEditedPlaylist(draggedPlaylistTrack, index);
                         }
                         setDraggedPlaylistTrack(null);
                         setPlaylistDropTarget(null);
-                      },
-                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors no-drag group ${
-                        isResolving ? 'opacity-60' : ''
-                      } ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''}`,
+                      } : undefined,
+                      className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 transition-colors no-drag group ${
+                        playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''}`,
                       onClick: () => {
                         if (draggedPlaylistTrack !== null) return; // Don't play if dragging
                         const tracksAfter = playlistTracks.slice(index + 1);
@@ -16301,11 +16460,32 @@ useEffect(() => {
                         }
                       }
                     },
-                      // Track number
-                      React.createElement('span', {
-                        className: 'text-sm text-gray-400 flex-shrink-0 text-right',
-                        style: { pointerEvents: 'none', width: '32px' }
-                      }, String(index + 1).padStart(2, '0')),
+                      // Track number or drag handle in edit mode
+                      playlistEditMode
+                        ? React.createElement('span', {
+                            className: 'text-gray-400 flex-shrink-0 flex items-center justify-center',
+                            style: { pointerEvents: 'none', width: '32px' },
+                            title: 'Drag to reorder'
+                          },
+                          // Drag handle icon (hamburger/grip lines)
+                          React.createElement('svg', {
+                            className: 'w-4 h-4',
+                            fill: 'none',
+                            stroke: 'currentColor',
+                            viewBox: '0 0 24 24'
+                          },
+                            React.createElement('path', {
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round',
+                              strokeWidth: 2,
+                              d: 'M4 8h16M4 16h16'
+                            })
+                          )
+                        )
+                        : React.createElement('span', {
+                            className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                            style: { pointerEvents: 'none', width: '32px' }
+                          }, String(index + 1).padStart(2, '0')),
 
                       // Track title - fixed width column (font-medium for emphasis)
                       React.createElement('span', {
@@ -16406,7 +16586,8 @@ useEffect(() => {
               :
                 React.createElement('div', { className: 'text-center py-12 text-gray-400' },
                   'Loading tracks...'
-                )
+                );
+              })()
             )
           )
         )
@@ -16729,7 +16910,9 @@ useEffect(() => {
                           className: `w-full h-full flex items-center justify-center ${
                             playlist.sourceUrl
                               ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
-                              : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                              : playlist.isAiPlaylist
+                                ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500'
+                                : 'bg-gradient-to-br from-purple-400 to-pink-400'
                           }`
                         },
                           // Playlist icon (three lines with play triangle)
@@ -16765,6 +16948,16 @@ useEffect(() => {
                         )
                       ),
 
+                      // AI indicator
+                      playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('div', {
+                        className: 'absolute top-2 right-2'
+                      },
+                        React.createElement('span', {
+                          className: 'bg-white/90 backdrop-blur-sm text-purple-600 text-xs px-2 py-0.5 rounded-full font-medium',
+                          title: `Generated by ${playlist.creator || 'AI'}`
+                        }, '✨ AI')
+                      ),
+
                       // Hover play overlay
                       React.createElement('div', {
                         className: 'absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center'
@@ -16780,7 +16973,36 @@ useEffect(() => {
                       playlist.creator || `${playlist.tracks?.length || 0} Songs`
                     )
                   );
-                })
+                }),
+                // Trailing skeletons while hosted playlists are still loading
+                ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
+                  React.createElement('div', { key: `trailing-skeleton-${i}` },
+                    // Skeleton 2x2 album art grid
+                    React.createElement('div', {
+                      className: 'aspect-square rounded-lg overflow-hidden mb-3 shadow-md'
+                    },
+                      React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                        [0, 1, 2, 3].map(idx =>
+                          React.createElement('div', {
+                            key: idx,
+                            className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                            style: { backgroundSize: '200% 100%', animationDelay: `${(i * 4 + idx) * 30}ms` }
+                          })
+                        )
+                      )
+                    ),
+                    // Skeleton title
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                    }),
+                    // Skeleton creator
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                    })
+                  )
+                ) : [])
               );
             }
 
@@ -16847,7 +17069,9 @@ useEffect(() => {
                         className: `w-full h-full flex items-center justify-center ${
                           playlist.sourceUrl
                             ? 'bg-gradient-to-br from-blue-400 to-cyan-400'
-                            : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                            : playlist.isAiPlaylist
+                              ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500'
+                              : 'bg-gradient-to-br from-purple-400 to-pink-400'
                         }`
                       },
                         // Playlist icon (three lines with play triangle)
@@ -16869,6 +17093,11 @@ useEffect(() => {
                     className: 'text-xs text-blue-500 bg-blue-50 px-2 py-1 rounded-full font-medium flex-shrink-0',
                     title: 'Hosted playlist'
                   }, '🌐 Hosted'),
+                  // AI badge
+                  playlist.isAiPlaylist && !playlist.sourceUrl && React.createElement('span', {
+                    className: 'text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-full font-medium flex-shrink-0',
+                    title: `Generated by ${playlist.creator || 'AI'}`
+                  }, '✨ AI'),
                   // Track count
                   React.createElement('div', { className: 'text-sm text-gray-500 flex-shrink-0 w-20 text-right' },
                     `${trackCount} song${trackCount !== 1 ? 's' : ''}`
@@ -16897,7 +17126,36 @@ useEffect(() => {
                     React.createElement(Play, { size: 20, className: 'text-purple-600 fill-purple-600' })
                   )
                 );
-              })
+              }),
+              // Trailing skeletons while hosted playlists are still loading (table view)
+              ...(playlistsLoading ? Array.from({ length: 4 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `trailing-table-skeleton-${i}`,
+                  className: `flex items-center gap-4 py-3 px-4 border-t border-gray-100`
+                },
+                  // Skeleton thumbnail
+                  React.createElement('div', {
+                    className: 'w-12 h-12 rounded overflow-hidden flex-shrink-0 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  // Skeleton title/creator
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-48 mb-2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-24 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                    })
+                  ),
+                  // Skeleton track count
+                  React.createElement('div', {
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-16 flex-shrink-0 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                  })
+                )
+              ) : [])
             );
           })()
         )
@@ -22967,12 +23225,13 @@ useEffect(() => {
                         creator: 'Me',
                         tracks: tracksToAdd,
                         createdAt: Date.now(),
+                        addedAt: Date.now(),
                         lastModified: Date.now()
                       };
                       setPlaylists(prev => [newPlaylist, ...prev]);
                       fetchPlaylistCovers(playlistId, newPlaylist.tracks);
                       setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
-                      savePlaylistToDisk(newPlaylist); // Save to disk
+                      savePlaylistToStore(newPlaylist); // Save to disk
                       showSidebarBadge('playlists', tracksToAdd.length);
                       setNewPlaylistFormOpen(false);
                       setNewPlaylistName('');
@@ -23008,12 +23267,13 @@ useEffect(() => {
                       creator: 'Me',
                       tracks: tracksToAdd,
                       createdAt: Date.now(),
+                      addedAt: Date.now(),
                       lastModified: Date.now()
                     };
                     setPlaylists(prev => [newPlaylist, ...prev]);
                     fetchPlaylistCovers(playlistId, newPlaylist.tracks);
                     setSelectedPlaylistsForAdd(prev => [...prev, playlistId]);
-                    savePlaylistToDisk(newPlaylist); // Save to disk
+                    savePlaylistToStore(newPlaylist); // Save to disk
                     showSidebarBadge('playlists', tracksToAdd.length);
                     setNewPlaylistFormOpen(false);
                     setNewPlaylistName('');
@@ -23072,7 +23332,7 @@ useEffect(() => {
                 }));
 
                 // Save to disk
-                savePlaylistToDisk(updatedPlaylist);
+                savePlaylistToStore(updatedPlaylist);
 
                 // Mark as added
                 setSelectedPlaylistsForAdd(prev => [...prev, playlist.id]);
