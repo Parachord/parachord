@@ -31,17 +31,13 @@
     .header-icon {
       width: 32px;
       height: 32px;
-      background: linear-gradient(135deg, #9333ea 0%, #ec4899 100%);
       border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      overflow: hidden;
     }
 
-    .header-icon svg {
-      width: 18px;
-      height: 18px;
-      fill: white;
+    .header-icon img {
+      width: 100%;
+      height: 100%;
     }
 
     .header h1 {
@@ -271,13 +267,7 @@
 <body>
   <div class="header">
     <div class="header-icon">
-      <!-- Parachord logo - stylized 'p' with parachute -->
-      <svg viewBox="0 0 128 128" fill="none">
-        <circle cx="64" cy="58" r="28" stroke="white" stroke-width="12" fill="none"/>
-        <rect x="80" y="44" width="12" height="54" fill="white"/>
-        <path d="M38 110L18 124V96L38 110Z" fill="#FF0000"/>
-        <line x1="18.5" y1="124" x2="31" y2="116" stroke="white" stroke-width="1.5"/>
-      </svg>
+      <img src="icons/icon48.png" alt="Parachord">
     </div>
     <h1>Parachord</h1>
   </div>

@@ -21425,36 +21425,12 @@ React.createElement('div', {
               className: 'flex flex-col items-center justify-center py-12'
             },
               // Parachord Logo
-              React.createElement('svg', {
-                width: '280',
-                height: '70',
-                viewBox: '0 0 974 245',
-                fill: 'none',
-                xmlns: 'http://www.w3.org/2000/svg',
-                className: 'mb-6'
-              },
-                React.createElement('path', { d: 'M705.5 96C729.725 96 750.5 116.846 750.5 144C750.5 171.154 729.725 192 705.5 192C681.275 192 660.5 171.154 660.5 144C660.5 116.846 681.275 96 705.5 96Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('path', { d: 'M178.5 89C202.725 89 223.5 109.846 223.5 137C223.5 164.154 202.725 185 178.5 185C154.275 185 133.5 164.154 133.5 137C133.5 109.846 154.275 89 178.5 89Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '212', y: '75.5', width: '25', height: '123', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M365.5 93C389.725 93 410.5 113.846 410.5 141C410.5 168.154 389.725 189 365.5 189C341.275 189 320.5 168.154 320.5 141C320.5 113.846 341.275 93 365.5 93Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '399', y: '79.5', width: '25', height: '123', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M58.5 89C82.7246 89 103.5 109.846 103.5 137C103.5 164.154 82.7246 185 58.5 185C34.2754 185 13.5 164.154 13.5 137C13.5 109.846 34.2754 89 58.5 89Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { y: '141.5', width: '25', height: '90', fill: 'currentColor' }),
-                React.createElement('rect', { x: '248', y: '138.5', width: '27', height: '60', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M248 138.5C248 103.706 274.191 75.5 306.5 75.5C306.667 75.5 306.833 75.5024 307 75.5039L307 102.508C306.833 102.505 306.667 102.5 306.5 102.5C291.195 102.5 275.499 116.258 275.012 137.483L275 138.5L248 138.5Z', fill: 'currentColor' }),
-                React.createElement('rect', { x: '769', y: '142.5', width: '27', height: '60', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M769 142.5C769 107.706 795.191 79.5 827.5 79.5C827.667 79.5 827.833 79.5024 828 79.5039L828 106.508C827.833 106.505 827.667 106.5 827.5 106.5C812.195 106.5 796.499 120.258 796.012 141.483L796 142.5L769 142.5Z', fill: 'currentColor' }),
-                React.createElement('rect', { x: '617', y: '142.5', width: '25', height: '60', fill: 'currentColor' }),
-                React.createElement('rect', { x: '538', y: '36.3779', width: '25', height: '165', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M563 28.5V41L538 36.3779L563 28.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M589.702 82.5C616.533 82.5 639.054 108.771 641.898 142.5H616.816C614.171 118.264 598.459 107.5 589.702 107.5C581.176 107.5 565.661 118.003 563.075 142.5H538C540.787 108.771 562.871 82.5 589.702 82.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M488.5 79.5C506.518 79.5 522.632 88.0639 533.363 101.53L509.492 115.312C503.729 109.727 496.204 106.5 488.5 106.5C472.36 106.5 457 120.658 457 141C457 161.342 472.36 175.5 488.5 175.5C496.205 175.5 503.729 172.272 509.492 166.688L533.363 180.469C522.632 193.935 506.518 202.5 488.5 202.5C456.191 202.5 430 174.966 430 141C430 107.034 456.191 79.5 488.5 79.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M25 231.5L6.8343e-07 245L-6.11959e-07 231L0 217L25 231.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M893.011 191.341C868.787 191.577 847.81 170.935 847.545 143.782C847.28 116.63 867.851 95.5818 892.075 95.3456C916.298 95.1094 937.276 115.752 937.541 142.905C937.805 170.057 917.234 191.105 893.011 191.341Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '950.995', y: '138.273', width: '25', height: '100.266', transform: 'rotate(179.441 950.995 138.273)', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M974.001 27L925.251 55.1458L924.5 0L974.001 27Z', fill: '#FF0000' }),
-                React.createElement('line', { x1: '924.822', y1: '55.1746', x2: '950.699', y2: '40.9495', stroke: 'white' })
-              ),
+              React.createElement('img', {
+                src: 'assets/logo-wordmark.png',
+                alt: 'Parachord',
+                className: 'h-16 mb-6',
+                style: { filter: 'brightness(0)' } // Ensures black on light backgrounds
+              }),
 
               // Version
               React.createElement('p', { className: 'text-lg text-gray-600 mb-2' }, 'Version 1.0.0'),
