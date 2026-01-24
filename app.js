@@ -11731,6 +11731,89 @@ ${tracks}
     }
   };
 
+  // Fetch artist biography from Discogs (uses MBID or artist name)
+  const getDiscogsBio = async (artistMbid, artistName) => {
+    if (!artistMbid && !artistName) {
+      console.log('📀 Discogs bio skipped: no MBID or name');
+      return null;
+    }
+
+    try {
+      // Get Discogs token from metaservice config if available
+      const discogsConfig = metaServiceConfigs?.discogs || {};
+      const token = discogsConfig.personalAccessToken;
+
+      const headers = {
+        'User-Agent': 'Parachord/1.0 (https://parachord.app)'
+      };
+      if (token) {
+        headers['Authorization'] = `Discogs token=${token}`;
+      }
+
+      // Search for artist on Discogs
+      const searchQuery = artistName || artistMbid;
+      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(searchQuery)}&type=artist&per_page=5`;
+
+      const searchResponse = await fetch(searchUrl, { headers });
+
+      if (!searchResponse.ok) {
+        console.log('📀 Discogs search failed:', searchResponse.status);
+        return null;
+      }
+
+      const searchData = await searchResponse.json();
+
+      if (!searchData.results?.length) {
+        console.log('📀 No Discogs results found');
+        return null;
+      }
+
+      // Find best match - prefer exact name match
+      let artistResult = searchData.results.find(r =>
+        r.title?.toLowerCase() === artistName?.toLowerCase()
+      );
+
+      // Fall back to first result if no exact match
+      if (!artistResult) {
+        artistResult = searchData.results[0];
+      }
+
+      // Fetch full artist profile
+      const artistUrl = artistResult.resource_url;
+      const artistResponse = await fetch(artistUrl, { headers });
+
+      if (!artistResponse.ok) {
+        console.log('📀 Discogs artist fetch failed:', artistResponse.status);
+        return null;
+      }
+
+      const artistData = await artistResponse.json();
+
+      if (artistData.profile) {
+        // Clean up Discogs profile (remove [a=Artist] style links)
+        const cleanProfile = artistData.profile
+          .replace(/\[a=([^\]]+)\]/g, '$1')  // [a=Artist Name] -> Artist Name
+          .replace(/\[l=([^\]]+)\]/g, '$1')  // [l=Label Name] -> Label Name
+          .replace(/\[m=([^\]]+)\]/g, '$1')  // [m=Master] -> Master
+          .replace(/\[r=([^\]]+)\]/g, '$1')  // [r=Release] -> Release
+          .replace(/\[url=([^\]]+)\]([^\[]+)\[\/url\]/g, '$2')  // [url=...]text[/url] -> text
+          .trim();
+
+        console.log('📀 Discogs bio fetched successfully');
+        return {
+          bio: cleanProfile,
+          url: artistData.uri || `https://www.discogs.com/artist/${artistData.id}`,
+          source: 'discogs'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📀 Failed to fetch Discogs bio:', error);
+      return null;
+    }
+  };
+
   // Fetch similar artists from ListenBrainz Labs API
   const getListenBrainzSimilarArtists = async (artistMbid) => {
     if (!artistMbid) {
