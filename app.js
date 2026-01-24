@@ -15339,18 +15339,24 @@ useEffect(() => {
           ),
           // Skeleton content with white background (matching release page)
           React.createElement('div', { className: 'bg-white flex-1' },
-            // ALBUM DETAILS header skeleton
+            // ALBUM DETAILS header with breadcrumb (artist name known, album loading)
             React.createElement('div', {
               className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
             },
+              // Breadcrumb navigation: Artist Name > Loading...
               React.createElement('div', {
-                className: 'h-3 rounded w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                style: { backgroundSize: '200% 100%' }
-              }),
-              React.createElement('div', {
-                className: 'h-6 rounded w-16 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                style: { backgroundSize: '200% 100%' }
-              })
+                className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
+              },
+                React.createElement('button', {
+                  onClick: () => {
+                    setCurrentRelease(null);
+                  },
+                  className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
+                }, currentArtist?.name || 'Artist'),
+                React.createElement('span', { className: 'text-gray-300' }, '/'),
+                React.createElement('span', { className: 'text-gray-400 uppercase' }, 'Loading...')
+              ),
+              React.createElement('div')
             ),
             // Two-column layout matching ReleasePage
             React.createElement('div', { className: 'flex gap-0 p-6' },
