@@ -321,6 +321,10 @@ const ResolverCard = React.memo(({
           hasUpdate ? 'bg-orange-500 text-white' : 'bg-white text-green-600'
         }`
       }, hasUpdate ? '↑' : '✓'),
+      // Active checkmark for installed tab (when not in marketplace view and no update)
+      !isInstalled && !hasUpdate && React.createElement('div', {
+        className: 'absolute top-2 right-2 w-6 h-6 bg-white rounded-full flex items-center justify-center text-xs text-green-600'
+      }, '✓'),
       // Update badge for installed tab (top-right, only when not showing installed badge)
       !isInstalled && hasUpdate && React.createElement('div', {
         className: 'absolute top-2 right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs text-white'
@@ -20724,14 +20728,8 @@ React.createElement('div', {
                   metaServices.map(service => {
                     const config = metaServiceConfigs[service.id];
                     const requiresAuth = service.settings?.requiresAuth !== false;
-                    // Determine if service is connected based on service type
-                    const isConnected = service.id === 'lastfm'
-                      ? !!config?.username
-                      : service.id === 'listenbrainz'
-                        ? !!config?.username
-                        : (service.id === 'chatgpt' || service.id === 'gemini')
-                          ? !!(config?.enabled && config?.apiKey)
-                          : !!config;
+                    // All installed meta services show a checkmark
+                    const isConnected = true;
 
                     return React.createElement('div', {
                       key: service.id,
