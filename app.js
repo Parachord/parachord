@@ -2584,7 +2584,7 @@ const Parachord = () => {
 
     // Handle album/playlist URLs
     if (urlType === 'album' || urlType === 'playlist') {
-      await handleCollectionUrlDrop(url, resolverId, urlType);
+      await handleCollectionUrlDrop(url, resolverId, urlType, zone);
       return;
     }
 
@@ -2593,8 +2593,8 @@ const Parachord = () => {
   };
 
   // Handle album or playlist URL drop
-  const handleCollectionUrlDrop = async (url, resolverId, urlType) => {
-    console.log(`📀 Loading ${urlType} from URL:`, url);
+  const handleCollectionUrlDrop = async (url, resolverId, urlType, zone) => {
+    console.log(`📀 Loading ${urlType} from URL (zone: ${zone}):`, url);
 
     try {
       const config = await getResolverConfig(resolverId);
@@ -2623,31 +2623,50 @@ const Parachord = () => {
 
       console.log(`✅ ${urlType} "${collection.name}" loaded with ${tracks.length} tracks`);
 
-      // Show toast notification
-      showToast(`Added ${tracks.length} tracks from "${collection.name}" to queue`);
-
       // Convert all tracks to proper track objects
       const resolvedTracks = tracks.map(trackMeta =>
         createTrackFromMeta(trackMeta, collectionResolverId, url)
       );
 
-      // Add all tracks to queue
-      setCurrentQueue(prev => {
-        const newQueue = [...prev, ...resolvedTracks];
-        return newQueue;
-      });
-
-      // Trigger queue animation
-      triggerQueueAnimation();
-
-      // If nothing is playing, start the first track
       const hasCurrentTrack = currentTrackRef.current !== null;
-      if (!hasCurrentTrack && resolvedTracks.length > 0) {
+
+      // If dropped on now-playing zone, play first track immediately
+      // and add remaining tracks to the BEGINNING of the queue (play next)
+      if (zone === 'now-playing') {
         const firstTrack = resolvedTracks[0];
-        // Remove from queue and set as current
-        setCurrentQueue(prev => prev.slice(1));
+        const remainingTracks = resolvedTracks.slice(1);
+
+        // Show toast notification
+        showToast(`Playing "${collection.name}" (${tracks.length} tracks)`);
+
+        // Add remaining tracks to the BEGINNING of the queue (so they play next)
+        if (remainingTracks.length > 0) {
+          setCurrentQueue(prev => [...remainingTracks, ...prev]);
+        }
+
+        // Play first track immediately
         setCurrentTrack(firstTrack);
         handlePlay(firstTrack);
+
+        // Trigger queue animation if we added tracks
+        if (remainingTracks.length > 0) {
+          triggerQueueAnimation();
+        }
+      } else {
+        // Default behavior: add all tracks to queue
+        showToast(`Added ${tracks.length} tracks from "${collection.name}" to queue`);
+
+        setCurrentQueue(prev => [...prev, ...resolvedTracks]);
+        triggerQueueAnimation();
+
+        // If nothing is playing, start the first track
+        if (!hasCurrentTrack && resolvedTracks.length > 0) {
+          const firstTrack = resolvedTracks[0];
+          // Remove from queue and set as current
+          setCurrentQueue(prev => prev.slice(1));
+          setCurrentTrack(firstTrack);
+          handlePlay(firstTrack);
+        }
       }
 
       // Background resolution: resolve all tracks across all enabled resolvers
@@ -2904,13 +2923,131 @@ const Parachord = () => {
     setIsDraggingUrl(false);
     setDropZoneTarget(null);
 
+    // First, try to parse as internal JSON object (track, album, playlist)
+    const plainText = e.dataTransfer.getData('text/plain');
+    if (plainText) {
+      try {
+        const data = JSON.parse(plainText);
+        if (data.type === 'track' && data.track) {
+          console.log(`🎵 Internal track dropped on ${zone}:`, data.track.title);
+          if (zone === 'now-playing') {
+            // Play immediately
+            setCurrentTrack(data.track);
+            handlePlay(data.track);
+          } else {
+            // Add to queue
+            setCurrentQueue(prev => [...prev, data.track]);
+            triggerQueueAnimation();
+          }
+          return;
+        }
+        if (data.type === 'album' && data.album) {
+          console.log(`📀 Internal album dropped on ${zone}:`, data.album.title);
+          // Fetch album tracks and handle like a collection drop
+          handleInternalAlbumDrop(data.album, zone);
+          return;
+        }
+        if (data.type === 'playlist' && data.playlist) {
+          console.log(`📋 Internal playlist dropped on ${zone}:`, data.playlist.title);
+          // Handle playlist tracks
+          handleInternalPlaylistDrop(data.playlist, zone);
+          return;
+        }
+      } catch (parseError) {
+        // Not JSON, continue to URL handling
+      }
+    }
+
+    // Fall back to URL drop handling
     const url = extractUrlFromDrop(e.dataTransfer);
     if (!url) {
-      console.log('No valid URL in drop');
+      console.log('No valid URL or internal object in drop');
       return;
     }
 
     handleUrlDrop(url, zone);
+  };
+
+  // Handle internal album drop (from within the app)
+  const handleInternalAlbumDrop = async (album, zone) => {
+    // If album has tracks array, use it directly
+    if (album.tracks && album.tracks.length > 0) {
+      const tracks = album.tracks;
+      if (zone === 'now-playing') {
+        showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
+        const firstTrack = tracks[0];
+        const remainingTracks = tracks.slice(1);
+        // Add remaining tracks to BEGINNING of queue (play next)
+        if (remainingTracks.length > 0) {
+          setCurrentQueue(prev => [...remainingTracks, ...prev]);
+        }
+        setCurrentTrack(firstTrack);
+        handlePlay(firstTrack);
+        if (remainingTracks.length > 0) {
+          triggerQueueAnimation();
+        }
+      } else {
+        showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
+        setCurrentQueue(prev => [...prev, ...tracks]);
+        triggerQueueAnimation();
+      }
+      return;
+    }
+
+    // Otherwise, need to fetch the album tracks (e.g., from release page cache)
+    const releaseId = album.id;
+    const cachedRelease = prefetchedReleasesRef.current[releaseId];
+    if (cachedRelease && cachedRelease.tracks) {
+      const tracks = cachedRelease.tracks;
+      if (zone === 'now-playing') {
+        showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
+        const firstTrack = tracks[0];
+        const remainingTracks = tracks.slice(1);
+        // Add remaining tracks to BEGINNING of queue (play next)
+        if (remainingTracks.length > 0) {
+          setCurrentQueue(prev => [...remainingTracks, ...prev]);
+        }
+        setCurrentTrack(firstTrack);
+        handlePlay(firstTrack);
+        if (remainingTracks.length > 0) {
+          triggerQueueAnimation();
+        }
+      } else {
+        showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
+        setCurrentQueue(prev => [...prev, ...tracks]);
+        triggerQueueAnimation();
+      }
+    } else {
+      showToast(`Could not load tracks for "${album.title}"`, 'error');
+    }
+  };
+
+  // Handle internal playlist drop (from within the app)
+  const handleInternalPlaylistDrop = async (playlist, zone) => {
+    const tracks = playlist.tracks || [];
+    if (tracks.length === 0) {
+      showToast(`Playlist "${playlist.title}" has no tracks`, 'error');
+      return;
+    }
+
+    if (zone === 'now-playing') {
+      showToast(`Playing "${playlist.title}" (${tracks.length} tracks)`);
+      const firstTrack = tracks[0];
+      const remainingTracks = tracks.slice(1);
+      // Add remaining tracks to BEGINNING of queue (play next)
+      if (remainingTracks.length > 0) {
+        setCurrentQueue(prev => [...remainingTracks, ...prev]);
+      }
+      setCurrentTrack(firstTrack);
+      handlePlay(firstTrack);
+      if (remainingTracks.length > 0) {
+        triggerQueueAnimation();
+      }
+    } else {
+      showToast(`Added ${tracks.length} tracks from "${playlist.title}" to queue`);
+      setCurrentQueue(prev => [...prev, ...tracks]);
+      triggerQueueAnimation();
+    }
   };
 
   // Drop zone overlay component
@@ -16878,9 +17015,26 @@ useEffect(() => {
                     },
                     className: 'group cursor-pointer'
                   },
-                    // Album art mosaic or placeholder
+                    // Album art mosaic or placeholder (draggable)
                     React.createElement('div', {
-                      className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow'
+                      className: 'relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md group-hover:shadow-lg transition-shadow cursor-grab active:cursor-grabbing',
+                      draggable: true,
+                      onDragStart: (e) => {
+                        const tracksWithIds = (playlist.tracks || []).map(track => {
+                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          return { ...track, id: trackId, sources: {} };
+                        });
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'playlist',
+                          playlist: {
+                            id: playlist.id,
+                            title: playlist.title,
+                            creator: playlist.creator,
+                            tracks: tracksWithIds
+                          }
+                        }));
+                      }
                     },
                       hasCachedCovers ?
                         React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
@@ -17015,6 +17169,23 @@ useEffect(() => {
 
                 return React.createElement('div', {
                   key: playlist.id,
+                  draggable: true,
+                  onDragStart: (e) => {
+                    const tracksWithIds = (playlist.tracks || []).map(track => {
+                      const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                      return { ...track, id: trackId, sources: {} };
+                    });
+                    e.dataTransfer.effectAllowed = 'copy';
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                      type: 'playlist',
+                      playlist: {
+                        id: playlist.id,
+                        title: playlist.title,
+                        creator: playlist.creator,
+                        tracks: tracksWithIds
+                      }
+                    }));
+                  },
                   onClick: (e) => {
                     e.preventDefault();
                     e.stopPropagation();
