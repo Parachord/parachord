@@ -21576,8 +21576,31 @@ React.createElement('div', {
             isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
           }),
           currentTrack ? [
-            React.createElement('button', {
+            React.createElement('div', {
               key: 'album-art-button',
+              draggable: true,
+              onDragStart: (e) => {
+                // Set track data for playlists
+                const trackData = {
+                  type: 'track',
+                  track: {
+                    title: currentTrack.title,
+                    artist: currentTrack.artist,
+                    album: currentTrack.album,
+                    duration: currentTrack.duration,
+                    id: `${currentTrack.artist}-${currentTrack.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                  }
+                };
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('text/plain', JSON.stringify(trackData));
+                // Also set state for immediate access
+                setDraggingTrackForPlaylist(trackData.track);
+              },
+              onDragEnd: () => {
+                setDraggingTrackForPlaylist(null);
+                setDropTargetPlaylistId(null);
+                setDropTargetNewPlaylist(false);
+              },
               onClick: async () => {
                 // Search for the album and open its page
                 if (currentTrack.album && currentTrack.artist) {
@@ -21600,8 +21623,8 @@ React.createElement('div', {
                   }
                 }
               },
-              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
-              title: currentTrack.album ? `Open "${currentTrack.album}"` : 'Album'
+              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-grab active:cursor-grabbing no-drag',
+              title: currentTrack.album ? `Drag to add to playlist • Click to open "${currentTrack.album}"` : 'Drag to add to playlist'
             },
               React.createElement('div', {
                 className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
