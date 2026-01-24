@@ -15354,7 +15354,10 @@ useEffect(() => {
                   className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
                 }, currentArtist?.name || 'Artist'),
                 React.createElement('span', { className: 'text-gray-300' }, '/'),
-                React.createElement('span', { className: 'text-gray-400 uppercase' }, 'Loading...')
+React.createElement('div', {
+                  className: 'h-3 w-24 rounded bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                  style: { backgroundSize: '200% 100%' }
+                })
               ),
               React.createElement('div')
             ),
