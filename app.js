@@ -11652,6 +11652,85 @@ ${tracks}
     }
   };
 
+  // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
+  const getWikipediaBio = async (artistMbid) => {
+    if (!artistMbid) {
+      console.log('📚 Wikipedia bio skipped: no MBID');
+      return null;
+    }
+
+    try {
+      // Step 1: Query MusicBrainz for Wikidata relation
+      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
+      const mbResponse = await fetch(mbUrl, {
+        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
+      });
+
+      if (!mbResponse.ok) {
+        console.log('📚 MusicBrainz artist lookup failed:', mbResponse.status);
+        return null;
+      }
+
+      const mbData = await mbResponse.json();
+
+      // Find Wikidata URL in relations
+      const wikidataRel = mbData.relations?.find(r =>
+        r.type === 'wikidata' && r.url?.resource
+      );
+
+      if (!wikidataRel) {
+        console.log('📚 No Wikidata link found for artist');
+        return null;
+      }
+
+      // Extract Wikidata ID (e.g., "Q1299" from "https://www.wikidata.org/wiki/Q1299")
+      const wikidataUrl = wikidataRel.url.resource;
+      const wikidataId = wikidataUrl.split('/').pop();
+
+      // Step 2: Query Wikidata for Wikipedia article title
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
+      const wdResponse = await fetch(wdUrl);
+
+      if (!wdResponse.ok) {
+        console.log('📚 Wikidata lookup failed:', wdResponse.status);
+        return null;
+      }
+
+      const wdData = await wdResponse.json();
+      const wikiTitle = wdData.entities?.[wikidataId]?.sitelinks?.enwiki?.title;
+
+      if (!wikiTitle) {
+        console.log('📚 No English Wikipedia article found');
+        return null;
+      }
+
+      // Step 3: Fetch Wikipedia article summary
+      const wpUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`;
+      const wpResponse = await fetch(wpUrl);
+
+      if (!wpResponse.ok) {
+        console.log('📚 Wikipedia summary fetch failed:', wpResponse.status);
+        return null;
+      }
+
+      const wpData = await wpResponse.json();
+
+      if (wpData.extract) {
+        console.log('📚 Wikipedia bio fetched successfully');
+        return {
+          bio: wpData.extract,
+          url: wpData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+          source: 'wikipedia'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📚 Failed to fetch Wikipedia bio:', error);
+      return null;
+    }
+  };
+
   // Fetch similar artists from ListenBrainz Labs API
   const getListenBrainzSimilarArtists = async (artistMbid) => {
     if (!artistMbid) {
