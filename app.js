@@ -1513,8 +1513,8 @@ const Parachord = () => {
   const [searchResultsFilterOpen, setSearchResultsFilterOpen] = useState(false); // Filter input open state
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
-  const [activeView, setActiveView] = useState('library');
-  const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
+  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'library'
+  const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
   const [playlists, setPlaylists] = useState([]);
@@ -6766,7 +6766,15 @@ const Parachord = () => {
             setViewHistory(['library', savedLastView.view]);
             console.log(`📦 Restoring last view: ${savedLastView.view}`);
           }
+        } else {
+          // No saved view or invalid - default to library
+          setActiveView('library');
+          setViewHistory(['library']);
         }
+      } else {
+        // No saved view data - default to library
+        setActiveView('library');
+        setViewHistory(['library']);
       }
 
       // Mark settings as loaded so save useEffect knows it's safe to save
@@ -6778,6 +6786,11 @@ const Parachord = () => {
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
+      // Default to library view on error
+      if (activeView === null) {
+        setActiveView('library');
+        setViewHistory(['library']);
+      }
     }
   };
 
