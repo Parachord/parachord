@@ -4162,6 +4162,7 @@ const Parachord = () => {
               // Remove from state
               setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
               // Clear cover cache for deleted playlist
+              delete playlistCoverCache.current[data.playlistId];
               setAllPlaylistCovers(prev => {
                 const updated = { ...prev };
                 delete updated[data.playlistId];
@@ -9069,6 +9070,18 @@ ${tracks}
     if (playlist.sourceUrl) {
       console.log(`⏭️ Skipping save for hosted playlist: ${playlist.title}`);
       return;
+    }
+
+    // Invalidate playlist cover cache when tracks change
+    // This ensures the 2x2 cover grid regenerates with new tracks
+    if (playlistCoverCache.current[playlist.id]) {
+      delete playlistCoverCache.current[playlist.id];
+      // Also clear from UI state so it re-fetches
+      setAllPlaylistCovers(prev => {
+        const updated = { ...prev };
+        delete updated[playlist.id];
+        return updated;
+      });
     }
 
     try {
@@ -16548,6 +16561,7 @@ React.createElement('div', {
                       window.electron.playlists.delete(selectedPlaylist.id);
                       setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
                       // Clear cover cache for this playlist
+                      delete playlistCoverCache.current[selectedPlaylist.id];
                       setAllPlaylistCovers(prev => {
                         const newCovers = { ...prev };
                         delete newCovers[selectedPlaylist.id];
