@@ -20724,11 +20724,14 @@ React.createElement('div', {
                   metaServices.map(service => {
                     const config = metaServiceConfigs[service.id];
                     const requiresAuth = service.settings?.requiresAuth !== false;
+                    // Determine if service is connected based on service type
                     const isConnected = service.id === 'lastfm'
                       ? !!config?.username
                       : service.id === 'listenbrainz'
                         ? !!config?.username
-                        : !!config;
+                        : (service.id === 'chatgpt' || service.id === 'gemini')
+                          ? !!(config?.enabled && config?.apiKey)
+                          : !!config;
 
                     return React.createElement('div', {
                       key: service.id,
