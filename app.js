@@ -11864,6 +11864,59 @@ ${tracks}
     }
   };
 
+  // Fetch artist image from Discogs (fallback when Spotify and Wikipedia have no image)
+  const getDiscogsArtistImage = async (artistMbid, artistName) => {
+    if (!artistName) return null;
+
+    try {
+      const discogsConfig = metaServiceConfigs?.discogs || {};
+      const token = discogsConfig.personalAccessToken;
+
+      const headers = {
+        'User-Agent': 'Parachord/1.0 (https://parachord.app)'
+      };
+      if (token) {
+        headers['Authorization'] = `Discogs token=${token}`;
+      }
+
+      // Search for artist
+      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(artistName)}&type=artist&per_page=5`;
+      const searchResponse = await fetch(searchUrl, { headers });
+
+      if (!searchResponse.ok) return null;
+
+      const searchData = await searchResponse.json();
+
+      if (!searchData.results?.length) return null;
+
+      // Find best match
+      let artistResult = searchData.results.find(r =>
+        r.title?.toLowerCase() === artistName.toLowerCase()
+      ) || searchData.results[0];
+
+      // Fetch full artist profile for images
+      const artistResponse = await fetch(artistResult.resource_url, { headers });
+
+      if (!artistResponse.ok) return null;
+
+      const artistData = await artistResponse.json();
+
+      // Discogs images array - first is primary
+      if (artistData.images?.length > 0) {
+        // Prefer primary image, fall back to first
+        const primaryImage = artistData.images.find(img => img.type === 'primary');
+        const imageUrl = primaryImage?.uri || artistData.images[0].uri;
+        console.log('📀 Discogs artist image found');
+        return imageUrl;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📀 Failed to fetch Discogs artist image:', error);
+      return null;
+    }
+  };
+
   // Fetch artist biography from all sources with priority: Wikipedia > Discogs > Last.fm
   const getArtistBio = async (artistName, artistMbid) => {
     if (!artistName) return null;
