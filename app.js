@@ -21601,6 +21601,16 @@ React.createElement('div', {
                 setDropTargetPlaylistId(null);
                 setDropTargetNewPlaylist(false);
               },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'track',
+                    track: currentTrack,
+                    isNowPlaying: true
+                  });
+                }
+              },
               onClick: async () => {
                 // Search for the album and open its page
                 if (currentTrack.album && currentTrack.artist) {
@@ -21657,7 +21667,20 @@ React.createElement('div', {
                 React.createElement(Music, { size: 20, className: 'text-gray-500' })
               )
             ),
-            React.createElement('div', { key: 'track-info', className: 'min-w-0' },
+            React.createElement('div', {
+              key: 'track-info',
+              className: 'min-w-0',
+              onContextMenu: (e) => {
+                e.preventDefault();
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'track',
+                    track: currentTrack,
+                    isNowPlaying: true
+                  });
+                }
+              }
+            },
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
               // Line 2: Artist name
