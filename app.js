@@ -1581,6 +1581,7 @@ const Parachord = () => {
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
+  const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const [settingsTab, setSettingsTab] = useState('marketplace'); // 'marketplace' | 'installed' | 'general' | 'about'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -5523,95 +5524,111 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
-    // FIRST: Clean up any active polling to prevent race conditions
-    // This must happen BEFORE any async operations to prevent duplicate handleNext calls
-    if (playbackPollerRef.current) {
-      clearInterval(playbackPollerRef.current);
-      playbackPollerRef.current = null;
-    }
-    if (pollingRecoveryRef.current) {
-      clearInterval(pollingRecoveryRef.current);
-      pollingRecoveryRef.current = null;
-    }
-
-    // Notify scrobble manager that current track is ending
-    if (window.scrobbleManager) {
-      window.scrobbleManager.onTrackEnd();
-    }
-
-    // CRITICAL: Reset streaming playback flag when advancing tracks
-    // This ensures browser extension events are not ignored when switching
-    // from a streaming track (Spotify) to a browser track (YouTube/Bandcamp)
-    streamingPlaybackActiveRef.current = false;
-
-    // Stop browser extension playback if active (YouTube external browser)
-    if (browserPlaybackActive && activeExtensionTabId) {
-      console.log('⏹️ Stopping browser playback before next track');
-      window.electron.extension.sendCommand({
-        type: 'command',
-        action: 'pause'
-      });
-      // Store the tab ID to close when next track connects
-      pendingCloseTabIdRef.current = activeExtensionTabId;
-      setBrowserPlaybackActive(false);
-      setActiveExtensionTabId(null);
-    }
-
-    // Close playback window if active (Bandcamp embedded player)
-    if (window.electron?.playbackWindow?.close) {
-      console.log('⏹️ Closing playback window before next track');
-      await window.electron.playbackWindow.close();
-    }
-
-    // Clean up external track timeouts
-    if (externalTrackTimeoutRef.current) {
-      clearTimeout(externalTrackTimeoutRef.current);
-      externalTrackTimeoutRef.current = null;
-    }
-    if (externalTrackIntervalRef.current) {
-      clearInterval(externalTrackIntervalRef.current);
-      externalTrackIntervalRef.current = null;
-    }
-    setIsExternalPlayback(false);
-    setShowExternalPrompt(false);
-    setPendingExternalTrack(null);
-
-    // Always use our local queue for navigation
-    // (Spotify doesn't know about our queue - tracks may resolve to different services)
-    // Use refs to get current values (avoids stale closure when called from event handlers)
-    const queue = currentQueueRef.current;
-    const track = currentTrackRef.current;
-
-    if (queue.length === 0) {
-      console.log('No queue set, cannot go to next track');
+    // RE-ENTRANCY GUARD: Prevent multiple simultaneous handleNext() calls
+    // This can happen when events fire in rapid succession (e.g., tab close + ended event)
+    if (isAdvancingTrackRef.current) {
+      console.log('⚠️ handleNext() already in progress, skipping duplicate call');
       return;
     }
+    isAdvancingTrackRef.current = true;
 
-    console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", queueLength=${queue.length}`);
+    try {
+      // FIRST: Clean up any active polling to prevent race conditions
+      // This must happen BEFORE any async operations to prevent duplicate handleNext calls
+      if (playbackPollerRef.current) {
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
 
-    // Queue represents upcoming tracks - current track is NOT in the queue
-    // Find the first playable track in the queue
-    const nextTrackIndex = queue.findIndex(t => t.status !== 'error');
+      // Notify scrobble manager that current track is ending
+      if (window.scrobbleManager) {
+        window.scrobbleManager.onTrackEnd();
+      }
 
-    if (nextTrackIndex === -1) {
-      console.log('⚠️ No playable tracks in queue');
-      return;
+      // CRITICAL: Reset streaming playback flag when advancing tracks
+      // This ensures browser extension events are not ignored when switching
+      // from a streaming track (Spotify) to a browser track (YouTube/Bandcamp)
+      streamingPlaybackActiveRef.current = false;
+
+      // Stop browser extension playback if active (YouTube external browser)
+      if (browserPlaybackActive && activeExtensionTabId) {
+        console.log('⏹️ Stopping browser playback before next track');
+        window.electron.extension.sendCommand({
+          type: 'command',
+          action: 'pause'
+        });
+        // Store the tab ID to close when next track connects
+        pendingCloseTabIdRef.current = activeExtensionTabId;
+        setBrowserPlaybackActive(false);
+        setActiveExtensionTabId(null);
+      }
+
+      // Close playback window if active (Bandcamp embedded player)
+      if (window.electron?.playbackWindow?.close) {
+        console.log('⏹️ Closing playback window before next track');
+        await window.electron.playbackWindow.close();
+      }
+
+      // Clean up external track timeouts
+      if (externalTrackTimeoutRef.current) {
+        clearTimeout(externalTrackTimeoutRef.current);
+        externalTrackTimeoutRef.current = null;
+      }
+      if (externalTrackIntervalRef.current) {
+        clearInterval(externalTrackIntervalRef.current);
+        externalTrackIntervalRef.current = null;
+      }
+      setIsExternalPlayback(false);
+      setShowExternalPrompt(false);
+      setPendingExternalTrack(null);
+
+      // Always use our local queue for navigation
+      // (Spotify doesn't know about our queue - tracks may resolve to different services)
+      // Use refs to get current values (avoids stale closure when called from event handlers)
+      const queue = currentQueueRef.current;
+      const track = currentTrackRef.current;
+
+      if (queue.length === 0) {
+        console.log('No queue set, cannot go to next track');
+        return;
+      }
+
+      console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", queueLength=${queue.length}`);
+
+      // Queue represents upcoming tracks - current track is NOT in the queue
+      // Find the first playable track in the queue
+      const nextTrackIndex = queue.findIndex(t => t.status !== 'error');
+
+      if (nextTrackIndex === -1) {
+        console.log('⚠️ No playable tracks in queue');
+        return;
+      }
+
+      const nextTrack = queue[nextTrackIndex];
+
+      // Push current track to history before moving to next (for "previous" navigation)
+      if (track) {
+        playHistoryRef.current = [...playHistoryRef.current, track];
+        console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
+      }
+
+      // Remove the track we're about to play from the queue
+      const newQueue = queue.filter((_, index) => index !== nextTrackIndex);
+      setCurrentQueue(newQueue);
+
+      console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
+      handlePlay(nextTrack);
+    } finally {
+      // Reset re-entrancy guard after a short delay to allow state updates to propagate
+      // This prevents immediate re-entry but allows subsequent legitimate calls
+      setTimeout(() => {
+        isAdvancingTrackRef.current = false;
+      }, 100);
     }
-
-    const nextTrack = queue[nextTrackIndex];
-
-    // Push current track to history before moving to next (for "previous" navigation)
-    if (track) {
-      playHistoryRef.current = [...playHistoryRef.current, track];
-      console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
-    }
-
-    // Remove the track we're about to play from the queue
-    const newQueue = queue.filter((_, index) => index !== nextTrackIndex);
-    setCurrentQueue(newQueue);
-
-    console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
-    handlePlay(nextTrack);
   };
 
   // Keep handleNextRef in sync so event handlers always call the latest version
