@@ -83,6 +83,7 @@ function createWindow() {
     titleBarStyle: 'hidden',
     frame: true,
     backgroundColor: '#0f172a',
+    icon: path.join(__dirname, 'assets/icons/icon512.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

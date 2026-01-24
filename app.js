@@ -321,6 +321,10 @@ const ResolverCard = React.memo(({
           hasUpdate ? 'bg-orange-500 text-white' : 'bg-white text-green-600'
         }`
       }, hasUpdate ? '↑' : '✓'),
+      // Active checkmark for installed tab (when not in marketplace view and no update)
+      !isInstalled && !hasUpdate && React.createElement('div', {
+        className: 'absolute top-2 right-2 w-6 h-6 bg-white rounded-full flex items-center justify-center text-xs text-green-600'
+      }, '✓'),
       // Update badge for installed tab (top-right, only when not showing installed badge)
       !isInstalled && hasUpdate && React.createElement('div', {
         className: 'absolute top-2 right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-xs text-white'
@@ -1513,8 +1517,8 @@ const Parachord = () => {
   const [searchResultsFilterOpen, setSearchResultsFilterOpen] = useState(false); // Filter input open state
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
-  const [activeView, setActiveView] = useState('library');
-  const [viewHistory, setViewHistory] = useState(['library']); // Navigation history for back button
+  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'library'
+  const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
   const [playlists, setPlaylists] = useState([]);
@@ -4158,6 +4162,7 @@ const Parachord = () => {
               // Remove from state
               setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
               // Clear cover cache for deleted playlist
+              delete playlistCoverCache.current[data.playlistId];
               setAllPlaylistCovers(prev => {
                 const updated = { ...prev };
                 delete updated[data.playlistId];
@@ -6766,7 +6771,15 @@ const Parachord = () => {
             setViewHistory(['library', savedLastView.view]);
             console.log(`📦 Restoring last view: ${savedLastView.view}`);
           }
+        } else {
+          // No saved view or invalid - default to library
+          setActiveView('library');
+          setViewHistory(['library']);
         }
+      } else {
+        // No saved view data - default to library
+        setActiveView('library');
+        setViewHistory(['library']);
       }
 
       // Mark settings as loaded so save useEffect knows it's safe to save
@@ -6778,6 +6791,11 @@ const Parachord = () => {
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
+      // Default to library view on error
+      if (activeView === null) {
+        setActiveView('library');
+        setViewHistory(['library']);
+      }
     }
   };
 
@@ -9054,6 +9072,18 @@ ${tracks}
       return;
     }
 
+    // Invalidate playlist cover cache when tracks change
+    // This ensures the 2x2 cover grid regenerates with new tracks
+    if (playlistCoverCache.current[playlist.id]) {
+      delete playlistCoverCache.current[playlist.id];
+      // Also clear from UI state so it re-fetches
+      setAllPlaylistCovers(prev => {
+        const updated = { ...prev };
+        delete updated[playlist.id];
+        return updated;
+      });
+    }
+
     try {
       // Generate XSPF content for the playlist
       const xspfContent = generateXSPF(playlist);
@@ -9095,9 +9125,17 @@ ${tracks}
       items.forEach(item => {
         const titleText = item.querySelector('title')?.textContent || '';
         const link = item.querySelector('link')?.textContent || '';
-        const description = item.querySelector('description')?.textContent || '';
-        const score = item.querySelector('creator')?.textContent || ''; // dc:creator contains score
+        const descriptionRaw = item.querySelector('description')?.textContent || '';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
+
+        // Extract Spotify URL from description before stripping HTML
+        const spotifyMatch = descriptionRaw.match(/href="(https:\/\/open\.spotify\.com\/album\/[^"]+)"/);
+        const spotifyUrl = spotifyMatch ? spotifyMatch[1] : null;
+
+        // Strip HTML tags and remove any remaining Spotify URLs from the synopsis
+        let description = descriptionRaw.replace(/<[^>]*>/g, '').trim();
+        // Remove plain text Spotify URLs that might remain after HTML stripping
+        description = description.replace(/https:\/\/open\.spotify\.com\/album\/\S+/g, '').trim();
 
         // Parse "Album by Artist" format
         // Examples: "Valentine by Courtney Marie Andrews", "Tragic Magic by Julianna Barwick & Mary Lattimore"
@@ -9119,9 +9157,9 @@ ${tracks}
             id: `critics-${artist}-${album}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
             artist: artist,
             title: album,
-            score: parseInt(score) || null,
             link: link,
             description: description,
+            spotifyUrl: spotifyUrl,
             pubDate: pubDate ? new Date(pubDate) : null,
             albumArt: undefined // undefined = loading, null = no art found, string = art URL
           });
@@ -9245,7 +9283,7 @@ ${tracks}
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
-      const response = await fetch('https://fetchrss.com/rss/6749eb6afa8030e1220ad6736749eb5b3c110a8c250ae1c2.xml');
+      const response = await fetch('https://www.rssground.com/p/uncoveries');
       if (!response.ok) {
         throw new Error(`Failed to fetch RSS: ${response.status}`);
       }
@@ -11818,8 +11856,9 @@ ${tracks}
     console.log(`🎸 Finished fetching related artist images`);
   };
 
-  // Get 4 unique album covers for a playlist's 2x2 grid display
-  // Returns array of up to 4 album art URLs, using cache when available
+  // Get 4 unique covers for a playlist's 2x2 grid display
+  // Prioritizes album art, falls back to artist images
+  // Returns array of up to 4 image URLs, using cache when available
   const getPlaylistCovers = async (playlistId, tracks) => {
     // Check cache first
     const cached = playlistCoverCache.current[playlistId];
@@ -11827,29 +11866,47 @@ ${tracks}
       return cached.covers;
     }
 
-    // Collect unique album art URLs from tracks
-    const seenAlbums = new Set();
+    // Collect unique covers from tracks
+    const seenAlbums = new Set(); // Albums we've already tried
+    const seenArtists = new Set(); // Artists we've already used for images
     const covers = [];
 
     for (const track of tracks) {
       if (covers.length >= 4) break;
 
-      // Create a unique key for the album to avoid duplicates
-      const albumKey = `${track.artist}-${track.album}`.toLowerCase();
-      if (seenAlbums.has(albumKey)) continue;
-      seenAlbums.add(albumKey);
+      let foundCover = false;
 
-      // If track already has albumArt, use it
-      if (track.albumArt) {
-        covers.push(track.albumArt);
-        continue;
+      // First try album art if we have album info
+      if (track.album && track.artist) {
+        const albumKey = `${track.artist}-${track.album}`.toLowerCase();
+        if (!seenAlbums.has(albumKey)) {
+          seenAlbums.add(albumKey);
+
+          // If track already has albumArt, use it
+          if (track.albumArt) {
+            covers.push(track.albumArt);
+            foundCover = true;
+          } else {
+            // Try to fetch album art
+            const artUrl = await getAlbumArt(track.artist, track.album);
+            if (artUrl) {
+              covers.push(artUrl);
+              foundCover = true;
+            }
+          }
+        }
       }
 
-      // Otherwise try to fetch it
-      if (track.artist && track.album) {
-        const artUrl = await getAlbumArt(track.artist, track.album);
-        if (artUrl) {
-          covers.push(artUrl);
+      // Fall back to artist image if no album art found for this track
+      if (!foundCover && track.artist) {
+        const artistKey = track.artist.toLowerCase();
+        if (!seenArtists.has(artistKey)) {
+          seenArtists.add(artistKey);
+
+          const artistResult = await getArtistImage(track.artist);
+          if (artistResult?.url) {
+            covers.push(artistResult.url);
+          }
         }
       }
     }
@@ -16507,6 +16564,7 @@ React.createElement('div', {
                       window.electron.playlists.delete(selectedPlaylist.id);
                       setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
                       // Clear cover cache for this playlist
+                      delete playlistCoverCache.current[selectedPlaylist.id];
                       setAllPlaylistCovers(prev => {
                         const newCovers = { ...prev };
                         delete newCovers[selectedPlaylist.id];
@@ -17054,18 +17112,20 @@ React.createElement('div', {
                               'bg-gradient-to-br from-amber-400 to-orange-500',
                               'bg-gradient-to-br from-emerald-400 to-teal-500'
                             ];
-                            return covers[idx] ?
-                              React.createElement('img', {
-                                key: idx,
+                            return React.createElement('div', {
+                              key: idx,
+                              className: `relative w-full h-full ${gradients[idx]} flex items-center justify-center`
+                            },
+                              !covers[idx] && React.createElement(Music, { size: 20, className: 'text-white/70' }),
+                              covers[idx] && React.createElement('img', {
                                 src: covers[idx],
                                 alt: '',
-                                className: 'w-full h-full object-cover'
+                                className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                                style: { opacity: 0 },
+                                ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                                onLoad: (e) => { e.target.style.opacity = '1'; }
                               })
-                            :
-                              React.createElement('div', {
-                                key: idx,
-                                className: `w-full h-full ${gradients[idx]} flex items-center justify-center`
-                              }, React.createElement(Music, { size: 20, className: 'text-white/70' }));
+                            );
                           })
                         )
                       :
@@ -17230,18 +17290,19 @@ React.createElement('div', {
                             'bg-gradient-to-br from-amber-400 to-orange-500',
                             'bg-gradient-to-br from-emerald-400 to-teal-500'
                           ];
-                          return covers[idx] ?
-                            React.createElement('img', {
-                              key: idx,
+                          return React.createElement('div', {
+                            key: idx,
+                            className: `relative w-full h-full ${gradients[idx]}`
+                          },
+                            covers[idx] && React.createElement('img', {
                               src: covers[idx],
                               alt: '',
-                              className: 'w-full h-full object-cover'
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              style: { opacity: 0 },
+                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                              onLoad: (e) => { e.target.style.opacity = '1'; }
                             })
-                          :
-                            React.createElement('div', {
-                              key: idx,
-                              className: `w-full h-full ${gradients[idx]}`
-                            });
+                          );
                         })
                       )
                     :
@@ -18666,25 +18727,38 @@ React.createElement('div', {
           },
             // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
             (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              className: 'space-y-4 pb-6'
             },
-            Array.from({ length: 15 }).map((_, i) =>
-              React.createElement('div', { key: `skeleton-${i}` },
+            Array.from({ length: 8 }).map((_, i) =>
+              React.createElement('div', {
+                key: `skeleton-${i}`,
+                className: 'flex gap-5 p-4 bg-white rounded-xl border border-gray-100'
+              },
                 // Skeleton album art
                 React.createElement('div', {
-                  className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                  className: 'w-28 h-28 flex-shrink-0 rounded-lg bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
                   style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                 }),
-                // Skeleton title
-                React.createElement('div', { className: 'space-y-2' },
+                // Skeleton content
+                React.createElement('div', { className: 'flex-1 space-y-3 py-1' },
                   React.createElement('div', {
-                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                    className: 'h-5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-2/5 animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                   }),
                   React.createElement('div', {
-                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/4 animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  })
+                  }),
+                  React.createElement('div', { className: 'space-y-2 pt-2' },
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-full animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-4/5 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
+                    })
+                  )
                 )
               )
             )
@@ -18711,94 +18785,99 @@ React.createElement('div', {
             }
 
             return React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
+              className: 'space-y-4 pb-6'
             },
               sorted.map(album =>
               React.createElement('div', {
                 key: album.id,
-                className: 'group cursor-pointer',
+                className: 'group flex gap-5 p-4 bg-white rounded-xl border border-gray-100 hover:border-purple-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing',
+                draggable: true,
+                onDragStart: (e) => {
+                  e.dataTransfer.effectAllowed = 'copy';
+                  const albumData = {
+                    type: 'album',
+                    album: {
+                      id: album.id,
+                      title: album.title,
+                      artist: album.artist,
+                      year: album.pubDate ? album.pubDate.getFullYear() : null,
+                      art: album.albumArt || null
+                    }
+                  };
+                  e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
+                },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
                 onClick: () => openCriticsPicksAlbum(album)
               },
-                // Album art with hover overlay
-                // States: shimmer (fetching URL), placeholder (no art found), image (URL exists)
+                // Album art - left column
+                // States: undefined = loading (shimmer), null = no art (placeholder), string = has art
                 React.createElement('div', {
-                  className: `aspect-square rounded-lg overflow-hidden mb-3 relative ${
-                    // Purple gradient for failed lookups (null) - shows placeholder icon
+                  className: `w-28 h-28 flex-shrink-0 rounded-lg overflow-hidden relative ${
                     album.albumArt === null
                       ? 'bg-gradient-to-br from-purple-500 to-pink-500'
-                      // Shimmer while fetching OR while image loads from URL
-                      : 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                      : album.albumArt === undefined
+                        ? 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer'
+                        : 'bg-gray-100'
                   }`,
-                  style: album.albumArt === null ? {} : { backgroundSize: '200% 100%' }
+                  style: album.albumArt === undefined ? { backgroundSize: '200% 100%' } : {}
                 },
-                  // Placeholder - only show when art fetch completed with no result (null)
+                  // Placeholder icon - only show when art fetch completed with no result (null)
                   album.albumArt === null && React.createElement('div', {
                     className: 'absolute inset-0 flex items-center justify-center text-white/60'
                   },
-                    React.createElement('svg', { className: 'w-16 h-16', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
+                    React.createElement('svg', { className: 'w-12 h-12', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1 },
                       React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
                       React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
                       React.createElement('circle', { cx: 12, cy: 12, r: 6, strokeDasharray: '2 2' })
                     )
                   ),
-                  album.albumArt && typeof album.albumArt === 'string' && React.createElement('img', {
+                  // Image - show when we have a URL string
+                  typeof album.albumArt === 'string' && React.createElement('img', {
                     src: album.albumArt,
                     alt: album.title,
-                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-opacity duration-300',
+                    className: 'absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-all duration-300',
                     style: { opacity: 0 },
                     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                     onLoad: (e) => { e.target.style.opacity = '1'; },
                     onError: (e) => { e.target.style.display = 'none'; }
                   }),
-                  // Metacritic score badge
-                  album.score && React.createElement('div', {
-                    className: `absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold ${
-                      album.score >= 80 ? 'bg-green-500 text-white' :
-                      album.score >= 60 ? 'bg-yellow-500 text-black' :
-                      'bg-red-500 text-white'
-                    }`
-                  }, album.score),
-                  // Hover overlay with Add to Queue button
+                  // Play overlay on hover
                   React.createElement('div', {
-                    className: 'absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center'
                   },
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
                         addCriticsPicksToQueue(album);
                       },
-                      className: 'bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg'
+                      className: 'w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform'
                     },
                       React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
+                        className: 'w-5 h-5 text-gray-900 ml-0.5',
+                        fill: 'currentColor',
+                        viewBox: '0 0 24 24'
                       },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          strokeWidth: 2,
-                          d: 'M12 4v16m8-8H4'
-                        })
-                      ),
-                      'Add to Queue'
+                        React.createElement('path', { d: 'M8 5v14l11-7z' })
+                      )
                     )
                   )
                 ),
-                // Album info
-                React.createElement('div', { className: 'space-y-1' },
+                // Album info - right column
+                React.createElement('div', { className: 'flex-1 min-w-0 flex flex-col justify-center' },
                   React.createElement('div', {
-                    className: 'font-medium text-gray-900 truncate group-hover:text-purple-600 transition-colors'
+                    className: 'font-semibold text-gray-900 truncate group-hover:text-purple-600 transition-colors text-lg'
                   }, album.title),
                   React.createElement('div', {
-                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                    className: 'text-sm text-gray-500 truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors mt-0.5',
                     onClick: (e) => {
                       e.stopPropagation();
                       fetchArtistData(album.artist);
                     }
-                  }, album.artist)
+                  }, album.artist),
+                  // Synopsis
+                  album.description && React.createElement('p', {
+                    className: 'text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed'
+                  }, album.description)
                 )
               )
             )
@@ -20685,11 +20764,8 @@ React.createElement('div', {
                   metaServices.map(service => {
                     const config = metaServiceConfigs[service.id];
                     const requiresAuth = service.settings?.requiresAuth !== false;
-                    const isConnected = service.id === 'lastfm'
-                      ? !!config?.username
-                      : service.id === 'listenbrainz'
-                        ? !!config?.username
-                        : !!config;
+                    // All installed meta services show a checkmark
+                    const isConnected = true;
 
                     return React.createElement('div', {
                       key: service.id,
@@ -20873,118 +20949,6 @@ React.createElement('div', {
 
               // Settings sections
               React.createElement('div', { className: 'space-y-8' },
-                // AI Integration Section
-                React.createElement('div', {
-                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
-                },
-                  React.createElement('div', { className: 'mb-5' },
-                    React.createElement('h3', {
-                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
-                    }, 'AI Integration'),
-                    React.createElement('p', {
-                      className: 'text-xs text-gray-500 mt-1'
-                    }, 'Connect AI services to generate playlists from natural language prompts')
-                  ),
-
-                  // AI Service cards (meta services with generate capability)
-                  React.createElement('div', { className: 'space-y-4' },
-                    metaServices.filter(s => s.capabilities?.generate).map(service => {
-                      const config = metaServiceConfigs[service.id] || {};
-                      const isEnabled = config.enabled;
-
-                      return React.createElement('div', {
-                        key: service.id,
-                        className: `border rounded-lg transition-all ${isEnabled ? 'border-purple-200 bg-purple-50/30' : 'border-gray-200 bg-gray-50'}`
-                      },
-                        // Header row
-                        React.createElement('div', {
-                          className: 'flex items-center justify-between p-4'
-                        },
-                          React.createElement('div', { className: 'flex items-center gap-3' },
-                            React.createElement('span', {
-                              className: 'text-xl',
-                              style: { color: service.color }
-                            }, service.icon),
-                            React.createElement('div', null,
-                              React.createElement('span', { className: 'font-medium text-gray-900' }, service.name),
-                              React.createElement('p', { className: 'text-xs text-gray-500' }, service.description)
-                            )
-                          ),
-                          React.createElement('button', {
-                            onClick: () => {
-                              const newEnabled = !isEnabled;
-                              // Persist config to metaServiceConfigs
-                              saveMetaServiceConfig(service.id, { ...config, enabled: newEnabled });
-                            },
-                            className: `px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                              isEnabled
-                                ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                            }`
-                          }, isEnabled ? 'Enabled' : 'Disabled')
-                        ),
-
-                        // Config section (only when enabled)
-                        isEnabled && React.createElement('div', { className: 'px-4 pb-4 space-y-4 border-t border-gray-100 pt-4' },
-                          // API Key
-                          React.createElement('div', null,
-                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'API Key'),
-                            React.createElement('div', { className: 'relative' },
-                              React.createElement('input', {
-                                type: 'password',
-                                value: config.apiKey || '',
-                                onChange: (e) => {
-                                  saveMetaServiceConfig(service.id, { ...config, apiKey: e.target.value });
-                                },
-                                placeholder: service.id === 'chatgpt' ? 'sk-...' : 'AIza...',
-                                className: 'w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
-                              })
-                            ),
-                            React.createElement('a', {
-                              href: '#',
-                              onClick: (e) => {
-                                e.preventDefault();
-                                const url = service.id === 'chatgpt'
-                                  ? 'https://platform.openai.com/api-keys'
-                                  : 'https://aistudio.google.com/app/apikey';
-                                window.electron?.shell?.openExternal?.(url);
-                              },
-                              className: 'text-xs text-purple-600 hover:text-purple-700 mt-1 inline-block'
-                            }, 'Get your API key →')
-                          ),
-
-                          // Model selector
-                          React.createElement('div', null,
-                            React.createElement('label', { className: 'block text-sm font-medium text-gray-700 mb-1' }, 'Model'),
-                            React.createElement('select', {
-                              value: config.model || (service.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
-                              onChange: (e) => {
-                                saveMetaServiceConfig(service.id, { ...config, model: e.target.value });
-                              },
-                              className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white'
-                            },
-                              service.id === 'chatgpt' ? [
-                                React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
-                                React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
-                                React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
-                              ] : [
-                                React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
-                                React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
-                              ]
-                            )
-                          )
-                        )
-                      );
-                    })
-                  ),
-
-                  // No AI services message
-                  metaServices.filter(s => s.capabilities?.generate).length === 0 &&
-                    React.createElement('p', { className: 'text-sm text-gray-500 italic' },
-                      'No AI plugins installed. AI plugins will appear here when available.'
-                    )
-                ),
-
                 // Cache Management Section
                 React.createElement('div', {
                   className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
@@ -21425,36 +21389,11 @@ React.createElement('div', {
               className: 'flex flex-col items-center justify-center py-12'
             },
               // Parachord Logo
-              React.createElement('svg', {
-                width: '280',
-                height: '70',
-                viewBox: '0 0 974 245',
-                fill: 'none',
-                xmlns: 'http://www.w3.org/2000/svg',
-                className: 'mb-6'
-              },
-                React.createElement('path', { d: 'M705.5 96C729.725 96 750.5 116.846 750.5 144C750.5 171.154 729.725 192 705.5 192C681.275 192 660.5 171.154 660.5 144C660.5 116.846 681.275 96 705.5 96Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('path', { d: 'M178.5 89C202.725 89 223.5 109.846 223.5 137C223.5 164.154 202.725 185 178.5 185C154.275 185 133.5 164.154 133.5 137C133.5 109.846 154.275 89 178.5 89Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '212', y: '75.5', width: '25', height: '123', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M365.5 93C389.725 93 410.5 113.846 410.5 141C410.5 168.154 389.725 189 365.5 189C341.275 189 320.5 168.154 320.5 141C320.5 113.846 341.275 93 365.5 93Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '399', y: '79.5', width: '25', height: '123', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M58.5 89C82.7246 89 103.5 109.846 103.5 137C103.5 164.154 82.7246 185 58.5 185C34.2754 185 13.5 164.154 13.5 137C13.5 109.846 34.2754 89 58.5 89Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { y: '141.5', width: '25', height: '90', fill: 'currentColor' }),
-                React.createElement('rect', { x: '248', y: '138.5', width: '27', height: '60', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M248 138.5C248 103.706 274.191 75.5 306.5 75.5C306.667 75.5 306.833 75.5024 307 75.5039L307 102.508C306.833 102.505 306.667 102.5 306.5 102.5C291.195 102.5 275.499 116.258 275.012 137.483L275 138.5L248 138.5Z', fill: 'currentColor' }),
-                React.createElement('rect', { x: '769', y: '142.5', width: '27', height: '60', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M769 142.5C769 107.706 795.191 79.5 827.5 79.5C827.667 79.5 827.833 79.5024 828 79.5039L828 106.508C827.833 106.505 827.667 106.5 827.5 106.5C812.195 106.5 796.499 120.258 796.012 141.483L796 142.5L769 142.5Z', fill: 'currentColor' }),
-                React.createElement('rect', { x: '617', y: '142.5', width: '25', height: '60', fill: 'currentColor' }),
-                React.createElement('rect', { x: '538', y: '36.3779', width: '25', height: '165', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M563 28.5V41L538 36.3779L563 28.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M589.702 82.5C616.533 82.5 639.054 108.771 641.898 142.5H616.816C614.171 118.264 598.459 107.5 589.702 107.5C581.176 107.5 565.661 118.003 563.075 142.5H538C540.787 108.771 562.871 82.5 589.702 82.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M488.5 79.5C506.518 79.5 522.632 88.0639 533.363 101.53L509.492 115.312C503.729 109.727 496.204 106.5 488.5 106.5C472.36 106.5 457 120.658 457 141C457 161.342 472.36 175.5 488.5 175.5C496.205 175.5 503.729 172.272 509.492 166.688L533.363 180.469C522.632 193.935 506.518 202.5 488.5 202.5C456.191 202.5 430 174.966 430 141C430 107.034 456.191 79.5 488.5 79.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M25 231.5L6.8343e-07 245L-6.11959e-07 231L0 217L25 231.5Z', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M893.011 191.341C868.787 191.577 847.81 170.935 847.545 143.782C847.28 116.63 867.851 95.5818 892.075 95.3456C916.298 95.1094 937.276 115.752 937.541 142.905C937.805 170.057 917.234 191.105 893.011 191.341Z', stroke: 'currentColor', strokeWidth: '27' }),
-                React.createElement('rect', { x: '950.995', y: '138.273', width: '25', height: '100.266', transform: 'rotate(179.441 950.995 138.273)', fill: 'currentColor' }),
-                React.createElement('path', { d: 'M974.001 27L925.251 55.1458L924.5 0L974.001 27Z', fill: '#FF0000' }),
-                React.createElement('line', { x1: '924.822', y1: '55.1746', x2: '950.699', y2: '40.9495', stroke: 'white' })
-              ),
+              React.createElement('img', {
+                src: './assets/logo-wordmark.png',
+                alt: 'Parachord',
+                className: 'h-16 mb-6'
+              }),
 
               // Version
               React.createElement('p', { className: 'text-lg text-gray-600 mb-2' }, 'Version 1.0.0'),
@@ -21601,8 +21540,41 @@ React.createElement('div', {
             isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
           }),
           currentTrack ? [
-            React.createElement('button', {
+            React.createElement('div', {
               key: 'album-art-button',
+              draggable: true,
+              onDragStart: (e) => {
+                // Set track data for playlists
+                const trackData = {
+                  type: 'track',
+                  track: {
+                    title: currentTrack.title,
+                    artist: currentTrack.artist,
+                    album: currentTrack.album,
+                    duration: currentTrack.duration,
+                    id: `${currentTrack.artist}-${currentTrack.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                  }
+                };
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('text/plain', JSON.stringify(trackData));
+                // Also set state for immediate access
+                setDraggingTrackForPlaylist(trackData.track);
+              },
+              onDragEnd: () => {
+                setDraggingTrackForPlaylist(null);
+                setDropTargetPlaylistId(null);
+                setDropTargetNewPlaylist(false);
+              },
+              onContextMenu: (e) => {
+                e.preventDefault();
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'track',
+                    track: currentTrack,
+                    isNowPlaying: true
+                  });
+                }
+              },
               onClick: async () => {
                 // Search for the album and open its page
                 if (currentTrack.album && currentTrack.artist) {
@@ -21625,8 +21597,8 @@ React.createElement('div', {
                   }
                 }
               },
-              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
-              title: currentTrack.album ? `Open "${currentTrack.album}"` : 'Album'
+              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-grab active:cursor-grabbing no-drag',
+              title: currentTrack.album ? `Drag to add to playlist • Click to open "${currentTrack.album}"` : 'Drag to add to playlist'
             },
               React.createElement('div', {
                 className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
@@ -21659,7 +21631,20 @@ React.createElement('div', {
                 React.createElement(Music, { size: 20, className: 'text-gray-500' })
               )
             ),
-            React.createElement('div', { key: 'track-info', className: 'min-w-0' },
+            React.createElement('div', {
+              key: 'track-info',
+              className: 'min-w-0',
+              onContextMenu: (e) => {
+                e.preventDefault();
+                if (window.electron?.contextMenu?.showTrackMenu) {
+                  window.electron.contextMenu.showTrackMenu({
+                    type: 'track',
+                    track: currentTrack,
+                    isNowPlaying: true
+                  });
+                }
+              }
+            },
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
               // Line 2: Artist name

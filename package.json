@@ -49,18 +49,21 @@
     ],
     "mac": {
       "category": "public.app-category.music",
+      "icon": "assets/icons/icon.icns",
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "icon": "assets/icons/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "linux": {
+      "icon": "assets/icons",
       "target": [
         "AppImage",
         "deb",
