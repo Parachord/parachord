@@ -11728,6 +11728,59 @@ ${tracks}
     }
   };
 
+  // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
+  const getWikipediaArtistImage = async (artistMbid) => {
+    if (!artistMbid) return null;
+
+    try {
+      // Step 1: Get Wikidata ID via MusicBrainz
+      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
+      const mbResponse = await fetch(mbUrl, {
+        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
+      });
+
+      if (!mbResponse.ok) return null;
+
+      const mbData = await mbResponse.json();
+      const wikidataRel = mbData.relations?.find(r =>
+        r.type === 'wikidata' && r.url?.resource
+      );
+
+      if (!wikidataRel) return null;
+
+      const wikidataId = wikidataRel.url.resource.split('/').pop();
+
+      // Step 2: Get Wikipedia article title
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
+      const wdResponse = await fetch(wdUrl);
+
+      if (!wdResponse.ok) return null;
+
+      const wdData = await wdResponse.json();
+      const wikiTitle = wdData.entities?.[wikidataId]?.sitelinks?.enwiki?.title;
+
+      if (!wikiTitle) return null;
+
+      // Step 3: Fetch Wikipedia page summary (includes thumbnail)
+      const wpUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`;
+      const wpResponse = await fetch(wpUrl);
+
+      if (!wpResponse.ok) return null;
+
+      const wpData = await wpResponse.json();
+
+      if (wpData.thumbnail?.source) {
+        console.log('📚 Wikipedia artist image found');
+        return wpData.thumbnail.source;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📚 Failed to fetch Wikipedia artist image:', error);
+      return null;
+    }
+  };
+
   // Fetch artist biography from Discogs (uses MBID or artist name)
   const getDiscogsBio = async (artistMbid, artistName) => {
     if (!artistMbid && !artistName) {
