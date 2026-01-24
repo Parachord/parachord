@@ -1442,6 +1442,9 @@ const Parachord = () => {
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
+  // Album art crossfade state for smooth transitions in playbar
+  const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
+  const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
@@ -2334,6 +2337,30 @@ const Parachord = () => {
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
+
+  // Handle album art crossfade transitions in playbar
+  useEffect(() => {
+    const newArt = currentTrack?.albumArt || null;
+    const prevArt = playbarAlbumArtRef.current;
+
+    if (newArt !== prevArt) {
+      // Album art changed - trigger crossfade
+      setPlaybarAlbumArt({
+        current: newArt,
+        previous: prevArt,
+        isLoaded: !newArt // If no new art, mark as loaded immediately
+      });
+      playbarAlbumArtRef.current = newArt;
+
+      // Clear previous art after transition completes to free memory
+      if (prevArt) {
+        const clearPrevious = setTimeout(() => {
+          setPlaybarAlbumArt(prev => ({ ...prev, previous: null }));
+        }, 400); // Slightly longer than transition duration
+        return () => clearTimeout(clearPrevious);
+      }
+    }
+  }, [currentTrack?.albumArt]);
 
   // Scroll queue to bottom when opened (so track 1 is visible at the bottom)
   useEffect(() => {
@@ -21167,10 +21194,28 @@ useEffect(() => {
                 className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
                 style: { width: '61px', height: '61px' }
               },
-                currentTrack.albumArt && React.createElement('img', {
-                  src: currentTrack.albumArt,
+                // Previous album art (fading out)
+                playbarAlbumArt.previous && React.createElement('img', {
+                  key: 'prev-art-' + playbarAlbumArt.previous,
+                  src: playbarAlbumArt.previous,
+                  alt: '',
+                  className: 'absolute inset-0 w-full h-full object-cover',
+                  style: {
+                    opacity: playbarAlbumArt.isLoaded ? 0 : 1,
+                    transition: 'opacity 0.3s ease-out'
+                  }
+                }),
+                // Current album art (fading in)
+                playbarAlbumArt.current && React.createElement('img', {
+                  key: 'curr-art-' + playbarAlbumArt.current,
+                  src: playbarAlbumArt.current,
                   alt: currentTrack.album,
                   className: 'absolute inset-0 w-full h-full object-cover',
+                  style: {
+                    opacity: playbarAlbumArt.isLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease-in'
+                  },
+                  onLoad: () => setPlaybarAlbumArt(prev => ({ ...prev, isLoaded: true })),
                   onError: (e) => { e.target.style.display = 'none'; }
                 }),
                 React.createElement(Music, { size: 20, className: 'text-gray-500' })
