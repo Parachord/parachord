@@ -16126,12 +16126,18 @@ React.createElement('div', {
               React.createElement('div', {
                 className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
               }, artistBio.bio),
-              artistBio.url && React.createElement('a', {
-                href: artistBio.url,
-                target: '_blank',
-                rel: 'noopener noreferrer',
-                className: 'inline-block mt-4 text-purple-600 hover:text-purple-700 text-sm'
-              }, 'Read more on Last.fm →')
+              // Source attribution and link
+              React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
+                React.createElement('span', {
+                  className: 'text-xs text-gray-400'
+                }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
+                artistBio.url && React.createElement('a', {
+                  href: artistBio.url,
+                  target: '_blank',
+                  rel: 'noopener noreferrer',
+                  className: 'text-purple-600 hover:text-purple-700 text-sm'
+                }, 'Read more →')
+              )
             ),
             // No bio found
             !loadingBio && !artistBio && React.createElement('div', {
