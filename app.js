@@ -17112,18 +17112,20 @@ React.createElement('div', {
                               'bg-gradient-to-br from-amber-400 to-orange-500',
                               'bg-gradient-to-br from-emerald-400 to-teal-500'
                             ];
-                            return covers[idx] ?
-                              React.createElement('img', {
-                                key: idx,
+                            return React.createElement('div', {
+                              key: idx,
+                              className: `relative w-full h-full ${gradients[idx]} flex items-center justify-center`
+                            },
+                              !covers[idx] && React.createElement(Music, { size: 20, className: 'text-white/70' }),
+                              covers[idx] && React.createElement('img', {
                                 src: covers[idx],
                                 alt: '',
-                                className: 'w-full h-full object-cover'
+                                className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                                style: { opacity: 0 },
+                                ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                                onLoad: (e) => { e.target.style.opacity = '1'; }
                               })
-                            :
-                              React.createElement('div', {
-                                key: idx,
-                                className: `w-full h-full ${gradients[idx]} flex items-center justify-center`
-                              }, React.createElement(Music, { size: 20, className: 'text-white/70' }));
+                            );
                           })
                         )
                       :
@@ -17288,18 +17290,19 @@ React.createElement('div', {
                             'bg-gradient-to-br from-amber-400 to-orange-500',
                             'bg-gradient-to-br from-emerald-400 to-teal-500'
                           ];
-                          return covers[idx] ?
-                            React.createElement('img', {
-                              key: idx,
+                          return React.createElement('div', {
+                            key: idx,
+                            className: `relative w-full h-full ${gradients[idx]}`
+                          },
+                            covers[idx] && React.createElement('img', {
                               src: covers[idx],
                               alt: '',
-                              className: 'w-full h-full object-cover'
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              style: { opacity: 0 },
+                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                              onLoad: (e) => { e.target.style.opacity = '1'; }
                             })
-                          :
-                            React.createElement('div', {
-                              key: idx,
-                              className: `w-full h-full ${gradients[idx]}`
-                            });
+                          );
                         })
                       )
                     :
