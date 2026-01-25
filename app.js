@@ -15600,10 +15600,16 @@ useEffect(() => {
                       } else if (result.type === 'playlist') {
                         const playlist = playlists.find(p => p.id === result.id);
                         if (playlist) handlePlaylistClick(playlist);
-                      }
-                      // For tracks, just re-run the search
-                      else {
-                        handleSearchInput(entry.query);
+                      } else if (result.type === 'track') {
+                        // Play the track directly - create a minimal track object for resolution
+                        const track = {
+                          id: result.id,
+                          title: result.name,
+                          artist: result.artist,
+                          albumArt: result.imageUrl,
+                          sources: {}
+                        };
+                        handlePlay(track);
                       }
                     },
                     onRemove: (query) => clearSearchHistory(query)
