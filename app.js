@@ -735,12 +735,11 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
       }
     }
   },
-    // Circular artist image
+    // Circular artist image with hover overlay - fills card width
     React.createElement('div', {
-      className: 'relative rounded-full overflow-hidden mx-auto',
+      className: 'relative w-full rounded-full overflow-hidden group/art',
       style: {
-        width: imageSize,
-        height: imageSize,
+        aspectRatio: '1',
         boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.06)'
       }
     },
@@ -770,11 +769,23 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
           }
         },
           React.createElement('svg', {
-            style: { width: imageSize * 0.4, height: imageSize * 0.4, color: 'rgba(255, 255, 255, 0.2)' },
+            style: { width: '40px', height: '40px', color: 'rgba(255, 255, 255, 0.2)' },
             fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1.5
           },
             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
           )
+        )
+      ),
+      // Hover overlay with play button
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/40 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center rounded-full'
+      },
+        React.createElement('div', {
+          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110',
+          style: { cursor: 'pointer' },
+          title: 'View Artist'
+        },
+          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
         )
       )
     ),
@@ -905,9 +916,9 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, animationDel
       animationDelay: `${animationDelay}ms`
     }
   },
-    // Artist image (circular) - shimmer while fetching, dark placeholder if no image
+    // Artist image (circular) with hover overlay - shimmer while fetching, dark placeholder if no image
     React.createElement('div', {
-      className: `w-full aspect-square rounded-full mb-3 flex items-center justify-center overflow-hidden ${
+      className: `w-full aspect-square rounded-full mb-3 flex items-center justify-center overflow-hidden relative group/art ${
         imageUrl === null
           ? ''
           : imageUrl === undefined
@@ -927,8 +938,8 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, animationDel
       imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
-        className: 'w-full h-full object-cover',
-        style: { opacity: 0, transition: 'opacity 0.35s ease-out' },
+        className: 'w-full h-full object-cover group-hover:scale-105 transition-transform duration-300',
+        style: { opacity: 0, transition: 'opacity 0.35s ease-out, transform 0.3s ease' },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; }
       }),
@@ -940,6 +951,17 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, animationDel
         stroke: 'currentColor'
       },
         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+      ),
+      // Hover overlay with play button
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/40 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center rounded-full'
+      },
+        React.createElement('div', {
+          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110',
+          title: 'View Artist'
+        },
+          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+        )
       )
     ),
     // Artist name
@@ -6820,8 +6842,8 @@ const Parachord = () => {
     // Check if nothing is currently playing BEFORE updating queue
     const nothingPlaying = !currentTrackRef.current;
 
-    // Prepend to top of queue (so newly added tracks play next)
-    setCurrentQueue(prev => [...taggedTracks, ...prev]);
+    // Append to end of queue
+    setCurrentQueue(prev => [...prev, ...taggedTracks]);
     // Trigger queue animation
     setQueueAnimating(true);
     setTimeout(() => setQueueAnimating(false), 600);
@@ -16146,7 +16168,7 @@ useEffect(() => {
 
                 return filteredArtists.length > 0 && React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-5',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...filteredArtists.map((artist, index) => {
                     const animationDelay = Math.min(index * 30, 300);
@@ -16154,7 +16176,7 @@ useEffect(() => {
                       key: artist.id,
                       className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group release-card card-fade-up',
                       style: {
-                        padding: '12px',
+                        padding: '10px',
                         borderRadius: '10px',
                         backgroundColor: '#ffffff',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
@@ -16188,12 +16210,11 @@ useEffect(() => {
                         }
                       }
                     },
-                      // Circular artist image with dark placeholder
+                      // Circular artist image with dark placeholder and hover overlay - fills card width
                       React.createElement('div', {
-                        className: 'relative rounded-full overflow-hidden',
+                        className: 'relative w-full rounded-full overflow-hidden group/art',
                         style: {
-                          width: '100px',
-                          height: '100px',
+                          aspectRatio: '1',
                           boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.06)'
                         }
                       },
@@ -16202,16 +16223,27 @@ useEffect(() => {
                           className: 'absolute inset-0',
                           style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                         }),
-                        // Image with fade-in
+                        // Image with fade-in and scale on hover
                         artist.image && React.createElement('img', {
                           src: artist.image,
                           alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300',
+                          className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-105',
                           style: { opacity: 0 },
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => { e.target.style.display = 'none'; }
-                        })
+                        }),
+                        // Hover overlay with play button
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/40 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center rounded-full'
+                        },
+                          React.createElement('div', {
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110',
+                            title: 'View Artist'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          )
+                        )
                       ),
                       // Artist name - refined typography
                       React.createElement('span', {
@@ -18467,15 +18499,15 @@ React.createElement('div', {
                 ),
                 // Related artists grid (sorted by match, highest first) - Cinematic Light design
                 !loadingRelated && filteredArtists.length > 0 && React.createElement('div', {
-                  className: 'grid gap-x-4 gap-y-6',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }
+                  className: 'grid gap-x-4 gap-y-5',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   [...filteredArtists].sort((a, b) => b.match - a.match).map((artist, index) =>
                     React.createElement('div', {
                       key: artist.name,
                       className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group release-card card-fade-up',
                       style: {
-                        padding: '12px',
+                        padding: '10px',
                         borderRadius: '10px',
                         backgroundColor: '#ffffff',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
@@ -18509,9 +18541,11 @@ React.createElement('div', {
                         }
                       }
                     },
+                      // Artist image - fills card width
                       React.createElement('div', {
-                        className: 'relative w-28 h-28 rounded-full overflow-hidden',
+                        className: 'relative w-full rounded-full overflow-hidden group/art',
                         style: {
+                          aspectRatio: '1',
                           boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.06)'
                         }
                       },
@@ -18529,8 +18563,20 @@ React.createElement('div', {
                           } : {
                             background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
                           }
-                        })
+                        }),
+                        // Hover overlay with play button
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/40 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center rounded-full'
+                        },
+                          React.createElement('div', {
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110',
+                            title: 'View Artist'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          )
+                        )
                       ),
+                      // Artist name
                       React.createElement('span', {
                         style: {
                           marginTop: '10px',
@@ -22834,14 +22880,14 @@ React.createElement('div', {
                 // Top Artists grid - Cinematic Light design
                 React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-5',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
                   ...topArtists.artists.map((artist, index) =>
                     React.createElement('div', {
                       key: artist.id,
                       className: 'flex flex-col items-center cursor-grab active:cursor-grabbing group release-card card-fade-up',
                       style: {
-                        padding: '12px',
+                        padding: '10px',
                         borderRadius: '10px',
                         backgroundColor: '#ffffff',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
@@ -22875,9 +22921,11 @@ React.createElement('div', {
                         }
                       }
                     },
+                      // Artist image - fills card width
                       React.createElement('div', {
-                        className: 'relative w-28 h-28 rounded-full overflow-hidden',
+                        className: 'relative w-full rounded-full overflow-hidden group/art',
                         style: {
+                          aspectRatio: '1',
                           background: artist.image ? '#f3f4f6' : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
                           boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.06)'
                         }
@@ -22887,7 +22935,7 @@ React.createElement('div', {
                           style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
                         },
                           React.createElement('svg', {
-                            style: { width: '32px', height: '32px', color: 'rgba(255, 255, 255, 0.2)' },
+                            style: { width: '40px', height: '40px', color: 'rgba(255, 255, 255, 0.2)' },
                             fill: 'none',
                             viewBox: '0 0 24 24',
                             stroke: 'currentColor'
@@ -22916,18 +22964,31 @@ React.createElement('div', {
                         React.createElement('div', {
                           style: {
                             position: 'absolute',
-                            top: '4px',
-                            right: '4px',
-                            padding: '2px 6px',
+                            top: '6px',
+                            right: '6px',
+                            padding: '3px 8px',
                             borderRadius: '4px',
                             backgroundColor: 'rgba(0, 0, 0, 0.75)',
                             color: '#ffffff',
-                            fontSize: '10px',
+                            fontSize: '11px',
                             fontWeight: '600',
-                            letterSpacing: '0.02em'
+                            letterSpacing: '0.02em',
+                            zIndex: 10
                           }
-                        }, `#${artist.rank}`)
+                        }, `#${artist.rank}`),
+                        // Hover overlay with play button
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/40 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center rounded-full'
+                        },
+                          React.createElement('div', {
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110',
+                            title: 'View Artist'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          )
+                        )
                       ),
+                      // Artist name
                       React.createElement('span', {
                         style: {
                           marginTop: '10px',
