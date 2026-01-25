@@ -28450,11 +28450,12 @@ React.createElement('div', {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          opacity: confidence > 0.8 ? 1 : 0.6,
-                          transition: 'transform 0.1s'
+                          opacity: confidence > 0.8 ? 0.7 : 0.5,
+                          filter: 'saturate(0.7)',
+                          transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
                         },
-                        onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                        onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                        onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
+                        onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = confidence > 0.8 ? '0.7' : '0.5'; e.currentTarget.style.filter = 'saturate(0.7)'; },
                         title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
                       }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                     })
