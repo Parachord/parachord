@@ -164,5 +164,15 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   // Scrobbler config - get Last.fm API credentials from main process
-  getScrobblerConfig: () => ipcRenderer.invoke('get-scrobbler-config')
+  getScrobblerConfig: () => ipcRenderer.invoke('get-scrobbler-config'),
+
+  // Search history operations
+  searchHistory: {
+    load: () => ipcRenderer.invoke('search-history-load'),
+    save: (entry) => ipcRenderer.invoke('search-history-save', entry),
+    clear: (entryQuery) => ipcRenderer.invoke('search-history-clear', entryQuery)
+  },
+
+  // Generic invoke for IPC calls
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 });
