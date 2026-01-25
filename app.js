@@ -2736,6 +2736,10 @@ const Parachord = () => {
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
   const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
+  const [addToPlaylistSort, setAddToPlaylistSort] = useState('added'); // Sort option for add-to-playlist panel
+  const [addToPlaylistSearch, setAddToPlaylistSearch] = useState(''); // Search filter for add-to-playlist panel
+  const [addToPlaylistSearchOpen, setAddToPlaylistSearchOpen] = useState(false); // Search input expanded state
+  const [addToPlaylistSortDropdownOpen, setAddToPlaylistSortDropdownOpen] = useState(false); // Sort dropdown open state
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState({
@@ -2798,6 +2802,15 @@ const Parachord = () => {
   const queueResolutionActiveRef = useRef(false); // When true, queue resolution takes priority over page resolution
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
+
+  // Close add-to-playlist sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setAddToPlaylistSortDropdownOpen(false);
+    if (addToPlaylistSortDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [addToPlaylistSortDropdownOpen]);
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
@@ -28533,6 +28546,8 @@ React.createElement('div', {
           setSelectedPlaylistsForAdd([]);
           setNewPlaylistFormOpen(false);
           setNewPlaylistName('');
+          setAddToPlaylistSearch('');
+          setAddToPlaylistSearchOpen(false);
         },
         onDragOver: (e) => {
           e.preventDefault();
@@ -28542,12 +28557,12 @@ React.createElement('div', {
         }
       }),
 
-      // Panel - positioned at right edge of sidebar
+      // Panel - positioned at right edge of sidebar, full height above playbar
       React.createElement('div', {
         className: 'absolute flex flex-col',
         style: {
           left: '256px',
-          top: '28px',
+          top: '0',
           bottom: '85px',
           width: '384px',
           pointerEvents: 'auto',
@@ -28649,13 +28664,44 @@ React.createElement('div', {
                 }
               }, addToPlaylistPanel.tracks[0]?.artist || `${addToPlaylistPanel.tracks.length} tracks`)
             ),
-            // DONE button - refined
+            // DONE button - executes additions for all selected playlists
             React.createElement('button', {
               onClick: () => {
+                // Add tracks to all selected playlists
+                if (selectedPlaylistsForAdd.length > 0) {
+                  const tracksToAdd = addToPlaylistPanel.tracks.map(t => ({
+                    title: t.title,
+                    artist: t.artist,
+                    album: t.album,
+                    duration: t.duration,
+                    id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                  }));
+
+                  setPlaylists(prev => prev.map(p => {
+                    if (selectedPlaylistsForAdd.includes(p.id)) {
+                      const updatedPlaylist = {
+                        ...p,
+                        tracks: [...(p.tracks || []), ...tracksToAdd],
+                        lastModified: Date.now()
+                      };
+                      // Save each updated playlist to disk
+                      savePlaylistToStore(updatedPlaylist);
+                      return updatedPlaylist;
+                    }
+                    return p;
+                  }));
+
+                  // Show sidebar badge with total tracks added
+                  showSidebarBadge('playlists', tracksToAdd.length * selectedPlaylistsForAdd.length);
+                }
+
+                // Close panel and reset state
                 setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
                 setSelectedPlaylistsForAdd([]);
                 setNewPlaylistFormOpen(false);
                 setNewPlaylistName('');
+                setAddToPlaylistSearch('');
+                setAddToPlaylistSearchOpen(false);
               },
               className: 'transition-colors',
               style: {
@@ -28670,21 +28716,91 @@ React.createElement('div', {
                 textTransform: 'uppercase',
                 letterSpacing: '0.03em'
               }
-            }, 'Done')
+            }, selectedPlaylistsForAdd.length > 0
+              ? `Add to ${selectedPlaylistsForAdd.length} Playlist${selectedPlaylistsForAdd.length > 1 ? 's' : ''}`
+              : 'Done')
           )
         ),
 
-        // PLAYLISTS section header - refined
+        // Filter bar (sticky) - sort dropdown and search
         React.createElement('div', {
-          style: {
-            padding: '12px 20px',
-            fontSize: '11px',
-            fontWeight: '600',
-            color: '#9ca3af',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em'
-          }
-        }, 'Playlists'),
+          className: 'flex items-center px-5 py-2 bg-white border-b border-gray-200',
+          style: { flexShrink: 0 }
+        },
+          // Sort dropdown
+          React.createElement('div', { className: 'relative' },
+            React.createElement('button', {
+              onClick: (e) => { e.stopPropagation(); setAddToPlaylistSortDropdownOpen(!addToPlaylistSortDropdownOpen); },
+              className: 'flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors'
+            },
+              React.createElement('span', null, playlistsSortOptions.find(o => o.value === addToPlaylistSort)?.label || 'Sort'),
+              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+              )
+            ),
+            addToPlaylistSortDropdownOpen && React.createElement('div', {
+              className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
+            },
+              playlistsSortOptions.map(option =>
+                React.createElement('button', {
+                  key: option.value,
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    setAddToPlaylistSort(option.value);
+                    setAddToPlaylistSortDropdownOpen(false);
+                  },
+                  className: `w-full px-3 py-1.5 text-left text-xs hover:bg-gray-100 flex items-center justify-between ${
+                    addToPlaylistSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                  }`
+                },
+                  option.label,
+                  addToPlaylistSort === option.value && React.createElement('svg', {
+                    className: 'w-3 h-3',
+                    fill: 'none',
+                    viewBox: '0 0 24 24',
+                    stroke: 'currentColor'
+                  },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                  )
+                )
+              )
+            )
+          ),
+          React.createElement('div', { className: 'flex-1' }),
+          // Search
+          React.createElement('div', { className: 'flex items-center' },
+            addToPlaylistSearchOpen ?
+              React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-2 py-1' },
+                React.createElement('input', {
+                  type: 'text',
+                  value: addToPlaylistSearch,
+                  onChange: (e) => setAddToPlaylistSearch(e.target.value),
+                  onBlur: () => { if (!addToPlaylistSearch.trim()) setAddToPlaylistSearchOpen(false); },
+                  autoFocus: true,
+                  placeholder: 'Filter...',
+                  className: 'bg-transparent text-gray-700 text-xs placeholder-gray-400 outline-none',
+                  style: { width: '120px' }
+                }),
+                addToPlaylistSearch && React.createElement('button', {
+                  onClick: () => { setAddToPlaylistSearch(''); setAddToPlaylistSearchOpen(false); },
+                  className: 'ml-1 text-gray-400 hover:text-gray-600'
+                },
+                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                  )
+                )
+              )
+            :
+              React.createElement('button', {
+                onClick: () => setAddToPlaylistSearchOpen(true),
+                className: 'p-1 text-gray-400 hover:text-gray-600 transition-colors'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                )
+              )
+          )
+        ),
 
         // Playlist list (scrollable) - includes New Playlist row at top
         React.createElement('div', {
@@ -28873,13 +28989,45 @@ React.createElement('div', {
               }, 'New Playlist')
           ),
 
-          // Existing playlists
-          playlists.length === 0 ?
-            React.createElement('div', {
-              className: 'px-5 py-8 text-center text-gray-400 text-sm'
-            }, 'No playlists yet')
-          :
-            playlists.map(playlist => {
+          // Existing playlists (filtered and sorted)
+          (() => {
+            // Filter playlists by search
+            let filteredPlaylists = playlists;
+            if (addToPlaylistSearch.trim()) {
+              const query = addToPlaylistSearch.toLowerCase();
+              filteredPlaylists = playlists.filter(p => p.title.toLowerCase().includes(query));
+            }
+            // Sort playlists
+            const sortedPlaylists = [...filteredPlaylists];
+            switch (addToPlaylistSort) {
+              case 'added':
+                sortedPlaylists.sort((a, b) => {
+                  const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
+                  const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
+                  return bTime - aTime;
+                });
+                break;
+              case 'created':
+                sortedPlaylists.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+                break;
+              case 'modified':
+                sortedPlaylists.sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0));
+                break;
+              case 'alpha-asc':
+                sortedPlaylists.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+                break;
+              case 'alpha-desc':
+                sortedPlaylists.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+                break;
+            }
+
+            if (sortedPlaylists.length === 0) {
+              return React.createElement('div', {
+                className: 'px-5 py-8 text-center text-gray-400 text-sm'
+              }, addToPlaylistSearch ? 'No matching playlists' : 'No playlists yet');
+            }
+
+            return sortedPlaylists.map(playlist => {
               const isAdded = selectedPlaylistsForAdd.includes(playlist.id);
               const isDropTarget = dropTargetPlaylistId === playlist.id;
 
@@ -28922,7 +29070,14 @@ React.createElement('div', {
 
               return React.createElement('div', {
                 key: playlist.id,
-                onClick: () => addTracksToPlaylistHelper(addToPlaylistPanel.tracks),
+                onClick: () => {
+                  // Toggle selection instead of immediately adding
+                  setSelectedPlaylistsForAdd(prev =>
+                    prev.includes(playlist.id)
+                      ? prev.filter(id => id !== playlist.id)
+                      : [...prev, playlist.id]
+                  );
+                },
                 onDragEnter: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -29015,7 +29170,8 @@ React.createElement('div', {
                   })
                 )
               );
-            })
+            });
+          })()
         )
       )
     ),
