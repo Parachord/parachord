@@ -25577,7 +25577,9 @@ React.createElement('div', {
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
       playbackContext && React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 cursor-pointer hover:bg-purple-900/50 transition-colors',
+        className: `flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 transition-colors ${
+          playbackContext.type !== 'spinoff' ? 'cursor-pointer hover:bg-purple-900/50' : ''
+        }`,
         onClick: () => {
           // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
