@@ -12960,6 +12960,14 @@ ${tracks}
     setSpinoffLoading(true);
     console.log(`🔀 Starting spinoff from "${track.title}" by ${track.artist}`);
 
+    // If we're in listen-along mode, exit it first (we're leaving to explore similar music)
+    if (listenAlongFriend) {
+      console.log(`🔀 Exiting listen-along with ${listenAlongFriend.displayName} to start spinoff`);
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      // Don't show the "stopped listening along" toast since we'll show the spinoff toast
+    }
+
     try {
       const similarTracks = await fetchSimilarTracks(track.artist, track.title);
 
@@ -12969,7 +12977,12 @@ ${tracks}
       }
 
       // Save current playback context to restore when spinoff ends
-      spinoffPreviousContextRef.current = playbackContext;
+      // (but not if it was a listenAlong context - that session is over)
+      if (playbackContext?.type !== 'listenAlong') {
+        spinoffPreviousContextRef.current = playbackContext;
+      } else {
+        spinoffPreviousContextRef.current = null;
+      }
 
       // Enter spinoff mode
       setSpinoffMode(true);
