@@ -21658,13 +21658,26 @@ React.createElement('div', {
         })(),
 
         activeView === 'settings' && React.createElement('div', {
-          className: 'flex h-full'
+          className: 'flex flex-col h-full'
         },
-          // Settings vertical tabs (left side)
-          React.createElement('div', {
-            className: 'w-48 border-r border-gray-200 py-6 flex-shrink-0'
-          },
-            React.createElement('nav', { className: 'space-y-1 px-3' },
+          // Header bar with SETTINGS title and CLOSE button
+          React.createElement('div', { className: 'flex items-center justify-between px-8 py-4 border-b border-gray-200 flex-shrink-0' },
+            React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Settings'),
+            React.createElement('button', {
+              onClick: () => navigateBack(),
+              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+            },
+              'CLOSE',
+              React.createElement('span', { className: 'text-gray-400' }, '×')
+            )
+          ),
+          // Wrapper for sidebar and content
+          React.createElement('div', { className: 'flex flex-1 overflow-hidden' },
+            // Settings vertical tabs (left side)
+            React.createElement('div', {
+              className: 'w-48 border-r border-gray-200 py-6 flex-shrink-0'
+            },
+              React.createElement('nav', { className: 'space-y-1 px-3' },
               // Marketplace tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('marketplace'),
@@ -22479,10 +22492,11 @@ React.createElement('div', {
               )
             )
           )
-        )
-      )
+        ) // Close content area
+      ) // Close wrapper (sidebar + content)
+    ) // Close settings container
     )
-    ), // Close the sidebar + main wrapper
+    ), // Close outer wrappers
 
     // Player bar (always visible) - New Tomahawk-inspired layout
     // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
