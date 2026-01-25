@@ -914,15 +914,10 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   const containerRef = useRef(null);
 
   useEffect(() => {
-    // If we already have art from the service, use it
-    if (track.albumArt) {
-      setArtUrl(track.albumArt);
-      return;
-    }
-
-    // No art provided - try to fetch via our cache system
+    // Always try our cache system first for better quality art
     if (!track.album || !track.artist) {
-      setArtUrl(null);
+      // No album/artist info - fall back to service-provided art or null
+      setArtUrl(track.albumArt || null);
       return;
     }
 
@@ -930,7 +925,8 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     const loadArt = async () => {
       const fetchedArt = await getAlbumArt(track.artist, track.album);
       if (!cancelled) {
-        setArtUrl(fetchedArt || null);
+        // Use cached art if available, otherwise fall back to service-provided art
+        setArtUrl(fetchedArt || track.albumArt || null);
       }
     };
     loadArt();
@@ -958,7 +954,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
 
   return React.createElement('div', {
     className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors',
-    style: { maxWidth: '160px', height: '20px' },
+    style: { maxWidth: '180px', height: '20px' },
     onClick: onPlay,
     onContextMenu: onContextMenu
   },
@@ -982,7 +978,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     // Track info - only scrolls if overflowing
     React.createElement('div', {
       ref: containerRef,
-      className: `flex-1 min-w-0 px-1.5 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
+      className: `flex-1 min-w-0 px-2 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
       style: { overflow: 'hidden', height: '100%' }
     },
       React.createElement('span', {
@@ -1562,6 +1558,7 @@ const Parachord = () => {
   const [spinoffLoading, setSpinoffLoading] = useState(false);
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
@@ -1783,6 +1780,7 @@ const Parachord = () => {
   // Friends state
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
+  const [autoPinnedFriendIds, setAutoPinnedFriendIds] = useState([]); // Friends auto-pinned due to being on-air
   const [currentFriend, setCurrentFriend] = useState(null);
   const [friendHistoryTab, setFriendHistoryTab] = useState('recent');
   const [friendHistoryData, setFriendHistoryData] = useState({
@@ -1800,6 +1798,10 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
+  const [listenAlongFriend, setListenAlongFriend] = useState(null); // Friend object when in listen-along mode
+  const listenAlongFriendRef = useRef(null); // Ref for use in async callbacks
+  const listenAlongLastTrackRef = useRef(null); // Track what we last played in listen-along to detect changes
+  const listenAlongPendingTrackRef = useRef(null); // Track queued to play when current song ends (friend is ahead)
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
@@ -2468,6 +2470,8 @@ const Parachord = () => {
   const removeFriendRef = useRef(null);
   const saveFriendToCollectionRef = useRef(null);
   const removeFriendFromCollectionRef = useRef(null);
+  const activateListenAlongRef = useRef(null);
+  const deactivateListenAlongRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
@@ -2483,6 +2487,8 @@ const Parachord = () => {
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -3858,6 +3864,8 @@ const Parachord = () => {
           case 'ended':
             console.log('🎵 Playback window track ended, advancing to next');
             setBrowserPlaybackActive(false);
+            // Clear the waiting flag - browser track has ended, we're no longer waiting for it to connect
+            waitingForBrowserPlaybackRef.current = false;
             // Use ref to avoid stale closure in useEffect
             if (handleNextRef.current) handleNextRef.current();
             break;
@@ -3874,6 +3882,8 @@ const Parachord = () => {
         }
         console.log('🎵 Playback window closed');
         setBrowserPlaybackActive(false);
+        // Clear the waiting flag - browser window is closed, we're no longer waiting for it
+        waitingForBrowserPlaybackRef.current = false;
         // Don't auto-advance, just stop playback
         setIsPlaying(false);
       });
@@ -4280,11 +4290,17 @@ const Parachord = () => {
             context = { type: 'playlist', id: data.sourceId, name: data.sourceName };
           } else if ((data.sourceType === 'album' || data.sourceType === 'release') && data.sourceName) {
             context = { type: 'album', id: data.sourceId, name: data.sourceName, artist: data.artistName };
+          } else if (data.sourceType === 'recommendations') {
+            context = { type: 'recommendations', name: 'Recommendations' };
           }
           addToQueue(data.tracks, context);
         } else if (data.action === 'add-to-queue' && data.track) {
-          // Single track from friend's now playing - no context for single tracks
-          addToQueue([data.track]);
+          // Single track - build context from source info if available
+          let context = null;
+          if (data.sourceType === 'recommendations') {
+            context = { type: 'recommendations', name: 'Recommendations' };
+          }
+          addToQueue([data.track], context);
         } else if (data.action === 'add-to-playlist' && data.track) {
           // Single track from friend's now playing
           setAddToPlaylistPanel({
@@ -4414,6 +4430,10 @@ const Parachord = () => {
           if (saveFriendToCollectionRef.current) saveFriendToCollectionRef.current(data.friendId);
         } else if (data.action === 'remove-friend-from-collection' && data.friendId) {
           if (removeFriendFromCollectionRef.current) removeFriendFromCollectionRef.current(data.friendId);
+        } else if (data.action === 'start-listen-along' && data.friend) {
+          if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
+        } else if (data.action === 'stop-listen-along') {
+          if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
         }
       });
     }
@@ -4967,7 +4987,7 @@ const Parachord = () => {
           title: trackOrSource.title,
           album: trackOrSource.album,
           duration: duration,
-          albumArt: sourceToPlay.albumArt || trackOrSource.albumArt,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
           _playbackContext: trackOrSource._playbackContext // Preserve playback context
         } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
@@ -5061,6 +5081,7 @@ const Parachord = () => {
           title: trackOrSource.title,
           album: trackOrSource.album,
           duration: sourceToPlay.duration || trackOrSource.duration,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
           _playbackContext: trackOrSource._playbackContext // Preserve playback context
         } :
@@ -5117,6 +5138,7 @@ const Parachord = () => {
             title: trackOrSource.title,
             album: trackOrSource.album,
             duration: sourceToPlay.duration || trackOrSource.duration,
+            albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
             sources: trackOrSource.sources,
             _playbackContext: trackOrSource._playbackContext // Preserve playback context
           } :
@@ -5933,7 +5955,7 @@ const Parachord = () => {
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = async (userInitiated = false) => {
     // BROWSER PLAYBACK GUARD: Block handleNext while waiting for browser to connect
     // This prevents race conditions when opening external tracks (YouTube, Bandcamp, etc.)
     if (waitingForBrowserPlaybackRef.current) {
@@ -5946,6 +5968,20 @@ const Parachord = () => {
     if (isAdvancingTrackRef.current) {
       console.log('⚠️ handleNext() already in progress, skipping duplicate call');
       return;
+    }
+
+    // If user manually clicked next while listening along, end the session
+    let listenAlongEnded = false;
+    const listenAlongFriendNow = listenAlongFriendRef.current;
+    if (userInitiated && listenAlongFriendNow) {
+      console.log(`🎧 User skipped track - ending listen-along with ${listenAlongFriendNow.displayName}`);
+      showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      setPlaybackContext(null);
+      listenAlongEnded = true;
+      // Fall through to play from queue
     }
     isAdvancingTrackRef.current = true;
 
@@ -6003,6 +6039,47 @@ const Parachord = () => {
       setShowExternalPrompt(false);
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
+
+      // LISTEN-ALONG MODE: Handle track progression when listening along with a friend
+      // Skip this block if we already ended listen-along above (user clicked next)
+      if (listenAlongFriendNow && !listenAlongEnded) {
+        // Check if there's a pending track queued (friend moved ahead while we were still playing)
+        const pendingTrack = listenAlongPendingTrackRef.current;
+        if (pendingTrack) {
+          console.log(`🎧 Listen-along: Playing pending track "${pendingTrack.title}"`);
+          listenAlongPendingTrackRef.current = null;
+          listenAlongLastTrackRef.current = {
+            name: pendingTrack.title,
+            artist: pendingTrack.artist
+          };
+          handlePlay(pendingTrack);
+          return;
+        }
+
+        // Check if friend's current track is the same as what we just finished
+        // If so, they haven't moved on yet - end listen-along and go to queue
+        const friendTrack = listenAlongFriendNow.cachedRecentTrack;
+        const lastTrack = listenAlongLastTrackRef.current;
+        const friendStillOnSameTrack = friendTrack && lastTrack &&
+          friendTrack.name === lastTrack.name &&
+          friendTrack.artist === lastTrack.artist;
+
+        if (friendStillOnSameTrack) {
+          console.log(`🎧 Listen-along: Song ended but ${listenAlongFriendNow.displayName} hasn't moved on - ending listen-along`);
+          showToast(`${listenAlongFriendNow.displayName} hasn't moved on - resuming your queue`);
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+          setPlaybackContext(null);
+          // Fall through to play from queue below
+        } else {
+          // Friend has a different track, but we don't have it queued yet
+          // Wait for polling to detect the change
+          console.log(`🎧 Listen-along active with ${listenAlongFriendNow.displayName} - waiting for their next track`);
+          setIsPlaying(false);
+          return;
+        }
+      }
 
       // Always use our local queue for navigation
       // (Spotify doesn't know about our queue - tracks may resolve to different services)
@@ -6087,6 +6164,17 @@ const Parachord = () => {
     const track = currentTrackRef.current;
 
     if (!track) return;
+
+    // If user clicked previous while listening along, end the session
+    const listenAlongFriendNow = listenAlongFriendRef.current;
+    if (listenAlongFriendNow) {
+      console.log(`🎧 User went back - ending listen-along with ${listenAlongFriendNow.displayName}`);
+      showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      setPlaybackContext(null);
+    }
 
     // Notify scrobble manager that current track is ending
     if (window.scrobbleManager) {
@@ -6480,7 +6568,9 @@ const Parachord = () => {
   // Handle adding AI results to queue
   const handleAiAddToQueue = () => {
     if (!resultsSidebar?.tracks) return;
-    addToQueue(resultsSidebar.tracks);
+    // Use aiPlaylist context type (not navigable, unlike recommendations page)
+    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
+    addToQueue(resultsSidebar.tracks, context);
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
@@ -7110,9 +7200,9 @@ const Parachord = () => {
       // Load friends from storage
       const savedFriends = await window.electron.store.get('friends');
       if (savedFriends && Array.isArray(savedFriends)) {
-        // Migrate friends that have savedToCollection: false to true
+        // Migrate friends to have savedToCollection: true (covers both false and undefined from older versions)
         const migratedFriends = savedFriends.map(f =>
-          f.savedToCollection === false ? { ...f, savedToCollection: true } : f
+          f.savedToCollection !== true ? { ...f, savedToCollection: true } : f
         );
         // Save migrated friends back if any were changed
         if (migratedFriends.some((f, i) => f !== savedFriends[i])) {
@@ -8644,16 +8734,24 @@ const Parachord = () => {
 
         await Promise.all(resolverPromises);
 
-        // Update the queue track with resolved sources
+        // Update the queue track with resolved sources and duration
         if (Object.keys(sources).length > 0) {
+          // Get duration from first source that has it
+          const resolvedDuration = Object.values(sources).find(s => s.duration)?.duration || null;
+
           setCurrentQueue(prevQueue =>
             prevQueue.map(queueTrack =>
               queueTrack.id === track.id
-                ? { ...queueTrack, sources: { ...queueTrack.sources, ...sources } }
+                ? {
+                    ...queueTrack,
+                    sources: { ...queueTrack.sources, ...sources },
+                    // Update duration if resolved source has it and track doesn't
+                    duration: queueTrack.duration || resolvedDuration
+                  }
                 : queueTrack
             )
           );
-          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources)`);
+          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources${resolvedDuration ? `, ${resolvedDuration}s` : ''})`);
         }
 
         // Small delay between tracks to avoid rate limiting
@@ -10944,7 +11042,7 @@ ${tracks}
         addedAt: Date.now(),
         lastFetched: Date.now(),
         cachedRecentTrack: null,
-        savedToCollection: true  // Friends are saved to collection by default
+        savedToCollection: false  // Friends added from sidebar are NOT saved to collection by default
       };
 
       // Fetch recent track for initial on-air status
@@ -10956,9 +11054,11 @@ ${tracks}
       }
 
       setFriends(prev => [...prev, newFriend]);
+      // Auto-pin the friend to sidebar (they're not saved to collection yet)
+      setPinnedFriendIds(prev => [...prev, newFriend.id]);
       setAddFriendModalOpen(false);
       setAddFriendInput('');
-      showToast(`Added ${newFriend.displayName} from ${finalService === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+      showToast(`${newFriend.displayName} pinned to sidebar`);
 
       console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
     } catch (error) {
@@ -11001,6 +11101,10 @@ ${tracks}
         showToast(`${friend.displayName} pinned to sidebar`);
       }
     }
+    // If friend was auto-pinned, remove from auto-pinned list (now manually pinned)
+    if (autoPinnedFriendIds.includes(friendId)) {
+      setAutoPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    }
   };
   pinFriendRef.current = pinFriend;
 
@@ -11017,6 +11121,8 @@ ${tracks}
 
     // Otherwise proceed with unpin
     setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    // Also clear from auto-pinned list if they were auto-pinned
+    setAutoPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     if (friend) {
       showToast(`${friend.displayName} unpinned from sidebar`);
     }
@@ -11027,6 +11133,7 @@ ${tracks}
   const confirmUnpinFriend = () => {
     if (pendingUnpinFriend) {
       setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+      setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
       showToast(`${pendingUnpinFriend.displayName} unpinned from sidebar`);
       setUnsavedFriendWarningOpen(false);
       setPendingUnpinFriend(null);
@@ -11111,11 +11218,19 @@ ${tracks}
     }
   };
 
-  // Refresh recent tracks for pinned friends (for polling)
+  // Refresh recent tracks for friends (for polling)
+  // Polls: all pinned friends + all saved friends (to check if they become active)
   const refreshPinnedFriends = async () => {
-    const pinnedFriends = friends.filter(f => pinnedFriendIds.includes(f.id));
+    const listenAlongFriendNow = listenAlongFriendRef.current;
 
-    for (const friend of pinnedFriends) {
+    // Get all friends we need to poll:
+    // 1. All pinned friends (manual or auto-pinned)
+    // 2. All saved friends (even if not pinned, to detect when they become active)
+    const friendsToCheck = friends.filter(f =>
+      pinnedFriendIds.includes(f.id) || f.savedToCollection
+    );
+
+    for (const friend of friendsToCheck) {
       const recentTrack = await fetchFriendRecentTrack(friend);
       if (recentTrack) {
         // Check if track changed before updating
@@ -11124,28 +11239,167 @@ ${tracks}
           previousTrack.name !== recentTrack.name ||
           previousTrack.artist !== recentTrack.artist;
 
+        // Check if friend is on-air (track less than 10 minutes old)
+        const isOnAirNow = recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000;
+        const wasOnAir = previousTrack?.timestamp && (Date.now() - previousTrack.timestamp) < 10 * 60 * 1000;
+
         setFriends(prev => prev.map(f =>
           f.id === friend.id
             ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
             : f
         ));
 
+        // Auto-pin/unpin saved friends based on on-air status
+        const isPinned = pinnedFriendIds.includes(friend.id);
+        const isAutoPinned = autoPinnedFriendIds.includes(friend.id);
+
+        if (friend.savedToCollection && isOnAirNow && !isPinned) {
+          // Saved friend became active - auto-pin them to sidebar
+          console.log(`👥 Auto-pinning ${friend.displayName} (now active)`);
+          setPinnedFriendIds(prev => [...prev, friend.id]);
+          setAutoPinnedFriendIds(prev => [...prev, friend.id]);
+        } else if (isAutoPinned && !isOnAirNow) {
+          // Auto-pinned friend is no longer active - auto-unpin them
+          console.log(`👥 Auto-unpinning ${friend.displayName} (no longer active)`);
+          setPinnedFriendIds(prev => prev.filter(id => id !== friend.id));
+          setAutoPinnedFriendIds(prev => prev.filter(id => id !== friend.id));
+        }
+
+        // Check if the friend we're listening along to went inactive
+        if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
+          console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
+          showToast(`${friend.displayName} stopped listening`);
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+          setPlaybackContext(null);
+          // Resume playback from queue if there are tracks
+          if (currentQueueRef.current.length > 0) {
+            handleNextRef.current?.();
+          }
+          continue; // Skip further processing for this friend
+        }
+
         // Resolve the track in background if it's new/changed and friend is on-air
-        if (trackChanged && recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000) {
+        if (trackChanged && isOnAirNow) {
           resolveFriendTrack(recentTrack);
+
+          // If we're listening along to this friend and they changed tracks, queue or play the new one
+          if (listenAlongFriendNow?.id === friend.id) {
+            const lastTrack = listenAlongLastTrackRef.current;
+            const isNewTrack = !lastTrack ||
+              lastTrack.name !== recentTrack.name ||
+              lastTrack.artist !== recentTrack.artist;
+
+            if (isNewTrack) {
+              console.log(`🎧 Listen-along: ${friend.displayName} started playing "${recentTrack.name}"`);
+
+              // Wait a moment for track to resolve, then queue or play
+              setTimeout(async () => {
+                const cacheKey = `${recentTrack.artist.toLowerCase()}|${recentTrack.name.toLowerCase()}|0`;
+                const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+                const track = {
+                  title: recentTrack.name,
+                  artist: recentTrack.artist,
+                  album: recentTrack.album,
+                  albumArt: recentTrack.albumArt,
+                  sources: cachedSources,
+                  _playbackContext: {
+                    type: 'listenAlong',
+                    name: friend.displayName,
+                    friendId: friend.id
+                  }
+                };
+
+                // Check if we're currently playing - if so, queue as pending
+                // Otherwise play immediately (our song already ended)
+                if (isPlayingRef.current) {
+                  console.log(`🎧 Listen-along: Queuing "${track.title}" to play when current track ends`);
+                  listenAlongPendingTrackRef.current = track;
+                } else {
+                  // Not playing, so our track ended - play friend's track now
+                  console.log(`🎧 Listen-along: Playing "${track.title}" immediately`);
+                  listenAlongLastTrackRef.current = {
+                    name: recentTrack.name,
+                    artist: recentTrack.artist
+                  };
+                  handlePlay(track);
+                }
+              }, 1000); // Wait 1 second for sources to resolve
+            }
+          }
         }
       }
     }
   };
 
-  // Poll pinned friends every 2 minutes for on-air status
+  // Activate listen-along mode for a friend
+  const activateListenAlong = (friend) => {
+    if (!friend || !friend.cachedRecentTrack) return;
+
+    console.log(`🎧 Starting listen-along with ${friend.displayName}`);
+    setListenAlongFriend(friend);
+    listenAlongLastTrackRef.current = {
+      name: friend.cachedRecentTrack.name,
+      artist: friend.cachedRecentTrack.artist
+    };
+
+    // Set playback context to listen-along
+    setPlaybackContext({
+      type: 'listenAlong',
+      name: friend.displayName,
+      friendId: friend.id
+    });
+
+    // Play the friend's current track
+    const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+    const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+    const track = {
+      title: friend.cachedRecentTrack.name,
+      artist: friend.cachedRecentTrack.artist,
+      album: friend.cachedRecentTrack.album,
+      albumArt: friend.cachedRecentTrack.albumArt,
+      sources: cachedSources,
+      _playbackContext: {
+        type: 'listenAlong',
+        name: friend.displayName,
+        friendId: friend.id
+      }
+    };
+    handlePlay(track);
+
+    showToast(`Listening along with ${friend.displayName}`);
+  };
+
+  // Deactivate listen-along mode
+  const deactivateListenAlong = () => {
+    if (!listenAlongFriend) return;
+
+    const friendName = listenAlongFriend.displayName;
+    console.log(`🎧 Stopped listening along with ${friendName}`);
+    setListenAlongFriend(null);
+    listenAlongLastTrackRef.current = null;
+
+    // Clear the listen-along context - will use queue's context when next track plays
+    setPlaybackContext(null);
+
+    showToast(`Stopped listening along with ${friendName}`);
+  };
+
+  // Assign listen-along functions to refs for context menu access
+  activateListenAlongRef.current = activateListenAlong;
+  deactivateListenAlongRef.current = deactivateListenAlong;
+
+  // Poll friends for on-air status (pinned friends + saved friends for auto-pinning)
+  const hasSavedFriends = friends.some(f => f.savedToCollection);
   useEffect(() => {
-    if (pinnedFriendIds.length > 0) {
+    if (pinnedFriendIds.length > 0 || hasSavedFriends) {
       // Initial refresh
       refreshPinnedFriends();
 
-      // Set up polling interval
-      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, 2 * 60 * 1000);
+      // Set up polling interval - faster when listen-along is active
+      const pollInterval = listenAlongFriend ? 15 * 1000 : 2 * 60 * 1000; // 15 seconds vs 2 minutes
+      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, pollInterval);
 
       return () => {
         if (friendPollIntervalRef.current) {
@@ -11153,7 +11407,7 @@ ${tracks}
         }
       };
     }
-  }, [pinnedFriendIds.length]);
+  }, [pinnedFriendIds.length, hasSavedFriends, listenAlongFriend]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {
@@ -12009,6 +12263,21 @@ ${tracks}
       albumToReleaseIdCache.current[lookupKey] = null;
       return null;
     }
+  };
+
+  // Synchronous check for cached album art (doesn't fetch, just checks existing cache)
+  // Prioritizes our cache over resolver-provided art for consistency
+  const getCachedAlbumArt = (artist, album) => {
+    if (!artist || !album) return null;
+
+    const lookupKey = `${artist}-${album}`.toLowerCase();
+    const releaseId = albumToReleaseIdCache.current[lookupKey];
+
+    if (releaseId && albumArtCache.current[releaseId]?.url) {
+      return albumArtCache.current[releaseId].url;
+    }
+
+    return null;
   };
 
   // Detect face position in an image using browser's FaceDetector API
@@ -14369,7 +14638,7 @@ useEffect(() => {
         ),
 
         // Search - navigates to search page
-        React.createElement('div', { className: 'px-4 py-2 border-b border-gray-200' },
+        React.createElement('div', { className: 'px-4 pt-1 pb-3 border-b border-gray-200' },
           React.createElement('button', {
             className: `w-full flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${
               activeView === 'search' ? 'text-gray-900 font-medium' : ''
@@ -14536,7 +14805,16 @@ useEffect(() => {
           friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
             className: 'px-3 py-4 text-sm text-purple-600 text-center'
           }, 'Drop to pin'),
-          pinnedFriendIds.map((friendId, index) => {
+          // Sort pinned friends: active (on-air) friends first, then by original order
+          [...pinnedFriendIds].sort((a, b) => {
+            const friendA = friends.find(f => f.id === a);
+            const friendB = friends.find(f => f.id === b);
+            const aOnAir = friendA && isOnAir(friendA);
+            const bOnAir = friendB && isOnAir(friendB);
+            if (aOnAir && !bOnAir) return -1;
+            if (!aOnAir && bOnAir) return 1;
+            return 0; // Keep original order within same group
+          }).map((friendId, index) => {
             const friend = friends.find(f => f.id === friendId);
             if (!friend) return null;
             const onAir = isOnAir(friend);
@@ -14547,7 +14825,7 @@ useEffect(() => {
               className: `px-3 py-1.5 rounded cursor-pointer group transition-colors flex items-center ${
                 isSelected ? 'bg-gray-200 text-gray-900' : 'hover:bg-gray-100'
               }`,
-              style: { minHeight: '52px' },  // Fixed height to prevent layout shift when mini playbar appears
+              style: { minHeight: '52px' },
               draggable: true,
               onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
@@ -14572,7 +14850,9 @@ useEffect(() => {
                     type: 'friend',
                     friend: friend,
                     isPinned: true,
-                    isSavedToCollection: friend.savedToCollection
+                    isSavedToCollection: friend.savedToCollection,
+                    isOnAir: onAir,
+                    isListeningAlong: listenAlongFriend?.id === friend.id
                   });
                 }
               }
@@ -14609,9 +14889,43 @@ useEffect(() => {
                 ),
                 // Name and track info
                 React.createElement('div', { className: 'flex-1 min-w-0' },
-                  React.createElement('div', {
-                    className: 'text-sm text-gray-600 truncate'
-                  }, friend.displayName),
+                  // Friend name with listen-along toggle
+                  React.createElement('div', { className: 'flex items-center gap-1' },
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-600 truncate'
+                    }, friend.displayName),
+                    // Listen along toggle - only show when friend is on-air
+                    onAir && React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        if (listenAlongFriend?.id === friend.id) {
+                          deactivateListenAlong();
+                        } else {
+                          activateListenAlong(friend);
+                        }
+                      },
+                      className: `flex-shrink-0 transition-colors ${
+                        listenAlongFriend?.id === friend.id
+                          ? 'text-purple-500 hover:text-purple-400'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`,
+                      title: listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along'
+                    },
+                      React.createElement('svg', {
+                        className: 'w-3.5 h-3.5',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor',
+                        strokeWidth: 2
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1'
+                        })
+                      )
+                    )
+                  ),
                   // Mini playbar showing friend's current track
                   onAir && friend.cachedRecentTrack && React.createElement(FriendMiniPlaybar, {
                     track: friend.cachedRecentTrack,
@@ -14682,18 +14996,18 @@ useEffect(() => {
         ),
 
         // Settings button at bottom of sidebar
-        React.createElement('div', { className: 'px-4 py-2 border-t border-gray-200' },
+        React.createElement('div', { className: 'px-4 py-3 border-t border-gray-200' },
           React.createElement('button', {
             onClick: () => navigateTo('settings'),
-            className: `w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors ${
-              activeView === 'settings' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+            className: `w-full flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${
+              activeView === 'settings' ? 'text-gray-900 font-medium' : ''
             }`
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }),
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' })
             ),
-            'Settings'
+            React.createElement('span', { className: 'text-sm' }, 'Settings')
           )
         )
       ),
@@ -19328,7 +19642,20 @@ React.createElement('div', {
                         // On-air indicator
                         onAir && React.createElement('div', {
                           className: 'absolute -bottom-1 right-4 w-5 h-5 bg-green-500 rounded-full border-2 border-white'
-                        })
+                        }),
+                        // Pin icon for manually pinned friends (not auto-pinned)
+                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('div', {
+                          className: 'absolute top-0 right-2',
+                          title: 'Pinned to sidebar'
+                        },
+                          React.createElement('svg', {
+                            className: 'w-4 h-4 text-purple-400 drop-shadow-sm',
+                            fill: 'currentColor',
+                            viewBox: '0 0 24 24'
+                          },
+                            React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
+                          )
+                        )
                       ),
                       // Name and info
                       React.createElement('span', {
@@ -20435,7 +20762,9 @@ React.createElement('div', {
                           if (window.electron?.contextMenu?.showTrackMenu) {
                             window.electron.contextMenu.showTrackMenu({
                               type: 'track',
-                              track: track
+                              track: track,
+                              sourceType: 'recommendations',
+                              sourceName: 'Recommendations'
                             });
                           }
                         }
@@ -22646,7 +22975,7 @@ React.createElement('div', {
             style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
           }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 })),
           React.createElement('button', {
-            onClick: handleNext,
+            onClick: () => handleNext(true),
             disabled: !currentTrack,
             className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
             style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
@@ -22659,7 +22988,8 @@ React.createElement('div', {
             title: `Queue (${currentQueue.length} tracks)`
           },
             React.createElement(List, { size: 15 }),
-            currentQueue.length > 0 && React.createElement('span', {
+            // Hide queue badge when in listen-along mode
+            !listenAlongFriend && currentQueue.length > 0 && React.createElement('span', {
               className: `absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[10px] font-medium ${queueAnimating ? 'badge-flash' : ''}`
             }, currentQueue.length > 99 ? '99+' : currentQueue.length)
           ),
@@ -22826,19 +23156,56 @@ React.createElement('div', {
                   className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
                 }, currentTrack.artist)
               ),
-              // Line 3: Resolver + browser indicator
+              // Line 3: Resolver dropdown + browser indicator
               (() => {
-                const resolverId = determineResolverIdFromTrack(currentTrack);
-                const resolver = allResolvers.find(r => r.id === resolverId);
+                const currentResolverId = determineResolverIdFromTrack(currentTrack);
+                const resolver = allResolvers.find(r => r.id === currentResolverId);
+                const resolverColors = {
+                  spotify: { color: 'text-green-400', bg: 'bg-green-400' },
+                  bandcamp: { color: 'text-cyan-400', bg: 'bg-cyan-400' },
+                  qobuz: { color: 'text-blue-400', bg: 'bg-blue-400' },
+                  youtube: { color: 'text-red-400', bg: 'bg-red-400' },
+                  localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' }
+                };
+
+                // Get available sources for this track
+                const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
+                  ? Object.keys(currentTrack.sources).filter(resId => activeResolvers.includes(resId))
+                  : [];
+
+                const meta = resolverColors[currentResolverId] || { color: 'text-purple-400', bg: 'bg-purple-400' };
+                const hasMultipleSources = availableSources.length > 1;
+
                 if (resolver) {
-                  const meta = {
-                    spotify: { color: 'text-green-400' },
-                    bandcamp: { color: 'text-cyan-400' },
-                    qobuz: { color: 'text-blue-400' },
-                    youtube: { color: 'text-red-400' }
-                  }[resolverId] || { color: 'text-purple-400' };
                   return React.createElement('div', { className: 'flex items-center gap-1 mt-0.5' },
-                    React.createElement('span', { className: `text-xs ${meta.color}` }, resolver.name),
+                    // Resolver dropdown (or just label if single source)
+                    hasMultipleSources ? React.createElement('select', {
+                      value: currentResolverId,
+                      onChange: (e) => {
+                        const newResolverId = e.target.value;
+                        if (newResolverId !== currentResolverId && currentTrack.sources[newResolverId]) {
+                          // Play from the new source with preferredResolver to keep all sources available
+                          handlePlay({ ...currentTrack, preferredResolver: newResolverId });
+                        }
+                      },
+                      className: `text-xs ${meta.color} bg-transparent border-none cursor-pointer hover:opacity-80 transition-opacity focus:outline-none appearance-none pr-3 no-drag`,
+                      style: {
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right center',
+                        paddingRight: '12px'
+                      },
+                      title: 'Switch playback source'
+                    },
+                      availableSources.map(resId => {
+                        const r = allResolvers.find(res => res.id === resId);
+                        return React.createElement('option', {
+                          key: resId,
+                          value: resId,
+                          style: { color: '#000', backgroundColor: '#fff' }
+                        }, r ? r.name : resId);
+                      })
+                    ) : React.createElement('span', { className: `text-xs ${meta.color}` }, resolver.name),
                     // Browser indicator pill for external playback
                     isExternalPlayback && React.createElement('span', {
                       className: 'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-cyan-500/20 text-cyan-300',
@@ -22996,7 +23363,7 @@ React.createElement('div', {
                       audioRef.current.currentTime = newPosition;
                     }
                   },
-                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-700' : 'bg-gray-600'}`,
+                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`,
                   title: isSpotifyTrack ? 'Seeking not available for Spotify tracks' : undefined
                 });
               })()
@@ -25412,15 +25779,27 @@ React.createElement('div', {
                     });
                   }
                 },
+                onClick: () => {
+                  if (isLoading || isError) return;
+                  // Trigger drop animation for all tracks at index <= clicked index
+                  setDroppingFromIndex(index);
+                  // After animation, play the track
+                  setTimeout(() => {
+                    setCurrentQueue(prev => prev.slice(index + 1));
+                    handlePlay(track);
+                    setDroppingFromIndex(null);
+                  }, 300);
+                },
                 className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-600/30 hover:bg-white/10 transition-all duration-300 ${
                   isCurrentTrack ? 'bg-purple-900/40' : ''
                 } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
                   isError ? 'opacity-50' : ''
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
-                  isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
+                  isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
                   isFallingDown ? 'queue-track-drop' : ''} ${
                   isInserted ? 'queue-track-insert' : ''} ${
-                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''}`
+                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''} ${
+                  listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`
               },
                 // Track number / status indicator - fixed width
                 // In spinoff/listen-along mode, show ·· instead of numbers (queue is "paused")
@@ -25431,6 +25810,7 @@ React.createElement('div', {
                   }`,
                   style: { width: '28px', flexShrink: 0 }
                 },
+                  listenAlongFriend ? '–' :
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
                   isError ? '⚠' :
                   isCurrentTrack ? '▶' :
@@ -25441,7 +25821,7 @@ React.createElement('div', {
                 // Track title - flexible column that grows
                 // First track gets font-medium to indicate it's next (matches playbar styling)
                 React.createElement('span', {
-                  className: `text-sm truncate cursor-pointer ${index === 0 ? 'font-medium' : ''} ${
+                  className: `text-sm truncate ${index === 0 ? 'font-medium' : ''} ${
                     isLoading ? 'text-gray-500' :
                     isError ? 'text-red-400' :
                     isCurrentTrack ? 'text-purple-400' : 'text-gray-200 group-hover:text-white'
@@ -25582,11 +25962,14 @@ React.createElement('div', {
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
+      // aiPlaylist type is not clickable (no navigation back to ephemeral AI-generated sidebar)
       playbackContext && React.createElement('div', {
         className: `flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 transition-colors ${
-          playbackContext.type !== 'spinoff' ? 'cursor-pointer hover:bg-purple-900/50' : ''
+          (playbackContext.type === 'spinoff' || playbackContext.type === 'aiPlaylist') ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
         }`,
         onClick: () => {
+          // AI Playlist is not navigable (ephemeral sidebar)
+          if (playbackContext.type === 'aiPlaylist') return;
           // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
@@ -25615,6 +25998,13 @@ React.createElement('div', {
             navigateTo('friendHistory');
           } else if (playbackContext.type === 'spinoff') {
             // Spinoff has no destination page - do nothing
+          } else if (playbackContext.type === 'listenAlong') {
+            // Navigate to the friend's history page
+            const friend = friends.find(f => f.id === playbackContext.friendId);
+            if (friend) {
+              setCurrentFriend(friend);
+              navigateTo('friendHistory');
+            }
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
@@ -25625,7 +26015,8 @@ React.createElement('div', {
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-xs text-purple-300' },
-            playbackContext.type === 'spinoff' ? 'Playing' : 'Playing from'
+            playbackContext.type === 'spinoff' ? 'Playing' :
+            playbackContext.type === 'listenAlong' ? 'Listening along with' : 'Playing from'
           ),
           React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
@@ -25633,14 +26024,17 @@ React.createElement('div', {
             playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
             playbackContext.type === 'library' ? 'Collection' :
             playbackContext.type === 'recommendations' ? 'Recommendations' :
+            playbackContext.type === 'aiPlaylist' ? 'AI Playlist' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
+            playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
             playbackContext.name || 'Unknown'
           )
         ),
-        playbackContext.type !== 'spinoff' && React.createElement('svg', {
+        // Hide arrow for spinoff and aiPlaylist (not clickable)
+        playbackContext.type !== 'spinoff' && playbackContext.type !== 'aiPlaylist' && React.createElement('svg', {
           className: 'w-4 h-4 text-purple-400',
           fill: 'none',
           stroke: 'currentColor',

@@ -1253,6 +1253,19 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       }
     });
 
+    // Listen Along option - only show when friend is on-air
+    if (data.isOnAir) {
+      menuItems.push({
+        label: data.isListeningAlong ? 'Stop Listening Along' : 'Listen Along',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: data.isListeningAlong ? 'stop-listen-along' : 'start-listen-along',
+            friend: data.friend
+          });
+        }
+      });
+    }
+
     if (data.isPinned) {
       menuItems.push({
         label: 'Unpin from Sidebar',
