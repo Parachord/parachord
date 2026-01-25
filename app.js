@@ -1461,6 +1461,9 @@ const Parachord = () => {
   const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
+  const [isMuted, setIsMuted] = useState(false);
+  const preMuteVolumeRef = useRef(70); // Remember volume before muting
+  const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
@@ -2361,6 +2364,7 @@ const Parachord = () => {
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -3154,11 +3158,12 @@ const Parachord = () => {
   // Helper to determine resolver ID from track properties
   const determineResolverIdFromTrack = (track) => {
     if (!track) return null;
-    if (track.spotifyUri || track.spotifyId) return 'spotify';
-    if (track.bandcampUrl) return 'bandcamp';
-    if (track.youtubeUrl || track.youtubeId) return 'youtube';
-    if (track.qobuzId) return 'qobuz';
-    if (track.filePath || track.fileUrl) return 'localfiles';
+    // Check for resolver-specific properties at top level OR nested in sources
+    if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
+    if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
+    if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
+    if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
+    if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
     return null;
   };
 
@@ -4747,10 +4752,11 @@ const Parachord = () => {
       const audioUrl = `local-audio://${filePath}`;
       console.log('🎵 Audio URL:', audioUrl);
       audioRef.current.src = audioUrl;
-      // Apply normalized volume for local files
-      const effectiveVolume = getEffectiveVolume(volume, 'localfiles', sourceToPlay.id || trackOrSource.id);
+      // Apply normalized volume for local files (respect mute state)
+      const volumeToApply = isMutedRef.current ? 0 : volume;
+      const effectiveVolume = getEffectiveVolume(volumeToApply, 'localfiles', sourceToPlay.id || trackOrSource.id);
       audioRef.current.volume = effectiveVolume / 100;
-      console.log(`🔊 Applied volume: ${volume}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.localfiles || 0}dB)`);
+      console.log(`🔊 Applied volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.localfiles || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
 
       // Explicitly load to trigger metadata events
       audioRef.current.load();
@@ -4891,12 +4897,13 @@ const Parachord = () => {
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
 
-        // Apply normalized volume for Spotify
+        // Apply normalized volume for Spotify (respect mute state)
         if (resolverId === 'spotify') {
           const trackId = sourceToPlay.id || trackOrSource.id;
-          const effectiveVolume = getEffectiveVolume(volume, 'spotify', trackId);
-          console.log(`🔊 Applied Spotify volume: ${volume}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.spotify || 0}dB)`);
-          setSpotifyVolume(volume, true); // Apply with normalization
+          const volumeToApply = isMutedRef.current ? 0 : volume;
+          const effectiveVolume = getEffectiveVolume(volumeToApply, 'spotify', trackId);
+          console.log(`🔊 Applied Spotify volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.spotify || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
+          setSpotifyVolume(volumeToApply, !isMutedRef.current); // Apply with normalization only if not muted
         }
 
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
@@ -22221,34 +22228,83 @@ React.createElement('div', {
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
+            const effectiveVolume = isMuted ? 0 : volume;
+
+            // Toggle mute handler
+            const handleMuteToggle = () => {
+              if (isDisabled) return;
+              const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
+              if (isMuted) {
+                // Unmute: restore previous volume
+                const restoredVolume = preMuteVolumeRef.current || 70;
+                setIsMuted(false);
+                setVolume(restoredVolume);
+                if (activeResolverId === 'localfiles' && audioRef.current) {
+                  applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id);
+                }
+                if (activeResolverId === 'spotify') {
+                  setSpotifyVolume(restoredVolume, true);
+                }
+              } else {
+                // Mute: save current volume and set to 0
+                preMuteVolumeRef.current = volume;
+                setIsMuted(true);
+                if (activeResolverId === 'localfiles' && audioRef.current) {
+                  audioRef.current.volume = 0;
+                }
+                if (activeResolverId === 'spotify') {
+                  setSpotifyVolume(0, false);
+                }
+              }
+            };
+
             return React.createElement('div', {
               className: 'flex items-center gap-1',
               title: isDisabled
                 ? 'Volume control not available for browser playback'
-                : hasOffset
-                  ? `Volume (${resolverOffset > 0 ? '+' : ''}${resolverOffset}dB normalization applied)`
-                  : 'Volume'
+                : isMuted
+                  ? 'Click to unmute'
+                  : hasOffset
+                    ? `Volume (${resolverOffset > 0 ? '+' : ''}${resolverOffset}dB normalization applied) - Click to mute`
+                    : 'Click to mute'
             },
-              React.createElement('span', { className: isDisabled ? 'text-gray-600' : 'text-gray-400' },
+              React.createElement('button', {
+                className: `${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white cursor-pointer'} transition-colors`,
+                onClick: handleMuteToggle,
+                disabled: isDisabled
+              },
                 React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
-                  React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
+                  isMuted || effectiveVolume === 0
+                    // Muted icon (speaker with X)
+                    ? React.createElement('g', null,
+                        React.createElement('path', { d: 'M12,17.4l-6.1-3.8H-2V5.1h6.9L12,0.6V17.4z M-1,12.6h7.2l4.8,3V2.4L5.1,6.1H-1V12.6z', transform: 'translate(4, 0)' }),
+                        React.createElement('path', { d: 'M2.5,6.5l4,4M6.5,6.5l-4,4', stroke: 'currentColor', strokeWidth: '1.5', fill: 'none', strokeLinecap: 'round' })
+                      )
+                    // Normal volume icon
+                    : React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
                 )
               ),
               React.createElement('input', {
                 type: 'range',
                 min: '0',
                 max: '100',
-                value: volume,
+                value: effectiveVolume,
                 disabled: isDisabled,
                 onChange: (e) => {
                     const newVolume = Number(e.target.value);
+                    // If user moves slider while muted, unmute
+                    if (isMuted && newVolume > 0) {
+                      setIsMuted(false);
+                    }
                     setVolume(newVolume);
+                    // Re-determine resolver from current track ref to avoid stale closure
+                    const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
                     // Local files: apply normalized volume
-                    if (currentResolverId === 'localfiles' && audioRef.current) {
-                      applyLocalFileVolume(newVolume, currentTrack?.id);
+                    if (activeResolverId === 'localfiles' && audioRef.current) {
+                      applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
                     }
                     // Spotify: set volume via API with normalization
-                    if (currentResolverId === 'spotify') {
+                    if (activeResolverId === 'spotify') {
                       setSpotifyVolume(newVolume, true);
                     }
                   },
