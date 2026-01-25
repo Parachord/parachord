@@ -1557,6 +1557,7 @@ const Parachord = () => {
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
   const [spinoffLoading, setSpinoffLoading] = useState(false);
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
+  const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
@@ -12967,6 +12968,9 @@ ${tracks}
         return;
       }
 
+      // Save current playback context to restore when spinoff ends
+      spinoffPreviousContextRef.current = playbackContext;
+
       // Enter spinoff mode
       setSpinoffMode(true);
       setSpinoffSourceTrack({ title: track.title, artist: track.artist });
@@ -12990,14 +12994,15 @@ ${tracks}
 
   // Exit spinoff mode - return to normal queue playback
   const exitSpinoff = () => {
-    console.log('🔀 Exiting spinoff mode, clearing state...');
+    console.log('🔀 Exiting spinoff mode, restoring previous context...');
     setSpinoffMode(false);
     setSpinoffSourceTrack(null);
     spinoffTracksRef.current = [];
-    // Clear playbackContext so banner updates immediately
-    // (next track from queue will set its own context when it plays)
-    setPlaybackContext(null);
-    console.log('🔀 Spinoff state cleared: spinoffMode=false, playbackContext=null');
+    // Restore the previous playback context (if any)
+    const previousContext = spinoffPreviousContextRef.current;
+    setPlaybackContext(previousContext);
+    spinoffPreviousContextRef.current = null;
+    console.log('🔀 Spinoff state cleared, restored context:', previousContext?.type || 'none');
   };
 
   // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
