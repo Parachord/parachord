@@ -12945,7 +12945,12 @@ ${tracks}
           match: Math.round(parseFloat(t.match) * 100),
           source: 'lastfm-similar'
         }));
-        console.log(`🔀 Found ${tracks.length} similar tracks`);
+        // Shuffle the tracks for variety (Fisher-Yates shuffle)
+        for (let i = tracks.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+        }
+        console.log(`🔀 Found ${tracks.length} similar tracks (shuffled)`);
         return tracks;
       }
 
