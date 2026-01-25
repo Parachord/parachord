@@ -14020,10 +14020,10 @@ useEffect(() => {
         ),
 
         // Settings button at bottom of sidebar
-        React.createElement('div', { className: 'p-4 border-t border-gray-200' },
+        React.createElement('div', { className: 'px-4 py-2 border-t border-gray-200' },
           React.createElement('button', {
             onClick: () => navigateTo('settings'),
-            className: `w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
+            className: `w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors ${
               activeView === 'settings' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
             }`
           },
