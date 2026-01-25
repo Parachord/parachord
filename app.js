@@ -19142,6 +19142,16 @@ React.createElement('div', {
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                     )
                   )
+              ),
+              // Add Friend button in header (only on friends tab)
+              collectionTab === 'friends' && React.createElement('button', {
+                onClick: () => setAddFriendModalOpen(true),
+                className: 'ml-3 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+                ),
+                'Add Friend'
               )
             ),
             // Content with padding
@@ -19596,18 +19606,6 @@ React.createElement('div', {
               return React.createElement('div', {
                 style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
               },
-                // Add Friend button
-                React.createElement('div', { className: 'mb-4 flex justify-end' },
-                  React.createElement('button', {
-                    onClick: () => setAddFriendModalOpen(true),
-                    className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2'
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
-                    ),
-                    'Add Friend'
-                  )
-                ),
                 // Grid of friend cards - matching Related Artists style
                 React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-8',
@@ -19665,25 +19663,25 @@ React.createElement('div', {
                         // On-air indicator
                         onAir && React.createElement('div', {
                           className: 'absolute -bottom-1 right-4 w-5 h-5 bg-green-500 rounded-full border-2 border-white'
-                        }),
+                        })
+                      ),
+                      // Name and pin icon
+                      React.createElement('div', {
+                        className: 'mt-3 flex items-center justify-center gap-1 w-full'
+                      },
+                        React.createElement('span', {
+                          className: 'text-sm font-medium text-gray-700 text-center truncate group-hover:text-purple-600 transition-colors'
+                        }, friend.displayName),
                         // Pin icon for manually pinned friends (not auto-pinned)
-                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('div', {
-                          className: 'absolute top-0 right-2',
+                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('svg', {
+                          className: 'w-3.5 h-3.5 text-purple-400 flex-shrink-0',
+                          fill: 'currentColor',
+                          viewBox: '0 0 24 24',
                           title: 'Pinned to sidebar'
                         },
-                          React.createElement('svg', {
-                            className: 'w-4 h-4 text-purple-400 drop-shadow-sm',
-                            fill: 'currentColor',
-                            viewBox: '0 0 24 24'
-                          },
-                            React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
-                          )
+                          React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
                         )
                       ),
-                      // Name and info
-                      React.createElement('span', {
-                        className: 'mt-3 text-sm font-medium text-gray-700 text-center truncate w-full group-hover:text-purple-600 transition-colors'
-                      }, friend.displayName),
                       // Service badge
                       React.createElement('div', {
                         className: `inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs ${
