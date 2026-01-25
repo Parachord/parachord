@@ -11654,6 +11654,13 @@ ${tracks}
         const bioContent = data.artist.bio.content || data.artist.bio.summary || '';
         const cleanBio = bioContent.replace(/<[^>]*>/g, '').trim();
 
+        // Check if bio has meaningful content (not just "Read more on Last.fm" or similar)
+        // Last.fm often returns empty bios with just a link
+        if (!cleanBio || cleanBio.length < 50 || cleanBio.toLowerCase().includes('read more on last.fm')) {
+          console.log('🎧 Last.fm bio is empty or too short, skipping');
+          return null;
+        }
+
         // Also get the Last.fm URL for "Read more" link
         const lastfmUrl = data.artist.url || null;
 
