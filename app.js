@@ -18817,7 +18817,7 @@ React.createElement('div', {
                     }`,
                     onClick: () => {
                       const tracksAfter = sorted.slice(index + 1);
-                      const context = { type: 'library', name: 'Library' };
+                      const context = { type: 'library', name: 'Collection' };
                       setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
                     },
@@ -18902,7 +18902,7 @@ React.createElement('div', {
                                 onClick: (e) => {
                                   e.stopPropagation();
                                   const tracksAfter = sorted.slice(index + 1);
-                                  const context = { type: 'library', name: 'Library' };
+                                  const context = { type: 'library', name: 'Collection' };
                                   setQueueWithContext(tracksAfter, context);
                                   handlePlay({ ...track, preferredResolver: resolverId });
                                 },
@@ -18936,7 +18936,7 @@ React.createElement('div', {
                               onClick: (e) => {
                                 e.stopPropagation();
                                 const tracksAfter = sorted.slice(index + 1);
-                                const context = { type: 'library', name: 'Library' };
+                                const context = { type: 'library', name: 'Collection' };
                                 setQueueWithContext(tracksAfter, context);
                                 handlePlay({ ...track, preferredResolver: 'localfiles' });
                               },
@@ -18980,7 +18980,7 @@ React.createElement('div', {
                             onClick: (e) => {
                               e.stopPropagation();
                               const tracksAfter = sorted.slice(index + 1);
-                              const context = { type: 'library', name: 'Library' };
+                              const context = { type: 'library', name: 'Collection' };
                               setQueueWithContext(tracksAfter, context);
                               handlePlay({ ...track, preferredResolver: 'localfiles' });
                             },
@@ -25364,6 +25364,7 @@ React.createElement('div', {
           } else if (playbackContext.type === 'search') {
             navigateTo('search');
           } else if (playbackContext.type === 'library') {
+            setCollectionTab('tracks'); // Navigate to the Songs tab
             navigateTo('library');
           } else if (playbackContext.type === 'recommendations') {
             navigateTo('recommendations');
@@ -25385,7 +25386,7 @@ React.createElement('div', {
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
             playbackContext.type === 'album' ? `${playbackContext.name || 'Album'} by ${playbackContext.artist || 'Unknown'}` :
             playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
-            playbackContext.type === 'library' ? 'Library' :
+            playbackContext.type === 'library' ? 'Collection' :
             playbackContext.type === 'recommendations' ? 'Recommendations' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
