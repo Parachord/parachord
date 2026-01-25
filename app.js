@@ -6487,6 +6487,37 @@ const Parachord = () => {
     return Math.max(1, Math.floor((availableWidth + gap) / (minItemWidth + gap)));
   };
 
+  // Preprocess search query for MusicBrainz Lucene syntax
+  // Maps user-friendly filters to MusicBrainz field names
+  const preprocessQuery = (query, endpoint) => {
+    let processed = query;
+
+    // Map album: to appropriate field based on endpoint
+    if (endpoint === 'release-group') {
+      processed = processed.replace(/\balbum:/gi, 'releasegroup:');
+    } else if (endpoint === 'recording') {
+      processed = processed.replace(/\balbum:/gi, 'release:');
+    } else if (endpoint === 'artist') {
+      // For artist endpoint, album: doesn't make sense - strip it
+      // Pattern handles both quoted values (album:"dark side") and unquoted (album:thriller)
+      processed = processed.replace(/\balbum:(?:"[^"]*"|[^\s]*)/gi, '').trim();
+    }
+
+    // Map track:/song: to recording: (only for recording endpoint)
+    if (endpoint === 'recording') {
+      processed = processed.replace(/\b(track|song):/gi, 'recording:');
+    } else {
+      // Strip track:/song: from non-recording endpoints
+      // Pattern handles both quoted values (track:"let it be") and unquoted (track:yesterday)
+      processed = processed.replace(/\b(track|song):(?:"[^"]*"|[^\s]*)/gi, '').trim();
+    }
+
+    // Clean up any double spaces from removals
+    processed = processed.replace(/\s+/g, ' ').trim();
+
+    return processed;
+  };
+
   const performSearch = async (query) => {
     // Cancel any in-flight request
     if (abortControllerRef.current) {
@@ -6510,8 +6541,9 @@ const Parachord = () => {
       };
 
       // Search MusicBrainz for artists (fetch more than we initially display)
+      const artistQuery = preprocessQuery(query, 'artist');
       const artistResponse = await fetch(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=25`,
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
         fetchOptions
       );
       if (artistResponse.ok) {
@@ -6535,8 +6567,9 @@ const Parachord = () => {
       if (query !== searchQueryRef.current) return;
 
       // Search MusicBrainz for albums (release-groups)
+      const albumQuery = preprocessQuery(query, 'release-group');
       const albumResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=30`,
+        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
         fetchOptions
       );
       if (albumResponse.ok) {
@@ -6562,8 +6595,9 @@ const Parachord = () => {
       if (query !== searchQueryRef.current) return;
 
       // Search MusicBrainz for tracks (recordings)
+      const trackQuery = preprocessQuery(query, 'recording');
       const trackResponse = await fetch(
-        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=50`,
+        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
         fetchOptions
       );
       if (trackResponse.ok) {
