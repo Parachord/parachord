@@ -3743,6 +3743,11 @@ const Parachord = () => {
             break;
 
           case 'ended':
+            // Ignore browser events when streaming playback (Spotify) is active
+            if (streamingPlaybackActiveRef.current) {
+              console.log('⏹️ Browser playback ended (ignored - streaming active)');
+              break;
+            }
             // Ignore when local file is playing
             if (audioRef.current && !audioRef.current.paused) {
               console.log('⏹️ Browser playback ended (ignored - local file playing)');
@@ -3757,6 +3762,13 @@ const Parachord = () => {
             break;
 
           case 'tabClosed':
+            // Ignore browser events when streaming playback (Spotify) is active
+            if (streamingPlaybackActiveRef.current) {
+              console.log('🚪 Browser tab closed (ignored - streaming active)');
+              setBrowserPlaybackActive(false);
+              setActiveExtensionTabId(null);
+              break;
+            }
             // Ignore when local file is playing
             if (audioRef.current && !audioRef.current.paused) {
               console.log('🚪 Browser tab closed (ignored - local file playing)');
@@ -5972,11 +5984,11 @@ const Parachord = () => {
       console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
       handlePlay(nextTrack);
     } finally {
-      // Reset re-entrancy guard after a short delay to allow state updates to propagate
-      // This prevents immediate re-entry but allows subsequent legitimate calls
+      // Reset re-entrancy guard after a delay to allow state updates and async operations to complete
+      // This prevents re-entry from race conditions (e.g., in-flight Spotify polls, browser events)
       setTimeout(() => {
         isAdvancingTrackRef.current = false;
-      }, 100);
+      }, 500);
     }
   };
 
