@@ -12647,6 +12647,54 @@ ${tracks}
     }
   };
 
+  // Start spinoff mode - play similar tracks based on current track
+  const startSpinoff = async (track) => {
+    if (!track || !track.artist || !track.title) {
+      console.log('🔀 Cannot start spinoff: missing track info');
+      return;
+    }
+
+    setSpinoffLoading(true);
+    console.log(`🔀 Starting spinoff from "${track.title}" by ${track.artist}`);
+
+    try {
+      const similarTracks = await fetchSimilarTracks(track.artist, track.title);
+
+      if (similarTracks.length === 0) {
+        showToast(`No similar tracks found for "${track.title}"`);
+        return;
+      }
+
+      // Enter spinoff mode
+      setSpinoffMode(true);
+      setSpinoffSourceTrack({ title: track.title, artist: track.artist });
+      spinoffTracksRef.current = similarTracks;
+
+      // Set playback context
+      setPlaybackContext({
+        type: 'spinoff',
+        sourceTrack: { title: track.title, artist: track.artist }
+      });
+
+      showToast(`Spinoff: ${similarTracks.length} similar tracks queued`);
+      console.log(`🔀 Spinoff mode activated with ${similarTracks.length} tracks`);
+    } catch (error) {
+      console.error('Failed to start spinoff:', error);
+      showToast('Failed to fetch similar tracks');
+    } finally {
+      setSpinoffLoading(false);
+    }
+  };
+
+  // Exit spinoff mode - return to normal queue playback
+  const exitSpinoff = () => {
+    console.log('🔀 Exiting spinoff mode');
+    setSpinoffMode(false);
+    setSpinoffSourceTrack(null);
+    spinoffTracksRef.current = [];
+    // Don't clear playbackContext - let next track from queue set its own
+  };
+
   // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
   const getRelatedArtists = async (artistName, artistMbid) => {
     if (!artistName) return [];
