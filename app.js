@@ -12990,13 +12990,14 @@ ${tracks}
 
   // Exit spinoff mode - return to normal queue playback
   const exitSpinoff = () => {
-    console.log('🔀 Exiting spinoff mode');
+    console.log('🔀 Exiting spinoff mode, clearing state...');
     setSpinoffMode(false);
     setSpinoffSourceTrack(null);
     spinoffTracksRef.current = [];
     // Clear playbackContext so banner updates immediately
     // (next track from queue will set its own context when it plays)
     setPlaybackContext(null);
+    console.log('🔀 Spinoff state cleared: spinoffMode=false, playbackContext=null');
   };
 
   // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
