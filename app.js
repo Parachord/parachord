@@ -1709,6 +1709,7 @@ const Parachord = () => {
   const playbackPollerRef = useRef(null);
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
+  const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('marketplace'); // 'marketplace' | 'installed' | 'general' | 'about'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -3697,6 +3698,14 @@ const Parachord = () => {
             setBrowserPlaybackActive(true);
             setIsExternalPlayback(true);
 
+            // Clear the waiting flag - browser is now connected and handling playback
+            if (waitingForBrowserPlaybackRef.current) {
+              console.log('✅ Browser playback connected, clearing wait flag');
+              waitingForBrowserPlaybackRef.current = false;
+              // Also ensure streaming flag is false so browser events aren't ignored
+              streamingPlaybackActiveRef.current = false;
+            }
+
             // Stop Spotify polling - browser is now handling playback
             if (playbackPollerRef.current) {
               console.log('⏹️ Stopping Spotify polling - browser playback connected');
@@ -5614,9 +5623,25 @@ const Parachord = () => {
 
     // Open in external browser FIRST
     try {
+      // Mark that we're waiting for browser to connect - prevents premature handleNext() calls
+      waitingForBrowserPlaybackRef.current = true;
+      console.log('⏳ Waiting for browser playback to connect...');
+
+      // Safety timeout: Clear the waiting flag after 10 seconds if browser never connects
+      // This prevents getting stuck if the browser extension isn't responding
+      const safetyTimeout = setTimeout(() => {
+        if (waitingForBrowserPlaybackRef.current) {
+          console.log('⚠️ Browser playback timeout - clearing wait flag after 10s');
+          waitingForBrowserPlaybackRef.current = false;
+        }
+      }, 10000);
+
       const config = await getResolverConfig(resolverId);
       await resolver.play(track, config);
       console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
+
+      // Clear safety timeout if browser opens successfully (the 'connected' event will clear the wait flag)
+      clearTimeout(safetyTimeout);
 
       // Only update state AFTER successful browser open
       setShowExternalPrompt(false);
@@ -5627,6 +5652,8 @@ const Parachord = () => {
       setCurrentTrack(track);
     } catch (error) {
       console.error('❌ Failed to open external track:', error);
+      // Clear the waiting flag on error
+      waitingForBrowserPlaybackRef.current = false;
       showConfirmDialog({
         type: 'error',
         title: 'Browser Error',
@@ -5643,6 +5670,9 @@ const Parachord = () => {
   // Skip external track (manual or auto-timeout)
   const handleSkipExternalTrack = () => {
     console.log('⏭️ Skipping external track');
+
+    // Clear waiting flag since we're skipping
+    waitingForBrowserPlaybackRef.current = false;
 
     // Clear timeout and interval if exists
     if (externalTrackTimeoutRef.current) {
@@ -5704,6 +5734,8 @@ const Parachord = () => {
   // User finished with external track, move to next
   const handleDoneWithExternalTrack = () => {
     console.log('✅ User done with external track, moving to next');
+    // Clear waiting flag
+    waitingForBrowserPlaybackRef.current = false;
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
@@ -5887,6 +5919,13 @@ const Parachord = () => {
   };
 
   const handleNext = async () => {
+    // BROWSER PLAYBACK GUARD: Block handleNext while waiting for browser to connect
+    // This prevents race conditions when opening external tracks (YouTube, Bandcamp, etc.)
+    if (waitingForBrowserPlaybackRef.current) {
+      console.log('⏳ handleNext() blocked - waiting for browser playback to connect');
+      return;
+    }
+
     // RE-ENTRANCY GUARD: Prevent multiple simultaneous handleNext() calls
     // This can happen when events fire in rapid succession (e.g., tab close + ended event)
     if (isAdvancingTrackRef.current) {
