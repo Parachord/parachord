@@ -8759,6 +8759,24 @@ const Parachord = () => {
                 : queueTrack
             )
           );
+
+          // Also update currentTrack if this is the currently playing track
+          // This enables the resolver dropdown in the playbar
+          setCurrentTrack(prev => {
+            if (!prev) return prev;
+            const isSameTrack = (prev.id && prev.id === track.id) ||
+              (prev.title === track.title && prev.artist === track.artist);
+            if (isSameTrack) {
+              console.log(`✅ Updated currentTrack with ${Object.keys(sources).length} resolved sources`);
+              return {
+                ...prev,
+                sources: { ...prev.sources, ...sources },
+                duration: prev.duration || resolvedDuration
+              };
+            }
+            return prev;
+          });
+
           console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources${resolvedDuration ? `, ${resolvedDuration}s` : ''})`);
         }
 
