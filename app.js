@@ -685,6 +685,74 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
   );
 };
 
+// Search history item for empty search page
+const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => {
+  const { query, selectedResult, timestamp } = entry;
+
+  return React.createElement('div', {
+    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors'
+  },
+    // Result thumbnail or search icon
+    selectedResult?.imageUrl ?
+      React.createElement('img', {
+        src: selectedResult.imageUrl,
+        className: 'w-12 h-12 rounded object-cover',
+        onError: (e) => { e.target.style.display = 'none'; }
+      }) :
+      React.createElement('div', {
+        className: 'w-12 h-12 rounded bg-gray-100 flex items-center justify-center'
+      },
+        React.createElement('svg', {
+          className: 'w-5 h-5 text-gray-400',
+          fill: 'none',
+          stroke: 'currentColor',
+          viewBox: '0 0 24 24'
+        },
+          React.createElement('path', {
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            strokeWidth: 2,
+            d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
+          })
+        )
+      ),
+
+    // Query and result info
+    React.createElement('div', { className: 'flex-1 min-w-0' },
+      React.createElement('button', {
+        onClick: () => onQueryClick(query),
+        className: 'text-sm font-medium text-gray-900 hover:text-blue-600 truncate block text-left w-full'
+      }, `"${query}"`),
+      selectedResult && React.createElement('button', {
+        onClick: () => onResultClick(selectedResult),
+        className: 'text-xs text-gray-500 hover:text-blue-600 truncate block text-left w-full'
+      },
+        `${selectedResult.type}: ${selectedResult.name}${selectedResult.artist ? ` • ${selectedResult.artist}` : ''}`
+      )
+    ),
+
+    // Remove button
+    React.createElement('button', {
+      onClick: (e) => { e.stopPropagation(); onRemove(query); },
+      className: 'opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity'
+    },
+      React.createElement('svg', {
+        className: 'w-4 h-4',
+        fill: 'none',
+        stroke: 'currentColor',
+        viewBox: '0 0 24 24'
+      },
+        React.createElement('path', {
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          strokeWidth: 2,
+          d: 'M6 18L18 6M6 6l12 12'
+        })
+      )
+    )
+  );
+};
+
 // CollectionArtistCard component - for Collection view artist grid with lazy image loading
 const CollectionArtistCard = ({ artist, getArtistImage, onNavigate }) => {
   // States: undefined (fetching), null (no image found), string (URL)
@@ -15256,8 +15324,69 @@ useEffect(() => {
           ),
 
         // Results area
-        // Show skeletons when no query or when searching
-        (!searchQuery || isSearching) ?
+        // Show search history when no query
+        (!searchQuery) ?
+          // Search history view
+          (searchHistory.length > 0 ?
+            React.createElement('div', { className: 'space-y-4' },
+              // Header with clear all button
+              React.createElement('div', { className: 'flex items-center justify-between' },
+                React.createElement('h3', {
+                  className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider'
+                }, 'Recent Searches'),
+                React.createElement('button', {
+                  onClick: () => clearSearchHistory(),
+                  className: 'text-xs text-gray-400 hover:text-red-500 transition-colors'
+                }, 'Clear All')
+              ),
+              // History list
+              React.createElement('div', { className: 'space-y-1' },
+                ...searchHistory.slice(0, 10).map((entry, i) =>
+                  React.createElement(SearchHistoryItem, {
+                    key: `history-${i}-${entry.query}`,
+                    entry,
+                    onQueryClick: (query) => {
+                      handleSearchInput(query);
+                    },
+                    onResultClick: (result) => {
+                      // Navigate directly to the result
+                      if (result.type === 'artist') {
+                        fetchArtistData(result.name);
+                      } else if (result.type === 'album') {
+                        handleAlbumClick({ id: result.id, title: result.name, 'artist-credit': [{ name: result.artist }] });
+                      } else if (result.type === 'playlist') {
+                        const playlist = playlists.find(p => p.id === result.id);
+                        if (playlist) handlePlaylistClick(playlist);
+                      }
+                      // For tracks, just re-run the search
+                      else {
+                        handleSearchInput(entry.query);
+                      }
+                    },
+                    onRemove: (query) => clearSearchHistory(query)
+                  })
+                )
+              )
+            ) :
+            // No history yet - show placeholder
+            React.createElement('div', { className: 'text-center py-12' },
+              React.createElement('svg', {
+                className: 'w-12 h-12 mx-auto text-gray-300 mb-4',
+                fill: 'none',
+                stroke: 'currentColor',
+                viewBox: '0 0 24 24'
+              },
+                React.createElement('path', {
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                  strokeWidth: 1.5,
+                  d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'
+                })
+              ),
+              React.createElement('p', { className: 'text-gray-400 text-sm' }, 'Start typing to search')
+            )
+          ) :
+        isSearching ?
           // Loading skeletons - dynamically sized based on container width
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton - circular style
