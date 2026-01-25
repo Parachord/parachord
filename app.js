@@ -21591,10 +21591,10 @@ React.createElement('div', {
                 React.createElement('div', {
                   className: `album-art-container ${album.albumArt === undefined ? 'animate-shimmer' : ''}`,
                   style: {
-                    width: '100px',
-                    height: '100px',
+                    width: '180px',
+                    height: '180px',
                     flexShrink: 0,
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     overflow: 'hidden',
                     position: 'relative',
                     background: album.albumArt === null
@@ -21649,7 +21649,7 @@ React.createElement('div', {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '6px',
+                      gap: '12px',
                       transition: 'opacity 0.2s ease'
                     }
                   },
@@ -21667,13 +21667,13 @@ React.createElement('div', {
                           });
                         }
                       },
-                      className: 'transition-all hover:scale-110',
-                      style: { width: '28px', height: '28px', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                       title: 'Add to Playlist'
                     },
-                      React.createElement('svg', { style: { width: '14px', height: '14px' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
                       )
                     ),
@@ -21693,11 +21693,11 @@ React.createElement('div', {
                           handlePlay(firstTrack);
                         }
                       },
-                      className: 'transition-all hover:scale-110',
-                      style: { width: '36px', height: '36px', backgroundColor: '#ffffff', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', border: 'none', cursor: 'pointer' },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer' },
                       title: 'Play'
                     },
-                      React.createElement(Play, { size: 16, className: 'text-gray-800 ml-0.5' })
+                      React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
                     ),
                     // Add to Queue button
                     React.createElement('button', {
@@ -21705,13 +21705,13 @@ React.createElement('div', {
                         e.stopPropagation();
                         addCriticsPicksToQueue(album);
                       },
-                      className: 'transition-all hover:scale-110',
-                      style: { width: '28px', height: '28px', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                       title: 'Add to Queue'
                     },
-                      React.createElement('svg', { style: { width: '14px', height: '14px' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                       )
                     )
@@ -21754,9 +21754,10 @@ React.createElement('div', {
                   album.description && React.createElement('p', {
                     style: {
                       fontSize: '12px',
-                      color: '#6b7280',
-                      marginTop: '6px',
+                      color: '#9ca3af',
+                      marginTop: '8px',
                       lineHeight: '1.5',
+                      maxWidth: '400px',
                       display: '-webkit-box',
                       WebkitLineClamp: 2,
                       WebkitBoxOrient: 'vertical',
@@ -25196,41 +25197,46 @@ React.createElement('div', {
             if (!currentTrack) return null;
             const trackId = `${currentTrack.artist || 'unknown'}-${currentTrack.title || 'untitled'}-${currentTrack.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
             const isInCollection = collectionData.tracks.some(t => t.id === trackId);
-            return React.createElement('button', {
-              onClick: () => {
-                if (!isInCollection) {
-                  // Get sources from trackSources state as fallback (keyed by position-title)
-                  const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
-                  const stateSources = trackSources[trackSourceKey];
-                  // Also check cache
-                  const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
-                  const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
-                  // Merge sources: currentTrack.sources > cached > state
-                  const effectiveSources = {
-                    ...(stateSources || {}),
-                    ...(cachedSources || {}),
-                    ...(currentTrack.sources || {})
-                  };
-                  addTrackToCollection({ ...currentTrack, sources: effectiveSources });
-                } else {
-                  showToast(`${currentTrack.title} is already in your collection`);
-                }
-              },
-              className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`,
-              title: isInCollection ? 'In your collection' : 'Add to collection'
+            return React.createElement(Tooltip, {
+              content: isInCollection ? 'In your collection' : 'Save to collection',
+              position: 'top',
+              variant: 'dark'
             },
-              React.createElement('svg', {
-                className: 'w-5 h-5',
-                viewBox: '0 0 24 24',
-                fill: isInCollection ? 'currentColor' : 'none',
-                stroke: 'currentColor',
-                strokeWidth: isInCollection ? 0 : 2
+              React.createElement('button', {
+                onClick: () => {
+                  if (!isInCollection) {
+                    // Get sources from trackSources state as fallback (keyed by position-title)
+                    const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
+                    const stateSources = trackSources[trackSourceKey];
+                    // Also check cache
+                    const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
+                    const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
+                    // Merge sources: currentTrack.sources > cached > state
+                    const effectiveSources = {
+                      ...(stateSources || {}),
+                      ...(cachedSources || {}),
+                      ...(currentTrack.sources || {})
+                    };
+                    addTrackToCollection({ ...currentTrack, sources: effectiveSources });
+                  } else {
+                    showToast(`${currentTrack.title} is already in your collection`);
+                  }
+                },
+                className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`
               },
-                React.createElement('path', {
-                  strokeLinecap: 'round',
-                  strokeLinejoin: 'round',
-                  d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z'
-                })
+                React.createElement('svg', {
+                  className: 'w-5 h-5',
+                  viewBox: '0 0 24 24',
+                  fill: isInCollection ? 'currentColor' : 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: isInCollection ? 0 : 2
+                },
+                  React.createElement('path', {
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z'
+                  })
+                )
               )
             );
           })(),
@@ -25352,23 +25358,28 @@ React.createElement('div', {
             };
 
             return React.createElement('div', {
-              className: 'flex items-center gap-1',
-              title: getTooltip()
+              className: 'flex items-center gap-1'
             },
-              React.createElement('button', {
-                className: `${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white cursor-pointer'} transition-colors`,
-                onClick: handleMuteToggle,
-                disabled: isDisabled
+              React.createElement(Tooltip, {
+                content: isMuted ? 'Unmute' : 'Mute',
+                position: 'top',
+                variant: 'dark'
               },
-                React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
-                  isMuted || effectiveVolume === 0
-                    // Muted icon (speaker with diagonal slash)
-                    ? React.createElement('g', null,
-                        React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' }),
-                        React.createElement('line', { x1: '1', y1: '17', x2: '17', y2: '1', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' })
-                      )
-                    // Normal volume icon
-                    : React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
+                React.createElement('button', {
+                  className: `${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white cursor-pointer'} transition-colors`,
+                  onClick: handleMuteToggle,
+                  disabled: isDisabled
+                },
+                  React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
+                    isMuted || effectiveVolume === 0
+                      // Muted icon (speaker with diagonal slash)
+                      ? React.createElement('g', null,
+                          React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' }),
+                          React.createElement('line', { x1: '1', y1: '17', x2: '17', y2: '1', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' })
+                        )
+                      // Normal volume icon
+                      : React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
+                  )
                 )
               ),
               React.createElement('input', {
