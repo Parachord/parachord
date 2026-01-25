@@ -12703,7 +12703,7 @@ ${tracks}
         sourceTrack: { title: track.title, artist: track.artist }
       });
 
-      showToast(`Spinoff: ${similarTracks.length} similar tracks queued`);
+      showToast(`Spinning off of ${track.title} - ${track.artist}`);
       console.log(`🔀 Spinoff mode activated with ${similarTracks.length} tracks`);
     } catch (error) {
       console.error('Failed to start spinoff:', error);
