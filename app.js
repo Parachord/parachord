@@ -2451,10 +2451,10 @@ const Parachord = () => {
   useEffect(() => {
     if (!currentArtist) return;
 
-    if (artistPageTab === 'biography' && !artistBio) {
+    if (artistPageTab === 'biography' && !artistBio && !loadingBio) {
       (async () => {
         const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-        if (bioData) setArtistBio(bioData);
+        setArtistBio(bioData); // Set even if null to prevent refetching
       })();
     }
 
@@ -15508,9 +15508,9 @@ useEffect(() => {
                   onClick: async () => {
                     setArtistPageTab(tab);
                     // Lazy load data when tab is first clicked
-                    if (tab === 'biography' && !artistBio && currentArtist) {
+                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
                       const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-                      if (bioData) setArtistBio(bioData);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -15570,9 +15570,9 @@ useEffect(() => {
                   key: `collapsed-${tab}`,
                   onClick: async () => {
                     setArtistPageTab(tab);
-                    if (tab === 'biography' && !artistBio && currentArtist) {
+                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
                       const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-                      if (bioData) setArtistBio(bioData);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -15827,13 +15827,13 @@ React.createElement('div', {
                     if (tab === 'music' && artistName && artistReleases.length === 0) {
                       fetchArtistData(artistName);
                     }
-                    if (tab === 'biography' && !artistBio && artistName) {
+                    if (tab === 'biography' && !artistBio && !loadingBio && artistName) {
                       // Ensure artist data is loaded first
                       if (artistReleases.length === 0) {
                         fetchArtistData(artistName);
                       }
                       const bioData = await getArtistBio(artistName, currentArtist?.mbid);
-                      if (bioData) setArtistBio(bioData);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && artistName) {
                       // Ensure artist data is loaded first
