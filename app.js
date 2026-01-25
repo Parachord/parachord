@@ -3849,6 +3849,8 @@ const Parachord = () => {
           case 'ended':
             console.log('🎵 Playback window track ended, advancing to next');
             setBrowserPlaybackActive(false);
+            // Clear the waiting flag - browser track has ended, we're no longer waiting for it to connect
+            waitingForBrowserPlaybackRef.current = false;
             // Use ref to avoid stale closure in useEffect
             if (handleNextRef.current) handleNextRef.current();
             break;
@@ -3865,6 +3867,8 @@ const Parachord = () => {
         }
         console.log('🎵 Playback window closed');
         setBrowserPlaybackActive(false);
+        // Clear the waiting flag - browser window is closed, we're no longer waiting for it
+        waitingForBrowserPlaybackRef.current = false;
         // Don't auto-advance, just stop playback
         setIsPlaying(false);
       });
@@ -14244,7 +14248,7 @@ useEffect(() => {
         ),
 
         // Search - navigates to search page
-        React.createElement('div', { className: 'px-4 py-2 border-b border-gray-200' },
+        React.createElement('div', { className: 'px-4 pt-1 pb-3 border-b border-gray-200' },
           React.createElement('button', {
             className: `w-full flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${
               activeView === 'search' ? 'text-gray-900 font-medium' : ''
@@ -14557,18 +14561,18 @@ useEffect(() => {
         ),
 
         // Settings button at bottom of sidebar
-        React.createElement('div', { className: 'px-4 py-2 border-t border-gray-200' },
+        React.createElement('div', { className: 'px-4 py-3 border-t border-gray-200' },
           React.createElement('button', {
             onClick: () => navigateTo('settings'),
-            className: `w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors ${
-              activeView === 'settings' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+            className: `w-full flex items-center gap-2 text-gray-500 hover:text-gray-700 cursor-pointer transition-colors ${
+              activeView === 'settings' ? 'text-gray-900 font-medium' : ''
             }`
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' }),
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z' })
             ),
-            'Settings'
+            React.createElement('span', { className: 'text-sm' }, 'Settings')
           )
         )
       ),
@@ -22701,19 +22705,56 @@ React.createElement('div', {
                   className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
                 }, currentTrack.artist)
               ),
-              // Line 3: Resolver + browser indicator
+              // Line 3: Resolver dropdown + browser indicator
               (() => {
-                const resolverId = determineResolverIdFromTrack(currentTrack);
-                const resolver = allResolvers.find(r => r.id === resolverId);
+                const currentResolverId = determineResolverIdFromTrack(currentTrack);
+                const resolver = allResolvers.find(r => r.id === currentResolverId);
+                const resolverColors = {
+                  spotify: { color: 'text-green-400', bg: 'bg-green-400' },
+                  bandcamp: { color: 'text-cyan-400', bg: 'bg-cyan-400' },
+                  qobuz: { color: 'text-blue-400', bg: 'bg-blue-400' },
+                  youtube: { color: 'text-red-400', bg: 'bg-red-400' },
+                  localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' }
+                };
+
+                // Get available sources for this track
+                const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
+                  ? Object.keys(currentTrack.sources).filter(resId => activeResolvers.includes(resId))
+                  : [];
+
+                const meta = resolverColors[currentResolverId] || { color: 'text-purple-400', bg: 'bg-purple-400' };
+                const hasMultipleSources = availableSources.length > 1;
+
                 if (resolver) {
-                  const meta = {
-                    spotify: { color: 'text-green-400' },
-                    bandcamp: { color: 'text-cyan-400' },
-                    qobuz: { color: 'text-blue-400' },
-                    youtube: { color: 'text-red-400' }
-                  }[resolverId] || { color: 'text-purple-400' };
                   return React.createElement('div', { className: 'flex items-center gap-1 mt-0.5' },
-                    React.createElement('span', { className: `text-xs ${meta.color}` }, resolver.name),
+                    // Resolver dropdown (or just label if single source)
+                    hasMultipleSources ? React.createElement('select', {
+                      value: currentResolverId,
+                      onChange: (e) => {
+                        const newResolverId = e.target.value;
+                        if (newResolverId !== currentResolverId && currentTrack.sources[newResolverId]) {
+                          // Play from the new source - this will restart the track
+                          handlePlay(currentTrack.sources[newResolverId]);
+                        }
+                      },
+                      className: `text-xs ${meta.color} bg-transparent border-none cursor-pointer hover:opacity-80 transition-opacity focus:outline-none appearance-none pr-3 no-drag`,
+                      style: {
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right center',
+                        paddingRight: '12px'
+                      },
+                      title: 'Switch playback source'
+                    },
+                      availableSources.map(resId => {
+                        const r = allResolvers.find(res => res.id === resId);
+                        return React.createElement('option', {
+                          key: resId,
+                          value: resId,
+                          style: { color: '#000', backgroundColor: '#fff' }
+                        }, r ? r.name : resId);
+                      })
+                    ) : React.createElement('span', { className: `text-xs ${meta.color}` }, resolver.name),
                     // Browser indicator pill for external playback
                     isExternalPlayback && React.createElement('span', {
                       className: 'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-cyan-500/20 text-cyan-300',
@@ -22836,7 +22877,7 @@ React.createElement('div', {
                       audioRef.current.currentTime = newPosition;
                     }
                   },
-                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-700' : 'bg-gray-600'}`,
+                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`,
                   title: isSpotifyTrack ? 'Seeking not available for Spotify tracks' : undefined
                 });
               })()
