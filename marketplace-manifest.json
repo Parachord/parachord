@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-01-23T12:00:00Z",
+  "lastUpdated": "2026-01-24T20:00:00Z",
   "resolvers": [
     {
       "id": "spotify",
@@ -220,6 +220,46 @@
       "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/librefm.axe",
       "category": "social",
       "tags": ["social", "scrobbling", "open-source", "free"]
+    },
+    {
+      "id": "wikipedia",
+      "name": "Wikipedia",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Artist biographies and images from Wikipedia. No authentication required.",
+      "icon": "📚",
+      "color": "#000000",
+      "homepage": "https://www.wikipedia.org",
+      "capabilities": {
+        "metadata": true,
+        "biography": true,
+        "artistImages": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/wikipedia.axe",
+      "category": "metadata",
+      "tags": ["metadata", "biography", "images", "free", "open-source"]
+    },
+    {
+      "id": "discogs",
+      "name": "Discogs",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Artist biographies and images from Discogs. Optional token improves rate limits.",
+      "icon": "📀",
+      "color": "#333333",
+      "homepage": "https://www.discogs.com",
+      "capabilities": {
+        "metadata": true,
+        "biography": true,
+        "artistImages": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/jherskowitz/parachord/main/resolvers/discogs.axe",
+      "category": "metadata",
+      "tags": ["metadata", "biography", "images", "discography", "vinyl"]
     }
   ],
   "categories": ["streaming", "purchase", "metadata", "social", "local", "ai"]
