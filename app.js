@@ -1773,6 +1773,7 @@ const Parachord = () => {
   // Friends state
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
+  const [autoPinnedFriendIds, setAutoPinnedFriendIds] = useState([]); // Friends auto-pinned due to being on-air
   const [currentFriend, setCurrentFriend] = useState(null);
   const [friendHistoryTab, setFriendHistoryTab] = useState('recent');
   const [friendHistoryData, setFriendHistoryData] = useState({
@@ -4280,11 +4281,17 @@ const Parachord = () => {
             context = { type: 'playlist', id: data.sourceId, name: data.sourceName };
           } else if ((data.sourceType === 'album' || data.sourceType === 'release') && data.sourceName) {
             context = { type: 'album', id: data.sourceId, name: data.sourceName, artist: data.artistName };
+          } else if (data.sourceType === 'recommendations') {
+            context = { type: 'recommendations', name: 'Recommendations' };
           }
           addToQueue(data.tracks, context);
         } else if (data.action === 'add-to-queue' && data.track) {
-          // Single track from friend's now playing - no context for single tracks
-          addToQueue([data.track]);
+          // Single track - build context from source info if available
+          let context = null;
+          if (data.sourceType === 'recommendations') {
+            context = { type: 'recommendations', name: 'Recommendations' };
+          }
+          addToQueue([data.track], context);
         } else if (data.action === 'add-to-playlist' && data.track) {
           // Single track from friend's now playing
           setAddToPlaylistPanel({
@@ -6521,7 +6528,9 @@ const Parachord = () => {
   // Handle adding AI results to queue
   const handleAiAddToQueue = () => {
     if (!resultsSidebar?.tracks) return;
-    addToQueue(resultsSidebar.tracks);
+    // Use aiPlaylist context type (not navigable, unlike recommendations page)
+    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
+    addToQueue(resultsSidebar.tracks, context);
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
@@ -8685,16 +8694,24 @@ const Parachord = () => {
 
         await Promise.all(resolverPromises);
 
-        // Update the queue track with resolved sources
+        // Update the queue track with resolved sources and duration
         if (Object.keys(sources).length > 0) {
+          // Get duration from first source that has it
+          const resolvedDuration = Object.values(sources).find(s => s.duration)?.duration || null;
+
           setCurrentQueue(prevQueue =>
             prevQueue.map(queueTrack =>
               queueTrack.id === track.id
-                ? { ...queueTrack, sources: { ...queueTrack.sources, ...sources } }
+                ? {
+                    ...queueTrack,
+                    sources: { ...queueTrack.sources, ...sources },
+                    // Update duration if resolved source has it and track doesn't
+                    duration: queueTrack.duration || resolvedDuration
+                  }
                 : queueTrack
             )
           );
-          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources)`);
+          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources${resolvedDuration ? `, ${resolvedDuration}s` : ''})`);
         }
 
         // Small delay between tracks to avoid rate limiting
@@ -10985,7 +11002,7 @@ ${tracks}
         addedAt: Date.now(),
         lastFetched: Date.now(),
         cachedRecentTrack: null,
-        savedToCollection: true  // Friends are saved to collection by default
+        savedToCollection: false  // Friends added from sidebar are NOT saved to collection by default
       };
 
       // Fetch recent track for initial on-air status
@@ -10997,9 +11014,11 @@ ${tracks}
       }
 
       setFriends(prev => [...prev, newFriend]);
+      // Auto-pin the friend to sidebar (they're not saved to collection yet)
+      setPinnedFriendIds(prev => [...prev, newFriend.id]);
       setAddFriendModalOpen(false);
       setAddFriendInput('');
-      showToast(`Added ${newFriend.displayName} from ${finalService === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+      showToast(`${newFriend.displayName} pinned to sidebar`);
 
       console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
     } catch (error) {
@@ -11042,6 +11061,10 @@ ${tracks}
         showToast(`${friend.displayName} pinned to sidebar`);
       }
     }
+    // If friend was auto-pinned, remove from auto-pinned list (now manually pinned)
+    if (autoPinnedFriendIds.includes(friendId)) {
+      setAutoPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    }
   };
   pinFriendRef.current = pinFriend;
 
@@ -11058,6 +11081,8 @@ ${tracks}
 
     // Otherwise proceed with unpin
     setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
+    // Also clear from auto-pinned list if they were auto-pinned
+    setAutoPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     if (friend) {
       showToast(`${friend.displayName} unpinned from sidebar`);
     }
@@ -11068,6 +11093,7 @@ ${tracks}
   const confirmUnpinFriend = () => {
     if (pendingUnpinFriend) {
       setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+      setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
       showToast(`${pendingUnpinFriend.displayName} unpinned from sidebar`);
       setUnsavedFriendWarningOpen(false);
       setPendingUnpinFriend(null);
@@ -11152,12 +11178,19 @@ ${tracks}
     }
   };
 
-  // Refresh recent tracks for pinned friends (for polling)
+  // Refresh recent tracks for friends (for polling)
+  // Polls: all pinned friends + all saved friends (to check if they become active)
   const refreshPinnedFriends = async () => {
-    const pinnedFriends = friends.filter(f => pinnedFriendIds.includes(f.id));
     const listenAlongFriendNow = listenAlongFriendRef.current;
 
-    for (const friend of pinnedFriends) {
+    // Get all friends we need to poll:
+    // 1. All pinned friends (manual or auto-pinned)
+    // 2. All saved friends (even if not pinned, to detect when they become active)
+    const friendsToCheck = friends.filter(f =>
+      pinnedFriendIds.includes(f.id) || f.savedToCollection
+    );
+
+    for (const friend of friendsToCheck) {
       const recentTrack = await fetchFriendRecentTrack(friend);
       if (recentTrack) {
         // Check if track changed before updating
@@ -11175,6 +11208,22 @@ ${tracks}
             ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
             : f
         ));
+
+        // Auto-pin/unpin saved friends based on on-air status
+        const isPinned = pinnedFriendIds.includes(friend.id);
+        const isAutoPinned = autoPinnedFriendIds.includes(friend.id);
+
+        if (friend.savedToCollection && isOnAirNow && !isPinned) {
+          // Saved friend became active - auto-pin them to sidebar
+          console.log(`👥 Auto-pinning ${friend.displayName} (now active)`);
+          setPinnedFriendIds(prev => [...prev, friend.id]);
+          setAutoPinnedFriendIds(prev => [...prev, friend.id]);
+        } else if (isAutoPinned && !isOnAirNow) {
+          // Auto-pinned friend is no longer active - auto-unpin them
+          console.log(`👥 Auto-unpinning ${friend.displayName} (no longer active)`);
+          setPinnedFriendIds(prev => prev.filter(id => id !== friend.id));
+          setAutoPinnedFriendIds(prev => prev.filter(id => id !== friend.id));
+        }
 
         // Check if the friend we're listening along to went inactive
         if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
@@ -11301,9 +11350,10 @@ ${tracks}
   activateListenAlongRef.current = activateListenAlong;
   deactivateListenAlongRef.current = deactivateListenAlong;
 
-  // Poll pinned friends every 2 minutes for on-air status
+  // Poll friends for on-air status (pinned friends + saved friends for auto-pinning)
+  const hasSavedFriends = friends.some(f => f.savedToCollection);
   useEffect(() => {
-    if (pinnedFriendIds.length > 0) {
+    if (pinnedFriendIds.length > 0 || hasSavedFriends) {
       // Initial refresh
       refreshPinnedFriends();
 
@@ -11317,7 +11367,7 @@ ${tracks}
         }
       };
     }
-  }, [pinnedFriendIds.length, listenAlongFriend]);
+  }, [pinnedFriendIds.length, hasSavedFriends, listenAlongFriend]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {
@@ -14613,7 +14663,16 @@ useEffect(() => {
           friendDragOverSidebar && pinnedFriendIds.length === 0 && React.createElement('div', {
             className: 'px-3 py-4 text-sm text-purple-600 text-center'
           }, 'Drop to pin'),
-          pinnedFriendIds.map((friendId, index) => {
+          // Sort pinned friends: active (on-air) friends first, then by original order
+          [...pinnedFriendIds].sort((a, b) => {
+            const friendA = friends.find(f => f.id === a);
+            const friendB = friends.find(f => f.id === b);
+            const aOnAir = friendA && isOnAir(friendA);
+            const bOnAir = friendB && isOnAir(friendB);
+            if (aOnAir && !bOnAir) return -1;
+            if (!aOnAir && bOnAir) return 1;
+            return 0; // Keep original order within same group
+          }).map((friendId, index) => {
             const friend = friends.find(f => f.id === friendId);
             if (!friend) return null;
             const onAir = isOnAir(friend);
@@ -20548,7 +20607,9 @@ React.createElement('div', {
                           if (window.electron?.contextMenu?.showTrackMenu) {
                             window.electron.contextMenu.showTrackMenu({
                               type: 'track',
-                              track: track
+                              track: track,
+                              sourceType: 'recommendations',
+                              sourceName: 'Recommendations'
                             });
                           }
                         }
@@ -25528,12 +25589,23 @@ React.createElement('div', {
                     });
                   }
                 },
+                onClick: () => {
+                  if (isLoading || isError) return;
+                  // Trigger drop animation for all tracks at index <= clicked index
+                  setDroppingFromIndex(index);
+                  // After animation, play the track
+                  setTimeout(() => {
+                    setCurrentQueue(prev => prev.slice(index + 1));
+                    handlePlay(track);
+                    setDroppingFromIndex(null);
+                  }, 300);
+                },
                 className: `group flex items-center gap-3 py-2 px-3 border-b border-gray-600/30 hover:bg-white/10 transition-all duration-300 ${
                   isCurrentTrack ? 'bg-purple-900/40' : ''
                 } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
                   isError ? 'opacity-50' : ''
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
-                  isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
+                  isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
                   isFallingDown ? 'queue-track-drop' : ''} ${
                   isInserted ? 'queue-track-insert' : ''} ${
                   listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`
@@ -25552,24 +25624,12 @@ React.createElement('div', {
                 // Track title - flexible column that grows
                 // First track gets font-medium to indicate it's next (matches playbar styling)
                 React.createElement('span', {
-                  className: `text-sm truncate cursor-pointer ${index === 0 ? 'font-medium' : ''} ${
+                  className: `text-sm truncate ${index === 0 ? 'font-medium' : ''} ${
                     isLoading ? 'text-gray-500' :
                     isError ? 'text-red-400' :
                     isCurrentTrack ? 'text-purple-400' : 'text-gray-200 group-hover:text-white'
                   }`,
-                  style: { flex: '1 1 0', minWidth: 0 },
-                  onClick: () => {
-                    if (isLoading || isError) return;
-                    // Trigger drop animation for all tracks at index <= clicked index
-                    // These tracks will fall down into the player together
-                    setDroppingFromIndex(index);
-                    // After animation, play the track
-                    setTimeout(() => {
-                      setCurrentQueue(prev => prev.slice(index + 1));
-                      handlePlay(track);
-                      setDroppingFromIndex(null);
-                    }, 300);
-                  }
+                  style: { flex: '1 1 0', minWidth: 0 }
                 },
                   isLoading ? 'Loading...' :
                   isError ? 'Could not load track' :
@@ -25689,9 +25749,14 @@ React.createElement('div', {
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
+      // aiPlaylist type is not clickable (no navigation back to ephemeral AI-generated sidebar)
       playbackContext && React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 cursor-pointer hover:bg-purple-900/50 transition-colors',
+        className: `flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 transition-colors ${
+          playbackContext.type === 'aiPlaylist' ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
+        }`,
         onClick: () => {
+          // AI Playlist is not navigable (ephemeral sidebar)
+          if (playbackContext.type === 'aiPlaylist') return;
           // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
@@ -25743,6 +25808,7 @@ React.createElement('div', {
             playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
             playbackContext.type === 'library' ? 'Collection' :
             playbackContext.type === 'recommendations' ? 'Recommendations' :
+            playbackContext.type === 'aiPlaylist' ? 'AI Playlist' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
             playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
@@ -25750,7 +25816,8 @@ React.createElement('div', {
             playbackContext.name || 'Unknown'
           )
         ),
-        React.createElement('svg', {
+        // Hide arrow for aiPlaylist (not clickable)
+        playbackContext.type !== 'aiPlaylist' && React.createElement('svg', {
           className: 'w-4 h-4 text-purple-400',
           fill: 'none',
           stroke: 'currentColor',
