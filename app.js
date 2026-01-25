@@ -6328,7 +6328,11 @@ const Parachord = () => {
 
   const clearQueue = () => {
     setCurrentQueue([]);
-    setPlaybackContext(null);
+    // Preserve playback context if in spinoff or listen-along mode
+    // Only clear context for regular queue scenarios
+    if (playbackContext?.type !== 'spinoff' && playbackContext?.type !== 'listenAlong') {
+      setPlaybackContext(null);
+    }
     console.log('🗑️ Cleared queue');
   };
 
