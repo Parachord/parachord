@@ -1556,7 +1556,9 @@ const Parachord = () => {
   const [playbackContext, setPlaybackContext] = useState(null);
   // Spinoff mode - radio-like playback of similar tracks
   const [spinoffMode, setSpinoffMode] = useState(false);
+  const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
+  const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
   const [spinoffLoading, setSpinoffLoading] = useState(false);
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const [isPlaying, setIsPlaying] = useState(false);
@@ -2479,6 +2481,8 @@ const Parachord = () => {
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
+  useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -6007,7 +6011,8 @@ const Parachord = () => {
       const track = currentTrackRef.current;
 
       // Check if we're in spinoff mode - play from spinoff pool instead of queue
-      if (spinoffMode && spinoffTracksRef.current.length > 0) {
+      // Use refs to avoid stale closure issues
+      if (spinoffModeRef.current && spinoffTracksRef.current.length > 0) {
         const nextSimilar = spinoffTracksRef.current.shift();
         console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
 
@@ -6015,14 +6020,14 @@ const Parachord = () => {
           ...nextSimilar,
           _playbackContext: {
             type: 'spinoff',
-            sourceTrack: spinoffSourceTrack
+            sourceTrack: spinoffSourceTrackRef.current
           }
         });
         return;
       }
 
       // If spinoff mode but no tracks left, exit spinoff and continue with queue
-      if (spinoffMode && spinoffTracksRef.current.length === 0) {
+      if (spinoffModeRef.current && spinoffTracksRef.current.length === 0) {
         console.log('🔀 Spinoff pool exhausted, returning to queue');
         exitSpinoff();
       }
