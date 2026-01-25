@@ -15596,7 +15596,7 @@ useEffect(() => {
           className: 'h-full overflow-y-auto bg-white'
         },
           // Header bar with SEARCH title and CLOSE button
-          React.createElement('div', { className: 'flex items-center justify-between px-8 py-4 border-b border-gray-200' },
+          React.createElement('div', { className: 'flex items-center justify-between px-8 py-3 border-b border-gray-200' },
             React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Search'),
             React.createElement('button', {
               onClick: () => navigateBack(),
@@ -21661,7 +21661,7 @@ React.createElement('div', {
           className: 'flex flex-col h-full'
         },
           // Header bar with SETTINGS title and CLOSE button
-          React.createElement('div', { className: 'flex items-center justify-between px-8 py-4 border-b border-gray-200 flex-shrink-0' },
+          React.createElement('div', { className: 'flex items-center justify-between px-8 py-3 border-b border-gray-200 flex-shrink-0' },
             React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Settings'),
             React.createElement('button', {
               onClick: () => navigateBack(),
