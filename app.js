@@ -4730,6 +4730,12 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
+    // Exit spinoff mode if playing a track that isn't from the spinoff pool
+    // (unless this is being called FROM spinoff mode's handleNext)
+    if (spinoffMode && !trackOrSource._playbackContext?.type?.includes('spinoff')) {
+      exitSpinoff();
+    }
+
     // Use ref to avoid stale closure issues when called from extension message handler
     const currentResolvers = loadedResolversRef.current;
 
@@ -25437,6 +25443,10 @@ React.createElement('div', {
                   style: { flex: '1 1 0', minWidth: 0 },
                   onClick: () => {
                     if (isLoading || isError) return;
+                    // Exit spinoff mode when user clicks a track in the queue
+                    if (spinoffMode) {
+                      exitSpinoff();
+                    }
                     // Trigger drop animation for all tracks at index <= clicked index
                     // These tracks will fall down into the player together
                     setDroppingFromIndex(index);
