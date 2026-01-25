@@ -14,8 +14,6 @@
 - [ ] **Crossfade** - Fade between tracks (configurable duration)
 - [ ] **Context menus** - Right-click menus for tracks, albums, playlists (add to queue, add to playlist, etc.)
 
-### Nice to Have
-- [ ] **Queue history** - See previously played tracks
 
 ---
 
@@ -45,19 +43,12 @@
 ## 🎨 UI/UX Improvements
 
 ### Visual Enhancements
-- [ ] **Implement Jordi's designs** - Update aesthetic to match new design specs
-- [ ] **Hi-Res quality badges** - Show "Hi-Res" indicator for Qobuz tracks
 - [ ] **Animations & transitions** - Smooth page transitions
 - [ ] **Themes** - Light/dark mode toggle
 - [ ] **Custom themes** - User-created color schemes
 
 ### Navigation
-- [ ] **Breadcrumb navigation** - Show path in artist → album flow
-- [ ] **Recent history** - Quick access to recently viewed pages
-- [ ] **Search history** - Save recent searches
-- [ ] **Favorites/bookmarks** - Mark favorite artists/albums
 - [ ] **Mini-player mode** - Compact player view
-- [ ] **Remove resolver toggles from sidebar** - Clean up sidebar UI
 
 ### Accessibility
 - [ ] **Keyboard shortcuts** - Full keyboard navigation
@@ -80,15 +71,11 @@
 - [ ] **Track credits** - Individual track contributors
 - [ ] **Album reviews** - Aggregate review scores
 
-### Discover Page
-- [ ] **Add Uncoveries** - Integrate Uncoveries content into Discover page
-
 ---
 
 ## 🔍 Resolver & Search Features
 
 ### Bandcamp
-- [ ] **Album art scraping** - Parse image URLs from search results
 - [ ] **Backend proxy** - Avoid CORS, cache results
 - [ ] **Bandcamp Daily integration** - Featured artists/albums
 - [ ] **Collection integration** - Login, show purchases
@@ -163,7 +150,7 @@
 
 ### Friends & Sharing
 - [ ] **Friends list** - Add/manage friends
-- [ ] **Now playing status** - See what friends are listening to
+- [x] **Now playing status** - See what friends are listening to
 - [ ] **Share tracks** - Send tracks to friends
 - [ ] **Collaborative playlists** - Edit playlists together
 - [ ] **Listening parties** - Synchronized group listening
@@ -186,7 +173,7 @@
 ### Architecture
 - [ ] **Database integration** - Use SQLite for local storage
 - [ ] **Backend server** - Optional backend for advanced features
-- [ ] **WebSocket support** - Real-time updates
+- [x] **WebSocket support** - Real-time updates
 - [ ] **Plugin system expansion** - More plugin capabilities
 - [ ] **Auto-update** - Electron auto-updater
 - [ ] **Re-implement title bar dragging** - Allow dragging app window by title bar
@@ -232,7 +219,7 @@
 - [ ] **Genre classification** - Auto-tag genres
 
 ### Power User Features
-- [ ] **Advanced search** - Boolean operators, filters
+- [x] **Advanced search** - Boolean operators, filters
 - [ ] **Batch operations** - Bulk edit metadata
 - [ ] **Scripting support** - Automation via scripts
 - [ ] **API webhooks** - Integration with other services
