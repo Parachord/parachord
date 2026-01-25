@@ -15748,11 +15748,14 @@ useEffect(() => {
                   key: artist.id,
                   artist: artist,
                   onClick: () => {
+                    // Get cached artist image if available
+                    const normalizedName = artist.name?.trim().toLowerCase();
+                    const cachedImage = normalizedName ? artistImageCache.current[normalizedName] : null;
                     saveSearchHistory(searchQuery, {
                       type: 'artist',
                       id: artist.id,
                       name: artist.name,
-                      imageUrl: null
+                      imageUrl: cachedImage?.url || null
                     });
                     fetchArtistData(artist.name);
                   },
