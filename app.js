@@ -28400,7 +28400,7 @@ React.createElement('div', {
                 // Resolver icons - fixed width column (last before remove button)
                 React.createElement('div', {
                   className: 'flex items-center gap-1 justify-end',
-                  style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                  style: { width: '90px', flexShrink: 0, minHeight: '20px' }
                 },
                   isError ?
                     React.createElement('button', {
@@ -28419,11 +28419,12 @@ React.createElement('div', {
                       className: 'flex items-center gap-1'
                     },
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer'
+                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '20px', height: '20px' }
                       }),
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { animationDelay: '0.1s' }
+                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '20px', height: '20px', animationDelay: '0.1s' }
                       })
                     )
                   : availableSources.length > 0 ?
@@ -28440,8 +28441,8 @@ React.createElement('div', {
                         },
                         className: 'no-drag',
                         style: {
-                          width: '24px',
-                          height: '24px',
+                          width: '20px',
+                          height: '20px',
                           borderRadius: '4px',
                           backgroundColor: resolver.color,
                           border: 'none',
@@ -28455,7 +28456,7 @@ React.createElement('div', {
                         onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                         onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                         title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-                      }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                      }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                     })
                   :
                     // Show shimmer skeletons while resolving (match resolver icon size)
@@ -28463,12 +28464,13 @@ React.createElement('div', {
                       className: 'flex items-center gap-1'
                     },
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '20px', height: '20px' },
                         title: 'Resolving track...'
                       }),
                       React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { animationDelay: '0.1s' }
+                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '20px', height: '20px', animationDelay: '0.1s' }
                       })
                     )
                 ),
