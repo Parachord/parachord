@@ -908,16 +908,17 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate }) => {
 // FriendMiniPlaybar component - shows friend's current track with album art lookup
 const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   // States: undefined (fetching), null (no art found), string (URL)
-  const [artUrl, setArtUrl] = useState(track.albumArt || undefined);
+  // Don't use Last.fm placeholder art as initial state - only use our cache
+  const [artUrl, setArtUrl] = useState(undefined);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const textRef = useRef(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
-    // Always try our cache system first for better quality art
+    // Always try our cache system - never use Last.fm placeholder art
     if (!track.album || !track.artist) {
-      // No album/artist info - fall back to service-provided art or null
-      setArtUrl(track.albumArt || null);
+      // No album/artist info - show generic placeholder
+      setArtUrl(null);
       return;
     }
 
@@ -925,13 +926,13 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     const loadArt = async () => {
       const fetchedArt = await getAlbumArt(track.artist, track.album);
       if (!cancelled) {
-        // Use cached art if available, otherwise fall back to service-provided art
-        setArtUrl(fetchedArt || track.albumArt || null);
+        // Only use our cached art, show generic placeholder if not found
+        setArtUrl(fetchedArt || null);
       }
     };
     loadArt();
     return () => { cancelled = true; };
-  }, [track.name, track.artist, track.album, track.albumArt]);
+  }, [track.name, track.artist, track.album]);
 
   // Check if text overflows container (after render completes)
   useEffect(() => {
