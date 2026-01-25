@@ -3257,20 +3257,26 @@ const Parachord = () => {
 
   // Set Spotify playback volume via API (with normalization)
   const setSpotifyVolume = async (volumePercent, applyNormalization = true) => {
-    if (!spotifyTokenRef.current) return;
+    if (!spotifyTokenRef.current) {
+      console.warn('🔊 No Spotify token, skipping volume set');
+      return;
+    }
     try {
       // Apply normalization if enabled
       let effectiveVolume = volumePercent;
       if (applyNormalization && currentTrackRef.current) {
         effectiveVolume = getEffectiveVolume(volumePercent, 'spotify', currentTrackRef.current.id);
       }
+      console.log(`🔊 Sending Spotify volume API request: ${Math.round(effectiveVolume)}%`);
       const response = await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round(effectiveVolume)}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${spotifyTokenRef.current}`
         }
       });
-      if (!response.ok && response.status !== 204) {
+      if (response.ok || response.status === 204) {
+        console.log(`🔊 Spotify volume set successfully to ${Math.round(effectiveVolume)}%`);
+      } else {
         console.error('Failed to set Spotify volume:', response.status);
       }
     } catch (error) {
