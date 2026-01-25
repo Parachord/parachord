@@ -12608,6 +12608,45 @@ ${tracks}
     }
   };
 
+  // Fetch similar tracks from Last.fm API (for Spinoff feature)
+  const fetchSimilarTracks = async (artistName, trackName) => {
+    if (!artistName || !trackName) return [];
+
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) {
+      console.log('🔀 Last.fm similar tracks skipped: no API key');
+      return [];
+    }
+
+    try {
+      const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=20`;
+
+      console.log(`🔀 Fetching similar tracks for "${trackName}" by ${artistName}`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error('Last.fm similar tracks request failed:', response.status);
+        return [];
+      }
+
+      const data = await response.json();
+      if (data.similartracks?.track) {
+        const tracks = data.similartracks.track.map(t => ({
+          title: t.name,
+          artist: t.artist?.name || 'Unknown Artist',
+          match: Math.round(parseFloat(t.match) * 100),
+          source: 'lastfm-similar'
+        }));
+        console.log(`🔀 Found ${tracks.length} similar tracks`);
+        return tracks;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch similar tracks from Last.fm:', error);
+      return [];
+    }
+  };
+
   // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
   const getRelatedArtists = async (artistName, artistMbid) => {
     if (!artistName) return [];
