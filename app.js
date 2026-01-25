@@ -1527,6 +1527,7 @@ const Parachord = () => {
   const [searchResultsFilterOpen, setSearchResultsFilterOpen] = useState(false); // Filter input open state
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
+  const [searchHistory, setSearchHistory] = useState([]);
   const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'library'
   const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
@@ -3853,6 +3854,9 @@ const Parachord = () => {
     };
 
     loadPlaylistsFromStore();
+
+    // Load search history
+    loadSearchHistory();
 
     // Listen for local files library changes
     let libraryChangeCleanup = null;
@@ -6250,6 +6254,50 @@ const Parachord = () => {
         performSearch(value);
       }
     }, 400);
+  };
+
+  // Load search history from electron-store
+  const loadSearchHistory = async () => {
+    try {
+      const history = await window.electron.invoke('search-history-load');
+      setSearchHistory(history || []);
+    } catch (error) {
+      console.error('Failed to load search history:', error);
+    }
+  };
+
+  // Save a search history entry when user clicks a result
+  const saveSearchHistory = async (query, selectedResult) => {
+    if (!query || query.trim().length < 2) return;
+
+    const entry = {
+      query: query.trim(),
+      selectedResult: selectedResult ? {
+        type: selectedResult.type,
+        id: selectedResult.id,
+        name: selectedResult.name || selectedResult.title,
+        artist: selectedResult.artist,
+        imageUrl: selectedResult.imageUrl || selectedResult.albumArt
+      } : null
+    };
+
+    try {
+      await window.electron.invoke('search-history-save', entry);
+      // Reload history to reflect update
+      loadSearchHistory();
+    } catch (error) {
+      console.error('Failed to save search history:', error);
+    }
+  };
+
+  // Clear search history (single entry or all)
+  const clearSearchHistory = async (entryQuery = null) => {
+    try {
+      await window.electron.invoke('search-history-clear', entryQuery);
+      loadSearchHistory();
+    } catch (error) {
+      console.error('Failed to clear search history:', error);
+    }
   };
 
   // Load more results for a specific category
