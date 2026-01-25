@@ -1554,6 +1554,11 @@ const Parachord = () => {
   // Playback context - tracks where the current track originated from
   // Shape: { type: 'playlist' | 'album' | 'search' | 'library' | 'recommendations', id?, name?, artist? }
   const [playbackContext, setPlaybackContext] = useState(null);
+  // Spinoff mode - radio-like playback of similar tracks
+  const [spinoffMode, setSpinoffMode] = useState(false);
+  const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
+  const [spinoffLoading, setSpinoffLoading] = useState(false);
+  const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
