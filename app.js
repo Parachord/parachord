@@ -1500,6 +1500,8 @@ const Parachord = () => {
   });
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef(null);
+  const searchQueryRef = useRef('');
+  const abortControllerRef = useRef(null);
   // Recommendations state
   const [recommendations, setRecommendations] = useState({
     artists: [],
@@ -6219,6 +6221,7 @@ const Parachord = () => {
 
   const handleSearchInput = (value) => {
     setSearchQuery(value);
+    searchQueryRef.current = value;
 
     // Clear existing timeout
     if (searchTimeoutRef.current) {
@@ -6335,6 +6338,13 @@ const Parachord = () => {
   };
 
   const performSearch = async (query) => {
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     setIsSearching(true);
     const results = {
       artists: [],
@@ -6344,10 +6354,15 @@ const Parachord = () => {
     };
 
     try {
+      const fetchOptions = {
+        headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' },
+        signal
+      };
+
       // Search MusicBrainz for artists (fetch more than we initially display)
       const artistResponse = await fetch(
         `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(query)}&fmt=json&limit=25`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        fetchOptions
       );
       if (artistResponse.ok) {
         const data = await artistResponse.json();
@@ -6363,10 +6378,13 @@ const Parachord = () => {
         });
       }
 
+      // Check if query is still current before continuing
+      if (query !== searchQueryRef.current) return;
+
       // Search MusicBrainz for albums (release-groups)
       const albumResponse = await fetch(
         `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=30`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        fetchOptions
       );
       if (albumResponse.ok) {
         const data = await albumResponse.json();
@@ -6384,10 +6402,13 @@ const Parachord = () => {
         });
       }
 
+      // Check if query is still current before continuing
+      if (query !== searchQueryRef.current) return;
+
       // Search MusicBrainz for tracks (recordings)
       const trackResponse = await fetch(
         `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(query)}&fmt=json&limit=50`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        fetchOptions
       );
       if (trackResponse.ok) {
         const data = await trackResponse.json();
@@ -6399,6 +6420,9 @@ const Parachord = () => {
         const trackPromises = recordings.slice(0, initialBatchSize).map(recording => resolveRecording(recording));
         const resolvedTracks = await Promise.all(trackPromises);
 
+        // Check if query is still current after track resolution
+        if (query !== searchQueryRef.current) return;
+
         // Store unresolved tracks without sources (will resolve on-demand)
         const unresolvedTracks = recordings.slice(initialBatchSize).map(recording => ({
           id: recording.id,
@@ -6406,7 +6430,7 @@ const Parachord = () => {
           artist: recording['artist-credit']?.[0]?.name || 'Unknown',
           duration: Math.floor((recording.length || 180000) / 1000),
           album: recording.releases?.[0]?.title || '',
-          releaseId: recording.releases?.[0]?.id || null, // Store release ID for album art
+          releaseId: recording.releases?.[0]?.id || null,
           length: recording.length,
           sources: {}
         }));
@@ -6419,15 +6443,26 @@ const Parachord = () => {
         p.title.toLowerCase().includes(query.toLowerCase())
       );
 
+      // Final check: only update results if query is still current
+      if (query !== searchQueryRef.current) return;
+
       setSearchResults(results);
       console.log('🔍 Search results:', results);
 
       // Fetch album art lazily in background (don't block search results)
       fetchSearchAlbumArt(results.albums, results.tracks);
     } catch (error) {
+      // Ignore abort errors - these are expected when cancelling stale requests
+      if (error.name === 'AbortError') {
+        console.log('🔍 Search request cancelled (newer query in progress)');
+        return;
+      }
       console.error('Search error:', error);
     } finally {
-      setIsSearching(false);
+      // Only clear loading state if this query is still current
+      if (query === searchQueryRef.current) {
+        setIsSearching(false);
+      }
     }
   };
 
