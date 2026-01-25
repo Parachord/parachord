@@ -2455,10 +2455,10 @@ const Parachord = () => {
   useEffect(() => {
     if (!currentArtist) return;
 
-    if (artistPageTab === 'biography' && !artistBio) {
+    if (artistPageTab === 'biography' && !artistBio && !loadingBio) {
       (async () => {
-        const bioData = await getArtistBio(currentArtist.name);
-        if (bioData) setArtistBio(bioData);
+        const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
+        setArtistBio(bioData); // Set even if null to prevent refetching
       })();
     }
 
@@ -7133,13 +7133,31 @@ const Parachord = () => {
         type: artist.type
       });
 
-      // Start fetching artist image early (non-blocking)
-      getArtistImage(artistName).then(result => {
-        if (result) {
-          setArtistImage(result.url);
-          setArtistImagePosition(result.facePosition || 'center 25%');
+      // Start fetching artist image early (non-blocking) with fallbacks
+      (async () => {
+        // Try Spotify first
+        const spotifyResult = await getArtistImage(artistName);
+        if (spotifyResult) {
+          setArtistImage(spotifyResult.url);
+          setArtistImagePosition(spotifyResult.facePosition || 'center 25%');
+          return;
         }
-      });
+
+        // Try Wikipedia fallback
+        const wikiImage = await getWikipediaArtistImage(artist.id);
+        if (wikiImage) {
+          setArtistImage(wikiImage);
+          setArtistImagePosition('center 25%');
+          return;
+        }
+
+        // Try Discogs fallback
+        const discogsImage = await getDiscogsArtistImage(artist.id, artistName);
+        if (discogsImage) {
+          setArtistImage(discogsImage);
+          setArtistImagePosition('center 25%');
+        }
+      })();
 
       // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
       // Using release-groups instead of releases to avoid duplicates (each album appears once)
@@ -11650,7 +11668,7 @@ ${tracks}
   }, [searchDetailCategory, searchPreviewItem?.id]);
 
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
-  const getArtistBio = async (artistName) => {
+  const getLastfmBio = async (artistName) => {
     if (!artistName) return null;
 
     const apiKey = lastfmApiKey.current;
@@ -11659,7 +11677,6 @@ ${tracks}
       return null;
     }
 
-    setLoadingBio(true);
     try {
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
 
@@ -11675,15 +11692,331 @@ ${tracks}
         const bioContent = data.artist.bio.content || data.artist.bio.summary || '';
         const cleanBio = bioContent.replace(/<[^>]*>/g, '').trim();
 
+        // Check if bio has meaningful content (not just "Read more on Last.fm" or similar)
+        // Last.fm often returns empty bios with just a link
+        if (!cleanBio || cleanBio.length < 50 || cleanBio.toLowerCase().includes('read more on last.fm')) {
+          console.log('🎧 Last.fm bio is empty or too short, skipping');
+          return null;
+        }
+
         // Also get the Last.fm URL for "Read more" link
         const lastfmUrl = data.artist.url || null;
 
-        return { bio: cleanBio, url: lastfmUrl };
+        return { bio: cleanBio, url: lastfmUrl, source: 'lastfm' };
       }
 
       return null;
     } catch (error) {
       console.error('Failed to fetch artist bio from Last.fm:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist biography from Wikipedia via Wikidata (uses MBID)
+  const getWikipediaBio = async (artistMbid) => {
+    if (!artistMbid) {
+      console.log('📚 Wikipedia bio skipped: no MBID');
+      return null;
+    }
+
+    try {
+      // Step 1: Query MusicBrainz for Wikidata relation
+      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
+      const mbResponse = await fetch(mbUrl, {
+        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
+      });
+
+      if (!mbResponse.ok) {
+        console.log('📚 MusicBrainz artist lookup failed:', mbResponse.status);
+        return null;
+      }
+
+      const mbData = await mbResponse.json();
+
+      // Find Wikidata URL in relations
+      const wikidataRel = mbData.relations?.find(r =>
+        r.type === 'wikidata' && r.url?.resource
+      );
+
+      if (!wikidataRel) {
+        console.log('📚 No Wikidata link found for artist');
+        return null;
+      }
+
+      // Extract Wikidata ID (e.g., "Q1299" from "https://www.wikidata.org/wiki/Q1299")
+      const wikidataUrl = wikidataRel.url.resource;
+      const wikidataId = wikidataUrl.split('/').pop();
+
+      // Step 2: Query Wikidata for Wikipedia article title
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
+      const wdResponse = await fetch(wdUrl);
+
+      if (!wdResponse.ok) {
+        console.log('📚 Wikidata lookup failed:', wdResponse.status);
+        return null;
+      }
+
+      const wdData = await wdResponse.json();
+      const wikiTitle = wdData.entities?.[wikidataId]?.sitelinks?.enwiki?.title;
+
+      if (!wikiTitle) {
+        console.log('📚 No English Wikipedia article found');
+        return null;
+      }
+
+      // Step 3: Fetch Wikipedia article extract (longer bio)
+      // Using MediaWiki API with extracts to get more content than the summary endpoint
+      const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(wikiTitle)}&prop=extracts&exintro=1&explaintext=1&format=json&origin=*`;
+      const wpResponse = await fetch(wpUrl);
+
+      if (!wpResponse.ok) {
+        console.log('📚 Wikipedia extract fetch failed:', wpResponse.status);
+        return null;
+      }
+
+      const wpData = await wpResponse.json();
+      const pages = wpData.query?.pages;
+      const pageId = pages ? Object.keys(pages)[0] : null;
+      const extract = pageId && pageId !== '-1' ? pages[pageId].extract : null;
+
+      if (extract) {
+        console.log('📚 Wikipedia bio fetched successfully');
+        // Normalize line breaks: ensure double newlines between paragraphs for visual separation
+        const formattedBio = extract.trim().replace(/\n+/g, '\n\n');
+        return {
+          bio: formattedBio,
+          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+          source: 'wikipedia'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📚 Failed to fetch Wikipedia bio:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist image from Wikipedia/Wikidata (fallback when Spotify has no image)
+  const getWikipediaArtistImage = async (artistMbid) => {
+    if (!artistMbid) return null;
+
+    try {
+      // Step 1: Get Wikidata ID via MusicBrainz
+      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
+      const mbResponse = await fetch(mbUrl, {
+        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
+      });
+
+      if (!mbResponse.ok) return null;
+
+      const mbData = await mbResponse.json();
+      const wikidataRel = mbData.relations?.find(r =>
+        r.type === 'wikidata' && r.url?.resource
+      );
+
+      if (!wikidataRel) return null;
+
+      const wikidataId = wikidataRel.url.resource.split('/').pop();
+
+      // Step 2: Get Wikipedia article title
+      const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
+      const wdResponse = await fetch(wdUrl);
+
+      if (!wdResponse.ok) return null;
+
+      const wdData = await wdResponse.json();
+      const wikiTitle = wdData.entities?.[wikidataId]?.sitelinks?.enwiki?.title;
+
+      if (!wikiTitle) return null;
+
+      // Step 3: Fetch Wikipedia page summary (includes thumbnail)
+      const wpUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`;
+      const wpResponse = await fetch(wpUrl);
+
+      if (!wpResponse.ok) return null;
+
+      const wpData = await wpResponse.json();
+
+      if (wpData.thumbnail?.source) {
+        console.log('📚 Wikipedia artist image found');
+        return wpData.thumbnail.source;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📚 Failed to fetch Wikipedia artist image:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist biography from Discogs (uses MBID or artist name)
+  const getDiscogsBio = async (artistMbid, artistName) => {
+    if (!artistMbid && !artistName) {
+      console.log('📀 Discogs bio skipped: no MBID or name');
+      return null;
+    }
+
+    try {
+      // Get Discogs token from metaservice config if available
+      const discogsConfig = metaServiceConfigs?.discogs || {};
+      const token = discogsConfig.personalAccessToken;
+
+      const headers = {
+        'User-Agent': 'Parachord/1.0 (https://parachord.app)'
+      };
+      if (token) {
+        headers['Authorization'] = `Discogs token=${token}`;
+      }
+
+      // Search for artist on Discogs
+      const searchQuery = artistName || artistMbid;
+      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(searchQuery)}&type=artist&per_page=5`;
+
+      const searchResponse = await fetch(searchUrl, { headers });
+
+      if (!searchResponse.ok) {
+        console.log('📀 Discogs search failed:', searchResponse.status);
+        return null;
+      }
+
+      const searchData = await searchResponse.json();
+
+      if (!searchData.results?.length) {
+        console.log('📀 No Discogs results found');
+        return null;
+      }
+
+      // Find best match - prefer exact name match
+      let artistResult = searchData.results.find(r =>
+        r.title?.toLowerCase() === artistName?.toLowerCase()
+      );
+
+      // Fall back to first result if no exact match
+      if (!artistResult) {
+        artistResult = searchData.results[0];
+      }
+
+      // Fetch full artist profile
+      const artistUrl = artistResult.resource_url;
+      const artistResponse = await fetch(artistUrl, { headers });
+
+      if (!artistResponse.ok) {
+        console.log('📀 Discogs artist fetch failed:', artistResponse.status);
+        return null;
+      }
+
+      const artistData = await artistResponse.json();
+
+      if (artistData.profile) {
+        // Clean up Discogs profile (remove [a=Artist] style links)
+        const cleanProfile = artistData.profile
+          .replace(/\[a=([^\]]+)\]/g, '$1')  // [a=Artist Name] -> Artist Name
+          .replace(/\[l=([^\]]+)\]/g, '$1')  // [l=Label Name] -> Label Name
+          .replace(/\[m=([^\]]+)\]/g, '$1')  // [m=Master] -> Master
+          .replace(/\[r=([^\]]+)\]/g, '$1')  // [r=Release] -> Release
+          .replace(/\[url=([^\]]+)\]([^\[]+)\[\/url\]/g, '$2')  // [url=...]text[/url] -> text
+          .trim();
+
+        console.log('📀 Discogs bio fetched successfully');
+        return {
+          bio: cleanProfile,
+          url: artistData.uri || `https://www.discogs.com/artist/${artistData.id}`,
+          source: 'discogs'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📀 Failed to fetch Discogs bio:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist image from Discogs (fallback when Spotify and Wikipedia have no image)
+  const getDiscogsArtistImage = async (artistMbid, artistName) => {
+    if (!artistName) return null;
+
+    try {
+      const discogsConfig = metaServiceConfigs?.discogs || {};
+      const token = discogsConfig.personalAccessToken;
+
+      const headers = {
+        'User-Agent': 'Parachord/1.0 (https://parachord.app)'
+      };
+      if (token) {
+        headers['Authorization'] = `Discogs token=${token}`;
+      }
+
+      // Search for artist
+      const searchUrl = `https://api.discogs.com/database/search?q=${encodeURIComponent(artistName)}&type=artist&per_page=5`;
+      const searchResponse = await fetch(searchUrl, { headers });
+
+      if (!searchResponse.ok) return null;
+
+      const searchData = await searchResponse.json();
+
+      if (!searchData.results?.length) return null;
+
+      // Find best match
+      let artistResult = searchData.results.find(r =>
+        r.title?.toLowerCase() === artistName.toLowerCase()
+      ) || searchData.results[0];
+
+      // Fetch full artist profile for images
+      const artistResponse = await fetch(artistResult.resource_url, { headers });
+
+      if (!artistResponse.ok) return null;
+
+      const artistData = await artistResponse.json();
+
+      // Discogs images array - first is primary
+      if (artistData.images?.length > 0) {
+        // Prefer primary image, fall back to first
+        const primaryImage = artistData.images.find(img => img.type === 'primary');
+        const imageUrl = primaryImage?.uri || artistData.images[0].uri;
+        console.log('📀 Discogs artist image found');
+        return imageUrl;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('📀 Failed to fetch Discogs artist image:', error);
+      return null;
+    }
+  };
+
+  // Fetch artist biography from all sources with priority: Wikipedia > Discogs > Last.fm
+  const getArtistBio = async (artistName, artistMbid) => {
+    if (!artistName) return null;
+
+    setLoadingBio(true);
+    try {
+      // Fetch from all sources in parallel
+      const [wikipediaBio, discogsBio, lastfmBio] = await Promise.all([
+        getWikipediaBio(artistMbid),
+        getDiscogsBio(artistMbid, artistName),
+        getLastfmBio(artistName)
+      ]);
+
+      // Store all sources for potential future use
+      const allSources = {};
+      if (wikipediaBio) allSources.wikipedia = wikipediaBio;
+      if (discogsBio) allSources.discogs = discogsBio;
+      if (lastfmBio) allSources.lastfm = lastfmBio;
+
+      // Select best bio based on priority: Wikipedia > Discogs > Last.fm
+      const selected = wikipediaBio ?? discogsBio ?? lastfmBio;
+
+      if (selected) {
+        console.log(`🎤 Selected bio from ${selected.source}`);
+        return { ...selected, allSources };
+      }
+
+      console.log('🎤 No biography found from any source');
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch artist bio:', error);
       return null;
     } finally {
       setLoadingBio(false);
@@ -15232,9 +15565,9 @@ useEffect(() => {
                   onClick: async () => {
                     setArtistPageTab(tab);
                     // Lazy load data when tab is first clicked
-                    if (tab === 'biography' && !artistBio && currentArtist) {
-                      const bioData = await getArtistBio(currentArtist.name);
-                      if (bioData) setArtistBio(bioData);
+                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
+                      const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -15294,9 +15627,9 @@ useEffect(() => {
                   key: `collapsed-${tab}`,
                   onClick: async () => {
                     setArtistPageTab(tab);
-                    if (tab === 'biography' && !artistBio && currentArtist) {
-                      const bioData = await getArtistBio(currentArtist.name);
-                      if (bioData) setArtistBio(bioData);
+                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
+                      const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -15551,13 +15884,13 @@ React.createElement('div', {
                     if (tab === 'music' && artistName && artistReleases.length === 0) {
                       fetchArtistData(artistName);
                     }
-                    if (tab === 'biography' && !artistBio && artistName) {
+                    if (tab === 'biography' && !artistBio && !loadingBio && artistName) {
                       // Ensure artist data is loaded first
                       if (artistReleases.length === 0) {
                         fetchArtistData(artistName);
                       }
-                      const bioData = await getArtistBio(artistName);
-                      if (bioData) setArtistBio(bioData);
+                      const bioData = await getArtistBio(artistName, currentArtist?.mbid);
+                      setArtistBio(bioData);
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && artistName) {
                       // Ensure artist data is loaded first
@@ -15987,12 +16320,18 @@ React.createElement('div', {
               React.createElement('div', {
                 className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
               }, artistBio.bio),
-              artistBio.url && React.createElement('a', {
-                href: artistBio.url,
-                target: '_blank',
-                rel: 'noopener noreferrer',
-                className: 'inline-block mt-4 text-purple-600 hover:text-purple-700 text-sm'
-              }, 'Read more on Last.fm →')
+              // Source attribution and link
+              React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
+                React.createElement('span', {
+                  className: 'text-xs text-gray-400'
+                }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
+                artistBio.url && React.createElement('a', {
+                  href: artistBio.url,
+                  target: '_blank',
+                  rel: 'noopener noreferrer',
+                  className: 'text-purple-600 hover:text-purple-700 text-sm'
+                }, 'Read more →')
+              )
             ),
             // No bio found
             !loadingBio && !artistBio && React.createElement('div', {
