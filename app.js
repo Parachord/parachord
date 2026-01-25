@@ -22855,8 +22855,43 @@ React.createElement('div', {
           )
         ),
 
-        // RIGHT: Heart + Progress bar + Shuffle + Repeat + Volume
+        // RIGHT: Spinoff + Heart + Progress bar + Shuffle + Repeat + Volume
         React.createElement('div', { className: 'flex items-center gap-3' },
+          // Spinoff button - radio-like playback of similar tracks
+          React.createElement('button', {
+            onClick: () => {
+              if (spinoffMode) {
+                exitSpinoff();
+              } else if (currentTrack) {
+                startSpinoff(currentTrack);
+              }
+            },
+            disabled: !currentTrack || spinoffLoading,
+            className: `p-1.5 rounded-full transition-colors ${
+              !currentTrack ? 'text-gray-600 cursor-not-allowed' :
+              spinoffLoading ? 'text-gray-400' :
+              spinoffMode ? 'text-purple-400 hover:text-purple-300' :
+              'text-gray-400 hover:text-white'
+            }`,
+            title: spinoffMode ? 'Exit spinoff mode' : 'Start spinoff (play similar tracks)'
+          },
+            spinoffLoading
+              ? React.createElement('span', { className: 'animate-spin inline-block w-5 h-5' }, '◌')
+              : React.createElement('svg', {
+                  className: 'w-5 h-5',
+                  viewBox: '0 0 24 24',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 2
+                },
+                  // Branching/fork icon
+                  React.createElement('path', {
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    d: 'M6 3v12M6 9c0-2 2-3 4-3h4c2 0 4 1 4 3v6M18 21v-6M6 21a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6z'
+                  })
+                )
+          ),
           // Heart/favorite button
           (() => {
             if (!currentTrack) return null;
