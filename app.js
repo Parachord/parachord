@@ -6000,6 +6000,27 @@ const Parachord = () => {
       const queue = currentQueueRef.current;
       const track = currentTrackRef.current;
 
+      // Check if we're in spinoff mode - play from spinoff pool instead of queue
+      if (spinoffMode && spinoffTracksRef.current.length > 0) {
+        const nextSimilar = spinoffTracksRef.current.shift();
+        console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
+
+        handlePlay({
+          ...nextSimilar,
+          _playbackContext: {
+            type: 'spinoff',
+            sourceTrack: spinoffSourceTrack
+          }
+        });
+        return;
+      }
+
+      // If spinoff mode but no tracks left, exit spinoff and continue with queue
+      if (spinoffMode && spinoffTracksRef.current.length === 0) {
+        console.log('🔀 Spinoff pool exhausted, returning to queue');
+        exitSpinoff();
+      }
+
       if (queue.length === 0) {
         console.log('No queue set, cannot go to next track');
         return;
