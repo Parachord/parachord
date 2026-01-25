@@ -12994,7 +12994,9 @@ ${tracks}
     setSpinoffMode(false);
     setSpinoffSourceTrack(null);
     spinoffTracksRef.current = [];
-    // Don't clear playbackContext - let next track from queue set its own
+    // Clear playbackContext so banner updates immediately
+    // (next track from queue will set its own context when it plays)
+    setPlaybackContext(null);
   };
 
   // Fetch related artists from both Last.fm and ListenBrainz (merged and de-duped)
