@@ -1532,6 +1532,7 @@ const Parachord = () => {
   const [isMuted, setIsMuted] = useState(false);
   const preMuteVolumeRef = useRef(70); // Remember volume before muting
   const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
+  const spotifyVolumeTimeoutRef = useRef(null); // Debounce Spotify volume API calls
 
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
@@ -3275,6 +3276,16 @@ const Parachord = () => {
     } catch (error) {
       console.error('Error setting Spotify volume:', error);
     }
+  };
+
+  // Debounced version for slider dragging (prevents rate limiting)
+  const setSpotifyVolumeDebounced = (volumePercent, applyNormalization = true) => {
+    if (spotifyVolumeTimeoutRef.current) {
+      clearTimeout(spotifyVolumeTimeoutRef.current);
+    }
+    spotifyVolumeTimeoutRef.current = setTimeout(() => {
+      setSpotifyVolume(volumePercent, applyNormalization);
+    }, 150); // 150ms debounce
   };
 
   // Apply normalized volume for local file playback
@@ -22598,10 +22609,10 @@ React.createElement('div', {
               },
                 React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 18 18', fill: 'currentColor' },
                   isMuted || effectiveVolume === 0
-                    // Muted icon (speaker with X)
+                    // Muted icon (speaker with diagonal slash)
                     ? React.createElement('g', null,
-                        React.createElement('path', { d: 'M12,17.4l-6.1-3.8H-2V5.1h6.9L12,0.6V17.4z M-1,12.6h7.2l4.8,3V2.4L5.1,6.1H-1V12.6z', transform: 'translate(4, 0)' }),
-                        React.createElement('path', { d: 'M2.5,6.5l4,4M6.5,6.5l-4,4', stroke: 'currentColor', strokeWidth: '1.5', fill: 'none', strokeLinecap: 'round' })
+                        React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' }),
+                        React.createElement('line', { x1: '1', y1: '17', x2: '17', y2: '1', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' })
                       )
                     // Normal volume icon
                     : React.createElement('path', { d: 'M16,17.4l-6.1-3.8H2V5.1h6.9L16,0.6V17.4z M3,12.6h7.2l4.8,3V2.4L9.1,6.1H3V12.6z' })
@@ -22622,13 +22633,13 @@ React.createElement('div', {
                     setVolume(newVolume);
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
-                    // Local files: apply normalized volume
+                    // Local files: apply normalized volume immediately
                     if (activeResolverId === 'localfiles' && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
                     }
-                    // Spotify: set volume via API with normalization
+                    // Spotify: debounced API call to prevent rate limiting
                     if (activeResolverId === 'spotify') {
-                      setSpotifyVolume(newVolume, true);
+                      setSpotifyVolumeDebounced(newVolume, true);
                     }
                   },
                 className: `w-20 h-1 rounded-full appearance-none ${isDisabled ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-gray-600 cursor-pointer'}`
