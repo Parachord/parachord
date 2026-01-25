@@ -316,6 +316,8 @@
 
 ### Search
 - ✅ Search history - Save and display recent searches
+- ✅ Search history with images - Artist/album/track images in history
+- ✅ Clickable search history - Play tracks or navigate directly from history
 - ✅ Fuzzy re-ranking with fuse.js
 - ✅ Lucene query preprocessing with typed filters
 - ✅ Fixed typeahead race condition with AbortController
@@ -417,7 +419,7 @@ Want to tackle any of these? Great!
 ---
 
 **Total Features: 150+**
-**Completed: 65+**
-**Remaining: 85+**
+**Completed: 67+**
+**Remaining: 83+**
 
 *This TODO is a living document. Add, remove, or reprioritize as needed!* 🎵
