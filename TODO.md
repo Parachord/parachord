@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-24
+> Last updated: 2025-01-24
 
 ---
 
@@ -12,7 +12,6 @@
 - [ ] **Repeat modes** - Repeat one, repeat all, no repeat
 - [ ] **Gapless playback** - No pause between tracks
 - [ ] **Crossfade** - Fade between tracks (configurable duration)
-- [ ] **Fix volume slider** - Ensure volume control actually works
 - [ ] **Context menus** - Right-click menus for tracks, albums, playlists (add to queue, add to playlist, etc.)
 
 ### Nice to Have
@@ -220,7 +219,6 @@
 ## 📱 Advanced Features
 
 ### Integration
-- [ ] **Last.fm scrobbling** - Track listening history
 - [ ] **Discord Rich Presence** - Show now playing in Discord
 - [ ] **System media controls** - OS-level play/pause
 - [ ] **Global hotkeys** - System-wide shortcuts
@@ -253,10 +251,9 @@
 
 ### 🎯 Medium Priority (Next Month)
 1. Lyrics display
-2. Last.fm scrobbling
-3. Listening history
-4. Smart playlists
-5. Browser extension for external playback control
+2. Listening history
+3. Smart playlists
+4. Browser extension for external playback control
 
 ### 💡 Future Considerations
 1. Mobile apps
@@ -275,11 +272,14 @@
 - ✅ Track resolution & playback
 - ✅ Next/previous track navigation
 - ✅ Progress bar
-- ✅ Volume control
+- ✅ Volume control with mute toggle
+- ✅ Spotify volume slider (with device-specific disable for unsupported devices)
 - ✅ Always-visible playbar with empty state
 - ✅ Condensed playbar layout (controls + track info on same row)
 - ✅ Smart queue loading (only tracks after clicked position)
 - ✅ Skip non-playable resolvers during resolution
+- ✅ Track highlight preserved when playing from album view
+- ✅ Fixed track skipping from stale browser events
 
 ### Queue Management
 - ✅ Queue view UI - Show current queue in drawer
@@ -296,6 +296,9 @@
 - ✅ Drag & drop tracks - Reorder by dragging
 - ✅ Drag and drop from album pages to playlists
 - ✅ Scrollable album/playlist pages
+- ✅ Playlist cover images with artist image fallback
+- ✅ Smooth fade-in for playlist cover images
+- ✅ Cover cache invalidation when tracks change
 
 ### Artist & Album Pages
 - ✅ MusicBrainz artist pages
@@ -305,8 +308,17 @@
 - ✅ Album art caching - Remember loaded images
 - ✅ Stay on page playback - Play without leaving artist view
 - ✅ Artist bio - Fetch from Last.fm, Wikipedia, Discogs (with fallback)
+- ✅ Bio source attribution - Show where bio came from
+- ✅ Wikipedia/Discogs artist image fallbacks
 - ✅ Similar artists - Show related artists from Last.fm
 - ✅ Fix "Alls" typo on Discography - Should be "All"
+- ✅ Critics Picks redesigned to list layout with synopses
+
+### Search
+- ✅ Search history - Save and display recent searches
+- ✅ Fuzzy re-ranking with fuse.js
+- ✅ Lucene query preprocessing with typed filters
+- ✅ Fixed typeahead race condition with AbortController
 
 ### Resolvers
 - ✅ Multi-resolver search
@@ -319,6 +331,13 @@
 - ✅ Plugin system (.axe format)
 - ✅ Hot-reload resolvers
 - ✅ Resolver marketplace
+- ✅ Wikipedia metaservice plugin
+- ✅ Discogs metaservice plugin
+
+### Scrobbling
+- ✅ Last.fm scrobbling - Track listening history
+- ✅ ListenBrainz scrobbling
+- ✅ Libre.fm scrobbling
 
 ### UI/UX
 - ✅ Album art throughout app - Fetch from Cover Art Archive
@@ -326,6 +345,12 @@
 - ✅ Consistent resolver icons throughout app
 - ✅ Request caching (artist data, images, album art with TTL)
 - ✅ Image lazy loading
+- ✅ Right-click context menu on now playing track
+- ✅ Draggable album art to playlists from playbar
+- ✅ Updated app icons and branding
+- ✅ Fixed flash of default state on app load
+- ✅ Sidebar separator under Search
+- ✅ Reduced Settings button height
 
 ---
 
@@ -369,19 +394,21 @@ Want to tackle any of these? Great!
 
 ## 📅 Roadmap
 
-### Version 0.2.0 (Q1 2026)
+### Version 0.2.0 (Q1 2025)
 - [x] Queue management UI ✅
 - [x] Playlist creation/editing ✅
+- [x] Search history ✅
+- [x] Last.fm/ListenBrainz scrobbling ✅
+- [x] Volume control fixes ✅
 - [ ] Keyboard shortcuts
 - [ ] Lyrics display
 
-### Version 0.3.0 (Q2 2026)
+### Version 0.3.0 (Q2 2025)
 - [ ] Browser extension for external playback control
-- [ ] Last.fm scrobbling
 - [ ] Smart playlists
 - [ ] Collaborative features
 
-### Version 1.0.0 (Q3 2026)
+### Version 1.0.0 (Q3 2025)
 - [ ] Mobile apps
 - [ ] Backend server
 - [ ] Advanced audio features
@@ -390,7 +417,7 @@ Want to tackle any of these? Great!
 ---
 
 **Total Features: 150+**
-**Completed: 45+**
-**Remaining: 105+**
+**Completed: 65+**
+**Remaining: 85+**
 
 *This TODO is a living document. Add, remove, or reprioritize as needed!* 🎵
