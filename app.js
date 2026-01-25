@@ -4972,7 +4972,7 @@ const Parachord = () => {
           title: trackOrSource.title,
           album: trackOrSource.album,
           duration: duration,
-          albumArt: sourceToPlay.albumArt || trackOrSource.albumArt,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
           _playbackContext: trackOrSource._playbackContext // Preserve playback context
         } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
@@ -5066,6 +5066,7 @@ const Parachord = () => {
           title: trackOrSource.title,
           album: trackOrSource.album,
           duration: sourceToPlay.duration || trackOrSource.duration,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
           _playbackContext: trackOrSource._playbackContext // Preserve playback context
         } :
@@ -5122,6 +5123,7 @@ const Parachord = () => {
             title: trackOrSource.title,
             album: trackOrSource.album,
             duration: sourceToPlay.duration || trackOrSource.duration,
+            albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
             sources: trackOrSource.sources,
             _playbackContext: trackOrSource._playbackContext // Preserve playback context
           } :
@@ -7160,9 +7162,9 @@ const Parachord = () => {
       // Load friends from storage
       const savedFriends = await window.electron.store.get('friends');
       if (savedFriends && Array.isArray(savedFriends)) {
-        // Migrate friends that have savedToCollection: false to true
+        // Migrate friends to have savedToCollection: true (covers both false and undefined from older versions)
         const migratedFriends = savedFriends.map(f =>
-          f.savedToCollection === false ? { ...f, savedToCollection: true } : f
+          f.savedToCollection !== true ? { ...f, savedToCollection: true } : f
         );
         // Save migrated friends back if any were changed
         if (migratedFriends.some((f, i) => f !== savedFriends[i])) {
@@ -12223,6 +12225,21 @@ ${tracks}
       albumToReleaseIdCache.current[lookupKey] = null;
       return null;
     }
+  };
+
+  // Synchronous check for cached album art (doesn't fetch, just checks existing cache)
+  // Prioritizes our cache over resolver-provided art for consistency
+  const getCachedAlbumArt = (artist, album) => {
+    if (!artist || !album) return null;
+
+    const lookupKey = `${artist}-${album}`.toLowerCase();
+    const releaseId = albumToReleaseIdCache.current[lookupKey];
+
+    if (releaseId && albumArtCache.current[releaseId]?.url) {
+      return albumArtCache.current[releaseId].url;
+    }
+
+    return null;
   };
 
   // Detect face position in an image using browser's FaceDetector API
@@ -19500,7 +19517,20 @@ React.createElement('div', {
                         // On-air indicator
                         onAir && React.createElement('div', {
                           className: 'absolute -bottom-1 right-4 w-5 h-5 bg-green-500 rounded-full border-2 border-white'
-                        })
+                        }),
+                        // Pin icon for manually pinned friends (not auto-pinned)
+                        isPinned && !autoPinnedFriendIds.includes(friend.id) && React.createElement('div', {
+                          className: 'absolute top-0 right-2',
+                          title: 'Pinned to sidebar'
+                        },
+                          React.createElement('svg', {
+                            className: 'w-4 h-4 text-purple-400 drop-shadow-sm',
+                            fill: 'currentColor',
+                            viewBox: '0 0 24 24'
+                          },
+                            React.createElement('path', { d: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z' })
+                          )
+                        )
                       ),
                       // Name and info
                       React.createElement('span', {
@@ -23029,8 +23059,8 @@ React.createElement('div', {
                       onChange: (e) => {
                         const newResolverId = e.target.value;
                         if (newResolverId !== currentResolverId && currentTrack.sources[newResolverId]) {
-                          // Play from the new source - this will restart the track
-                          handlePlay(currentTrack.sources[newResolverId]);
+                          // Play from the new source with preferredResolver to keep all sources available
+                          handlePlay({ ...currentTrack, preferredResolver: newResolverId });
                         }
                       },
                       className: `text-xs ${meta.color} bg-transparent border-none cursor-pointer hover:opacity-80 transition-opacity focus:outline-none appearance-none pr-3 no-drag`,
