@@ -8176,6 +8176,12 @@ const Parachord = () => {
     try {
       console.log('Loading collection album:', album.title, 'by', album.artist);
 
+      // Skip if already viewing this album (avoid unnecessary reloads)
+      if (activeView === 'artist' && currentRelease?.title === album.title && currentArtist?.name === album.artist) {
+        console.log('📀 Already viewing album:', album.title);
+        return;
+      }
+
       // Show loading state immediately - set artist and navigate before search
       const artist = {
         name: album.artist,
@@ -12766,6 +12772,12 @@ ${tracks}
     } else {
       playlist = playlistOrId;
       console.log('🖱️ Playlist clicked, ID:', playlist.id);
+    }
+
+    // Skip if already viewing this playlist (avoid unnecessary reloads)
+    if (activeView === 'playlist-view' && selectedPlaylist?.id === playlist.id) {
+      console.log('📋 Already viewing playlist:', playlist.title);
+      return;
     }
 
     console.log('📋 Found playlist:', playlist.title);
@@ -25388,23 +25400,26 @@ React.createElement('div', {
       playbackContext && React.createElement('div', {
         className: 'flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 cursor-pointer hover:bg-purple-900/50 transition-colors',
         onClick: () => {
-          // Navigate to the context source
+          // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
             if (playlist) {
-              loadPlaylist(playlist);
+              loadPlaylist(playlist); // loadPlaylist has its own "already viewing" check
             }
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
-            // Navigate to the album page, not just the artist
+            // handleCollectionAlbumClick has its own "already viewing" check
             handleCollectionAlbumClick({
               title: playbackContext.name,
               artist: playbackContext.artist
             });
           } else if (playbackContext.type === 'search') {
-            navigateTo('search');
+            navigateTo('search'); // navigateTo skips if already on page
           } else if (playbackContext.type === 'library') {
-            setCollectionTab('tracks'); // Navigate to the Songs tab
-            navigateTo('library');
+            // Skip if already on library with tracks tab
+            if (activeView !== 'library' || collectionTab !== 'tracks') {
+              setCollectionTab('tracks');
+              navigateTo('library');
+            }
           } else if (playbackContext.type === 'recommendations') {
             navigateTo('recommendations');
           } else if (playbackContext.type === 'history') {
