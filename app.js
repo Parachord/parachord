@@ -25407,16 +25407,23 @@ React.createElement('div', {
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
                   isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
                   isFallingDown ? 'queue-track-drop' : ''} ${
-                  isInserted ? 'queue-track-insert' : ''}`
+                  isInserted ? 'queue-track-insert' : ''} ${
+                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''}`
               },
                 // Track number / status indicator - fixed width
+                // In spinoff/listen-along mode, show ·· instead of numbers (queue is "paused")
                 React.createElement('span', {
-                  className: 'text-sm text-gray-500 text-right',
+                  className: `text-sm text-right ${
+                    (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
+                      ? 'text-gray-600' : 'text-gray-500'
+                  }`,
                   style: { width: '28px', flexShrink: 0 }
                 },
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
                   isError ? '⚠' :
-                  isCurrentTrack ? '▶' : String(index + 1).padStart(2, '0')
+                  isCurrentTrack ? '▶' :
+                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
+                    ? '··' : String(index + 1).padStart(2, '0')
                 ),
 
                 // Track title - flexible column that grows
