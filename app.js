@@ -11743,8 +11743,10 @@ ${tracks}
 
       if (extract) {
         console.log('📚 Wikipedia bio fetched successfully');
+        // Normalize line breaks: ensure double newlines between paragraphs for visual separation
+        const formattedBio = extract.trim().replace(/\n+/g, '\n\n');
         return {
-          bio: extract.trim(),
+          bio: formattedBio,
           url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
           source: 'wikipedia'
         };
