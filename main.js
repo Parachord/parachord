@@ -1545,7 +1545,7 @@ ipcMain.handle('playlists-export', async (event, defaultFilename, xspfContent) =
   console.log('=== Export Playlist ===');
   const { dialog } = require('electron');
   const fs = require('fs').promises;
-  
+
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Playlist',
@@ -1554,21 +1554,110 @@ ipcMain.handle('playlists-export', async (event, defaultFilename, xspfContent) =
         { name: 'XSPF Playlists', extensions: ['xspf'] }
       ]
     });
-    
+
     if (result.canceled || !result.filePath) {
       console.log('  User cancelled');
       return null;
     }
-    
+
     const filepath = result.filePath;
     console.log('  Saving to:', filepath);
-    
+
     await fs.writeFile(filepath, xspfContent, 'utf8');
-    
+
     console.log('  ✅ Exported to:', filepath);
     return { success: true, filepath };
   } catch (error) {
     console.error('  ❌ Export failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Search history handlers - stored in electron-store (search_history key)
+ipcMain.handle('search-history-load', async () => {
+  console.log('=== Load Search History from electron-store ===');
+  try {
+    const history = store.get('search_history') || [];
+    console.log(`✅ Loaded ${history.length} search history entries`);
+    return history;
+  } catch (error) {
+    console.error('Error loading search history:', error.message);
+    return [];
+  }
+});
+
+ipcMain.handle('search-history-save', async (event, entry) => {
+  console.log('=== Save Search History Entry ===');
+  console.log('  Query:', entry?.query);
+
+  // Validate input
+  if (!entry || typeof entry.query !== 'string' || !entry.query.trim()) {
+    console.error('  ❌ Invalid entry: missing or empty query');
+    return { success: false, error: 'Invalid entry: missing or empty query' };
+  }
+
+  try {
+    const history = store.get('search_history') || [];
+    const MAX_HISTORY = 50;
+
+    // Check if this query already exists (case-insensitive)
+    const existingIndex = history.findIndex(h =>
+      h.query?.toLowerCase() === entry.query.toLowerCase()
+    );
+
+    if (existingIndex >= 0) {
+      // Update existing entry with new timestamp and selected result
+      history[existingIndex] = {
+        ...history[existingIndex],
+        ...entry,
+        timestamp: Date.now()
+      };
+      console.log('  ✅ Updated existing entry');
+    } else {
+      // Add new entry at the beginning
+      history.unshift({
+        ...entry,
+        timestamp: Date.now()
+      });
+      console.log('  ✅ Added new entry');
+    }
+
+    // Trim to max size
+    const trimmedHistory = history.slice(0, MAX_HISTORY);
+
+    // Sort by timestamp descending (most recent first)
+    trimmedHistory.sort((a, b) => b.timestamp - a.timestamp);
+
+    store.set('search_history', trimmedHistory);
+    console.log(`  ✅ Saved ${trimmedHistory.length} history entries`);
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Save failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('search-history-clear', async (event, entryQuery) => {
+  console.log('=== Clear Search History ===');
+  console.log('  Entry query:', entryQuery || 'ALL');
+
+  try {
+    if (entryQuery) {
+      // Clear single entry
+      const history = store.get('search_history') || [];
+      const filtered = history.filter(h =>
+        h.query?.toLowerCase() !== entryQuery.toLowerCase()
+      );
+      store.set('search_history', filtered);
+      console.log(`  ✅ Removed entry, ${filtered.length} remaining`);
+    } else {
+      // Clear all
+      store.set('search_history', []);
+      console.log('  ✅ Cleared all history');
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Clear failed:', error.message);
     return { success: false, error: error.message };
   }
 });
