@@ -6018,6 +6018,7 @@ const Parachord = () => {
 
         handlePlay({
           ...nextSimilar,
+          sources: nextSimilar.sources || {}, // Ensure sources object exists for on-demand resolution
           _playbackContext: {
             type: 'spinoff',
             sourceTrack: spinoffSourceTrackRef.current
