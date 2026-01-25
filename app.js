@@ -13904,7 +13904,6 @@ const getCurrentPlaybackState = async () => {
 
         // Update device info if available
         if (data.device) {
-          console.log('📱 Spotify device:', data.device.name, 'type:', data.device.type, 'supports_volume:', data.device.supports_volume);
           setSpotifyDevice({
             name: data.device.name,
             type: data.device.type,
@@ -22574,12 +22573,13 @@ React.createElement('div', {
           //     React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
           //   )
           // ),
-          // Volume - only enabled for local files and Spotify (when device supports volume)
+          // Volume - only enabled for local files and Spotify on Computer devices
           (() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);
             const isSpotify = currentResolverId === 'spotify';
-            // For Spotify, check if current device supports volume control
-            const spotifyVolumeSupported = !isSpotify || (spotifyDevice?.supports_volume !== false);
+            // For Spotify, only enable volume on Computer devices (desktop app)
+            // TVs, speakers, and other devices don't respond to remote volume commands reliably
+            const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
             const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
@@ -22620,8 +22620,8 @@ React.createElement('div', {
                 if (browserPlaybackActive || isExternalPlayback) {
                   return 'Volume control not available for browser playback';
                 }
-                if (isSpotify && spotifyDevice?.supports_volume === false) {
-                  return `Volume control not supported on ${spotifyDevice.name || 'this device'}`;
+                if (isSpotify && spotifyDevice && spotifyDevice.type !== 'Computer') {
+                  return `Volume control not available on ${spotifyDevice.name || spotifyDevice.type}`;
                 }
                 return 'Volume control not available';
               }
