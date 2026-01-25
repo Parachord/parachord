@@ -15806,12 +15806,14 @@ useEffect(() => {
                     className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative cursor-grab active:cursor-grabbing',
                     draggable: true,
                     onClick: () => {
+                      // Get album art from track or fall back to cache
+                      const cachedArt = track.releaseId ? albumArtCache.current[track.releaseId]?.url : null;
                       saveSearchHistory(searchQuery, {
                         type: 'track',
                         id: track.id,
                         name: track.title,
                         artist: track.artist,
-                        imageUrl: track.albumArt || null
+                        imageUrl: track.albumArt || cachedArt || null
                       });
                       handlePlay(track);
                     },
