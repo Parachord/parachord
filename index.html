@@ -228,11 +228,11 @@
     .volume-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
       border-radius: 50%;
       background: #3b82f6;
-      margin-top: -3px;
+      margin-top: -4px;
       cursor: pointer;
     }
 
@@ -240,12 +240,12 @@
       background: #60a5fa;
     }
 
-    .volume-slider:disabled::-webkit-slider-thumb {
-      background: #6b7280;
+    .volume-slider.disabled::-webkit-slider-thumb {
+      background: #6b7280 !important;
       cursor: not-allowed;
     }
 
-    .volume-slider:disabled::-webkit-slider-runnable-track {
+    .volume-slider.disabled::-webkit-slider-runnable-track {
       background: #374151;
     }
   </style>

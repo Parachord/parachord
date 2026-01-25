@@ -22673,7 +22673,7 @@ React.createElement('div', {
                       setSpotifyVolumeDebounced(newVolume, true);
                     }
                   },
-                className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
+                className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
               })
             );
           })()
