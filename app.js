@@ -11726,22 +11726,26 @@ ${tracks}
         return null;
       }
 
-      // Step 3: Fetch Wikipedia article summary
-      const wpUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`;
+      // Step 3: Fetch Wikipedia article extract (longer bio)
+      // Using MediaWiki API with extracts to get more content than the summary endpoint
+      const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(wikiTitle)}&prop=extracts&exintro=1&explaintext=1&format=json&origin=*`;
       const wpResponse = await fetch(wpUrl);
 
       if (!wpResponse.ok) {
-        console.log('📚 Wikipedia summary fetch failed:', wpResponse.status);
+        console.log('📚 Wikipedia extract fetch failed:', wpResponse.status);
         return null;
       }
 
       const wpData = await wpResponse.json();
+      const pages = wpData.query?.pages;
+      const pageId = pages ? Object.keys(pages)[0] : null;
+      const extract = pageId && pageId !== '-1' ? pages[pageId].extract : null;
 
-      if (wpData.extract) {
+      if (extract) {
         console.log('📚 Wikipedia bio fetched successfully');
         return {
-          bio: wpData.extract,
-          url: wpData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
+          bio: extract.trim(),
+          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
           source: 'wikipedia'
         };
       }
