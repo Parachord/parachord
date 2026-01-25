@@ -978,7 +978,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     // Track info - only scrolls if overflowing
     React.createElement('div', {
       ref: containerRef,
-      className: `flex-1 min-w-0 px-2 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
+      className: `flex-1 min-w-0 px-3 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
       style: { overflow: 'hidden', height: '100%' }
     },
       React.createElement('span', {
