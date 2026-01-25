@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2025-01-24
+> Last updated: 2026-01-25
 
 ---
 
@@ -149,8 +149,10 @@
 ## 👥 Social Features
 
 ### Friends & Sharing
-- [ ] **Friends list** - Add/manage friends
+- [x] **Friends list** - Add/manage friends
 - [x] **Now playing status** - See what friends are listening to
+- [x] **Listen Along** - Sync playback with friends in real-time
+- [x] **Spinoff mode** - Radio-like playback of similar tracks from Last.fm
 - [ ] **Share tracks** - Send tracks to friends
 - [ ] **Collaborative playlists** - Edit playlists together
 - [ ] **Listening parties** - Synchronized group listening
@@ -340,6 +342,18 @@
 - ✅ Fixed flash of default state on app load
 - ✅ Sidebar separator under Search
 - ✅ Reduced Settings button height
+- ✅ Reduced header padding on Search and Settings pages
+- ✅ Close button on Settings page header
+
+### Friends & Social
+- ✅ Friends list with Last.fm and ListenBrainz support
+- ✅ Friends sidebar with pinned friends and on-air indicators
+- ✅ Friend mini-playbar showing current track
+- ✅ Listen Along mode - sync playback with friends
+- ✅ Spinoff mode - radio-like playback of similar tracks
+- ✅ Auto-pin/unpin friends based on activity
+- ✅ Friend collection page with hex avatars
+- ✅ Context banners for Listen Along and Spinoff sessions
 
 ---
 
@@ -405,8 +419,8 @@ Want to tackle any of these? Great!
 
 ---
 
-**Total Features: 150+**
-**Completed: 67+**
-**Remaining: 83+**
+**Total Features: 160+**
+**Completed: 80+**
+**Remaining: 80+**
 
 *This TODO is a living document. Add, remove, or reprioritize as needed!* 🎵
