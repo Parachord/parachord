@@ -248,6 +248,75 @@
     .volume-slider.disabled::-webkit-slider-runnable-track {
       background: #374151;
     }
+
+    /* Release card hover lift animation */
+    .release-card {
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .release-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15),
+                  0 8px 16px -8px rgba(0, 0, 0, 0.1);
+    }
+
+    .release-card:active {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.12);
+    }
+
+    /* On-air pulse animation for friends */
+    @keyframes onAirPulse {
+      0%, 100% {
+        box-shadow: 0 2px 8px rgba(34, 197, 94, 0.4);
+      }
+      50% {
+        box-shadow: 0 2px 12px rgba(34, 197, 94, 0.6), 0 0 0 4px rgba(34, 197, 94, 0.15);
+      }
+    }
+
+    .on-air-indicator {
+      animation: onAirPulse 2s ease-in-out infinite;
+    }
+
+    /* Album art inner shadow for depth */
+    .album-art-container::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06),
+                  inset 0 2px 4px rgba(0, 0, 0, 0.04);
+      pointer-events: none;
+    }
+
+    /* Staggered grid animation */
+    @keyframes cardFadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .card-fade-up {
+      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      opacity: 0;
+    }
+
+    /* Release type badge styling */
+    .release-badge {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">
