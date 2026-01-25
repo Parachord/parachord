@@ -1,25 +1,21 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-19
+> Last updated: 2026-01-24
 
 ---
 
 ## 🎵 Playback & Queue Management
 
 ### High Priority
-- [ ] **Queue view UI** - Show current queue in sidebar or modal
 - [ ] **Shuffle mode** - Randomize queue order
 - [ ] **Repeat modes** - Repeat one, repeat all, no repeat
-- [ ] **Queue management** - Add/remove/reorder tracks in queue
 - [ ] **Gapless playback** - No pause between tracks
 - [ ] **Crossfade** - Fade between tracks (configurable duration)
 - [ ] **Fix volume slider** - Ensure volume control actually works
 - [ ] **Context menus** - Right-click menus for tracks, albums, playlists (add to queue, add to playlist, etc.)
 
 ### Nice to Have
-- [ ] **Save queue as playlist** - Convert current queue to permanent playlist
-- [ ] **Clear queue** - Button to clear all queued tracks
 - [ ] **Queue history** - See previously played tracks
 
 ---
@@ -27,10 +23,6 @@
 ## 📋 Playlist Features
 
 ### High Priority
-- [x] **Create playlists in-app** - UI for creating new playlists ✅
-- [x] **Edit playlists** - Add/remove/reorder tracks ✅
-- [x] **Delete tracks from playlists** - Remove individual tracks ✅
-- [x] **Drag & drop tracks** - Reorder by dragging ✅
 - [ ] **Import from Spotify/Apple Music** - Convert external playlists to XSPF
 
 ### Medium Priority
@@ -55,13 +47,10 @@
 
 ### Visual Enhancements
 - [ ] **Implement Jordi's designs** - Update aesthetic to match new design specs
-- [x] **Album art throughout app** - Fetch from Cover Art Archive ✅
 - [ ] **Hi-Res quality badges** - Show "Hi-Res" indicator for Qobuz tracks
-- [x] **Loading skeletons** - Better loading states with shimmer animations ✅
 - [ ] **Animations & transitions** - Smooth page transitions
 - [ ] **Themes** - Light/dark mode toggle
 - [ ] **Custom themes** - User-created color schemes
-- [x] **Consistent resolver icons** - Use same resolver icons from album page on playlist page and player ✅
 
 ### Navigation
 - [ ] **Breadcrumb navigation** - Show path in artist → album flow
@@ -82,16 +71,9 @@
 ## 🎤 Artist & Album Pages
 
 ### Artist Pages
-- [x] **Track listings on albums** - Click album to see all tracks ✅
-- [x] **Full album playback** - Play entire albums ✅
-- [x] **Album art caching** - Remember loaded images ✅
 - [ ] **Preview on hover** - 30-second previews
 - [ ] **Better single matching** - Smarter search for singles
-- [x] **Stay on page playback** - Play without leaving artist view ✅
 - [ ] **More metadata** - Record labels, genres, bio
-- [x] **Artist bio** - Fetch from Last.fm (requires API key) ✅
-- [x] **Similar artists** - Show related artists from Last.fm ✅
-- [x] **Fix "Alls" typo on Discography** - Should be "All" ✅
 
 ### Album Pages
 - [ ] **Liner notes** - Show album credits, producers
@@ -134,9 +116,7 @@
 - [ ] **Recommendations** - Spotify's algorithm suggestions
 
 ### General Resolvers
-- [x] **YouTube resolver** - Add YouTube search/playback ✅
 - [ ] **SoundCloud resolver** - Add SoundCloud support
-- [x] **Apple Music resolver** - Search/lookup (no playback without MusicKit) ✅
 - [ ] **Apple Music playlist URL extraction** - WIP: The HTML is fetched successfully via proxyFetch but track extraction from `serialized-server-data` (base64-encoded JSON) isn't working. Need to investigate the actual data structure in the decoded JSON. See `resolvers/applemusic.axe` lookupPlaylist function.
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Another streaming option
@@ -201,8 +181,6 @@
 
 ### Performance
 - [ ] **Virtual scrolling** - For large lists (1000+ items)
-- [x] **Image lazy loading** - Load images on demand ✅
-- [x] **Request caching** - Cache API responses (artist data, images, album art) ✅
 - [ ] **Offline mode** - Work without internet (cached content)
 - [ ] **Service worker** - PWA capabilities
 
@@ -267,11 +245,11 @@
 ## 📊 Priority Matrix
 
 ### 🔥 High Priority (Next Sprint)
-1. Queue view UI
-2. Playlist creation/editing
-3. Album art throughout
-4. Shuffle & repeat modes
-5. Keyboard shortcuts
+1. Shuffle & repeat modes
+2. Keyboard shortcuts
+3. Context menus (right-click)
+4. Gapless playback
+5. Crossfade
 
 ### 🎯 Medium Priority (Next Month)
 1. Lyrics display
@@ -293,36 +271,61 @@
 
 *(Features already implemented)*
 
-- ✅ XSPF playlist support
-- ✅ Multi-resolver search
-- ✅ Spotify Connect integration
-- ✅ MusicBrainz artist pages
-- ✅ Bandcamp resolver
-- ✅ Qobuz resolver
-- ✅ YouTube resolver
-- ✅ Apple Music resolver (search/lookup only, no playback)
-- ✅ Album art on artist pages
+### Core Playback
 - ✅ Track resolution & playback
-- ✅ Resolver priority system
-- ✅ Plugin system (.axe format)
-- ✅ Hot-reload resolvers
-- ✅ Import/export playlists
 - ✅ Next/previous track navigation
 - ✅ Progress bar
 - ✅ Volume control
-- ✅ Scrollable album/playlist pages
 - ✅ Always-visible playbar with empty state
 - ✅ Condensed playbar layout (controls + track info on same row)
 - ✅ Smart queue loading (only tracks after clicked position)
 - ✅ Skip non-playable resolvers during resolution
-- ✅ Resolver marketplace
-- ✅ Create/edit/delete playlists in-app
-- ✅ Drag and drop tracks to reorder playlists
+
+### Queue Management
+- ✅ Queue view UI - Show current queue in drawer
+- ✅ Queue management - Add/remove/reorder tracks in queue
+- ✅ Save queue as playlist - Convert current queue to permanent playlist
+- ✅ Clear queue - Button to clear all queued tracks
+
+### Playlists
+- ✅ XSPF playlist support
+- ✅ Import/export playlists
+- ✅ Create playlists in-app
+- ✅ Edit playlists - Add/remove/reorder tracks
+- ✅ Delete tracks from playlists
+- ✅ Drag & drop tracks - Reorder by dragging
 - ✅ Drag and drop from album pages to playlists
-- ✅ Artist bio and related artists (via Last.fm)
-- ✅ Request caching (artist data, images, album art with TTL)
-- ✅ Shimmer skeleton loading animations
+- ✅ Scrollable album/playlist pages
+
+### Artist & Album Pages
+- ✅ MusicBrainz artist pages
+- ✅ Album art on artist pages
+- ✅ Track listings on albums - Click album to see all tracks
+- ✅ Full album playback - Play entire albums
+- ✅ Album art caching - Remember loaded images
+- ✅ Stay on page playback - Play without leaving artist view
+- ✅ Artist bio - Fetch from Last.fm, Wikipedia, Discogs (with fallback)
+- ✅ Similar artists - Show related artists from Last.fm
+- ✅ Fix "Alls" typo on Discography - Should be "All"
+
+### Resolvers
+- ✅ Multi-resolver search
+- ✅ Spotify Connect integration
+- ✅ Bandcamp resolver
+- ✅ Qobuz resolver
+- ✅ YouTube resolver
+- ✅ Apple Music resolver (search/lookup only, no playback)
+- ✅ Resolver priority system
+- ✅ Plugin system (.axe format)
+- ✅ Hot-reload resolvers
+- ✅ Resolver marketplace
+
+### UI/UX
+- ✅ Album art throughout app - Fetch from Cover Art Archive
+- ✅ Loading skeletons - Better loading states with shimmer animations
 - ✅ Consistent resolver icons throughout app
+- ✅ Request caching (artist data, images, album art with TTL)
+- ✅ Image lazy loading
 
 ---
 
@@ -367,8 +370,8 @@ Want to tackle any of these? Great!
 ## 📅 Roadmap
 
 ### Version 0.2.0 (Q1 2026)
-- [ ] Queue management UI
-- [ ] Playlist creation/editing
+- [x] Queue management UI ✅
+- [x] Playlist creation/editing ✅
 - [ ] Keyboard shortcuts
 - [ ] Lyrics display
 
@@ -387,7 +390,7 @@ Want to tackle any of these? Great!
 ---
 
 **Total Features: 150+**
-**Completed: 30+**
-**Remaining: 120+**
+**Completed: 45+**
+**Remaining: 105+**
 
 *This TODO is a living document. Add, remove, or reprioritize as needed!* 🎵
