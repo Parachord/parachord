@@ -25595,6 +25595,8 @@ React.createElement('div', {
             navigateTo('history');
           } else if (playbackContext.type === 'friend') {
             navigateTo('friendHistory');
+          } else if (playbackContext.type === 'spinoff') {
+            // Spinoff has no destination page - do nothing
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
@@ -25604,7 +25606,9 @@ React.createElement('div', {
         title: playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
-          React.createElement('span', { className: 'text-xs text-purple-300' }, 'Playing from'),
+          React.createElement('span', { className: 'text-xs text-purple-300' },
+            playbackContext.type === 'spinoff' ? 'Playing' : 'Playing from'
+          ),
           React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
             playbackContext.type === 'album' ? `${playbackContext.name || 'Album'} by ${playbackContext.artist || 'Unknown'}` :
@@ -25613,11 +25617,12 @@ React.createElement('div', {
             playbackContext.type === 'recommendations' ? 'Recommendations' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
+            playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}"` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
             playbackContext.name || 'Unknown'
           )
         ),
-        React.createElement('svg', {
+        playbackContext.type !== 'spinoff' && React.createElement('svg', {
           className: 'w-4 h-4 text-purple-400',
           fill: 'none',
           stroke: 'currentColor',
