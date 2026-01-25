@@ -22920,7 +22920,7 @@ React.createElement('div', {
                   React.createElement('path', {
                     strokeLinecap: 'round',
                     strokeLinejoin: 'round',
-                    d: 'M6 3v12M6 9c0-2 2-3 4-3h4c2 0 4 1 4 3v6M18 21v-6M6 21a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6z'
+                    d: 'M6 3v6m0 6v6m0-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm12 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 0v6M6 9a9 9 0 0 0 9 3h3'
                   })
                 )
           ),
