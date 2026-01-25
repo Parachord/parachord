@@ -1882,6 +1882,7 @@ const Parachord = () => {
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
   const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
+  const [playbarSourceDropdownOpen, setPlaybarSourceDropdownOpen] = useState(false); // Source selector dropdown
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
@@ -2811,6 +2812,15 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [addToPlaylistSortDropdownOpen]);
+
+  // Close playbar source dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setPlaybarSourceDropdownOpen(false);
+    if (playbarSourceDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [playbarSourceDropdownOpen]);
 
   // Keep refs in sync with state
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
@@ -5085,6 +5095,24 @@ const Parachord = () => {
   const handlePlay = async (trackOrSource) => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
+
+    // Stop any active browser playback before starting new track
+    if (browserPlaybackActive && activeExtensionTabId) {
+      console.log('⏹️ Stopping browser playback before playing new track');
+      window.electron.extension.sendCommand({
+        type: 'command',
+        action: 'pause'
+      });
+      pendingCloseTabIdRef.current = activeExtensionTabId;
+      setBrowserPlaybackActive(false);
+      setActiveExtensionTabId(null);
+    }
+
+    // Close playback window if active (Bandcamp embedded player)
+    if (window.electron?.playbackWindow?.close) {
+      console.log('⏹️ Closing playback window before playing new track');
+      window.electron.playbackWindow.close();
+    }
 
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
@@ -12720,6 +12748,23 @@ ${tracks}
     return null;
   };
 
+  // Fetch album art for current track if missing
+  useEffect(() => {
+    if (currentTrack && !currentTrack.albumArt && currentTrack.artist && currentTrack.album) {
+      getAlbumArt(currentTrack.artist, currentTrack.album).then(artUrl => {
+        if (artUrl) {
+          setCurrentTrack(prev => {
+            // Only update if still the same track and still missing art
+            if (prev && prev.artist === currentTrack.artist && prev.title === currentTrack.title && !prev.albumArt) {
+              return { ...prev, albumArt: artUrl };
+            }
+            return prev;
+          });
+        }
+      });
+    }
+  }, [currentTrack?.artist, currentTrack?.album, currentTrack?.albumArt]);
+
   // Detect face position in an image using browser's FaceDetector API
   const detectFacePosition = async (imageUrl) => {
     // Check if FaceDetector API is available (Chromium/Electron)
@@ -13584,17 +13629,22 @@ ${tracks}
   // Prioritizes album art, falls back to artist images
   // Returns array of up to 4 image URLs, using cache when available
   const getPlaylistCovers = async (playlistId, tracks) => {
-    // Check cache first
+    // Check cache first - only use cache if we have all 4 covers or it's recent
     const cached = playlistCoverCache.current[playlistId];
     if (cached && Date.now() - cached.timestamp < CACHE_TTL.playlistCover) {
-      return cached.covers;
+      // If cache has 4 covers or is less than 1 day old, use it
+      if (cached.covers.length >= 4 || Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
+        return cached.covers;
+      }
     }
 
     // Collect unique covers from tracks
     const seenAlbums = new Set(); // Albums we've already tried
-    const seenArtists = new Set(); // Artists we've already used for images
+    const seenArtists = new Set(); // Artists we've successfully used for images
+    const triedArtists = new Set(); // Artists we've attempted (including failures)
     const covers = [];
 
+    // First pass: try album art, then artist image as fallback
     for (const track of tracks) {
       if (covers.length >= 4) break;
 
@@ -13609,12 +13659,14 @@ ${tracks}
           // If track already has albumArt, use it
           if (track.albumArt) {
             covers.push(track.albumArt);
+            seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
             foundCover = true;
           } else {
             // Try to fetch album art
             const artUrl = await getAlbumArt(track.artist, track.album);
             if (artUrl) {
               covers.push(artUrl);
+              seenArtists.add(track.artist.toLowerCase()); // Mark artist as used
               foundCover = true;
             }
           }
@@ -13624,13 +13676,33 @@ ${tracks}
       // Fall back to artist image if no album art found for this track
       if (!foundCover && track.artist) {
         const artistKey = track.artist.toLowerCase();
-        if (!seenArtists.has(artistKey)) {
-          seenArtists.add(artistKey);
+        if (!seenArtists.has(artistKey) && !triedArtists.has(artistKey)) {
+          triedArtists.add(artistKey);
 
           const artistResult = await getArtistImage(track.artist);
           if (artistResult?.url) {
             covers.push(artistResult.url);
+            seenArtists.add(artistKey);
           }
+        }
+      }
+    }
+
+    // Second pass: if we still don't have 4 covers, try more artist images
+    if (covers.length < 4) {
+      for (const track of tracks) {
+        if (covers.length >= 4) break;
+        if (!track.artist) continue;
+
+        const artistKey = track.artist.toLowerCase();
+        // Skip if we already have art from this artist or already tried and failed
+        if (seenArtists.has(artistKey) || triedArtists.has(artistKey)) continue;
+
+        triedArtists.add(artistKey);
+        const artistResult = await getArtistImage(track.artist);
+        if (artistResult?.url) {
+          covers.push(artistResult.url);
+          seenArtists.add(artistKey);
         }
       }
     }
@@ -25613,10 +25685,10 @@ React.createElement('div', {
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
             },
               React.createElement(List, { size: 15 }),
-              // Hide queue badge when in listen-along mode
-              !listenAlongFriend && currentQueue.length > 0 && React.createElement('span', {
+              // Show queue badge (gray when in spinoff or listen-along mode)
+              currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: '#059669' }
+                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : '#059669' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
@@ -25809,51 +25881,163 @@ React.createElement('div', {
                 const hasMultipleSources = availableSources.length > 1;
 
                 if (resolver) {
-                  return React.createElement('div', { className: 'flex items-center gap-1 mt-0.5' },
-                    // Resolver dropdown (or just label if single source)
-                    hasMultipleSources ? React.createElement('select', {
-                      value: currentResolverId,
-                      onChange: (e) => {
-                        const newResolverId = e.target.value;
-                        if (newResolverId !== currentResolverId && currentTrack.sources[newResolverId]) {
-                          // Play from the new source with preferredResolver to keep all sources available
-                          handlePlay({ ...currentTrack, preferredResolver: newResolverId });
+                  // Color mapping for resolver icons
+                  const resolverIconColors = {
+                    spotify: '#1DB954',
+                    bandcamp: '#1DA0C3',
+                    qobuz: '#4285F4',
+                    youtube: '#FF0000',
+                    localfiles: '#A855F7',
+                    soundcloud: '#FF5500',
+                    applemusic: '#FA2D48'
+                  };
+                  const currentIconColor = resolverIconColors[currentResolverId] || '#A855F7';
+
+                  return React.createElement('div', { className: 'flex items-center gap-1.5 mt-0.5' },
+                    // Custom resolver selector with icon
+                    React.createElement('div', { className: 'relative no-drag' },
+                      // Current resolver button (icon + dropdown chevron if multiple sources)
+                      React.createElement('button', {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          if (hasMultipleSources) {
+                            setPlaybarSourceDropdownOpen(!playbarSourceDropdownOpen);
+                          }
+                        },
+                        className: `flex items-center gap-1.5 px-2 py-1 rounded transition-all ${
+                          hasMultipleSources
+                            ? 'hover:bg-white/10 cursor-pointer'
+                            : 'cursor-default'
+                        }`,
+                        style: {
+                          background: playbarSourceDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent'
+                        },
+                        title: hasMultipleSources ? 'Switch playback source' : resolver.name
+                      },
+                        // Resolver icon
+                        React.createElement(ResolverIcon, {
+                          resolverId: currentResolverId,
+                          size: 14,
+                          fill: currentIconColor
+                        }),
+                        // Resolver name
+                        React.createElement('span', {
+                          className: 'text-xs font-medium',
+                          style: { color: currentIconColor }
+                        }, resolver.name),
+                        // Dropdown chevron (only if multiple sources)
+                        hasMultipleSources && React.createElement('svg', {
+                          className: `w-3 h-3 transition-transform ${playbarSourceDropdownOpen ? 'rotate-180' : ''}`,
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor',
+                          strokeWidth: 2,
+                          style: { color: '#9ca3af' }
+                        },
+                          React.createElement('path', {
+                            strokeLinecap: 'round',
+                            strokeLinejoin: 'round',
+                            d: 'M19 9l-7 7-7-7'
+                          })
+                        )
+                      ),
+                      // Dropdown menu
+                      playbarSourceDropdownOpen && hasMultipleSources && React.createElement('div', {
+                        className: 'absolute left-0 bottom-full mb-1 rounded-lg overflow-hidden z-50',
+                        style: {
+                          background: 'linear-gradient(180deg, rgba(30, 30, 35, 0.98) 0%, rgba(20, 20, 25, 0.98) 100%)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          boxShadow: '0 -4px 20px rgba(0,0,0,0.4), 0 0 1px rgba(255,255,255,0.1)',
+                          backdropFilter: 'blur(12px)',
+                          minWidth: '160px'
                         }
                       },
-                      className: `text-xs ${meta.color} bg-transparent border-none cursor-pointer hover:opacity-80 transition-opacity focus:outline-none appearance-none pr-3 no-drag`,
-                      style: {
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right center',
-                        paddingRight: '12px'
-                      },
-                      title: 'Switch playback source'
-                    },
-                      availableSources.map(resId => {
-                        const r = allResolvers.find(res => res.id === resId);
-                        return React.createElement('option', {
-                          key: resId,
-                          value: resId,
-                          style: { color: '#000', backgroundColor: '#fff' }
-                        }, r ? r.name : resId);
-                      })
-                    ) : React.createElement('span', { className: `text-xs ${meta.color}` }, resolver.name),
+                        // Header
+                        React.createElement('div', {
+                          className: 'px-3 py-2 text-[10px] font-semibold uppercase tracking-wider',
+                          style: {
+                            color: 'rgba(255,255,255,0.4)',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)'
+                          }
+                        }, 'Play from'),
+                        // Source options
+                        availableSources.map(resId => {
+                          const r = allResolvers.find(res => res.id === resId);
+                          const iconColor = resolverIconColors[resId] || '#A855F7';
+                          const isActive = resId === currentResolverId;
+                          return React.createElement('button', {
+                            key: resId,
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              if (resId !== currentResolverId && currentTrack.sources[resId]) {
+                                handlePlay({ ...currentTrack, preferredResolver: resId });
+                              }
+                              setPlaybarSourceDropdownOpen(false);
+                            },
+                            className: 'w-full flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-white/5',
+                            style: {
+                              background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent'
+                            }
+                          },
+                            // Resolver icon
+                            React.createElement(ResolverIcon, {
+                              resolverId: resId,
+                              size: 16,
+                              fill: iconColor
+                            }),
+                            // Resolver name
+                            React.createElement('span', {
+                              className: 'text-xs',
+                              style: {
+                                color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
+                                fontWeight: isActive ? '500' : '400'
+                              }
+                            }, r ? r.name : resId),
+                            // Active indicator
+                            isActive && React.createElement('svg', {
+                              className: 'w-3.5 h-3.5 ml-auto',
+                              fill: 'none',
+                              viewBox: '0 0 24 24',
+                              stroke: iconColor,
+                              strokeWidth: 2.5
+                            },
+                              React.createElement('path', {
+                                strokeLinecap: 'round',
+                                strokeLinejoin: 'round',
+                                d: 'M5 13l4 4L19 7'
+                              })
+                            )
+                          );
+                        })
+                      )
+                    ),
                     // Browser indicator pill for external playback
                     isExternalPlayback && React.createElement('span', {
-                      className: 'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-cyan-500/20 text-cyan-300',
+                      className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase',
+                      style: {
+                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+                        color: '#a5b4fc',
+                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                        boxShadow: '0 0 8px rgba(139, 92, 246, 0.15), inset 0 1px 0 rgba(255,255,255,0.05)'
+                      },
                       title: 'Playing in browser'
                     },
+                      // External link / window icon
                       React.createElement('svg', {
                         className: 'w-2.5 h-2.5',
                         fill: 'none',
                         viewBox: '0 0 24 24',
                         stroke: 'currentColor',
-                        strokeWidth: 2.5
+                        strokeWidth: 2,
+                        style: { opacity: 0.9 }
                       },
-                        React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-                        React.createElement('path', { d: 'M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' })
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
+                        })
                       ),
-                      'browser'
+                      'external'
                     )
                   );
                 }
