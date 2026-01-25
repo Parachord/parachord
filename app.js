@@ -11257,8 +11257,8 @@ ${tracks}
         if (friend.savedToCollection && isOnAirNow && !isPinned) {
           // Saved friend became active - auto-pin them to sidebar
           console.log(`👥 Auto-pinning ${friend.displayName} (now active)`);
-          setPinnedFriendIds(prev => [...prev, friend.id]);
-          setAutoPinnedFriendIds(prev => [...prev, friend.id]);
+          setPinnedFriendIds(prev => prev.includes(friend.id) ? prev : [...prev, friend.id]);
+          setAutoPinnedFriendIds(prev => prev.includes(friend.id) ? prev : [...prev, friend.id]);
         } else if (isAutoPinned && !isOnAirNow) {
           // Auto-pinned friend is no longer active - auto-unpin them
           console.log(`👥 Auto-unpinning ${friend.displayName} (no longer active)`);
