@@ -1183,7 +1183,11 @@ const ReleasePage = ({
   resolvers = [],
   // Drag and drop props (for adding tracks to playlists)
   onDragStart,
-  onDragEnd
+  onDragEnd,
+  // Now playing props
+  currentTrack,
+  playbackContext,
+  isPlaying
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -1329,6 +1333,23 @@ const ReleasePage = ({
               sources: sources
             };
 
+            // Check if this track is currently playing from this album
+            const isCurrentTrack = currentTrack?.id === trackId;
+            const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
+
+            // Debug logging for first track only
+            if (index === 0) {
+              console.log('🎯 ReleasePage highlight check:', {
+                trackId,
+                currentTrackId: currentTrack?.id,
+                isCurrentTrack,
+                playbackContextType: playbackContext?.type,
+                playbackContextId: playbackContext?.id,
+                releaseId: release.id,
+                isNowPlaying
+              });
+            }
+
             return React.createElement('div', {
               key: index,
               draggable: true,
@@ -1344,7 +1365,7 @@ const ReleasePage = ({
                   onDragEnd();
                 }
               },
-              className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors no-drag group',
+              className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors no-drag group ${isNowPlaying ? 'bg-purple-50' : ''}`,
               onClick: () => {
                 console.log('Track row clicked:', track.title);
 
@@ -1383,15 +1404,15 @@ const ReleasePage = ({
                 }
               }
             },
-              // Track number
+              // Track number or playing indicator
               React.createElement('span', {
-                className: 'text-sm text-gray-400 w-6 flex-shrink-0 text-right',
+                className: `text-sm w-6 flex-shrink-0 text-right ${isNowPlaying ? 'text-purple-500' : 'text-gray-400'}`,
                 style: { pointerEvents: 'none' }
-              }, String(track.position).padStart(2, '0')),
+              }, isNowPlaying ? '▶' : String(track.position).padStart(2, '0')),
 
               // Track title
               React.createElement('span', {
-                className: 'text-sm text-gray-700 flex-1 truncate transition-colors group-hover:text-gray-900',
+                className: `text-sm flex-1 truncate transition-colors ${isNowPlaying ? 'text-purple-600 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`,
                 style: { pointerEvents: 'none' }
               }, track.title),
 
@@ -1520,6 +1541,9 @@ const ReleasePage = ({
 const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
+  // Playback context - tracks where the current track originated from
+  // Shape: { type: 'playlist' | 'album' | 'search' | 'library' | 'recommendations', id?, name?, artist? }
+  const [playbackContext, setPlaybackContext] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
@@ -1663,6 +1687,7 @@ const Parachord = () => {
   const [isExternalPlayback, setIsExternalPlayback] = useState(false);
   const [showExternalPrompt, setShowExternalPrompt] = useState(false);
   const [pendingExternalTrack, setPendingExternalTrack] = useState(null);
+  const [pendingExternalResolverId, setPendingExternalResolverId] = useState(null); // Tracks which resolver was selected for external playback
   const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
   const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
   const [skipUnsavedFriendWarning, setSkipUnsavedFriendWarning] = useState(false); // "Don't show again" for unsaved friend unpin warning
@@ -2714,10 +2739,16 @@ const Parachord = () => {
 
       console.log(`✅ ${urlType} "${collection.name}" loaded with ${tracks.length} tracks`);
 
-      // Convert all tracks to proper track objects
-      const resolvedTracks = tracks.map(trackMeta =>
-        createTrackFromMeta(trackMeta, collectionResolverId, url)
-      );
+      // Create context for this collection (include source URL for external navigation)
+      const context = urlType === 'album'
+        ? { type: 'album', id: collection.id, name: collection.name, artist: collection.artist, url: url }
+        : { type: 'playlist', id: collection.id, name: collection.name, url: url };
+
+      // Convert all tracks to proper track objects with context
+      const resolvedTracks = tracks.map(trackMeta => ({
+        ...createTrackFromMeta(trackMeta, collectionResolverId, url),
+        _playbackContext: context
+      }));
 
       const hasCurrentTrack = currentTrackRef.current !== null;
 
@@ -2735,7 +2766,8 @@ const Parachord = () => {
           setCurrentQueue(prev => [...remainingTracks, ...prev]);
         }
 
-        // Play first track immediately
+        // Set context and play first track immediately
+        setPlaybackContext(context);
         setCurrentTrack(firstTrack);
         handlePlay(firstTrack);
 
@@ -2755,6 +2787,7 @@ const Parachord = () => {
           const firstTrack = resolvedTracks[0];
           // Remove from queue and set as current
           setCurrentQueue(prev => prev.slice(1));
+          setPlaybackContext(context);
           setCurrentTrack(firstTrack);
           handlePlay(firstTrack);
         }
@@ -2835,6 +2868,9 @@ const Parachord = () => {
 
   // Handle single track URL drop (original handleUrlDrop logic)
   const handleSingleTrackUrlDrop = async (url, zone, resolverId) => {
+    // Create context for this URL drop
+    const context = { type: 'url', url: url, name: getUrlDomain(url) };
+
     // Create placeholder track
     const placeholderId = `pending-${Date.now()}`;
     const placeholder = {
@@ -2848,7 +2884,8 @@ const Parachord = () => {
       duration: null,
       albumArt: null,
       sources: {},
-      errorMessage: null
+      errorMessage: null,
+      _playbackContext: context
     };
 
     // Determine where to insert - use refs to avoid stale closure issues
@@ -2887,8 +2924,11 @@ const Parachord = () => {
       const { track: trackMeta, resolverId: lookupResolverId } = result;
       console.log(`✅ URL lookup success:`, trackMeta.title, '-', trackMeta.artist);
 
-      // Create proper track object
-      const resolvedTrack = createTrackFromMeta(trackMeta, lookupResolverId, url);
+      // Create proper track object with playback context
+      const resolvedTrack = {
+        ...createTrackFromMeta(trackMeta, lookupResolverId, url),
+        _playbackContext: context
+      };
 
       // Now resolve across all enabled resolvers for playable sources
       console.log(`🔍 Resolving playable sources...`);
@@ -2925,7 +2965,8 @@ const Parachord = () => {
           }
           return prev;
         });
-        // Actually play it
+        // Set playback context and actually play it
+        setPlaybackContext(context);
         handlePlay(resolvedTrack);
       } else {
         setCurrentQueue(prev => prev.map(t =>
@@ -3064,14 +3105,17 @@ const Parachord = () => {
     // If album has tracks array, use it directly
     if (album.tracks && album.tracks.length > 0) {
       const tracks = album.tracks;
+      const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+      const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
       if (zone === 'now-playing') {
         showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
-        const firstTrack = tracks[0];
-        const remainingTracks = tracks.slice(1);
+        const firstTrack = taggedTracks[0];
+        const remainingTracks = taggedTracks.slice(1);
         // Add remaining tracks to BEGINNING of queue (play next)
         if (remainingTracks.length > 0) {
           setCurrentQueue(prev => [...remainingTracks, ...prev]);
         }
+        setPlaybackContext(context);
         setCurrentTrack(firstTrack);
         handlePlay(firstTrack);
         if (remainingTracks.length > 0) {
@@ -3079,7 +3123,7 @@ const Parachord = () => {
         }
       } else {
         showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
-        setCurrentQueue(prev => [...prev, ...tracks]);
+        setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
       return;
@@ -3090,14 +3134,17 @@ const Parachord = () => {
     const cachedRelease = prefetchedReleasesRef.current[releaseId];
     if (cachedRelease && cachedRelease.tracks) {
       const tracks = cachedRelease.tracks;
+      const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+      const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
       if (zone === 'now-playing') {
         showToast(`Playing "${album.title}" (${tracks.length} tracks)`);
-        const firstTrack = tracks[0];
-        const remainingTracks = tracks.slice(1);
+        const firstTrack = taggedTracks[0];
+        const remainingTracks = taggedTracks.slice(1);
         // Add remaining tracks to BEGINNING of queue (play next)
         if (remainingTracks.length > 0) {
           setCurrentQueue(prev => [...remainingTracks, ...prev]);
         }
+        setPlaybackContext(context);
         setCurrentTrack(firstTrack);
         handlePlay(firstTrack);
         if (remainingTracks.length > 0) {
@@ -3105,7 +3152,7 @@ const Parachord = () => {
         }
       } else {
         showToast(`Added ${tracks.length} tracks from "${album.title}" to queue`);
-        setCurrentQueue(prev => [...prev, ...tracks]);
+        setCurrentQueue(prev => [...prev, ...taggedTracks]);
         triggerQueueAnimation();
       }
     } else {
@@ -3121,14 +3168,18 @@ const Parachord = () => {
       return;
     }
 
+    const context = { type: 'playlist', id: playlist.id, name: playlist.title };
+    const taggedTracks = tracks.map(t => ({ ...t, _playbackContext: context }));
+
     if (zone === 'now-playing') {
       showToast(`Playing "${playlist.title}" (${tracks.length} tracks)`);
-      const firstTrack = tracks[0];
-      const remainingTracks = tracks.slice(1);
+      const firstTrack = taggedTracks[0];
+      const remainingTracks = taggedTracks.slice(1);
       // Add remaining tracks to BEGINNING of queue (play next)
       if (remainingTracks.length > 0) {
         setCurrentQueue(prev => [...remainingTracks, ...prev]);
       }
+      setPlaybackContext(context);
       setCurrentTrack(firstTrack);
       handlePlay(firstTrack);
       if (remainingTracks.length > 0) {
@@ -3136,7 +3187,7 @@ const Parachord = () => {
       }
     } else {
       showToast(`Added ${tracks.length} tracks from "${playlist.title}" to queue`);
-      setCurrentQueue(prev => [...prev, ...tracks]);
+      setCurrentQueue(prev => [...prev, ...taggedTracks]);
       triggerQueueAnimation();
     }
   };
@@ -4183,9 +4234,16 @@ const Parachord = () => {
       window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
-          addToQueue(data.tracks);
+          // Build context from source info if available
+          let context = null;
+          if (data.sourceType === 'playlist' && data.sourceId) {
+            context = { type: 'playlist', id: data.sourceId, name: data.sourceName };
+          } else if ((data.sourceType === 'album' || data.sourceType === 'release') && data.sourceName) {
+            context = { type: 'album', id: data.sourceId, name: data.sourceName, artist: data.artistName };
+          }
+          addToQueue(data.tracks, context);
         } else if (data.action === 'add-to-queue' && data.track) {
-          // Single track from friend's now playing
+          // Single track from friend's now playing - no context for single tracks
           addToQueue([data.track]);
         } else if (data.action === 'add-to-playlist' && data.track) {
           // Single track from friend's now playing
@@ -4481,12 +4539,14 @@ const Parachord = () => {
         // Save currentTrack + queue together so we restore the correct playing track
         const fullQueue = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
         await window.electron.store.set('saved_queue', fullQueue);
-        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue`);
+        // Also save playback context
+        await window.electron.store.set('saved_playback_context', playbackContext);
+        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}`);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [currentTrack, currentQueue, rememberQueue]);
+  }, [currentTrack, currentQueue, rememberQueue, playbackContext]);
 
   // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -4862,8 +4922,9 @@ const Parachord = () => {
           album: trackOrSource.album,
           duration: duration,
           albumArt: sourceToPlay.albumArt || trackOrSource.albumArt,
-          sources: trackOrSource.sources
-        } : sourceToPlay;
+          sources: trackOrSource.sources,
+          _playbackContext: trackOrSource._playbackContext // Preserve playback context
+        } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
 
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
@@ -4954,15 +5015,16 @@ const Parachord = () => {
           title: trackOrSource.title,
           album: trackOrSource.album,
           duration: sourceToPlay.duration || trackOrSource.duration,
-          sources: trackOrSource.sources
+          sources: trackOrSource.sources,
+          _playbackContext: trackOrSource._playbackContext // Preserve playback context
         } :
-        sourceToPlay;
+        { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
       setTrackLoading(false); // Clear loading state when showing prompt
       // Clear explicit start flag since we're playing a new track
       trackNeedsExplicitStart.current = false;
-      showExternalTrackPromptUI(trackToSet);
+      showExternalTrackPromptUI(trackToSet, resolverId);
       return; // Don't play yet, wait for user confirmation
     }
 
@@ -5009,9 +5071,10 @@ const Parachord = () => {
             title: trackOrSource.title,
             album: trackOrSource.album,
             duration: sourceToPlay.duration || trackOrSource.duration,
-            sources: trackOrSource.sources
+            sources: trackOrSource.sources,
+            _playbackContext: trackOrSource._playbackContext // Preserve playback context
           } :
-          sourceToPlay;
+          { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
@@ -5068,8 +5131,9 @@ const Parachord = () => {
               title: trackOrSource.title,
               album: trackOrSource.album,
               duration: sourceToPlay.duration || trackOrSource.duration,
-              sources: trackOrSource.sources
-            } : sourceToPlay;
+              sources: trackOrSource.sources,
+              _playbackContext: trackOrSource._playbackContext // Preserve playback context
+            } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
             setCurrentTrack(trackToSet);
             setIsPlaying(true);
             setProgress(0);
@@ -5421,17 +5485,20 @@ const Parachord = () => {
   };
 
   // Show prompt for external browser track
-  const showExternalTrackPromptUI = async (track) => {
-    console.log('🌐 Showing external track prompt for:', track.title);
+  const showExternalTrackPromptUI = async (track, resolverId) => {
+    console.log('🌐 Showing external track prompt for:', track.title, 'via', resolverId);
 
     // Stop any currently playing Spotify track before prompting
     await stopSpotifyPlayback();
+
+    // Store the selected resolver ID for when user confirms
+    setPendingExternalResolverId(resolverId);
 
     // If user has opted to skip the prompt, auto-open directly
     if (skipExternalPrompt) {
       console.log('🚀 Skip prompt enabled, auto-opening external track');
       setPendingExternalTrack(track);
-      handleOpenExternalTrack(track);
+      handleOpenExternalTrack(track, resolverId);
       return;
     }
 
@@ -5465,7 +5532,8 @@ const Parachord = () => {
   };
 
   // User confirmed opening external browser
-  const handleOpenExternalTrack = async (track) => {
+  // resolverIdOverride is used when called from showExternalTrackPromptUI with skip prompt enabled
+  const handleOpenExternalTrack = async (track, resolverIdOverride = null) => {
     console.log('✅ User confirmed, opening external track:', track.title);
 
     // Clear timeout and interval FIRST
@@ -5478,12 +5546,14 @@ const Parachord = () => {
       externalTrackIntervalRef.current = null;
     }
 
-    // Determine resolver before state changes
-    const resolverId = determineResolverIdFromTrack(track);
+    // Use the stored resolver ID from when the prompt was shown, or override if provided
+    // This preserves the SELECTED resolver rather than re-determining from track properties
+    const resolverId = resolverIdOverride || pendingExternalResolverId || determineResolverIdFromTrack(track);
     if (!resolverId) {
       console.error('❌ Could not determine resolver for external track');
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
+      setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
       handleNext();
       return;
@@ -5494,6 +5564,7 @@ const Parachord = () => {
       console.error(`❌ Resolver ${resolverId} not found`);
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
+      setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
       handleNext();
       return;
@@ -5528,6 +5599,7 @@ const Parachord = () => {
       // Only update state AFTER successful browser open
       setShowExternalPrompt(false);
       setPendingExternalTrack(null);
+      setPendingExternalResolverId(null);
       setIsExternalPlayback(true);
       setIsPlaying(true);
       setCurrentTrack(track);
@@ -5540,6 +5612,7 @@ const Parachord = () => {
       });
       setIsExternalPlayback(false);
       setPendingExternalTrack(null);
+      setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
       handleNext();
     }
@@ -5561,6 +5634,7 @@ const Parachord = () => {
 
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
+    setPendingExternalResolverId(null);
 
     // Show toast notification
     // (Simplified - full toast system out of scope)
@@ -5611,6 +5685,7 @@ const Parachord = () => {
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
+    setPendingExternalResolverId(null);
 
     // Use refs to get current values (avoids stale closure when called from event handlers)
     const queue = currentQueueRef.current;
@@ -5851,6 +5926,7 @@ const Parachord = () => {
       setIsExternalPlayback(false);
       setShowExternalPrompt(false);
       setPendingExternalTrack(null);
+      setPendingExternalResolverId(null);
 
       // Always use our local queue for navigation
       // (Spotify doesn't know about our queue - tracks may resolve to different services)
@@ -5885,6 +5961,13 @@ const Parachord = () => {
       // Remove the track we're about to play from the queue
       const newQueue = queue.filter((_, index) => index !== nextTrackIndex);
       setCurrentQueue(newQueue);
+
+      // Update playback context if the next track has a different context
+      console.log(`🎯 Next track context:`, nextTrack._playbackContext);
+      if (nextTrack._playbackContext) {
+        setPlaybackContext(nextTrack._playbackContext);
+        console.log(`🎯 Updated playback context to:`, nextTrack._playbackContext.type);
+      }
 
       console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
       handlePlay(nextTrack);
@@ -5952,6 +6035,7 @@ const Parachord = () => {
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
     setPendingExternalTrack(null);
+    setPendingExternalResolverId(null);
 
     // Check if we have history to go back to
     const history = playHistoryRef.current;
@@ -6056,7 +6140,29 @@ const Parachord = () => {
 
   const clearQueue = () => {
     setCurrentQueue([]);
+    setPlaybackContext(null);
     console.log('🗑️ Cleared queue');
+  };
+
+  // Helper to set queue with playback context tagged on each track
+  // This allows the context to update when tracks from different sources come up
+  const setQueueWithContext = (tracks, context) => {
+    const taggedTracks = tracks.map(track => ({
+      ...track,
+      _playbackContext: context
+    }));
+    console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
+    setCurrentQueue(taggedTracks);
+    setPlaybackContext(context);
+  };
+
+  // Helper to add tracks to existing queue with context
+  const addToQueueWithContext = (tracks, context) => {
+    const taggedTracks = tracks.map(track => ({
+      ...track,
+      _playbackContext: context
+    }));
+    setCurrentQueue(prev => [...prev, ...taggedTracks]);
   };
 
   // Open save dialog for queue as playlist
@@ -6279,13 +6385,18 @@ const Parachord = () => {
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
-  const addToQueue = (tracks) => {
+  const addToQueue = (tracks, context = null) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
+
+    // Tag tracks with context if provided
+    const taggedTracks = context
+      ? tracksArray.map(track => ({ ...track, _playbackContext: context }))
+      : tracksArray;
 
     // Check if nothing is currently playing BEFORE updating queue
     const nothingPlaying = !currentTrackRef.current;
 
-    setCurrentQueue(prev => [...prev, ...tracksArray]);
+    setCurrentQueue(prev => [...prev, ...taggedTracks]);
     // Trigger queue animation
     setQueueAnimating(true);
     setTimeout(() => setQueueAnimating(false), 600);
@@ -6973,6 +7084,12 @@ const Parachord = () => {
           // Mark that this track needs explicit start (not just resume) when played
           trackNeedsExplicitStart.current = true;
           console.log(`📦 Restored queue: "${firstTrack.title}" ready in playbar, ${remainingQueue.length} tracks in queue`);
+        }
+        // Restore playback context
+        const savedPlaybackContext = await window.electron.store.get('saved_playback_context');
+        if (savedPlaybackContext) {
+          setPlaybackContext(savedPlaybackContext);
+          console.log(`📦 Restored playback context: ${savedPlaybackContext.type}`);
         }
       }
 
@@ -9884,7 +10001,8 @@ ${tracks}
       });
 
       if (tracks.length > 0) {
-        setQueue(prev => [...prev, ...tracks]);
+        const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+        addToQueue(tracks, context);
         showConfirmDialog({
           type: 'success',
           title: 'Added to Queue',
@@ -11696,11 +11814,13 @@ ${tracks}
 
   // Add Critic's Picks album to queue
   const addCriticsPicksToQueue = async (album) => {
+    const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+
     // Check if we have prefetched tracks
     const prefetched = prefetchedReleases[album.id];
 
     if (prefetched?.tracks?.length > 0) {
-      addToQueue(prefetched.tracks);
+      addToQueue(prefetched.tracks, context);
       return;
     }
 
@@ -11708,7 +11828,7 @@ ${tracks}
     await prefetchCriticsPicksTracks(album);
     const newPrefetched = prefetchedReleases[album.id];
     if (newPrefetched?.tracks?.length > 0) {
-      addToQueue(newPrefetched.tracks);
+      addToQueue(newPrefetched.tracks, context);
     }
   };
 
@@ -13887,8 +14007,31 @@ const getCurrentPlaybackState = async () => {
         };
         setProgress(newProgress);
 
-        // Only update track if it's different
-        if (currentTrack?.id !== newTrackId) {
+        // Check if Spotify is playing a different track than what we initiated
+        // Use currentTrackRef to avoid stale closure issues
+        const track = currentTrackRef.current;
+        const currentSpotifyUri = track?.spotifyUri || track?.sources?.spotify?.spotifyUri;
+        const newSpotifyUri = data.item.uri;
+
+        // Determine if this is the same track we're playing (even if URIs weren't set yet)
+        const isSameTrack = currentSpotifyUri === newSpotifyUri ||
+          (track && !currentSpotifyUri && track.title?.toLowerCase() === data.item.name?.toLowerCase());
+
+        // Debug: Log track comparison for highlight debugging
+        if (!isSameTrack) {
+          console.log('🔄 Spotify polling: Track mismatch detected', {
+            currentSpotifyUri,
+            newSpotifyUri,
+            trackTitle: track?.title,
+            spotifyTitle: data.item.name,
+            trackId: track?.id,
+            hasPlaybackContext: !!track?._playbackContext
+          });
+        }
+
+        if (!isSameTrack) {
+          // Different track is playing - this is an external change (user changed track in Spotify app)
+          // Create new track without playback context since we didn't initiate this
           setCurrentTrack({
             id: newTrackId,
             title: data.item.name,
@@ -13899,7 +14042,18 @@ const getCurrentPlaybackState = async () => {
             spotifyUri: data.item.uri,
             spotifyId: data.item.id,
             sources: ['spotify']
+            // Note: _playbackContext is intentionally not set here since this is an external track change
           });
+        } else {
+          // Same track - update metadata while preserving original ID and playback context
+          setCurrentTrack(prev => ({
+            ...prev,
+            // Preserve original ID and context - never overwrite these
+            duration: data.item.duration_ms / 1000,
+            albumArt: prev.albumArt || data.item.album.images[0]?.url,
+            spotifyUri: data.item.uri,
+            spotifyId: data.item.id
+          }));
         }
 
         // Update device info if available
@@ -14376,6 +14530,7 @@ useEffect(() => {
           setIsPlaying(false);
           setShowExternalPrompt(false);
           setPendingExternalTrack(null);
+          setPendingExternalResolverId(null);
         }
       }
     },
@@ -14399,6 +14554,7 @@ useEffect(() => {
             setIsPlaying(false);
             setShowExternalPrompt(false);
             setPendingExternalTrack(null);
+            setPendingExternalResolverId(null);
             console.log('⏸️ User dismissed external track prompt, pausing playback');
           },
           className: 'absolute top-4 right-4 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors',
@@ -15107,7 +15263,8 @@ useEffect(() => {
                             // Add album tracks to queue (prefetched on hover)
                             const prefetched = prefetchedReleasesRef.current[album.id];
                             if (prefetched?.tracks?.length > 0) {
-                              setCurrentQueue(prev => [...prev, ...prefetched.tracks]);
+                              const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+                              addToQueue(prefetched.tracks, context);
                             }
                           },
                           className: 'bg-white text-gray-900 px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-100 transition-colors flex items-center gap-2 shadow-lg'
@@ -15185,6 +15342,8 @@ useEffect(() => {
                   ...filteredTracks.map((track, index) => {
                     const hasResolved = Object.keys(track.sources || {}).length > 0;
                     const isResolving = !hasResolved && track.resolving;
+                    const isCurrentTrack = currentTrack?.id === track.id;
+                    const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
                     return React.createElement('div', {
                       key: track.id,
@@ -15215,10 +15374,11 @@ useEffect(() => {
                     },
                     className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${
                       isResolving ? 'opacity-60' : ''
-                    }`,
+                    } ${isNowPlaying && isPlaying ? 'bg-purple-50' : ''}`,
                     onClick: () => {
                       const tracksAfter = filteredTracks.slice(index + 1);
-                      setCurrentQueue(tracksAfter);
+                      const context = { type: 'search', name: searchQuery };
+                      setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
                     },
                     onContextMenu: (e) => {
@@ -15231,15 +15391,15 @@ useEffect(() => {
                       }
                     }
                   },
-                    // Track number
+                    // Track number or playing indicator
                     React.createElement('span', {
-                      className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                      className: `text-sm flex-shrink-0 text-right ${isNowPlaying && isPlaying ? 'text-purple-500' : 'text-gray-400'}`,
                       style: { pointerEvents: 'none', width: '32px' }
-                    }, String(index + 1).padStart(2, '0')),
+                    }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
                     // Track title - fixed width column (font-medium for emphasis)
                     React.createElement('span', {
-                      className: `text-sm font-medium truncate transition-colors ${hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
+                      className: `text-sm font-medium truncate transition-colors ${isNowPlaying && isPlaying ? 'text-purple-600' : hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
                       style: { pointerEvents: 'none', width: '360px', flexShrink: 0 }
                     }, track.title),
 
@@ -15293,7 +15453,8 @@ useEffect(() => {
                               onClick: (e) => {
                                 e.stopPropagation();
                                 const tracksAfter = filteredTracks.slice(index + 1);
-                                setCurrentQueue(tracksAfter);
+                                const context = { type: 'search', name: searchQuery };
+                                setQueueWithContext(tracksAfter, context);
                                 handlePlay({ ...track, preferredResolver: resolverId });
                               },
                               style: {
@@ -16378,8 +16539,11 @@ React.createElement('div', {
             handlePlay: handlePlay,
             onTrackPlay: (track, tracksAfter) => {
               // Set queue with remaining tracks from the album, then play
-              setCurrentQueue(tracksAfter);
-              handlePlay(track);
+              const context = { type: 'album', id: currentRelease?.id, name: currentRelease?.title, artist: currentRelease?.artist?.name };
+              // Tag the current track with context too
+              const taggedTrack = { ...track, _playbackContext: context };
+              setQueueWithContext(tracksAfter, context);
+              handlePlay(taggedTrack);
             },
             onTrackContextMenu: (track) => {
               if (window.electron?.contextMenu?.showTrackMenu) {
@@ -16391,6 +16555,10 @@ React.createElement('div', {
             },
             trackSources: trackSources,
             resolvers: resolvers,
+            // Now playing props
+            currentTrack: currentTrack,
+            playbackContext: playbackContext,
+            isPlaying: isPlaying,
             // Drag and drop handlers for adding tracks to playlists
             onDragStart: (track) => {
               setDraggingTrackForPlaylist(track);
@@ -17348,6 +17516,21 @@ React.createElement('div', {
                     const isResolving = Object.keys(track.sources || {}).length === 0;
                     const isDraggedOver = playlistEditMode && playlistDropTarget === index;
                     const isDragging = playlistEditMode && draggedPlaylistTrack === index;
+                    const isCurrentTrack = currentTrack?.id === track.id;
+                    const isNowPlaying = isCurrentTrack && playbackContext?.type === 'playlist' && playbackContext?.id === selectedPlaylist?.id;
+
+                    // Debug logging for first track only
+                    if (index === 0) {
+                      console.log('🎯 Playlist highlight check:', {
+                        trackId: track.id,
+                        currentTrackId: currentTrack?.id,
+                        isCurrentTrack,
+                        playbackContextType: playbackContext?.type,
+                        playbackContextId: playbackContext?.id,
+                        selectedPlaylistId: selectedPlaylist?.id,
+                        isNowPlaying
+                      });
+                    }
 
                     return React.createElement('div', {
                       key: track.id || index,
@@ -17395,11 +17578,12 @@ React.createElement('div', {
                       } : undefined,
                       className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 transition-colors no-drag group ${
                         playlistEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''}`,
+                      } ${isResolving ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 bg-gray-100' : ''} ${isDraggedOver ? 'border-t-2 border-t-purple-500' : ''} ${isNowPlaying && isPlaying ? 'bg-purple-50' : ''}`,
                       onClick: () => {
                         if (draggedPlaylistTrack !== null) return; // Don't play if dragging
                         const tracksAfter = playlistTracks.slice(index + 1);
-                        setCurrentQueue(tracksAfter);
+                        const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
+                        setQueueWithContext(tracksAfter, context);
                         handlePlay(track);
                       },
                       onContextMenu: (e) => {
@@ -17439,13 +17623,13 @@ React.createElement('div', {
                           )
                         )
                         : React.createElement('span', {
-                            className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                            className: `text-sm flex-shrink-0 text-right ${isNowPlaying && isPlaying ? 'text-purple-500' : 'text-gray-400'}`,
                             style: { pointerEvents: 'none', width: '32px' }
-                          }, String(index + 1).padStart(2, '0')),
+                          }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
                       // Track title - fixed width column (font-medium for emphasis)
                       React.createElement('span', {
-                        className: `text-sm font-medium truncate transition-colors ${hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
+                        className: `text-sm font-medium truncate transition-colors ${isNowPlaying && isPlaying ? 'text-purple-600' : hasResolved ? 'text-gray-900 group-hover:text-gray-900' : 'text-gray-500'}`,
                         style: { pointerEvents: 'none', width: '360px', flexShrink: 0 }
                       }, track.title),
 
@@ -17499,7 +17683,8 @@ React.createElement('div', {
                                 onClick: (e) => {
                                   e.stopPropagation();
                                   const tracksAfter = playlistTracks.slice(index + 1);
-                                  setCurrentQueue(tracksAfter);
+                                  const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
+                                  setQueueWithContext(tracksAfter, context);
                                   handlePlay({ ...track, preferredResolver: resolverId });
                                 },
                                 style: {
@@ -18588,17 +18773,19 @@ React.createElement('div', {
                   const effectiveSources = track.sources || {};
                   const hasResolved = Object.keys(effectiveSources).length > 0;
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
+                  const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
                   const trackKey = track.filePath || track.id;
                   const isResolving = resolvingLibraryTracks.has(trackKey);
 
                   return React.createElement('div', {
                     key: track.id || track.filePath || index,
                     className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors no-drag group ${
-                      isCurrentTrack && isPlaying ? 'bg-purple-50' : ''
+                      isNowPlaying && isPlaying ? 'bg-purple-50' : ''
                     }`,
                     onClick: () => {
                       const tracksAfter = sorted.slice(index + 1);
-                      setCurrentQueue(tracksAfter);
+                      const context = { type: 'library', name: 'Library' };
+                      setQueueWithContext(tracksAfter, context);
                       handlePlay(track);
                     },
                     onContextMenu: (e) => {
@@ -18611,15 +18798,15 @@ React.createElement('div', {
                       }
                     }
                   },
-                    // Track number
+                    // Track number or playing indicator
                     React.createElement('span', {
-                      className: 'text-sm text-gray-400 flex-shrink-0 text-right',
+                      className: `text-sm flex-shrink-0 text-right ${isNowPlaying && isPlaying ? 'text-purple-500' : 'text-gray-400'}`,
                       style: { pointerEvents: 'none', width: '32px' }
-                    }, String(index + 1).padStart(2, '0')),
+                    }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
                     // Track title - fixed width column (font-medium for emphasis)
                     React.createElement('span', {
-                      className: `text-sm font-medium truncate transition-colors ${isCurrentTrack && isPlaying ? 'text-purple-600' : 'text-gray-900 group-hover:text-gray-900'}`,
+                      className: `text-sm font-medium truncate transition-colors ${isNowPlaying && isPlaying ? 'text-purple-600' : 'text-gray-900 group-hover:text-gray-900'}`,
                       style: { pointerEvents: 'none', width: '360px', flexShrink: 0 }
                     }, track.title),
 
@@ -18682,7 +18869,8 @@ React.createElement('div', {
                                 onClick: (e) => {
                                   e.stopPropagation();
                                   const tracksAfter = sorted.slice(index + 1);
-                                  setCurrentQueue(tracksAfter);
+                                  const context = { type: 'library', name: 'Library' };
+                                  setQueueWithContext(tracksAfter, context);
                                   handlePlay({ ...track, preferredResolver: resolverId });
                                 },
                                 style: {
@@ -18715,7 +18903,8 @@ React.createElement('div', {
                               onClick: (e) => {
                                 e.stopPropagation();
                                 const tracksAfter = sorted.slice(index + 1);
-                                setCurrentQueue(tracksAfter);
+                                const context = { type: 'library', name: 'Library' };
+                                setQueueWithContext(tracksAfter, context);
                                 handlePlay({ ...track, preferredResolver: 'localfiles' });
                               },
                               style: {
@@ -18758,7 +18947,8 @@ React.createElement('div', {
                             onClick: (e) => {
                               e.stopPropagation();
                               const tracksAfter = sorted.slice(index + 1);
-                              setCurrentQueue(tracksAfter);
+                              const context = { type: 'library', name: 'Library' };
+                              setQueueWithContext(tracksAfter, context);
                               handlePlay({ ...track, preferredResolver: 'localfiles' });
                             },
                             style: {
@@ -20027,7 +20217,8 @@ React.createElement('div', {
                         onClick: () => {
                           // Set remaining tracks as queue and play this track
                           const tracksAfter = filteredTracks.slice(index + 1);
-                          setCurrentQueue(tracksAfter);
+                          const context = { type: 'recommendations', name: 'Recommendations' };
+                          setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
                         },
                         onContextMenu: (e) => {
@@ -20102,7 +20293,8 @@ React.createElement('div', {
                                   onClick: (e) => {
                                     e.stopPropagation();
                                     const tracksAfter = recommendations.tracks.slice(index + 1);
-                                    setCurrentQueue(tracksAfter);
+                                    const context = { type: 'recommendations', name: 'Recommendations' };
+                                    setQueueWithContext(tracksAfter, context);
                                     handlePlay({ ...track, preferredResolver: resolverId });
                                   },
                                   style: {
@@ -20487,7 +20679,8 @@ React.createElement('div', {
                         className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
                         onClick: () => {
                           const tracksAfter = sorted.slice(index + 1);
-                          setCurrentQueue(tracksAfter);
+                          const context = { type: 'history', name: 'History' };
+                          setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
                         },
                         onContextMenu: (e) => {
@@ -20530,7 +20723,7 @@ React.createElement('div', {
                               return React.createElement('button', {
                                 key: resolverId,
                                 className: 'no-drag',
-                                onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                 style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
@@ -20597,7 +20790,7 @@ React.createElement('div', {
                         },
                         onDragEnd: () => { setDraggingTrackForPlaylist(null); setDropTargetPlaylistId(null); setDropTargetNewPlaylist(false); },
                         className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${!hasResolved ? 'opacity-60' : ''}`,
-                        onClick: () => { const tracksAfter = filtered.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay(track); },
+                        onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.electron.contextMenu.showTrackMenu({ type: 'track', track }); }
                       },
                         React.createElement('span', { className: 'text-sm text-gray-500 font-medium flex-shrink-0 text-right', style: { width: '32px' } }, `#${track.rank}`),
@@ -20616,7 +20809,7 @@ React.createElement('div', {
                               return React.createElement('button', {
                                 key: resolverId,
                                 className: 'no-drag',
-                                onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); setCurrentQueue(tracksAfter); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                 style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
@@ -21130,6 +21323,7 @@ React.createElement('div', {
                     ...sorted.map((track, index) => {
                       const hasResolved = Object.keys(track.sources || {}).length > 0;
                       const isResolving = Object.keys(track.sources || {}).length === 0;
+                      const tracksAfterRecent = sorted.slice(index + 1);
 
                       return React.createElement('div', {
                         key: track.id || index,
@@ -21147,7 +21341,8 @@ React.createElement('div', {
                         className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
                         onClick: () => {
                           const tracksAfter = sorted.slice(index + 1);
-                          setCurrentQueue(tracksAfter);
+                          const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' };
+                          setQueueWithContext(tracksAfter, context);
                           handlePlay(track);
                         },
                           onContextMenu: (e) => {
@@ -21194,7 +21389,7 @@ React.createElement('div', {
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
-                                  onClick: (e) => { e.stopPropagation(); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                   style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
@@ -21235,7 +21430,8 @@ React.createElement('div', {
                           className: `flex items-center gap-4 py-2 px-3 border-b border-gray-100 hover:bg-gray-50 cursor-grab active:cursor-grabbing transition-colors group ${isResolving ? 'opacity-60' : ''}`,
                           onClick: () => {
                             const tracksAfter = friendHistoryData.topTracks.slice(index + 1);
-                            setCurrentQueue(tracksAfter);
+                            const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' };
+                            setQueueWithContext(tracksAfter, context);
                             handlePlay(track);
                           },
                           onContextMenu: (e) => {
@@ -21278,7 +21474,7 @@ React.createElement('div', {
                                 return React.createElement('button', {
                                   key: resolverId,
                                   className: 'no-drag',
-                                  onClick: (e) => { e.stopPropagation(); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
                                   style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
@@ -21998,9 +22194,10 @@ React.createElement('div', {
                         setRememberQueue(newValue);
                         if (window.electron?.store) {
                           await window.electron.store.set('remember_queue', newValue);
-                          // If turning off, clear the saved queue
+                          // If turning off, clear the saved queue and context
                           if (!newValue) {
                             await window.electron.store.set('saved_queue', []);
+                            await window.electron.store.set('saved_playback_context', null);
                           }
                         }
                       },
@@ -24862,7 +25059,7 @@ React.createElement('div', {
       React.createElement('div', {
         ref: queueContentRef,
         className: 'overflow-y-auto relative',
-        style: { height: (queueDrawerHeight - 44) + 'px' },
+        style: { height: (queueDrawerHeight - 44 - (playbackContext ? 32 : 0)) + 'px' },
         onDragEnter: (e) => handleDragEnter(e, 'queue'),
         onDragOver: (e) => handleDragOver(e, 'queue'),
         onDragLeave: handleDragLeave,
@@ -24887,7 +25084,7 @@ React.createElement('div', {
           // flex-col-reverse reverses the main axis (bottom to top)
           // justify-start pins items to the START of that axis = BOTTOM of the container
           // min-h-full ensures it fills the container when there's little content
-          React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full pb-2' },
+          React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full' },
             currentQueue.map((track, index) => {
               const isCurrentTrack = currentTrack?.id === track.id;
               const isLoading = track.status === 'loading';
@@ -25113,6 +25310,76 @@ React.createElement('div', {
               );
             })
           )
+      ),
+
+      // Playback context banner - shows where playback originated from (at bottom of queue)
+      playbackContext && React.createElement('div', {
+        className: 'flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 cursor-pointer hover:bg-purple-900/50 transition-colors',
+        onClick: () => {
+          // Navigate to the context source
+          if (playbackContext.type === 'playlist' && playbackContext.id) {
+            const playlist = playlists.find(p => p.id === playbackContext.id);
+            if (playlist) {
+              loadPlaylist(playlist);
+            }
+          } else if (playbackContext.type === 'album' && playbackContext.artist) {
+            // Navigate to the album page, not just the artist
+            handleCollectionAlbumClick({
+              title: playbackContext.name,
+              artist: playbackContext.artist
+            });
+          } else if (playbackContext.type === 'search') {
+            navigateTo('search');
+          } else if (playbackContext.type === 'library') {
+            navigateTo('library');
+          } else if (playbackContext.type === 'recommendations') {
+            navigateTo('recommendations');
+          } else if (playbackContext.type === 'history') {
+            navigateTo('history');
+          } else if (playbackContext.type === 'friend') {
+            navigateTo('friendHistory');
+          } else if (playbackContext.type === 'url' && playbackContext.url) {
+            // Open the source URL in the default browser
+            window.electron.shell.openExternal(playbackContext.url);
+          }
+          setQueueDrawerOpen(false);
+        },
+        title: playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
+      },
+        React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('span', { className: 'text-xs text-purple-300' }, 'Playing from'),
+          React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
+            playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
+            playbackContext.type === 'album' ? `${playbackContext.name || 'Album'} by ${playbackContext.artist || 'Unknown'}` :
+            playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
+            playbackContext.type === 'library' ? 'Library' :
+            playbackContext.type === 'recommendations' ? 'Recommendations' :
+            playbackContext.type === 'history' ? 'History' :
+            playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
+            playbackContext.type === 'url' ? playbackContext.name || 'External link' :
+            playbackContext.name || 'Unknown'
+          )
+        ),
+        React.createElement('svg', {
+          className: 'w-4 h-4 text-purple-400',
+          fill: 'none',
+          stroke: 'currentColor',
+          viewBox: '0 0 24 24'
+        },
+          playbackContext.type === 'url'
+            ? React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                strokeWidth: 2,
+                d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'
+              })
+            : React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                strokeWidth: 2,
+                d: 'M14 5l7 7m0 0l-7 7m7-7H3'
+              })
+        )
       )
     )
   );
