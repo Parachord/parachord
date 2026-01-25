@@ -28304,7 +28304,7 @@ React.createElement('div', {
                     setDroppingFromIndex(null);
                   }, 300);
                 },
-                className: `group flex items-center gap-3 py-2.5 px-3 hover:bg-white/10 transition-all duration-300 ${
+                className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
                   isCurrentTrack ? 'bg-purple-900/40' : ''
                 } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
                   isError ? 'opacity-50' : ''
@@ -28326,7 +28326,7 @@ React.createElement('div', {
                   style: {
                     width: '28px',
                     flexShrink: 0,
-                    fontSize: '11px',
+                    fontSize: '12px',
                     fontWeight: '500',
                     color: (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
                       ? 'rgba(156, 163, 175, 0.5)' : 'rgba(156, 163, 175, 0.7)'
@@ -28347,7 +28347,7 @@ React.createElement('div', {
                   style: {
                     flex: '1 1 0',
                     minWidth: 0,
-                    fontSize: '12px',
+                    fontSize: '13px',
                     fontWeight: index === 0 ? '500' : '400',
                     color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
                            isError ? '#f87171' :
@@ -28378,7 +28378,7 @@ React.createElement('div', {
                 // Artist name - flexible column, clickable
                 React.createElement('span', {
                   className: 'truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
-                  style: { flex: '0.7 1 0', minWidth: 0, fontSize: '11px', color: 'rgba(156, 163, 175, 0.7)' },
+                  style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
                   onClick: (e) => {
                     e.stopPropagation();
                     if (!isLoading && !isError && track.artist) {
@@ -28394,7 +28394,7 @@ React.createElement('div', {
                 // Duration - fixed width column (before resolver icons)
                 React.createElement('span', {
                   className: 'text-right tabular-nums',
-                  style: { width: '50px', flexShrink: 0, fontSize: '11px', color: 'rgba(156, 163, 175, 0.5)' }
+                  style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.5)' }
                 }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
 
                 // Resolver icons - fixed width column (last before remove button)
