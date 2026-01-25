@@ -914,15 +914,10 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   const containerRef = useRef(null);
 
   useEffect(() => {
-    // If we already have art from the service, use it
-    if (track.albumArt) {
-      setArtUrl(track.albumArt);
-      return;
-    }
-
-    // No art provided - try to fetch via our cache system
+    // Always try our cache system first for better quality art
     if (!track.album || !track.artist) {
-      setArtUrl(null);
+      // No album/artist info - fall back to service-provided art or null
+      setArtUrl(track.albumArt || null);
       return;
     }
 
@@ -930,7 +925,8 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     const loadArt = async () => {
       const fetchedArt = await getAlbumArt(track.artist, track.album);
       if (!cancelled) {
-        setArtUrl(fetchedArt || null);
+        // Use cached art if available, otherwise fall back to service-provided art
+        setArtUrl(fetchedArt || track.albumArt || null);
       }
     };
     loadArt();
@@ -958,7 +954,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
 
   return React.createElement('div', {
     className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors',
-    style: { maxWidth: '160px', height: '20px' },
+    style: { maxWidth: '180px', height: '20px' },
     onClick: onPlay,
     onContextMenu: onContextMenu
   },
@@ -982,7 +978,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     // Track info - only scrolls if overflowing
     React.createElement('div', {
       ref: containerRef,
-      className: `flex-1 min-w-0 px-1.5 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
+      className: `flex-1 min-w-0 px-2 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
       style: { overflow: 'hidden', height: '100%' }
     },
       React.createElement('span', {
@@ -1555,6 +1551,7 @@ const Parachord = () => {
   // Shape: { type: 'playlist' | 'album' | 'search' | 'library' | 'recommendations', id?, name?, artist? }
   const [playbackContext, setPlaybackContext] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
@@ -1793,6 +1790,10 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
+  const [listenAlongFriend, setListenAlongFriend] = useState(null); // Friend object when in listen-along mode
+  const listenAlongFriendRef = useRef(null); // Ref for use in async callbacks
+  const listenAlongLastTrackRef = useRef(null); // Track what we last played in listen-along to detect changes
+  const listenAlongPendingTrackRef = useRef(null); // Track queued to play when current song ends (friend is ahead)
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
@@ -2461,6 +2462,8 @@ const Parachord = () => {
   const removeFriendRef = useRef(null);
   const saveFriendToCollectionRef = useRef(null);
   const removeFriendFromCollectionRef = useRef(null);
+  const activateListenAlongRef = useRef(null);
+  const deactivateListenAlongRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
@@ -2474,6 +2477,8 @@ const Parachord = () => {
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -4409,6 +4414,10 @@ const Parachord = () => {
           if (saveFriendToCollectionRef.current) saveFriendToCollectionRef.current(data.friendId);
         } else if (data.action === 'remove-friend-from-collection' && data.friendId) {
           if (removeFriendFromCollectionRef.current) removeFriendFromCollectionRef.current(data.friendId);
+        } else if (data.action === 'start-listen-along' && data.friend) {
+          if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
+        } else if (data.action === 'stop-listen-along') {
+          if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
         }
       });
     }
@@ -5922,7 +5931,7 @@ const Parachord = () => {
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = async (userInitiated = false) => {
     // BROWSER PLAYBACK GUARD: Block handleNext while waiting for browser to connect
     // This prevents race conditions when opening external tracks (YouTube, Bandcamp, etc.)
     if (waitingForBrowserPlaybackRef.current) {
@@ -5935,6 +5944,20 @@ const Parachord = () => {
     if (isAdvancingTrackRef.current) {
       console.log('⚠️ handleNext() already in progress, skipping duplicate call');
       return;
+    }
+
+    // If user manually clicked next while listening along, end the session
+    let listenAlongEnded = false;
+    const listenAlongFriendNow = listenAlongFriendRef.current;
+    if (userInitiated && listenAlongFriendNow) {
+      console.log(`🎧 User skipped track - ending listen-along with ${listenAlongFriendNow.displayName}`);
+      showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      setPlaybackContext(null);
+      listenAlongEnded = true;
+      // Fall through to play from queue
     }
     isAdvancingTrackRef.current = true;
 
@@ -5992,6 +6015,47 @@ const Parachord = () => {
       setShowExternalPrompt(false);
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
+
+      // LISTEN-ALONG MODE: Handle track progression when listening along with a friend
+      // Skip this block if we already ended listen-along above (user clicked next)
+      if (listenAlongFriendNow && !listenAlongEnded) {
+        // Check if there's a pending track queued (friend moved ahead while we were still playing)
+        const pendingTrack = listenAlongPendingTrackRef.current;
+        if (pendingTrack) {
+          console.log(`🎧 Listen-along: Playing pending track "${pendingTrack.title}"`);
+          listenAlongPendingTrackRef.current = null;
+          listenAlongLastTrackRef.current = {
+            name: pendingTrack.title,
+            artist: pendingTrack.artist
+          };
+          handlePlay(pendingTrack);
+          return;
+        }
+
+        // Check if friend's current track is the same as what we just finished
+        // If so, they haven't moved on yet - end listen-along and go to queue
+        const friendTrack = listenAlongFriendNow.cachedRecentTrack;
+        const lastTrack = listenAlongLastTrackRef.current;
+        const friendStillOnSameTrack = friendTrack && lastTrack &&
+          friendTrack.name === lastTrack.name &&
+          friendTrack.artist === lastTrack.artist;
+
+        if (friendStillOnSameTrack) {
+          console.log(`🎧 Listen-along: Song ended but ${listenAlongFriendNow.displayName} hasn't moved on - ending listen-along`);
+          showToast(`${listenAlongFriendNow.displayName} hasn't moved on - resuming your queue`);
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+          setPlaybackContext(null);
+          // Fall through to play from queue below
+        } else {
+          // Friend has a different track, but we don't have it queued yet
+          // Wait for polling to detect the change
+          console.log(`🎧 Listen-along active with ${listenAlongFriendNow.displayName} - waiting for their next track`);
+          setIsPlaying(false);
+          return;
+        }
+      }
 
       // Always use our local queue for navigation
       // (Spotify doesn't know about our queue - tracks may resolve to different services)
@@ -6053,6 +6117,17 @@ const Parachord = () => {
     const track = currentTrackRef.current;
 
     if (!track) return;
+
+    // If user clicked previous while listening along, end the session
+    const listenAlongFriendNow = listenAlongFriendRef.current;
+    if (listenAlongFriendNow) {
+      console.log(`🎧 User went back - ending listen-along with ${listenAlongFriendNow.displayName}`);
+      showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      setPlaybackContext(null);
+    }
 
     // Notify scrobble manager that current track is ending
     if (window.scrobbleManager) {
@@ -11080,6 +11155,7 @@ ${tracks}
   // Refresh recent tracks for pinned friends (for polling)
   const refreshPinnedFriends = async () => {
     const pinnedFriends = friends.filter(f => pinnedFriendIds.includes(f.id));
+    const listenAlongFriendNow = listenAlongFriendRef.current;
 
     for (const friend of pinnedFriends) {
       const recentTrack = await fetchFriendRecentTrack(friend);
@@ -11090,19 +11166,140 @@ ${tracks}
           previousTrack.name !== recentTrack.name ||
           previousTrack.artist !== recentTrack.artist;
 
+        // Check if friend is on-air (track less than 10 minutes old)
+        const isOnAirNow = recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000;
+        const wasOnAir = previousTrack?.timestamp && (Date.now() - previousTrack.timestamp) < 10 * 60 * 1000;
+
         setFriends(prev => prev.map(f =>
           f.id === friend.id
             ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
             : f
         ));
 
+        // Check if the friend we're listening along to went inactive
+        if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
+          console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
+          showToast(`${friend.displayName} stopped listening`);
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+          setPlaybackContext(null);
+          // Resume playback from queue if there are tracks
+          if (currentQueueRef.current.length > 0) {
+            handleNextRef.current?.();
+          }
+          continue; // Skip further processing for this friend
+        }
+
         // Resolve the track in background if it's new/changed and friend is on-air
-        if (trackChanged && recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000) {
+        if (trackChanged && isOnAirNow) {
           resolveFriendTrack(recentTrack);
+
+          // If we're listening along to this friend and they changed tracks, queue or play the new one
+          if (listenAlongFriendNow?.id === friend.id) {
+            const lastTrack = listenAlongLastTrackRef.current;
+            const isNewTrack = !lastTrack ||
+              lastTrack.name !== recentTrack.name ||
+              lastTrack.artist !== recentTrack.artist;
+
+            if (isNewTrack) {
+              console.log(`🎧 Listen-along: ${friend.displayName} started playing "${recentTrack.name}"`);
+
+              // Wait a moment for track to resolve, then queue or play
+              setTimeout(async () => {
+                const cacheKey = `${recentTrack.artist.toLowerCase()}|${recentTrack.name.toLowerCase()}|0`;
+                const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+                const track = {
+                  title: recentTrack.name,
+                  artist: recentTrack.artist,
+                  album: recentTrack.album,
+                  albumArt: recentTrack.albumArt,
+                  sources: cachedSources,
+                  _playbackContext: {
+                    type: 'listenAlong',
+                    name: friend.displayName,
+                    friendId: friend.id
+                  }
+                };
+
+                // Check if we're currently playing - if so, queue as pending
+                // Otherwise play immediately (our song already ended)
+                if (isPlayingRef.current) {
+                  console.log(`🎧 Listen-along: Queuing "${track.title}" to play when current track ends`);
+                  listenAlongPendingTrackRef.current = track;
+                } else {
+                  // Not playing, so our track ended - play friend's track now
+                  console.log(`🎧 Listen-along: Playing "${track.title}" immediately`);
+                  listenAlongLastTrackRef.current = {
+                    name: recentTrack.name,
+                    artist: recentTrack.artist
+                  };
+                  handlePlay(track);
+                }
+              }, 1000); // Wait 1 second for sources to resolve
+            }
+          }
         }
       }
     }
   };
+
+  // Activate listen-along mode for a friend
+  const activateListenAlong = (friend) => {
+    if (!friend || !friend.cachedRecentTrack) return;
+
+    console.log(`🎧 Starting listen-along with ${friend.displayName}`);
+    setListenAlongFriend(friend);
+    listenAlongLastTrackRef.current = {
+      name: friend.cachedRecentTrack.name,
+      artist: friend.cachedRecentTrack.artist
+    };
+
+    // Set playback context to listen-along
+    setPlaybackContext({
+      type: 'listenAlong',
+      name: friend.displayName,
+      friendId: friend.id
+    });
+
+    // Play the friend's current track
+    const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+    const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+    const track = {
+      title: friend.cachedRecentTrack.name,
+      artist: friend.cachedRecentTrack.artist,
+      album: friend.cachedRecentTrack.album,
+      albumArt: friend.cachedRecentTrack.albumArt,
+      sources: cachedSources,
+      _playbackContext: {
+        type: 'listenAlong',
+        name: friend.displayName,
+        friendId: friend.id
+      }
+    };
+    handlePlay(track);
+
+    showToast(`Listening along with ${friend.displayName}`);
+  };
+
+  // Deactivate listen-along mode
+  const deactivateListenAlong = () => {
+    if (!listenAlongFriend) return;
+
+    const friendName = listenAlongFriend.displayName;
+    console.log(`🎧 Stopped listening along with ${friendName}`);
+    setListenAlongFriend(null);
+    listenAlongLastTrackRef.current = null;
+
+    // Clear the listen-along context - will use queue's context when next track plays
+    setPlaybackContext(null);
+
+    showToast(`Stopped listening along with ${friendName}`);
+  };
+
+  // Assign listen-along functions to refs for context menu access
+  activateListenAlongRef.current = activateListenAlong;
+  deactivateListenAlongRef.current = deactivateListenAlong;
 
   // Poll pinned friends every 2 minutes for on-air status
   useEffect(() => {
@@ -11110,8 +11307,9 @@ ${tracks}
       // Initial refresh
       refreshPinnedFriends();
 
-      // Set up polling interval
-      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, 2 * 60 * 1000);
+      // Set up polling interval - faster when listen-along is active
+      const pollInterval = listenAlongFriend ? 15 * 1000 : 2 * 60 * 1000; // 15 seconds vs 2 minutes
+      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, pollInterval);
 
       return () => {
         if (friendPollIntervalRef.current) {
@@ -11119,7 +11317,7 @@ ${tracks}
         }
       };
     }
-  }, [pinnedFriendIds.length]);
+  }, [pinnedFriendIds.length, listenAlongFriend]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {
@@ -14426,7 +14624,7 @@ useEffect(() => {
               className: `px-3 py-1.5 rounded cursor-pointer group transition-colors flex items-center ${
                 isSelected ? 'bg-gray-200 text-gray-900' : 'hover:bg-gray-100'
               }`,
-              style: { minHeight: '52px' },  // Fixed height to prevent layout shift when mini playbar appears
+              style: { minHeight: '52px' },
               draggable: true,
               onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
@@ -14451,7 +14649,9 @@ useEffect(() => {
                     type: 'friend',
                     friend: friend,
                     isPinned: true,
-                    isSavedToCollection: friend.savedToCollection
+                    isSavedToCollection: friend.savedToCollection,
+                    isOnAir: onAir,
+                    isListeningAlong: listenAlongFriend?.id === friend.id
                   });
                 }
               }
@@ -14488,9 +14688,43 @@ useEffect(() => {
                 ),
                 // Name and track info
                 React.createElement('div', { className: 'flex-1 min-w-0' },
-                  React.createElement('div', {
-                    className: 'text-sm text-gray-600 truncate'
-                  }, friend.displayName),
+                  // Friend name with listen-along toggle
+                  React.createElement('div', { className: 'flex items-center gap-1' },
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-600 truncate'
+                    }, friend.displayName),
+                    // Listen along toggle - only show when friend is on-air
+                    onAir && React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        if (listenAlongFriend?.id === friend.id) {
+                          deactivateListenAlong();
+                        } else {
+                          activateListenAlong(friend);
+                        }
+                      },
+                      className: `flex-shrink-0 transition-colors ${
+                        listenAlongFriend?.id === friend.id
+                          ? 'text-purple-500 hover:text-purple-400'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`,
+                      title: listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along'
+                    },
+                      React.createElement('svg', {
+                        className: 'w-3.5 h-3.5',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor',
+                        strokeWidth: 2
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1'
+                        })
+                      )
+                    )
+                  ),
                   // Mini playbar showing friend's current track
                   onAir && friend.cachedRecentTrack && React.createElement(FriendMiniPlaybar, {
                     track: friend.cachedRecentTrack,
@@ -22525,7 +22759,7 @@ React.createElement('div', {
             style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
           }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 })),
           React.createElement('button', {
-            onClick: handleNext,
+            onClick: () => handleNext(true),
             disabled: !currentTrack,
             className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
             style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
@@ -22538,7 +22772,8 @@ React.createElement('div', {
             title: `Queue (${currentQueue.length} tracks)`
           },
             React.createElement(List, { size: 15 }),
-            currentQueue.length > 0 && React.createElement('span', {
+            // Hide queue badge when in listen-along mode
+            !listenAlongFriend && currentQueue.length > 0 && React.createElement('span', {
               className: `absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 text-[10px] font-medium ${queueAnimating ? 'badge-flash' : ''}`
             }, currentQueue.length > 99 ? '99+' : currentQueue.length)
           ),
@@ -25300,13 +25535,15 @@ React.createElement('div', {
                 } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
                   isLoading || isError ? '' : 'cursor-grab active:cursor-grabbing'} ${
                   isFallingDown ? 'queue-track-drop' : ''} ${
-                  isInserted ? 'queue-track-insert' : ''}`
+                  isInserted ? 'queue-track-insert' : ''} ${
+                  listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`
               },
-                // Track number / status indicator - fixed width
+                // Track number / status indicator - fixed width (hidden when listen-along active)
                 React.createElement('span', {
                   className: 'text-sm text-gray-500 text-right',
                   style: { width: '28px', flexShrink: 0 }
                 },
+                  listenAlongFriend ? '–' :
                   isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
                   isError ? '⚠' :
                   isCurrentTrack ? '▶' : String(index + 1).padStart(2, '0')
@@ -25481,6 +25718,13 @@ React.createElement('div', {
             navigateTo('history');
           } else if (playbackContext.type === 'friend') {
             navigateTo('friendHistory');
+          } else if (playbackContext.type === 'listenAlong') {
+            // Navigate to the friend's history page
+            const friend = friends.find(f => f.id === playbackContext.friendId);
+            if (friend) {
+              setCurrentFriend(friend);
+              navigateTo('friendHistory');
+            }
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
@@ -25490,7 +25734,9 @@ React.createElement('div', {
         title: playbackContext.type === 'url' ? 'Open source page' : 'Go to source'
       },
         React.createElement('div', { className: 'flex items-center gap-2' },
-          React.createElement('span', { className: 'text-xs text-purple-300' }, 'Playing from'),
+          React.createElement('span', { className: 'text-xs text-purple-300' },
+            playbackContext.type === 'listenAlong' ? 'Listening along with' : 'Playing from'
+          ),
           React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
             playbackContext.type === 'album' ? `${playbackContext.name || 'Album'} by ${playbackContext.artist || 'Unknown'}` :
@@ -25499,6 +25745,7 @@ React.createElement('div', {
             playbackContext.type === 'recommendations' ? 'Recommendations' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
+            playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
             playbackContext.name || 'Unknown'
           )
