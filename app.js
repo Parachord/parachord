@@ -15375,7 +15375,15 @@ useEffect(() => {
                 React.createElement(SearchArtistCard, {
                   key: artist.id,
                   artist: artist,
-                  onClick: () => fetchArtistData(artist.name),
+                  onClick: () => {
+                    saveSearchHistory(searchQuery, {
+                      type: 'artist',
+                      id: artist.id,
+                      name: artist.name,
+                      imageUrl: null
+                    });
+                    fetchArtistData(artist.name);
+                  },
                   getArtistImage: getArtistImage,
                   itemWidth: Math.floor((searchContainerWidth - (getItemsPerRow(130) - 1) * 16) / getItemsPerRow(130)),
                   onContextMenu: (artist) => {
@@ -15422,7 +15430,16 @@ useEffect(() => {
                   React.createElement('div', {
                     className: 'w-full aspect-square rounded-lg overflow-hidden mb-2 relative cursor-grab active:cursor-grabbing',
                     draggable: true,
-                    onClick: () => handlePlay(track),
+                    onClick: () => {
+                      saveSearchHistory(searchQuery, {
+                        type: 'track',
+                        id: track.id,
+                        name: track.title,
+                        artist: track.artist,
+                        imageUrl: track.albumArt || null
+                      });
+                      handlePlay(track);
+                    },
                     onDragStart: (e) => {
                       e.dataTransfer.effectAllowed = 'copy';
                       e.dataTransfer.setData('text/plain', JSON.stringify({
@@ -15541,7 +15558,16 @@ useEffect(() => {
                 const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(150) - 1) * 16) / getItemsPerRow(150));
                 return React.createElement('button', {
                   key: album.id,
-                  onClick: () => handleAlbumClick(album),
+                  onClick: () => {
+                    saveSearchHistory(searchQuery, {
+                      type: 'album',
+                      id: album.id,
+                      name: album.title,
+                      artist: album['artist-credit']?.[0]?.name,
+                      imageUrl: album.albumArt || null
+                    });
+                    handleAlbumClick(album);
+                  },
                   onMouseEnter: () => {
                     // Prefetch album tracks on hover for context menu
                     prefetchSearchAlbumTracks(album);
@@ -15649,7 +15675,15 @@ useEffect(() => {
               ...searchResults.playlists.slice(0, 20).map(playlist =>
                 React.createElement('button', {
                   key: playlist.title,
-                  onClick: () => handlePlaylistClick(playlist),
+                  onClick: () => {
+                    saveSearchHistory(searchQuery, {
+                      type: 'playlist',
+                      id: playlist.id,
+                      name: playlist.title,
+                      imageUrl: null
+                    });
+                    handlePlaylistClick(playlist);
+                  },
                   className: 'flex-shrink-0 text-left',
                   style: { width: '160px' }
                 },
