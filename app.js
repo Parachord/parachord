@@ -3283,7 +3283,9 @@ const Parachord = () => {
     if (spotifyVolumeTimeoutRef.current) {
       clearTimeout(spotifyVolumeTimeoutRef.current);
     }
+    console.log('🔊 Debouncing Spotify volume to:', volumePercent);
     spotifyVolumeTimeoutRef.current = setTimeout(() => {
+      console.log('🔊 Executing debounced Spotify volume:', volumePercent);
       setSpotifyVolume(volumePercent, applyNormalization);
     }, 150); // 150ms debounce
   };
@@ -22633,6 +22635,7 @@ React.createElement('div', {
                     setVolume(newVolume);
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
+                    console.log('🔊 Volume slider changed:', newVolume, 'activeResolverId:', activeResolverId, 'track:', currentTrackRef.current?.title);
                     // Local files: apply normalized volume immediately
                     if (activeResolverId === 'localfiles' && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
