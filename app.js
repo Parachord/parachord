@@ -14927,6 +14927,7 @@ useEffect(() => {
                       className: 'text-sm text-gray-600 truncate'
                     }, friend.displayName),
                     // Listen along toggle - only show when friend is on-air
+                    // Hidden by default, show on hover OR when actively listening along
                     onAir && React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
@@ -14936,10 +14937,10 @@ useEffect(() => {
                           activateListenAlong(friend);
                         }
                       },
-                      className: `flex-shrink-0 transition-colors ${
+                      className: `flex-shrink-0 transition-all ${
                         listenAlongFriend?.id === friend.id
-                          ? 'text-purple-500 hover:text-purple-400'
-                          : 'text-gray-400 hover:text-gray-600'
+                          ? 'text-purple-500 hover:text-purple-400 opacity-100'
+                          : 'text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100'
                       }`,
                       title: listenAlongFriend?.id === friend.id ? 'Stop listening along' : 'Listen along'
                     },
