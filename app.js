@@ -13904,6 +13904,7 @@ const getCurrentPlaybackState = async () => {
 
         // Update device info if available
         if (data.device) {
+          console.log('📱 Spotify device:', data.device.name, 'type:', data.device.type, 'supports_volume:', data.device.supports_volume);
           setSpotifyDevice({
             name: data.device.name,
             type: data.device.type,
