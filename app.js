@@ -689,8 +689,18 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, item
 const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => {
   const { query, selectedResult, timestamp } = entry;
 
+  // Click handler for the whole row - navigate to result if available, otherwise search
+  const handleRowClick = () => {
+    if (selectedResult) {
+      onResultClick(selectedResult);
+    } else {
+      onQueryClick(query);
+    }
+  };
+
   return React.createElement('div', {
-    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors'
+    className: 'flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 group transition-colors cursor-pointer',
+    onClick: handleRowClick
   },
     // Result thumbnail or search icon
     selectedResult?.imageUrl ?
@@ -720,11 +730,11 @@ const SearchHistoryItem = ({ entry, onQueryClick, onResultClick, onRemove }) => 
     // Query and result info
     React.createElement('div', { className: 'flex-1 min-w-0' },
       React.createElement('button', {
-        onClick: () => onQueryClick(query),
+        onClick: (e) => { e.stopPropagation(); onQueryClick(query); },
         className: 'text-sm font-medium text-gray-900 hover:text-blue-600 truncate block text-left w-full'
       }, `"${query}"`),
       selectedResult && React.createElement('button', {
-        onClick: () => onResultClick(selectedResult),
+        onClick: (e) => { e.stopPropagation(); onResultClick(selectedResult); },
         className: 'text-xs text-gray-500 hover:text-blue-600 truncate block text-left w-full'
       },
         `${selectedResult.type}: ${selectedResult.name}${selectedResult.artist ? ` • ${selectedResult.artist}` : ''}`
