@@ -1684,6 +1684,7 @@ const Parachord = () => {
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
@@ -3257,26 +3258,20 @@ const Parachord = () => {
 
   // Set Spotify playback volume via API (with normalization)
   const setSpotifyVolume = async (volumePercent, applyNormalization = true) => {
-    if (!spotifyTokenRef.current) {
-      console.warn('🔊 No Spotify token, skipping volume set');
-      return;
-    }
+    if (!spotifyTokenRef.current) return;
     try {
       // Apply normalization if enabled
       let effectiveVolume = volumePercent;
       if (applyNormalization && currentTrackRef.current) {
         effectiveVolume = getEffectiveVolume(volumePercent, 'spotify', currentTrackRef.current.id);
       }
-      console.log(`🔊 Sending Spotify volume API request: ${Math.round(effectiveVolume)}%`);
       const response = await fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round(effectiveVolume)}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${spotifyTokenRef.current}`
         }
       });
-      if (response.ok || response.status === 204) {
-        console.log(`🔊 Spotify volume set successfully to ${Math.round(effectiveVolume)}%`);
-      } else {
+      if (!response.ok && response.status !== 204) {
         console.error('Failed to set Spotify volume:', response.status);
       }
     } catch (error) {
@@ -3289,9 +3284,7 @@ const Parachord = () => {
     if (spotifyVolumeTimeoutRef.current) {
       clearTimeout(spotifyVolumeTimeoutRef.current);
     }
-    console.log('🔊 Debouncing Spotify volume to:', volumePercent);
     spotifyVolumeTimeoutRef.current = setTimeout(() => {
-      console.log('🔊 Executing debounced Spotify volume:', volumePercent);
       setSpotifyVolume(volumePercent, applyNormalization);
     }, 150); // 150ms debounce
   };
@@ -13796,6 +13789,14 @@ const playOnSpotifyConnect = async (track) => {
               device: verifyData.device?.name
             });
           }
+          // Store device info for volume control capability check
+          if (verifyData.device) {
+            setSpotifyDevice({
+              name: verifyData.device.name,
+              type: verifyData.device.type,
+              supports_volume: verifyData.device.supports_volume
+            });
+          }
         }
       } catch (verifyError) {
         console.warn('Could not verify playback state:', verifyError.message);
@@ -13898,6 +13899,15 @@ const getCurrentPlaybackState = async () => {
             spotifyUri: data.item.uri,
             spotifyId: data.item.id,
             sources: ['spotify']
+          });
+        }
+
+        // Update device info if available
+        if (data.device) {
+          setSpotifyDevice({
+            name: data.device.name,
+            type: data.device.type,
+            supports_volume: data.device.supports_volume
           });
         }
       }
@@ -22563,10 +22573,13 @@ React.createElement('div', {
           //     React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
           //   )
           // ),
-          // Volume - only enabled for local files and Spotify
+          // Volume - only enabled for local files and Spotify (when device supports volume)
           (() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'spotify';
+            const isSpotify = currentResolverId === 'spotify';
+            // For Spotify, check if current device supports volume control
+            const spotifyVolumeSupported = !isSpotify || (spotifyDevice?.supports_volume !== false);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -22600,15 +22613,25 @@ React.createElement('div', {
               }
             };
 
+            // Determine appropriate tooltip
+            const getTooltip = () => {
+              if (isDisabled) {
+                if (browserPlaybackActive || isExternalPlayback) {
+                  return 'Volume control not available for browser playback';
+                }
+                if (isSpotify && spotifyDevice?.supports_volume === false) {
+                  return `Volume control not supported on ${spotifyDevice.name || 'this device'}`;
+                }
+                return 'Volume control not available';
+              }
+              if (isMuted) return 'Click to unmute';
+              if (hasOffset) return `Volume (${resolverOffset > 0 ? '+' : ''}${resolverOffset}dB normalization applied) - Click to mute`;
+              return 'Click to mute';
+            };
+
             return React.createElement('div', {
               className: 'flex items-center gap-1',
-              title: isDisabled
-                ? 'Volume control not available for browser playback'
-                : isMuted
-                  ? 'Click to unmute'
-                  : hasOffset
-                    ? `Volume (${resolverOffset > 0 ? '+' : ''}${resolverOffset}dB normalization applied) - Click to mute`
-                    : 'Click to mute'
+              title: getTooltip()
             },
               React.createElement('button', {
                 className: `${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white cursor-pointer'} transition-colors`,
@@ -22641,7 +22664,6 @@ React.createElement('div', {
                     setVolume(newVolume);
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
-                    console.log('🔊 Volume slider changed:', newVolume, 'activeResolverId:', activeResolverId, 'track:', currentTrackRef.current?.title);
                     // Local files: apply normalized volume immediately
                     if (activeResolverId === 'localfiles' && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
@@ -22651,7 +22673,7 @@ React.createElement('div', {
                       setSpotifyVolumeDebounced(newVolume, true);
                     }
                   },
-                className: `w-20 h-1 rounded-full appearance-none ${isDisabled ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-gray-600 cursor-pointer'}`
+                className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
               })
             );
           })()

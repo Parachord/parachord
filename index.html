@@ -211,6 +211,43 @@
     .progress-slider:disabled::-webkit-slider-runnable-track {
       background: #374151;
     }
+
+    /* Volume slider styling */
+    .volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+    }
+
+    .volume-slider::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: #4b5563;
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #3b82f6;
+      margin-top: -3px;
+      cursor: pointer;
+    }
+
+    .volume-slider:hover::-webkit-slider-thumb {
+      background: #60a5fa;
+    }
+
+    .volume-slider:disabled::-webkit-slider-thumb {
+      background: #6b7280;
+      cursor: not-allowed;
+    }
+
+    .volume-slider:disabled::-webkit-slider-runnable-track {
+      background: #374151;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">
