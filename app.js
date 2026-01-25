@@ -25635,7 +25635,7 @@ React.createElement('div', {
             playbackContext.type === 'recommendations' ? 'Recommendations' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
-            playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}"` :
+            playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
             playbackContext.name || 'Unknown'
           )
