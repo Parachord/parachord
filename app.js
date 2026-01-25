@@ -7216,8 +7216,10 @@ const Parachord = () => {
 
       const savedPinnedFriendIds = await window.electron.store.get('pinnedFriendIds');
       if (savedPinnedFriendIds && Array.isArray(savedPinnedFriendIds)) {
-        setPinnedFriendIds(savedPinnedFriendIds);
-        console.log(`📌 Loaded ${savedPinnedFriendIds.length} pinned friends from storage`);
+        // Dedupe in case duplicates were saved
+        const dedupedIds = [...new Set(savedPinnedFriendIds)];
+        setPinnedFriendIds(dedupedIds);
+        console.log(`📌 Loaded ${dedupedIds.length} pinned friends from storage`);
       }
 
       // Load volume normalization offsets
@@ -11056,7 +11058,7 @@ ${tracks}
 
       setFriends(prev => [...prev, newFriend]);
       // Auto-pin the friend to sidebar (they're not saved to collection yet)
-      setPinnedFriendIds(prev => [...prev, newFriend.id]);
+      setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
       setAddFriendModalOpen(false);
       setAddFriendInput('');
       showToast(`${newFriend.displayName} pinned to sidebar`);
@@ -11096,7 +11098,7 @@ ${tracks}
   // Pin a friend to the sidebar
   const pinFriend = (friendId) => {
     if (!pinnedFriendIds.includes(friendId)) {
-      setPinnedFriendIds(prev => [...prev, friendId]);
+      setPinnedFriendIds(prev => prev.includes(friendId) ? prev : [...prev, friendId]);
       const friend = friends.find(f => f.id === friendId);
       if (friend) {
         showToast(`${friend.displayName} pinned to sidebar`);
