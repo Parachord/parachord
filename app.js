@@ -953,7 +953,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   }, [track.name, track.artist]);
 
   return React.createElement('div', {
-    className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors',
+    className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors pr-2',
     style: { maxWidth: '180px', height: '20px' },
     onClick: onPlay,
     onContextMenu: onContextMenu
@@ -978,7 +978,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
     // Track info - only scrolls if overflowing
     React.createElement('div', {
       ref: containerRef,
-      className: `flex-1 min-w-0 px-3 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
+      className: `flex-1 min-w-0 pl-2 flex items-center ${isOverflowing ? 'marquee-container' : ''}`,
       style: { overflow: 'hidden', height: '100%' }
     },
       React.createElement('span', {
