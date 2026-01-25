@@ -6260,6 +6260,40 @@ const Parachord = () => {
     }));
   };
 
+  // Re-rank search results using fuzzy matching + MusicBrainz popularity score
+  const reRankResults = (items, query, nameKey = 'name') => {
+    if (!items || items.length === 0 || !query) return items;
+
+    // Configure Fuse.js for fuzzy matching
+    const fuse = new Fuse(items, {
+      keys: [nameKey],
+      includeScore: true,
+      threshold: 0.6,
+      ignoreLocation: true,
+      useExtendedSearch: false
+    });
+
+    const fuzzyResults = fuse.search(query);
+
+    // Create a map of fuzzy scores (Fuse score is 0-1 where 0 is perfect match)
+    const fuzzyScoreMap = new Map();
+    fuzzyResults.forEach(result => {
+      // Convert Fuse score (0=best, 1=worst) to 0-100 (100=best)
+      fuzzyScoreMap.set(result.item, (1 - result.score) * 100);
+    });
+
+    // Score and sort all items
+    return items
+      .map(item => {
+        const fuzzyScore = fuzzyScoreMap.get(item) || 0;
+        const mbScore = item.score || 50; // MusicBrainz popularity score (0-100)
+        // Blend: 60% fuzzy relevance, 40% popularity
+        const finalScore = (fuzzyScore * 0.6) + (mbScore * 0.4);
+        return { ...item, _finalScore: finalScore };
+      })
+      .sort((a, b) => b._finalScore - a._finalScore);
+  };
+
   const resolveRecording = async (recording) => {
     const track = {
       id: recording.id,
@@ -6376,6 +6410,9 @@ const Parachord = () => {
           seenArtists.add(name);
           return true;
         });
+
+        // Re-rank artists with fuzzy matching + popularity
+        results.artists = reRankResults(results.artists, query, 'name');
       }
 
       // Check if query is still current before continuing
@@ -6400,6 +6437,9 @@ const Parachord = () => {
           seen.add(key);
           return true;
         });
+
+        // Re-rank albums with fuzzy matching + popularity
+        results.albums = reRankResults(results.albums, query, 'title');
       }
 
       // Check if query is still current before continuing
@@ -6436,6 +6476,9 @@ const Parachord = () => {
         }));
 
         results.tracks = [...resolvedTracks, ...unresolvedTracks];
+
+        // Re-rank tracks with fuzzy matching + popularity
+        results.tracks = reRankResults(results.tracks, query, 'title');
       }
 
       // Search local playlists
