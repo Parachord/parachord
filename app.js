@@ -1611,6 +1611,8 @@ const Parachord = () => {
   const [queueDropTarget, setQueueDropTarget] = useState(null); // Index where track will be dropped in queue
   const [droppingFromIndex, setDroppingFromIndex] = useState(null); // Index of clicked track - all tracks at index <= this fall down
   const [insertedTrackId, setInsertedTrackId] = useState(null); // Track ID that was just inserted via "previous"
+  const [queueSaveDialogOpen, setQueueSaveDialogOpen] = useState(false); // Save queue as playlist dialog
+  const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
 
@@ -5957,6 +5959,50 @@ const Parachord = () => {
   const clearQueue = () => {
     setCurrentQueue([]);
     console.log('🗑️ Cleared queue');
+  };
+
+  // Open save dialog for queue as playlist
+  const handleSaveQueueAsPlaylist = () => {
+    // Build track list: currently playing + queue
+    const tracksToSave = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+    if (tracksToSave.length === 0) return;
+
+    // Generate default name based on first track artist
+    const firstTrack = tracksToSave[0];
+    const defaultName = firstTrack?.artist
+      ? `${firstTrack.artist} Mix`
+      : 'My Queue';
+
+    setQueueSavePlaylistName(defaultName);
+    setQueueSaveDialogOpen(true);
+  };
+
+  // Actually save the queue as a playlist
+  const handleSaveQueueConfirm = async () => {
+    const tracksToSave = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+    if (tracksToSave.length === 0 || !queueSavePlaylistName.trim()) return;
+
+    const playlistId = `queue-${Date.now()}`;
+
+    const newPlaylist = {
+      id: playlistId,
+      title: queueSavePlaylistName.trim(),
+      creator: 'Queue',
+      tracks: tracksToSave,
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
+    };
+
+    // Add to playlists state (prepend so it appears at top immediately)
+    setPlaylists(prev => [newPlaylist, ...prev]);
+
+    // Save to unified local storage (electron-store)
+    await savePlaylistToStore(newPlaylist);
+
+    // Close dialog
+    setQueueSaveDialogOpen(false);
+    showToast(`Saved playlist: ${queueSavePlaylistName.trim()}`);
   };
 
   // Fetch listening context from Last.fm or ListenBrainz for AI prompt enrichment
@@ -22570,6 +22616,72 @@ React.createElement('div', {
       )
     ),
 
+    // Queue Save Playlist Dialog
+    queueSaveDialogOpen && React.createElement('div', {
+      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      onClick: (e) => {
+        if (e.target === e.currentTarget) {
+          setQueueSaveDialogOpen(false);
+        }
+      }
+    },
+      React.createElement('div', {
+        className: 'bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl border border-gray-700'
+      },
+        // Header
+        React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+          React.createElement('h2', { className: 'text-lg font-semibold text-white' }, 'Save Queue as Playlist'),
+          React.createElement('button', {
+            onClick: () => setQueueSaveDialogOpen(false),
+            className: 'p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors'
+          },
+            React.createElement('svg', { className: 'w-5 h-5', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+              React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+
+        // Track count info
+        React.createElement('p', {
+          className: 'text-xs text-gray-500 mb-4'
+        }, `${(currentTrack ? 1 : 0) + currentQueue.length} track${((currentTrack ? 1 : 0) + currentQueue.length) !== 1 ? 's' : ''} will be saved`),
+
+        // Name input
+        React.createElement('div', { className: 'mb-4' },
+          React.createElement('label', {
+            htmlFor: 'queue-playlist-name',
+            className: 'block text-sm text-gray-400 mb-2'
+          }, 'Playlist Name'),
+          React.createElement('input', {
+            id: 'queue-playlist-name',
+            type: 'text',
+            value: queueSavePlaylistName,
+            onChange: (e) => setQueueSavePlaylistName(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Enter' && queueSavePlaylistName.trim()) {
+                handleSaveQueueConfirm();
+              }
+            },
+            autoFocus: true,
+            className: 'w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500'
+          })
+        ),
+
+        // Actions
+        React.createElement('div', { className: 'flex gap-3' },
+          React.createElement('button', {
+            onClick: () => setQueueSaveDialogOpen(false),
+            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
+          }, 'Cancel'),
+          React.createElement('button', {
+            onClick: handleSaveQueueConfirm,
+            disabled: !queueSavePlaylistName.trim(),
+            className: 'flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save')
+        )
+      )
+    ),
+
     // Import Playlist Dialog Modal
     showUrlImportDialog && React.createElement('div', {
       className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
@@ -24276,32 +24388,37 @@ React.createElement('div', {
       }
     },
       // Drawer header with drag handle - dark translucent theme
+      // Clicking anywhere on header (except drag handle and Clear) closes drawer
       React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-2 bg-gray-900/60 border-b border-gray-700/50 cursor-ns-resize',
-        onMouseDown: (e) => {
-          const startY = e.clientY;
-          const startHeight = queueDrawerHeight;
-
-          const handleMouseMove = (moveEvent) => {
-            const deltaY = startY - moveEvent.clientY;
-            const newHeight = Math.max(200, Math.min(600, startHeight + deltaY));
-            setQueueDrawerHeight(newHeight);
-          };
-
-          const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-          };
-
-          document.addEventListener('mousemove', handleMouseMove);
-          document.addEventListener('mouseup', handleMouseUp);
-        }
+        className: 'flex items-center justify-between px-4 py-2 bg-gray-900/60 border-b border-gray-700/50 cursor-pointer hover:bg-gray-800/60 transition-colors',
+        onClick: () => setQueueDrawerOpen(false)
       },
         React.createElement('div', {
           className: 'flex items-center gap-3'
         },
+          // Drag handle for resizing - stops click propagation
           React.createElement('div', {
-            className: 'w-8 h-1 bg-gray-600 rounded-full'
+            className: 'w-8 h-1 bg-gray-600 rounded-full cursor-ns-resize',
+            onClick: (e) => e.stopPropagation(),
+            onMouseDown: (e) => {
+              e.stopPropagation();
+              const startY = e.clientY;
+              const startHeight = queueDrawerHeight;
+
+              const handleMouseMove = (moveEvent) => {
+                const deltaY = startY - moveEvent.clientY;
+                const newHeight = Math.max(200, Math.min(600, startHeight + deltaY));
+                setQueueDrawerHeight(newHeight);
+              };
+
+              const handleMouseUp = () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+              };
+
+              document.addEventListener('mousemove', handleMouseMove);
+              document.addEventListener('mouseup', handleMouseUp);
+            }
           }),
           React.createElement('span', {
             className: 'text-sm font-medium text-gray-200'
@@ -24313,14 +24430,24 @@ React.createElement('div', {
         React.createElement('div', {
           className: 'flex items-center gap-2'
         },
+          // Save as Playlist button - shows when there's a current track or queue
+          (currentTrack || currentQueue.length > 0) && React.createElement('button', {
+            onClick: (e) => { e.stopPropagation(); handleSaveQueueAsPlaylist(); },
+            className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
+          }, 'SAVE'),
+          // Clear button
           currentQueue.length > 0 && React.createElement('button', {
-            onClick: clearQueue,
-            className: 'text-xs text-gray-400 hover:text-white px-2 py-1 hover:bg-white/10 rounded transition-colors'
-          }, 'Clear'),
+            onClick: (e) => { e.stopPropagation(); clearQueue(); },
+            className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
+          }, 'CLEAR'),
+          // Close button
           React.createElement('button', {
             onClick: () => setQueueDrawerOpen(false),
-            className: 'p-1 hover:bg-white/10 rounded transition-colors text-gray-400 hover:text-white'
-          }, React.createElement(X))
+            className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
+          },
+            'CLOSE',
+            React.createElement('span', { className: 'text-gray-500' }, '×')
+          )
         )
       ),
 
@@ -24443,8 +24570,9 @@ React.createElement('div', {
                 ),
 
                 // Track title - flexible column that grows
+                // First track gets font-medium to indicate it's next (matches playbar styling)
                 React.createElement('span', {
-                  className: `text-sm truncate cursor-pointer ${
+                  className: `text-sm truncate cursor-pointer ${index === 0 ? 'font-medium' : ''} ${
                     isLoading ? 'text-gray-500' :
                     isError ? 'text-red-400' :
                     isCurrentTrack ? 'text-purple-400' : 'text-gray-200 group-hover:text-white'
