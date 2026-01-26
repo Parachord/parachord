@@ -431,6 +431,62 @@
       padding: 3px 8px;
       border-radius: 4px;
     }
+
+    /* Friend sidebar entry animation */
+    @keyframes friendSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .friend-entry {
+      animation: friendSlideIn 0.3s ease-out forwards;
+    }
+
+    /* Friend move/reorder animation - subtle scale pulse */
+    @keyframes friendMoved {
+      0% {
+        transform: scale(1);
+        background-color: transparent;
+      }
+      30% {
+        transform: scale(1.02);
+        background-color: rgba(147, 51, 234, 0.08);
+      }
+      100% {
+        transform: scale(1);
+        background-color: transparent;
+      }
+    }
+
+    .friend-moved {
+      animation: friendMoved 0.4s ease-out forwards;
+    }
+
+    /* Friend on-air status change animation */
+    @keyframes friendStatusChange {
+      0% {
+        transform: translateY(0);
+      }
+      25% {
+        transform: translateY(-2px);
+      }
+      75% {
+        transform: translateY(2px);
+      }
+      100% {
+        transform: translateY(0);
+      }
+    }
+
+    .friend-status-change {
+      animation: friendStatusChange 0.3s ease-in-out forwards;
+    }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">

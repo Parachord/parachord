@@ -3134,6 +3134,8 @@ const Parachord = () => {
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
   const [autoPinnedFriendIds, setAutoPinnedFriendIds] = useState([]); // Friends auto-pinned due to being on-air
+  const [newlyPinnedFriendIds, setNewlyPinnedFriendIds] = useState(new Set()); // Track newly added friends for animation
+  const [movedFriendIds, setMovedFriendIds] = useState(new Set()); // Track friends that moved position for animation
   const [currentFriend, setCurrentFriend] = useState(null);
   const [friendHistoryTab, setFriendHistoryTab] = useState('recent');
   const [friendHistoryData, setFriendHistoryData] = useState({
@@ -13799,6 +13801,16 @@ ${tracks}
   const pinFriend = (friendId) => {
     if (!pinnedFriendIds.includes(friendId)) {
       setPinnedFriendIds(prev => prev.includes(friendId) ? prev : [...prev, friendId]);
+      // Track as newly pinned for entry animation
+      setNewlyPinnedFriendIds(prev => new Set([...prev, friendId]));
+      // Clear animation tracking after animation completes
+      setTimeout(() => {
+        setNewlyPinnedFriendIds(prev => {
+          const next = new Set(prev);
+          next.delete(friendId);
+          return next;
+        });
+      }, 300); // Match animation duration
       const friend = friends.find(f => f.id === friendId);
       if (friend) {
         showToast(`${friend.displayName} pinned to sidebar`);
@@ -13861,6 +13873,11 @@ ${tracks}
       const newOrder = [...prev];
       const [removed] = newOrder.splice(fromIndex, 1);
       newOrder.splice(toIndex, 0, removed);
+      // Track moved friend for animation
+      setMovedFriendIds(new Set([removed]));
+      setTimeout(() => {
+        setMovedFriendIds(new Set());
+      }, 400); // Match animation duration
       return newOrder;
     });
   };
@@ -13938,6 +13955,18 @@ ${tracks}
         const isOnAirNow = recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000;
         const wasOnAir = previousTrack?.timestamp && (Date.now() - previousTrack.timestamp) < 10 * 60 * 1000;
 
+        // Track on-air status change for animation (friend will move in sorted list)
+        if (isOnAirNow !== wasOnAir && pinnedFriendIds.includes(friend.id)) {
+          setMovedFriendIds(prev => new Set([...prev, friend.id]));
+          setTimeout(() => {
+            setMovedFriendIds(prev => {
+              const next = new Set(prev);
+              next.delete(friend.id);
+              return next;
+            });
+          }, 400);
+        }
+
         setFriends(prev => prev.map(f =>
           f.id === friend.id
             ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
@@ -13953,6 +13982,15 @@ ${tracks}
           console.log(`👥 Auto-pinning ${friend.displayName} (now active)`);
           setPinnedFriendIds(prev => prev.includes(friend.id) ? prev : [...prev, friend.id]);
           setAutoPinnedFriendIds(prev => prev.includes(friend.id) ? prev : [...prev, friend.id]);
+          // Track as newly pinned for entry animation
+          setNewlyPinnedFriendIds(prev => new Set([...prev, friend.id]));
+          setTimeout(() => {
+            setNewlyPinnedFriendIds(prev => {
+              const next = new Set(prev);
+              next.delete(friend.id);
+              return next;
+            });
+          }, 300);
         } else if (isAutoPinned && !isOnAirNow) {
           // Auto-pinned friend is no longer active - auto-unpin them
           console.log(`👥 Auto-unpinning ${friend.displayName} (no longer active)`);
@@ -17483,6 +17521,9 @@ useEffect(() => {
             const onAir = isOnAir(friend);
             const isSelected = activeView === 'friendHistory' && currentFriend?.id === friend.id;
 
+            const isNewlyPinned = newlyPinnedFriendIds.has(friend.id);
+            const wasMoved = movedFriendIds.has(friend.id);
+
             return React.createElement('div', {
               key: friend.id,
               ref: (el) => {
@@ -17496,7 +17537,7 @@ useEffect(() => {
                 }
               },
               'data-friend-id': friend.id,
-              className: 'px-3 py-1 rounded cursor-pointer group transition-colors flex items-center',
+              className: `px-3 py-1 rounded cursor-pointer group transition-all duration-300 ease-in-out flex items-center ${isNewlyPinned ? 'friend-entry' : ''} ${wasMoved ? 'friend-moved' : ''}`,
               style: {
                 minHeight: '44px',
                 backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
