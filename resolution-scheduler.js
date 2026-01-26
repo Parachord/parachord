@@ -402,16 +402,19 @@
 
         await this.resolveCallback(data, abortController.signal);
 
-        // Mark as resolved so we don't re-resolve on future visibility updates
-        this.resolved.add(trackKey);
+        // Only mark as resolved if the resolution wasn't aborted
+        // The callback may return early without throwing if signal was aborted
+        if (!abortController.signal.aborted) {
+          this.resolved.add(trackKey);
+        }
 
-        // Remove from pending after successful resolution
+        // Remove from pending after resolution attempt
         this.dequeue(trackKey);
       } catch (error) {
         if (error.name !== 'AbortError') {
           console.error(`Resolution error for ${trackKey}:`, error);
         }
-        // Don't add to resolved on error - allow retry
+        // Don't add to resolved on error/abort - allow retry
         this.dequeue(trackKey);
       }
 
