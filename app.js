@@ -804,7 +804,12 @@ const VirtualizedQueueList = React.memo(({
   fetchArtistData,
   removeFromQueue,
   handleUrlDrop,
-  formatTime
+  formatTime,
+  // New props for resolution scheduler
+  onVisibilityChange,
+  onTrackHover,
+  onTrackHoverEnd,
+  currentTrackIndex
 }) => {
   const TRACK_HEIGHT = 36; // Approximate height of each track row in pixels
 
@@ -816,6 +821,52 @@ const VirtualizedQueueList = React.memo(({
     estimateSize: () => TRACK_HEIGHT,
     overscan: 10 // Render 10 extra items above/below viewport for smooth scrolling
   }) : null;
+
+  // Track visible items for resolution scheduler
+  useEffect(() => {
+    if (!virtualizer || !onVisibilityChange || !queue || queue.length === 0) return;
+
+    const visibleRange = virtualizer.getVirtualItems();
+    if (visibleRange.length === 0) return;
+
+    const startIndex = visibleRange[0].index;
+    const endIndex = visibleRange[visibleRange.length - 1].index;
+
+    // Include overscan (10) which virtualizer already handles
+    // Plus playback lookahead (5 from current track)
+    const lookaheadStart = currentTrackIndex ?? 0;
+    const lookaheadEnd = lookaheadStart + 5;
+
+    // Build visible tracks list
+    const visibleTracks = [];
+    const seen = new Set();
+
+    // Add viewport + overscan
+    for (let i = Math.max(0, startIndex - 10); i <= Math.min(queue.length - 1, endIndex + 10); i++) {
+      const track = queue[i];
+      if (track && !seen.has(track.id)) {
+        seen.add(track.id);
+        visibleTracks.push({
+          key: track.id,
+          data: { track, artistName: track.artist, isQueueResolution: true }
+        });
+      }
+    }
+
+    // Add playback lookahead
+    for (let i = lookaheadStart; i < Math.min(queue.length, lookaheadEnd); i++) {
+      const track = queue[i];
+      if (track && !seen.has(track.id)) {
+        seen.add(track.id);
+        visibleTracks.push({
+          key: track.id,
+          data: { track, artistName: track.artist, isQueueResolution: true }
+        });
+      }
+    }
+
+    onVisibilityChange(visibleTracks);
+  }, [virtualizer?.range?.startIndex, virtualizer?.range?.endIndex, queue.length, currentTrackIndex, onVisibilityChange]);
 
   // Helper to render a single queue track row
   const renderQueueTrackRow = (track, index, virtualRow) => {
@@ -888,6 +939,12 @@ const VirtualizedQueueList = React.memo(({
           handlePlay(track);
           setDroppingFromIndex(null);
         }, 300);
+      },
+      onMouseEnter: () => {
+        if (onTrackHover) onTrackHover(track.id);
+      },
+      onMouseLeave: () => {
+        if (onTrackHoverEnd) onTrackHoverEnd();
       },
       className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
         isCurrentTrack ? 'bg-purple-900/40' : ''
@@ -10356,6 +10413,12 @@ const Parachord = () => {
     setSchedulerPlaybackIndex,
     abortSchedulerContext
   ]);
+
+  // Register queue context for resolution scheduler
+  useEffect(() => {
+    const cleanup = registerQueueContext('queue', 5);
+    return cleanup;
+  }, [registerQueueContext]);
 
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
@@ -32473,7 +32536,12 @@ React.createElement('div', {
             fetchArtistData,
             removeFromQueue,
             handleUrlDrop,
-            formatTime
+            formatTime,
+            // Resolution scheduler integration
+            onVisibilityChange: (tracks) => updateSchedulerVisibility('queue', tracks),
+            onTrackHover: (trackId) => setSchedulerHoverTrack(trackId, 'queue'),
+            onTrackHoverEnd: () => clearSchedulerHoverTrack(),
+            currentTrackIndex: currentQueue.findIndex(t => t.id === currentTrack?.id)
           })
       ),
 
