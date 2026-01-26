@@ -2120,6 +2120,9 @@ const Parachord = () => {
     error: null
   });
 
+  // Sync status modal state (quick view from collection)
+  const [syncStatusModal, setSyncStatusModal] = useState({ open: false });
+
   // Background sync timer (every 15 minutes)
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
@@ -30533,6 +30536,94 @@ React.createElement('div', {
             onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
             className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
           }, 'Done')
+        )
+      )
+    ),
+
+    // Sync Status Modal (Quick View from Collection)
+    syncStatusModal.open && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center'
+    },
+      // Backdrop
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
+        onClick: () => setSyncStatusModal({ open: false })
+      }),
+
+      // Modal
+      React.createElement('div', {
+        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-md mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header
+        React.createElement('div', {
+          className: 'px-6 py-4 border-b border-zinc-700/50'
+        },
+          React.createElement('h2', {
+            className: 'text-lg font-semibold text-white'
+          }, 'Library Sync')
+        ),
+
+        // Content
+        React.createElement('div', {
+          className: 'px-6 py-4 space-y-4'
+        },
+          // List enabled sync providers
+          Object.entries(resolverSyncSettings)
+            .filter(([_, settings]) => settings.enabled)
+            .map(([providerId, settings]) =>
+              React.createElement('div', {
+                key: providerId,
+                className: 'flex items-center gap-3'
+              },
+                React.createElement('div', {
+                  className: 'w-2 h-2 bg-green-400 rounded-full'
+                }),
+                React.createElement('div', {
+                  className: 'flex-1'
+                },
+                  React.createElement('div', {
+                    className: 'text-white font-medium capitalize'
+                  }, providerId),
+                  React.createElement('div', {
+                    className: 'text-sm text-zinc-400'
+                  }, 'Last sync: ' + (settings.lastSyncAt
+                    ? new Date(settings.lastSyncAt).toLocaleString()
+                    : 'Never'))
+                )
+              )
+            ),
+
+          // No providers message
+          Object.keys(resolverSyncSettings).filter(id => resolverSyncSettings[id]?.enabled).length === 0 &&
+            React.createElement('div', {
+              className: 'text-center py-4 text-zinc-400'
+            }, 'No sync providers enabled')
+        ),
+
+        // Footer
+        React.createElement('div', {
+          className: 'px-6 py-4 border-t border-zinc-700/50 flex justify-between'
+        },
+          React.createElement('button', {
+            onClick: () => {
+              setSyncStatusModal({ open: false });
+              // Navigate to settings - to be wired up later
+            },
+            className: 'text-zinc-400 hover:text-white text-sm transition-colors'
+          }, 'Manage settings'),
+          React.createElement('button', {
+            onClick: async () => {
+              for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
+                if (settings.enabled) {
+                  await window.electron.sync.start(providerId, { settings });
+                }
+              }
+              const newCollection = await window.electron.collection.load();
+              setCollectionData(newCollection);
+            },
+            className: 'px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors'
+          }, 'Sync Now')
         )
       )
     ),
