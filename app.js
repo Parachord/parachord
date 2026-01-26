@@ -14528,11 +14528,77 @@ ${tracks}
       }
 
       setFriendHistoryData(prev => ({ ...prev, topAlbums: albums }));
+
+      // Fetch album images in background
+      if (albums.length > 0) {
+        resolveFriendTopAlbumImages(albums);
+      }
     } catch (error) {
       console.error('Failed to load friend top albums:', error);
       showToast('Failed to load top albums', 'error');
     } finally {
       setFriendHistoryLoading(false);
+    }
+  };
+
+  // Resolve friend top album images from Cover Art Archive
+  const resolveFriendTopAlbumImages = async (albums) => {
+    for (const album of albums) {
+      // Skip if already has an image from Last.fm
+      if (album.image) {
+        setFriendHistoryData(prev => ({
+          ...prev,
+          topAlbums: prev.topAlbums.map(a =>
+            a.id === album.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
+        continue;
+      }
+
+      try {
+        // Try to get album art from Cover Art Archive via MusicBrainz
+        const searchUrl = `https://musicbrainz.org/ws/2/release-group?query=release:${encodeURIComponent(album.name)}%20AND%20artist:${encodeURIComponent(album.artist)}&fmt=json&limit=1`;
+        const searchResponse = await fetch(searchUrl, {
+          headers: { 'User-Agent': 'Parachord/1.0 (support@parachord.com)' }
+        });
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          const releaseGroup = searchData['release-groups']?.[0];
+
+          if (releaseGroup?.id) {
+            const coverUrl = `https://coverartarchive.org/release-group/${releaseGroup.id}/front-250`;
+            // Check if cover exists
+            const coverResponse = await fetch(coverUrl, { method: 'HEAD' });
+            if (coverResponse.ok) {
+              setFriendHistoryData(prev => ({
+                ...prev,
+                topAlbums: prev.topAlbums.map(a =>
+                  a.id === album.id ? { ...a, image: coverUrl, imageLoaded: true } : a
+                )
+              }));
+              continue;
+            }
+          }
+        }
+
+        // No image found
+        setFriendHistoryData(prev => ({
+          ...prev,
+          topAlbums: prev.topAlbums.map(a =>
+            a.id === album.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
+      } catch (err) {
+        console.error(`Error fetching image for album ${album.name}:`, err);
+        // Mark as loaded even on error so we show the pattern fallback
+        setFriendHistoryData(prev => ({
+          ...prev,
+          topAlbums: prev.topAlbums.map(a =>
+            a.id === album.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
+      }
     }
   };
 
@@ -26928,10 +26994,15 @@ React.createElement('div', {
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative',
-                            style: { background: !album.image ? albumPattern.gradient : '#e5e7eb' }
+                            style: { background: album.imageLoaded && !album.image ? albumPattern.gradient : '#e5e7eb' }
                           },
-                            // Initials fallback (only show when no image)
-                            !album.image && React.createElement('div', {
+                            // Shimmer while loading (imageLoaded not yet true)
+                            !album.imageLoaded && React.createElement('div', {
+                              className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                              style: { backgroundSize: '200% 100%' }
+                            }),
+                            // Initials fallback (only show when imageLoaded && no image)
+                            album.imageLoaded && !album.image && React.createElement('div', {
                               className: 'absolute inset-0 flex items-center justify-center',
                               style: { color: albumPattern.textColor, opacity: 0.4 }
                             },
