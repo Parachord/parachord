@@ -507,7 +507,10 @@ ipcMain.handle('spotify-auth', async () => {
     'streaming',
     'user-read-playback-state',
     'user-modify-playback-state',
-    'user-library-read'
+    'user-library-read',
+    'user-follow-read',
+    'playlist-read-private',
+    'playlist-read-collaborative'
   ].join(' ');
 
   const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true`;
