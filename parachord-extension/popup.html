@@ -52,10 +52,10 @@
       align-items: center;
       gap: 10px;
       padding: 14px;
-      background: white;
-      border-radius: 12px;
+      background: #ffffff;
+      border-radius: 10px;
       margin-bottom: 12px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03);
     }
 
     .status-dot {
@@ -88,7 +88,7 @@
     }
 
     button {
-      background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+      background: #7c3aed;
       color: white;
       border: none;
       padding: 12px 16px;
@@ -100,23 +100,20 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(147, 51, 234, 0.2);
+      transition: background-color 0.15s ease, transform 0.1s ease;
     }
 
     button:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
+      background: #6d28d9;
     }
 
     button:active {
-      transform: translateY(0);
+      transform: scale(0.98);
     }
 
     button:disabled {
       background: #d1d5db;
       cursor: not-allowed;
-      box-shadow: none;
       transform: none;
     }
 
@@ -146,10 +143,10 @@
       align-items: center;
       justify-content: space-between;
       padding: 10px 14px;
-      background: white;
+      background: #ffffff;
       border-radius: 10px;
       margin-bottom: 8px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03);
     }
 
     .setting-info {
@@ -173,7 +170,7 @@
     }
 
     .setting-icon.applemusic {
-      background: linear-gradient(135deg, #fc3c44 0%, #fa2d49 100%);
+      background: #fc3c44;
     }
 
     .setting-icon svg {
@@ -220,7 +217,7 @@
       right: 0;
       bottom: 0;
       background-color: #d1d5db;
-      transition: 0.2s ease;
+      transition: background-color 0.2s ease;
       border-radius: 24px;
     }
 
@@ -232,13 +229,13 @@
       left: 3px;
       bottom: 3px;
       background-color: white;
-      transition: 0.2s ease;
+      transition: transform 0.2s ease;
       border-radius: 50%;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
     }
 
     .toggle input:checked + .toggle-slider {
-      background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+      background: #7c3aed;
     }
 
     .toggle input:checked + .toggle-slider:before {
@@ -255,8 +252,9 @@
     }
 
     .info a {
-      color: #9333ea;
+      color: #7c3aed;
       text-decoration: none;
+      font-weight: 500;
     }
 
     .info a:hover {
