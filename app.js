@@ -9570,7 +9570,8 @@ const Parachord = () => {
       setLoadingRelease(false);
 
       // Resolve release tracks directly (release pages are typically small, 10-20 tracks)
-      const artistName = release.artist?.name || 'Unknown Artist';
+      // Use the artist parameter passed to fetchReleaseData, not release.artist
+      const artistName = artist?.name || artist || 'Unknown Artist';
       tracks.forEach(track => {
         resolveTrack(track, artistName, {});
       });
