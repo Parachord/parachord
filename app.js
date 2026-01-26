@@ -4192,11 +4192,15 @@ const Parachord = () => {
           })
           .filter(Boolean);
 
-        return {
+        const newData = {
+          ...prev,
           tracks: filterItems(prev.tracks || []),
           albums: filterItems(prev.albums || []),
           artists: filterItems(prev.artists || [])
         };
+        // Save async (don't block state update)
+        saveCollection(newData);
+        return newData;
       });
     } else {
       // Just remove sync sources but keep items
@@ -4208,11 +4212,15 @@ const Parachord = () => {
           return { ...item, syncSources: Object.keys(newSyncSources).length > 0 ? newSyncSources : undefined };
         });
 
-        return {
+        const newData = {
+          ...prev,
           tracks: removeSource(prev.tracks || []),
           albums: removeSource(prev.albums || []),
           artists: removeSource(prev.artists || [])
         };
+        // Save async (don't block state update)
+        saveCollection(newData);
+        return newData;
       });
     }
 
