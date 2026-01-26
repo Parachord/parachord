@@ -5511,7 +5511,7 @@ const Parachord = () => {
       const artistName = currentArtist?.name || 'Unknown Artist';
       currentRelease.tracks.forEach(track => {
         // Force refresh to bypass cache
-        resolveTrack(track, artistName, true);
+        resolveTrack(track, artistName, { forceRefresh: true });
       });
     }
 
@@ -6289,7 +6289,7 @@ const Parachord = () => {
           const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
 
           // Force refresh to bypass cache
-          await resolveTrack(trackData, artistName, true);
+          await resolveTrack(trackData, artistName, { forceRefresh: true });
 
           showConfirmDialog({
             type: 'info',
@@ -6307,7 +6307,7 @@ const Parachord = () => {
         console.log('🔄 Playback error - attempting to re-resolve...');
         const artistName = sourceToPlay.artist;
         const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
-        await resolveTrack(trackData, artistName, true);
+        await resolveTrack(trackData, artistName, { forceRefresh: true });
       }
     }
   };
@@ -9656,7 +9656,15 @@ const Parachord = () => {
 
   // Resolve a single track across all active resolvers
   // isQueueResolution: when true, this is a priority queue resolution that won't yield
-  const resolveTrack = async (track, artistName, forceRefresh = false, isQueueResolution = false) => {
+  const resolveTrack = async (track, artistName, options = {}) => {
+    const { forceRefresh = false, isQueueResolution = false, signal } = options;
+
+    // Early abort check
+    if (signal?.aborted) {
+      console.log(`⏹️ Resolution aborted for "${track.title}" before start`);
+      return;
+    }
+
     const trackKey = `${track.position}-${track.title}`;
     const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
     const currentResolverHash = getResolverSettingsHash();
@@ -9710,6 +9718,9 @@ const Parachord = () => {
       return;
     }
 
+    // Check abort after cache check
+    if (signal?.aborted) return;
+
     // If cache is valid but missing resolvers, query only the missing ones
     if (cacheValid && missingResolvers.length > 0) {
       console.log(`🔍 Cache valid but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
@@ -9723,12 +9734,22 @@ const Parachord = () => {
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
+        // Check abort before each resolver
+        if (signal?.aborted) return;
+
         if (!resolver.capabilities.resolve || !resolver.play) return;
 
         try {
           const config = await getResolverConfig(resolver.id);
+
+          // Check abort after config fetch
+          if (signal?.aborted) return;
+
           console.log(`  🔎 Trying ${resolver.id}...`);
           const result = await resolver.resolve(artistName, track.title, null, config);
+
+          // Check abort before processing result
+          if (signal?.aborted) return;
 
           if (result) {
             sources[resolver.id] = {
@@ -9743,11 +9764,19 @@ const Parachord = () => {
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
+          // Silently ignore abort errors
+          if (error.name === 'AbortError') return;
           console.error(`  ❌ ${resolver.name} resolve error:`, error);
         }
       });
 
       await Promise.all(resolverPromises);
+
+      // Final abort check before state update
+      if (signal?.aborted) {
+        console.log(`⏹️ Resolution aborted for "${track.title}" before state update`);
+        return;
+      }
 
       // Update state with combined sources
       setTrackSources(prev => ({
@@ -9784,6 +9813,9 @@ const Parachord = () => {
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
+      // Check abort before each resolver
+      if (signal?.aborted) return;
+
       // Skip resolvers that can't resolve or can't play (no point resolving if we can't play)
       if (!resolver.capabilities.resolve || !resolver.play) {
         console.log(`  ⏭️ Skipping ${resolver.id}: resolve=${resolver.capabilities.resolve}, play=${!!resolver.play}`);
@@ -9792,8 +9824,15 @@ const Parachord = () => {
 
       try {
         const config = await getResolverConfig(resolver.id);
+
+        // Check abort after config fetch
+        if (signal?.aborted) return;
+
         console.log(`  🔎 Trying ${resolver.id}...`);
         const result = await resolver.resolve(artistName, track.title, null, config);
+
+        // Check abort before processing result
+        if (signal?.aborted) return;
 
         if (result) {
           sources[resolver.id] = {
@@ -9805,12 +9844,20 @@ const Parachord = () => {
           console.log(`  ⚪ ${resolver.name}: No match found`);
         }
       } catch (error) {
+        // Silently ignore abort errors
+        if (error.name === 'AbortError') return;
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
       }
     });
 
     // Wait for all resolvers to complete
     await Promise.all(resolverPromises);
+
+    // Final abort check before state update
+    if (signal?.aborted) {
+      console.log(`⏹️ Resolution aborted for "${track.title}" before state update`);
+      return;
+    }
 
     // Update state with found sources
     if (Object.keys(sources).length > 0) {
@@ -9872,7 +9919,7 @@ const Parachord = () => {
         console.log(`▶️ Resuming page resolution`);
       }
 
-      await resolveTrack(track, artistName, forceRefresh);
+      await resolveTrack(track, artistName, { forceRefresh });
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
     }
