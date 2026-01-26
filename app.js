@@ -3680,6 +3680,11 @@ const Parachord = () => {
   const collectionObserverRef = useRef(null);
   const visibleCollectionTrackIds = useRef(new Set());
 
+  // Refs for friends sidebar visibility tracking
+  const friendEntryRefs = useRef(new Map());
+  const friendsObserverRef = useRef(null);
+  const visibleFriendIds = useRef(new Set());
+
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Close add-to-playlist sort dropdown when clicking outside
@@ -10507,6 +10512,72 @@ const Parachord = () => {
     return () => collectionObserverRef.current?.disconnect();
   }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility]);
 
+  // Register sidebar context for friends sidebar visibility tracking
+  useEffect(() => {
+    if (pinnedFriendIds.length > 0) {
+      const cleanup = registerSidebarContext('friends-sidebar');
+      return () => {
+        // Abort context when no pinned friends
+        abortSchedulerContext('friends-sidebar', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [pinnedFriendIds.length, registerSidebarContext, abortSchedulerContext]);
+
+  // IntersectionObserver for friends sidebar visibility
+  useEffect(() => {
+    if (pinnedFriendIds.length === 0) {
+      friendsObserverRef.current?.disconnect();
+      visibleFriendIds.current.clear();
+      return;
+    }
+
+    friendsObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const friendId = entry.target.dataset.friendId;
+          if (entry.isIntersecting) {
+            if (!visibleFriendIds.current.has(friendId)) {
+              visibleFriendIds.current.add(friendId);
+              changed = true;
+            }
+          } else {
+            if (visibleFriendIds.current.has(friendId)) {
+              visibleFriendIds.current.delete(friendId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleFriends = [];
+          visibleFriendIds.current.forEach(friendId => {
+            const friend = friends.find(f => f.id === friendId);
+            if (friend?.cachedRecentTrack) {
+              visibleFriends.push({
+                key: `friend-${friendId}`,
+                data: {
+                  track: friend.cachedRecentTrack,
+                  artistName: friend.cachedRecentTrack.artist
+                }
+              });
+            }
+          });
+          updateSchedulerVisibility('friends-sidebar', visibleFriends);
+        }
+      },
+      { rootMargin: '50px' }
+    );
+
+    // Observe all existing friend entries
+    friendEntryRefs.current.forEach((element) => {
+      if (element) friendsObserverRef.current.observe(element);
+    });
+
+    return () => friendsObserverRef.current?.disconnect();
+  }, [pinnedFriendIds, friends, updateSchedulerVisibility]);
+
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
     // If the resolver already provided a confidence score, use it
@@ -17013,6 +17084,17 @@ useEffect(() => {
 
             return React.createElement('div', {
               key: friend.id,
+              ref: (el) => {
+                if (el) {
+                  friendEntryRefs.current.set(friend.id, el);
+                  if (friendsObserverRef.current) {
+                    friendsObserverRef.current.observe(el);
+                  }
+                } else {
+                  friendEntryRefs.current.delete(friend.id);
+                }
+              },
+              'data-friend-id': friend.id,
               className: 'px-3 py-1 rounded cursor-pointer group transition-colors flex items-center',
               style: {
                 minHeight: '44px',
