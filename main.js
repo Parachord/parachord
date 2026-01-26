@@ -724,6 +724,21 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     show: false
   });
 
+  // Set up console-message listener BEFORE loading URL to catch all messages
+  playbackWindow.webContents.on('console-message', (event, level, message) => {
+    // Log all messages from playback window for debugging
+    console.log('[PlaybackWindow]', message);
+
+    if (message.startsWith('__PLAYBACK_EVENT__:')) {
+      const eventType = message.replace('__PLAYBACK_EVENT__:', '');
+      console.log('Playback window event:', eventType);
+      // Forward to main renderer
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('playback-window-event', eventType);
+      }
+    }
+  });
+
   playbackWindow.loadURL(url);
 
   // When page finishes loading, inject script to auto-click play button and set up event listeners
@@ -735,25 +750,28 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
       try {
         const result = await playbackWindow.webContents.executeJavaScript(`
           (function() {
+            console.log('=== Bandcamp embed injection starting ===');
+            console.log('Document URL:', window.location.href);
+            console.log('Document body:', document.body ? 'exists' : 'missing');
+
             // Click the play button first
             const playBtn = document.querySelector('.embeddedplaybutton') ||
                            document.querySelector('.playbutton') ||
-                           document.querySelector('.inline_player');
+                           document.querySelector('.inline_player') ||
+                           document.querySelector('[class*="play"]');
+            console.log('Play button search:', playBtn ? 'found: ' + playBtn.className : 'not found');
+
             if (playBtn) {
               playBtn.click();
+              console.log('Clicked play button');
             }
 
-            // Wait a bit for audio to be created, then set up event listeners and force play
-            setTimeout(() => {
+            // Function to attach listeners and start playback
+            function setupAudio() {
               const audio = document.querySelector('audio');
               console.log('Audio element check:', audio ? 'found' : 'not found');
               if (audio) {
-                console.log('Audio state:', {
-                  paused: audio.paused,
-                  src: audio.src ? 'has src' : 'no src',
-                  readyState: audio.readyState,
-                  networkState: audio.networkState
-                });
+                console.log('Audio state: paused=' + audio.paused + ', src=' + (audio.src ? 'yes' : 'no') + ', readyState=' + audio.readyState);
               }
               if (audio && !audio._parachordListenersAttached) {
                 // Set up event listeners - use console.log with special prefix that main process will catch
@@ -775,12 +793,27 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
                 }).catch(err => {
                   console.log('Audio play failed:', err.message);
                 });
-              } else if (!audio) {
-                // Try to find audio in iframes
-                const iframes = document.querySelectorAll('iframe');
-                console.log('No audio in main document, found', iframes.length, 'iframes');
+                return true;
               }
-            }, 500);
+              return false;
+            }
+
+            // Try immediately
+            if (!setupAudio()) {
+              // Try again after delays
+              setTimeout(() => {
+                if (!setupAudio()) {
+                  setTimeout(() => {
+                    if (!setupAudio()) {
+                      console.log('Failed to find audio after multiple attempts');
+                      // List all elements for debugging
+                      console.log('All elements with audio:', document.querySelectorAll('audio').length);
+                      console.log('All iframes:', document.querySelectorAll('iframe').length);
+                    }
+                  }, 1000);
+                }
+              }, 500);
+            }
 
             return playBtn ? 'clicked: ' + playBtn.className : 'no button found';
           })();
@@ -809,18 +842,6 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
         console.log('JS injection error:', err);
       }
     }, 1000);
-
-    // Listen for console messages from the playback window to catch playback events
-    playbackWindow.webContents.on('console-message', (event, level, message) => {
-      if (message.startsWith('__PLAYBACK_EVENT__:')) {
-        const eventType = message.replace('__PLAYBACK_EVENT__:', '');
-        console.log('Playback window event:', eventType);
-        // Forward to main renderer
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-          mainWindow.webContents.send('playback-window-event', eventType);
-        }
-      }
-    });
   });
 
   playbackWindow.once('ready-to-show', () => {
