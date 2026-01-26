@@ -39,6 +39,12 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyFetch(endpoint, token, allItems, onProgress);
     }
+    if (response.status === 401) {
+      throw new Error('Spotify token expired. Please reconnect your Spotify account.');
+    }
+    if (response.status === 403) {
+      throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
+    }
     throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
   }
 
@@ -177,6 +183,12 @@ const SpotifySyncProvider = {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Spotify token expired. Please reconnect your Spotify account.');
+        }
+        if (response.status === 403) {
+          throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
+        }
         throw new Error(`Spotify API error: ${response.status}`);
       }
 
@@ -250,6 +262,12 @@ const SpotifySyncProvider = {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Spotify token expired. Please reconnect your Spotify account.');
+      }
+      if (response.status === 403) {
+        throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
+      }
       throw new Error(`Spotify API error: ${response.status}`);
     }
 
