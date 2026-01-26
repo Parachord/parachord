@@ -493,8 +493,8 @@ const VirtualizedQueueList = React.memo(({
         top: 0,
         left: 0,
         width: '100%',
-        // Position from the bottom: total height - item's bottom position
-        transform: `translateY(${virtualizer.getTotalSize() - virtualRow.end}px)`,
+        height: `${virtualRow.size}px`,
+        transform: `translateY(${virtualRow.start}px)`,
         borderRadius: '6px'
       } : {
         borderRadius: '6px',
@@ -650,9 +650,9 @@ const VirtualizedQueueList = React.memo(({
     );
   };
 
-  // Fallback if ReactVirtual not loaded - render all (original behavior)
-  if (!virtualizer) {
-    console.warn('ReactVirtual not available, falling back to non-virtualized queue');
+  // Fallback if ReactVirtual not loaded OR small queue - render all (original behavior)
+  // Virtualization only helps for large queues (100+ items)
+  if (!virtualizer || queue.length < 100) {
     return React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full' },
       queue.map((track, index) => renderQueueTrackRow(track, index, null))
     );
