@@ -8346,83 +8346,11 @@ const Parachord = () => {
           }
         });
       }
-      
-      // Try to fetch album art
-      let albumArt = null;
+
       // Keep track of the original ID (release-group ID from artist page) for caching
       const originalReleaseGroupId = release.id;
-      try {
-        const artResponse = await fetch(
-          `https://coverartarchive.org/release/${releaseId}`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
 
-        if (artResponse.ok) {
-          const artData = await artResponse.json();
-          const frontCover = artData.images.find(img => img.front);
-          if (frontCover) {
-            albumArt = frontCover.thumbnails?.['500'] || frontCover.image;
-
-            // Cache the album art using the release-group ID so artist page can use it
-            // Use a smaller thumbnail (250) for the cache like fetchAlbumArtLazy does
-            const cacheUrl = frontCover.thumbnails?.['250'] || albumArt;
-            albumArtCache.current[originalReleaseGroupId] = { url: cacheUrl, timestamp: Date.now() };
-
-            // Update artistReleases so the art shows immediately when returning to artist page
-            setArtistReleases(prev =>
-              prev.map(r =>
-                r.id === originalReleaseGroupId
-                  ? { ...r, albumArt: cacheUrl }
-                  : r
-              )
-            );
-
-            // Update criticsPicks so the art shows when returning to Critics Picks page
-            setCriticsPicks(prev =>
-              prev.map(a => {
-                // Match by release title (case-insensitive) and check artist contains match
-                const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
-                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
-                if (titleMatch && artistMatch) {
-                  return { ...a, albumArt: cacheUrl };
-                }
-                return a;
-              })
-            );
-
-            // Update charts (Pop of the Tops) so the art shows when returning
-            setCharts(prev =>
-              prev.map(a => {
-                const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
-                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
-                if (titleMatch && artistMatch) {
-                  return { ...a, albumArt: cacheUrl };
-                }
-                return a;
-              })
-            );
-
-            // Update topAlbums (History page) so the art shows when returning
-            setTopAlbums(prev => ({
-              ...prev,
-              albums: prev.albums.map(a => {
-                const titleMatch = a.name.toLowerCase() === release.title.toLowerCase();
-                const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
-                if (titleMatch && artistMatch) {
-                  return { ...a, image: cacheUrl };
-                }
-                return a;
-              })
-            }));
-
-            // Save cache to persist
-            saveCacheToStore();
-          }
-        }
-      } catch (error) {
-        console.log('No album art found');
-      }
-      
+      // Create release info and show tracks immediately (don't wait for album art)
       const releaseInfo = {
         id: releaseData.id,
         title: releaseData.title,
@@ -8430,18 +8358,96 @@ const Parachord = () => {
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
-        albumArt: albumArt,
+        albumArt: null, // Will be updated async
         barcode: releaseData.barcode,
         country: releaseData.country,
         label: releaseData['label-info']?.[0]?.label?.name
       };
-      
+
       console.log('Release data loaded:', tracks.length, 'tracks');
       setCurrentRelease(releaseInfo);
       setLoadingRelease(false);
-      
+
       // Start resolving tracks in background
       resolveAllTracks(releaseInfo, artist.name);
+
+      // Fetch album art in background (don't block track display)
+      (async () => {
+        try {
+          const artResponse = await fetch(
+            `https://coverartarchive.org/release/${releaseId}`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+          );
+
+          if (artResponse.ok) {
+            const artData = await artResponse.json();
+            const frontCover = artData.images.find(img => img.front);
+            if (frontCover) {
+              const albumArt = frontCover.thumbnails?.['500'] || frontCover.image;
+
+              // Update the current release with album art
+              setCurrentRelease(prev => prev && prev.id === releaseData.id ? { ...prev, albumArt } : prev);
+
+              // Cache the album art using the release-group ID so artist page can use it
+              // Use a smaller thumbnail (250) for the cache like fetchAlbumArtLazy does
+              const cacheUrl = frontCover.thumbnails?.['250'] || albumArt;
+              albumArtCache.current[originalReleaseGroupId] = { url: cacheUrl, timestamp: Date.now() };
+
+              // Update artistReleases so the art shows immediately when returning to artist page
+              setArtistReleases(prev =>
+                prev.map(r =>
+                  r.id === originalReleaseGroupId
+                    ? { ...r, albumArt: cacheUrl }
+                    : r
+                )
+              );
+
+              // Update criticsPicks so the art shows when returning to Critics Picks page
+              setCriticsPicks(prev =>
+                prev.map(a => {
+                  // Match by release title (case-insensitive) and check artist contains match
+                  const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
+                  const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                  if (titleMatch && artistMatch) {
+                    return { ...a, albumArt: cacheUrl };
+                  }
+                  return a;
+                })
+              );
+
+              // Update charts (Pop of the Tops) so the art shows when returning
+              setCharts(prev =>
+                prev.map(a => {
+                  const titleMatch = a.title.toLowerCase() === release.title.toLowerCase();
+                  const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                  if (titleMatch && artistMatch) {
+                    return { ...a, albumArt: cacheUrl };
+                  }
+                  return a;
+                })
+              );
+
+              // Update topAlbums (History page) so the art shows when returning
+              setTopAlbums(prev => ({
+                ...prev,
+                albums: prev.albums.map(a => {
+                  const titleMatch = a.name.toLowerCase() === release.title.toLowerCase();
+                  const artistMatch = artist?.name && a.artist.toLowerCase().includes(artist.name.toLowerCase());
+                  if (titleMatch && artistMatch) {
+                    return { ...a, image: cacheUrl };
+                  }
+                  return a;
+                })
+              }));
+
+              // Save cache to persist
+              saveCacheToStore();
+            }
+          }
+        } catch (error) {
+          console.log('No album art found');
+        }
+      })();
       
     } catch (error) {
       console.error('Error fetching release data:', error);
