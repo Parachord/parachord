@@ -59,6 +59,7 @@ class ResolutionScheduler {
       throw new Error(`Invalid context type: ${type}`);
     }
 
+    console.log(`📋 Scheduler: registerContext ${id} (type: ${type})`);
     this.contexts.set(id, {
       type,
       abortController: new AbortController(),
@@ -98,7 +99,11 @@ class ResolutionScheduler {
    */
   updateVisibility(contextId, visibleTracks) {
     const context = this.contexts.get(contextId);
-    if (!context) return;
+    if (!context) {
+      console.warn(`📋 Scheduler: updateVisibility called for unregistered context: ${contextId}`);
+      return;
+    }
+    console.log(`📋 Scheduler: updateVisibility for ${contextId}, ${visibleTracks.length} tracks`);
 
     const newVisibleKeys = new Set(visibleTracks.map(t => t.key));
     const oldVisibleKeys = context.visibleTracks;
@@ -127,11 +132,21 @@ class ResolutionScheduler {
    * @param {object} data - Track data
    */
   enqueue(trackKey, contextId, data) {
-    if (this.pending.has(trackKey)) return; // Already pending
-    if (this.resolved.has(trackKey)) return; // Already resolved
+    if (this.pending.has(trackKey)) {
+      // console.log(`📋 Scheduler: enqueue skipped (already pending): ${trackKey}`);
+      return;
+    }
+    if (this.resolved.has(trackKey)) {
+      // console.log(`📋 Scheduler: enqueue skipped (already resolved): ${trackKey}`);
+      return;
+    }
 
     const context = this.contexts.get(contextId);
-    if (!context) return;
+    if (!context) {
+      console.warn(`📋 Scheduler: enqueue failed (context not found): ${contextId}`);
+      return;
+    }
+    console.log(`📋 Scheduler: enqueue ${trackKey} for ${contextId}`);
 
     const priority = CONTEXT_PRIORITY[context.type];
 
@@ -346,7 +361,15 @@ class ResolutionScheduler {
    * @private
    */
   _maybeProcess() {
-    if (this.isProcessing || !this.resolveCallback) return;
+    if (this.isProcessing) {
+      console.log(`📋 Scheduler: _maybeProcess skipped (already processing)`);
+      return;
+    }
+    if (!this.resolveCallback) {
+      console.warn(`📋 Scheduler: _maybeProcess skipped (no resolveCallback set)`);
+      return;
+    }
+    console.log(`📋 Scheduler: _maybeProcess starting, pending: ${this.pending.size}`);
     this._processNext();
   }
 

@@ -10340,6 +10340,13 @@ const Parachord = () => {
         [trackKey]: sources
       }));
 
+      // Also update queue track objects directly so VirtualizedQueueList can see changes
+      if (isQueueResolution && track.id) {
+        setCurrentQueue(prev => prev.map(t =>
+          t.id === track.id ? { ...t, sources: { ...t.sources, ...sources } } : t
+        ));
+      }
+
       // Cache the resolved sources with resolver settings hash
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
@@ -18157,7 +18164,10 @@ useEffect(() => {
 
                 return filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
                   ...filteredTracks.map((track, index) => {
-                    const hasResolved = Object.keys(track.sources || {}).length > 0;
+                    // Build track key for looking up resolved sources from trackSources state
+                    const trackKey = `${track.position || index}-${track.title}`;
+                    const resolvedSources = trackSources[trackKey] || track.sources || {};
+                    const hasResolved = Object.keys(resolvedSources).length > 0;
                     const isResolving = !hasResolved && track.resolving;
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
@@ -18323,7 +18333,7 @@ useEffect(() => {
                           })
                         )
                       : hasResolved ?
-                        Object.entries(track.sources)
+                        Object.entries(resolvedSources)
                           .sort(([aId], [bId]) => {
                             const aIndex = resolverOrder.indexOf(aId);
                             const bIndex = resolverOrder.indexOf(bId);
@@ -21103,8 +21113,11 @@ React.createElement('div', {
                 return displayTracks.length > 0 ?
                 React.createElement('div', { className: 'space-y-0' },
                   displayTracks.map((track, index) => {
-                    const hasResolved = Object.keys(track.sources || {}).length > 0;
-                    const isResolving = Object.keys(track.sources || {}).length === 0;
+                    // Build track key for looking up resolved sources from trackSources state
+                    const trackKey = `${track.position || index}-${track.title}`;
+                    const resolvedSources = trackSources[trackKey] || track.sources || {};
+                    const hasResolved = Object.keys(resolvedSources).length > 0;
+                    const isResolving = Object.keys(resolvedSources).length === 0;
                     const isDraggedOver = playlistEditMode && playlistDropTarget === index;
                     const isDragging = playlistEditMode && draggedPlaylistTrack === index;
                     const isCurrentTrack = currentTrack?.id === track.id;
@@ -21299,7 +21312,7 @@ React.createElement('div', {
                             })
                           )
                         : hasResolved ?
-                          Object.entries(track.sources)
+                          Object.entries(resolvedSources)
                             .sort(([aId], [bId]) => {
                               const aIndex = resolverOrder.indexOf(aId);
                               const bIndex = resolverOrder.indexOf(bId);
@@ -24428,8 +24441,11 @@ React.createElement('div', {
                 // Songs tab content - track list table
                 recommendationsTab === 'songs' && filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
                   ...filteredTracks.map((track, index) => {
-                      const hasResolved = Object.keys(track.sources || {}).length > 0;
-                      const isResolving = Object.keys(track.sources || {}).length === 0;
+                      // Build track key for looking up resolved sources from trackSources state
+                      const trackKey = `${track.position || index}-${track.title}`;
+                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      const isResolving = Object.keys(resolvedSources).length === 0;
 
                       return React.createElement('div', {
                         key: track.id,
@@ -24538,7 +24554,7 @@ React.createElement('div', {
                               })
                             )
                           : hasResolved ?
-                            Object.entries(track.sources)
+                            Object.entries(resolvedSources)
                               .sort(([aId], [bId]) => {
                                 const aIndex = resolverOrder.indexOf(aId);
                                 const bIndex = resolverOrder.indexOf(bId);
@@ -24914,8 +24930,11 @@ React.createElement('div', {
 
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      const hasResolved = Object.keys(track.sources || {}).length > 0;
-                      const isResolving = Object.keys(track.sources || {}).length === 0;
+                      // Build track key for looking up resolved sources from trackSources state
+                      const trackKey = `${track.position || index}-${track.title}`;
+                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      const isResolving = Object.keys(resolvedSources).length === 0;
 
                       return React.createElement('div', {
                         key: track.id,
@@ -24992,7 +25011,7 @@ React.createElement('div', {
                               React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ?
-                            Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                            Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -25054,7 +25073,10 @@ React.createElement('div', {
 
                   return React.createElement('div', { className: 'space-y-0' },
                     ...filtered.map((track, index) => {
-                      const hasResolved = Object.keys(track.sources || {}).length > 0;
+                      // Build track key for looking up resolved sources from trackSources state
+                      const trackKey = `${track.position || index}-${track.title}`;
+                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      const hasResolved = Object.keys(resolvedSources).length > 0;
                       return React.createElement('div', {
                         key: track.id,
                         'data-track-id': track.id,
@@ -25090,7 +25112,7 @@ React.createElement('div', {
                         React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '100px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
-                            Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                            Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -25730,8 +25752,11 @@ React.createElement('div', {
                   }
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      const hasResolved = Object.keys(track.sources || {}).length > 0;
-                      const isResolving = Object.keys(track.sources || {}).length === 0;
+                      // Build track key for looking up resolved sources from trackSources state
+                      const trackKey = `${track.position || index}-${track.title}`;
+                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      const hasResolved = Object.keys(resolvedSources).length > 0;
+                      const isResolving = Object.keys(resolvedSources).length === 0;
                       const tracksAfterRecent = sorted.slice(index + 1);
 
                       return React.createElement('div', {
@@ -25804,7 +25829,7 @@ React.createElement('div', {
                                 React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ?
-                              Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
@@ -25832,8 +25857,11 @@ React.createElement('div', {
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
-                        const hasResolved = Object.keys(track.sources || {}).length > 0;
-                        const isResolving = Object.keys(track.sources || {}).length === 0;
+                        // Build track key for looking up resolved sources from trackSources state
+                        const trackKey = `${track.position || index}-${track.title}`;
+                        const resolvedSources = trackSources[trackKey] || track.sources || {};
+                        const hasResolved = Object.keys(resolvedSources).length > 0;
+                        const isResolving = Object.keys(resolvedSources).length === 0;
 
                         return React.createElement('div', {
                           key: track.id || index,
@@ -25901,7 +25929,7 @@ React.createElement('div', {
                                 React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ?
-                              Object.entries(track.sources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
