@@ -2123,6 +2123,12 @@ const Parachord = () => {
   // Sync status modal state (quick view from collection)
   const [syncStatusModal, setSyncStatusModal] = useState({ open: false });
 
+  // Stop sync confirmation dialog state
+  const [stopSyncDialog, setStopSyncDialog] = useState({
+    open: false,
+    providerId: null
+  });
+
   // Background sync timer (every 15 minutes)
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
@@ -4169,6 +4175,59 @@ const Parachord = () => {
         error: result.error
       }));
     }
+  };
+
+  // Stop syncing for a provider
+  const stopSyncing = async (providerId, removeItems = false) => {
+    if (removeItems) {
+      // Remove items that only have this provider as source
+      setCollectionData(prev => {
+        const filterItems = (items) => items
+          .map(item => {
+            if (!item.syncSources?.[providerId]) return item;
+            const newSyncSources = { ...item.syncSources };
+            delete newSyncSources[providerId];
+            if (Object.keys(newSyncSources).length === 0) return null;
+            return { ...item, syncSources: newSyncSources };
+          })
+          .filter(Boolean);
+
+        return {
+          tracks: filterItems(prev.tracks || []),
+          albums: filterItems(prev.albums || []),
+          artists: filterItems(prev.artists || [])
+        };
+      });
+    } else {
+      // Just remove sync sources but keep items
+      setCollectionData(prev => {
+        const removeSource = (items) => items.map(item => {
+          if (!item.syncSources?.[providerId]) return item;
+          const newSyncSources = { ...item.syncSources };
+          delete newSyncSources[providerId];
+          return { ...item, syncSources: Object.keys(newSyncSources).length > 0 ? newSyncSources : undefined };
+        });
+
+        return {
+          tracks: removeSource(prev.tracks || []),
+          albums: removeSource(prev.albums || []),
+          artists: removeSource(prev.artists || [])
+        };
+      });
+    }
+
+    // Disable sync in settings
+    await window.electron.syncSettings.setProvider(providerId, {
+      ...resolverSyncSettings[providerId],
+      enabled: false
+    });
+
+    setResolverSyncSettings(prev => ({
+      ...prev,
+      [providerId]: { ...prev[providerId], enabled: false }
+    }));
+
+    setStopSyncDialog({ open: false, providerId: null });
   };
 
   // Browser extension event handlers
@@ -27738,19 +27797,16 @@ React.createElement('div', {
                       }
                     }, 'Manage Sync'),
                     React.createElement('button', {
-                      disabled: true,
-                      onClick: () => {/* TODO: Stop syncing flow - Task 15 */},
-                      className: 'px-3 py-1.5 text-zinc-400 text-sm',
+                      onClick: () => setStopSyncDialog({ open: true, providerId: 'spotify' }),
+                      className: 'px-3 py-1.5 text-zinc-400 hover:text-red-400 text-sm transition-colors',
                       style: {
                         padding: '6px 12px',
                         backgroundColor: 'transparent',
-                        color: '#4b5563',
+                        color: '#9ca3af',
                         fontSize: '13px',
                         border: 'none',
-                        cursor: 'not-allowed',
-                        opacity: '0.5'
-                      },
-                      title: 'Stop syncing will be available in a future update'
+                        cursor: 'pointer'
+                      }
                     }, 'Stop Syncing')
                   )
                 )
@@ -30631,6 +30687,75 @@ React.createElement('div', {
             },
             className: 'px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors'
           }, 'Sync Now')
+        )
+      )
+    ),
+
+    // Stop Sync Confirmation Dialog
+    stopSyncDialog.open && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center'
+    },
+      // Backdrop
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
+        onClick: () => setStopSyncDialog({ open: false, providerId: null })
+      }),
+
+      // Dialog
+      React.createElement('div', {
+        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-sm mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        onClick: (e) => e.stopPropagation()
+      },
+        // Content
+        React.createElement('div', {
+          className: 'px-6 py-4'
+        },
+          React.createElement('h2', {
+            className: 'text-lg font-semibold text-white mb-2'
+          }, 'Stop Syncing?'),
+          React.createElement('p', {
+            className: 'text-zinc-400 text-sm mb-4'
+          }, 'What would you like to do with your synced items?'),
+
+          // Options
+          React.createElement('div', {
+            className: 'space-y-2'
+          },
+            // Keep items option
+            React.createElement('button', {
+              onClick: () => stopSyncing(stopSyncDialog.providerId, false),
+              className: 'w-full p-3 text-left bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors'
+            },
+              React.createElement('div', {
+                className: 'text-white font-medium'
+              }, 'Keep imported items'),
+              React.createElement('div', {
+                className: 'text-sm text-zinc-400'
+              }, 'Items stay in your Collection as local items')
+            ),
+            // Remove items option
+            React.createElement('button', {
+              onClick: () => stopSyncing(stopSyncDialog.providerId, true),
+              className: 'w-full p-3 text-left bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors'
+            },
+              React.createElement('div', {
+                className: 'text-white font-medium'
+              }, 'Remove synced items'),
+              React.createElement('div', {
+                className: 'text-sm text-zinc-400'
+              }, 'Remove everything synced from this provider')
+            )
+          )
+        ),
+
+        // Footer
+        React.createElement('div', {
+          className: 'px-6 py-3 border-t border-zinc-700/50'
+        },
+          React.createElement('button', {
+            onClick: () => setStopSyncDialog({ open: false, providerId: null }),
+            className: 'w-full py-2 text-zinc-400 hover:text-white text-sm transition-colors'
+          }, 'Cancel')
         )
       )
     ),
