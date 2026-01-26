@@ -629,6 +629,62 @@ ipcMain.handle('shell-open-external', async (event, url) => {
   }
 });
 
+// Launch Spotify app in background (minimized/hidden)
+ipcMain.handle('spotify-launch-background', async () => {
+  console.log('=== Launch Spotify in Background ===');
+
+  const { exec } = require('child_process');
+  const platform = process.platform;
+
+  try {
+    if (platform === 'darwin') {
+      // macOS: Open Spotify and immediately hide it
+      // First check if Spotify is already running
+      exec('pgrep -x "Spotify"', (error, stdout) => {
+        if (stdout.trim()) {
+          console.log('✅ Spotify is already running');
+          return;
+        }
+
+        // Launch Spotify in background using AppleScript
+        exec(`osascript -e 'tell application "Spotify" to activate' -e 'delay 1' -e 'tell application "System Events" to set visible of process "Spotify" to false'`, (err) => {
+          if (err) {
+            console.error('Failed to launch Spotify via AppleScript:', err);
+            // Fallback: just open the app
+            shell.openExternal('spotify:');
+          } else {
+            console.log('✅ Spotify launched and hidden');
+          }
+        });
+      });
+    } else if (platform === 'win32') {
+      // Windows: Launch Spotify minimized
+      exec('start /min spotify:', (err) => {
+        if (err) {
+          console.error('Failed to launch Spotify on Windows:', err);
+          shell.openExternal('spotify:');
+        } else {
+          console.log('✅ Spotify launched minimized');
+        }
+      });
+    } else {
+      // Linux: Just open Spotify (minimized launch varies by DE)
+      exec('spotify &', (err) => {
+        if (err) {
+          console.error('Failed to launch Spotify on Linux:', err);
+        } else {
+          console.log('✅ Spotify launched');
+        }
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Failed to launch Spotify:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Playback window for external content (Bandcamp, etc.) with autoplay enabled
 let playbackWindow = null;
 

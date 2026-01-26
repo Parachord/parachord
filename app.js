@@ -2340,6 +2340,7 @@ const Parachord = () => {
   const [pendingExternalResolverId, setPendingExternalResolverId] = useState(null); // Tracks which resolver was selected for external playback
   const [externalTrackCountdown, setExternalTrackCountdown] = useState(15);
   const [skipExternalPrompt, setSkipExternalPrompt] = useState(false); // "Don't show again" preference
+  const [autoLaunchSpotify, setAutoLaunchSpotify] = useState(false); // Auto-launch Spotify on app startup
   const [skipUnsavedFriendWarning, setSkipUnsavedFriendWarning] = useState(false); // "Don't show again" for unsaved friend unpin warning
   const [unsavedFriendWarningOpen, setUnsavedFriendWarningOpen] = useState(false); // Warning dialog state
   const [pendingUnpinFriend, setPendingUnpinFriend] = useState(null); // Friend being unpinned (for warning dialog)
@@ -3127,7 +3128,7 @@ const Parachord = () => {
   const [newPlaylistFormOpen, setNewPlaylistFormOpen] = useState(false); // Accordion state for new playlist form
   const [newPlaylistName, setNewPlaylistName] = useState(''); // Input value for new playlist name
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
-  const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+  const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' | 'info', action?: { label: string, onClick: () => void } }
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const [collectionLoading, setCollectionLoading] = useState(true);
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
@@ -5124,16 +5125,17 @@ const Parachord = () => {
     }
   }, [isPlaying, currentTrack, browserPlaybackActive]);
 
-  // Auto-dismiss toast after 3 seconds
+  // Auto-dismiss toast after 3 seconds (6 seconds if it has an action button)
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000);
+      const timeout = toast.action ? 6000 : 3000;
+      const timer = setTimeout(() => setToast(null), timeout);
       return () => clearTimeout(timer);
     }
   }, [toast]);
 
-  const showToast = useCallback((message, type = 'success') => {
-    setToast({ message, type });
+  const showToast = useCallback((message, type = 'success', action = null) => {
+    setToast({ message, type, action });
   }, []);
 
   // Save collection to disk
@@ -6200,11 +6202,54 @@ const Parachord = () => {
             return; // Success on retry, don't fall through to re-resolve
           }
           console.error('❌ Spotify retry also failed');
+
+          // Spotify failed after retry - try to fall back to next best source
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && activeResolvers.includes(id));
+
+            if (otherSources.length > 0) {
+              // Sort by resolver priority
+              const sortedFallbacks = otherSources
+                .map(resId => ({
+                  resolverId: resId,
+                  source: trackOrSource.sources[resId],
+                  priority: resolverOrder.indexOf(resId)
+                }))
+                .sort((a, b) => a.priority - b.priority);
+
+              const fallback = sortedFallbacks[0];
+              const fallbackResolver = currentResolvers.find(r => r.id === fallback.resolverId);
+
+              console.log(`🔄 Spotify unavailable, falling back to ${fallbackResolver?.name || fallback.resolverId}`);
+
+              // Show toast with option to retry Spotify (e.g., after opening app)
+              showToast(
+                `Spotify device unavailable. Playing via ${fallbackResolver?.name || fallback.resolverId}.`,
+                'info',
+                {
+                  label: 'Open Spotify',
+                  onClick: wakeSpotifyApp
+                }
+              );
+
+              // Create fallback track without spotify source to prevent loop
+              const fallbackTrack = {
+                ...trackOrSource,
+                sources: Object.fromEntries(
+                  Object.entries(trackOrSource.sources).filter(([id]) => id !== 'spotify')
+                ),
+                _spotifyFallback: true // Mark that we fell back from Spotify
+              };
+
+              // Play via the fallback source
+              handlePlay(fallbackTrack);
+              return;
+            }
+          }
         }
 
-        // Playback failed - cached source may be invalid
-        // Try to re-resolve and find alternative sources
-        if (sourceToPlay.artist && sourceToPlay.title) {
+        // No fallback available or non-Spotify failure - show re-resolve dialog
+        if (!trackOrSource._spotifyFallback && sourceToPlay.artist && sourceToPlay.title) {
           console.log('🔄 Attempting to re-resolve track with fresh sources...');
           const artistName = sourceToPlay.artist;
           const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
@@ -6526,6 +6571,17 @@ const Parachord = () => {
 
     pollingRecoveryRef.current = recoveryInterval;
   };
+
+  // Wake Spotify by opening the app via protocol URL
+  const wakeSpotifyApp = useCallback(() => {
+    console.log('🎵 Attempting to wake Spotify app...');
+    if (window.electron?.shell?.openExternal) {
+      window.electron.shell.openExternal('spotify:');
+    } else {
+      // Fallback for web - open Spotify web player
+      window.open('https://open.spotify.com', '_blank');
+    }
+  }, []);
 
   // Stop Spotify playback (used when switching to external browser track)
   const stopSpotifyPlayback = async () => {
@@ -8246,6 +8302,19 @@ const Parachord = () => {
       if (savedSkipExternalPrompt !== undefined) {
         setSkipExternalPrompt(savedSkipExternalPrompt);
         console.log('📦 Loaded skip external prompt preference:', savedSkipExternalPrompt);
+      }
+
+      // Load auto-launch Spotify preference and trigger launch if enabled
+      const savedAutoLaunchSpotify = await window.electron.store.get('auto_launch_spotify');
+      if (savedAutoLaunchSpotify !== undefined) {
+        setAutoLaunchSpotify(savedAutoLaunchSpotify);
+        console.log('📦 Loaded auto-launch Spotify preference:', savedAutoLaunchSpotify);
+
+        // If enabled, launch Spotify in background on startup
+        if (savedAutoLaunchSpotify && window.electron?.spotify?.launchInBackground) {
+          console.log('🎵 Auto-launching Spotify in background...');
+          window.electron.spotify.launchInBackground();
+        }
       }
 
       // Load skip unsaved friend warning preference
@@ -16397,19 +16466,38 @@ useEffect(() => {
         )
       ),
 
-      // Toast notification - refined styling
+      // Toast notification - refined styling with optional action button
       toast && React.createElement('div', {
-        className: 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 transition-all',
+        className: 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 transition-all flex items-center gap-3',
         style: {
           padding: '12px 20px',
-          backgroundColor: toast.type === 'error' ? '#dc2626' : '#1f2937',
+          backgroundColor: toast.type === 'error' ? '#dc2626' : toast.type === 'info' ? '#2563eb' : '#1f2937',
           color: '#ffffff',
           fontSize: '13px',
           fontWeight: '500',
           borderRadius: '10px',
           boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 8px 32px rgba(0, 0, 0, 0.15)'
         }
-      }, toast.message),
+      },
+        toast.message,
+        toast.action && React.createElement('button', {
+          onClick: () => {
+            toast.action.onClick();
+            setToast(null);
+          },
+          style: {
+            marginLeft: '8px',
+            padding: '4px 12px',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            borderRadius: '6px',
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: 'pointer'
+          }
+        }, toast.action.label)
+      ),
 
       // Main content area
       React.createElement('div', {
@@ -26070,7 +26158,7 @@ React.createElement('div', {
                     }, 'Configure how external tracks are handled')
                   ),
                   // Skip external prompt toggle - refined
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0' } },
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0', borderBottom: '1px solid rgba(0, 0, 0, 0.04)' } },
                     React.createElement('div', null,
                       React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } },
                         'Auto-open external tracks'
@@ -26091,6 +26179,36 @@ React.createElement('div', {
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  ),
+                  // Auto-launch Spotify toggle
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0' } },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } },
+                        'Auto-launch Spotify'
+                      ),
+                      React.createElement('p', { style: { fontSize: '12px', color: '#9ca3af', marginTop: '2px' } },
+                        'Start Spotify in background when Parachord opens'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !autoLaunchSpotify;
+                        setAutoLaunchSpotify(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('auto_launch_spotify', newValue);
+                        }
+                        // If enabling, offer to launch now
+                        if (newValue && window.electron?.spotify?.launchInBackground) {
+                          window.electron.spotify.launchInBackground();
+                          showToast('Spotify launched in background', 'success');
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),

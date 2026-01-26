@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('electron', {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)
   },
 
+  // Spotify app control
+  spotify: {
+    launchInBackground: () => ipcRenderer.invoke('spotify-launch-background')
+  },
+
   // Proxy fetch - bypasses CORS for resolvers
   proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
 
