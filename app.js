@@ -24306,11 +24306,11 @@ React.createElement('div', {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -24393,11 +24393,11 @@ React.createElement('div', {
                                 key: resolverId,
                                 className: 'no-drag',
                                 onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             })
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
