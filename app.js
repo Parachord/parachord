@@ -4448,6 +4448,7 @@ const Parachord = () => {
 
           const needsSave = cleanedCount > 0 || migratedCount > 0;
           const finalData = {
+            ...data,  // Preserve any additional fields (e.g., version, lastModified, metadata)
             tracks: migratedTracks,
             albums: migratedAlbums,
             artists: migratedArtists
