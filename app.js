@@ -10121,14 +10121,24 @@ const Parachord = () => {
   const resolveTrack = async (track, artistName, options = {}) => {
     const { forceRefresh = false, isQueueResolution = false, signal } = options;
 
+    // Validate required parameters
+    if (!track || !track.title) {
+      console.warn('⚠️ resolveTrack called with invalid track:', track);
+      return;
+    }
+    if (!artistName) {
+      // Try to get artist from track object
+      artistName = track.artist || track.artistName || 'Unknown Artist';
+    }
+
     // Early abort check
     if (signal?.aborted) {
       console.log(`⏹️ Resolution aborted for "${track.title}" before start`);
       return;
     }
 
-    const trackKey = `${track.position}-${track.title}`;
-    const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
+    const trackKey = `${track.position || 0}-${track.title}`;
+    const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position || 0}`;
     const currentResolverHash = getResolverSettingsHash();
 
     // Check cache first (unless force refresh)
