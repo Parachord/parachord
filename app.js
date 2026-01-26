@@ -360,6 +360,322 @@ const SERVICE_LOGOS = {
   )
 };
 
+// VirtualizedQueueList component - Renders queue tracks efficiently using windowing
+// Only renders visible tracks + overscan buffer, dramatically reducing DOM nodes for large queues
+const VirtualizedQueueList = React.memo(({
+  queue,
+  currentTrack,
+  resolverOrder,
+  allResolvers,
+  queueDropTarget,
+  draggedQueueTrack,
+  insertedTrackId,
+  droppingFromIndex,
+  spinoffMode,
+  playbackContext,
+  listenAlongFriend,
+  addToPlaylistPanel,
+  selectedPlaylistsForAdd,
+  containerHeight,
+  parentRef,
+  // Callbacks
+  setDraggedQueueTrack,
+  setDraggingTrackForPlaylist,
+  setQueueDropTarget,
+  setDropTargetPlaylistId,
+  setDropTargetNewPlaylist,
+  setAddToPlaylistPanel,
+  moveInQueue,
+  setDroppingFromIndex,
+  setCurrentQueue,
+  handlePlay,
+  exitSpinoff,
+  fetchArtistData,
+  removeFromQueue,
+  handleUrlDrop,
+  formatTime
+}) => {
+  const TRACK_HEIGHT = 36; // Approximate height of each track row in pixels
+
+  // Use @tanstack/react-virtual for efficient rendering
+  // ReactVirtual is loaded from CDN as a global
+  const virtualizer = typeof ReactVirtual !== 'undefined' ? ReactVirtual.useVirtualizer({
+    count: queue.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => TRACK_HEIGHT,
+    overscan: 10 // Render 10 extra items above/below viewport for smooth scrolling
+  }) : null;
+
+  // Helper to render a single queue track row
+  const renderQueueTrackRow = (track, index, virtualRow) => {
+    const isCurrentTrack = currentTrack?.id === track.id;
+    const isLoading = track.status === 'loading';
+    const isError = track.status === 'error';
+    const availableSources = Object.keys(track.sources || {}).sort((a, b) => {
+      const aIndex = resolverOrder.indexOf(a);
+      const bIndex = resolverOrder.indexOf(b);
+      return aIndex - bIndex;
+    });
+
+    const isDraggedOver = queueDropTarget === index;
+    const isDragging = draggedQueueTrack === index;
+    const isInserted = insertedTrackId === track.id;
+    const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
+
+    return React.createElement('div', {
+      key: track.id,
+      'data-index': index,
+      ref: virtualRow ? virtualizer.measureElement : undefined,
+      draggable: !isLoading && !isError,
+      onDragStart: (e) => {
+        if (!isLoading && !isError) {
+          setDraggedQueueTrack(index);
+          setDraggingTrackForPlaylist(track);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
+        }
+      },
+      onDragEnd: () => {
+        setDraggedQueueTrack(null);
+        setQueueDropTarget(null);
+        setDraggingTrackForPlaylist(null);
+        setDropTargetPlaylistId(null);
+        setDropTargetNewPlaylist(false);
+        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+        }
+      },
+      onDragOver: (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
+          setQueueDropTarget(index);
+        }
+      },
+      onDragLeave: () => {
+        setQueueDropTarget(null);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
+          moveInQueue(draggedQueueTrack, index);
+        }
+        setDraggedQueueTrack(null);
+        setQueueDropTarget(null);
+      },
+      onContextMenu: (e) => {
+        e.preventDefault();
+        if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
+          window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+        }
+      },
+      onClick: () => {
+        if (isLoading || isError) return;
+        setDroppingFromIndex(index);
+        setTimeout(() => {
+          setCurrentQueue(prev => prev.slice(index + 1));
+          handlePlay(track);
+          setDroppingFromIndex(null);
+        }, 300);
+      },
+      className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
+        isCurrentTrack ? 'bg-purple-900/40' : ''
+      } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
+        isError ? 'opacity-50' : ''
+      } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
+        isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
+        isFallingDown ? 'queue-track-drop' : ''} ${
+        isInserted ? 'queue-track-insert' : ''} ${
+        (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''} ${
+        listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`,
+      style: virtualRow ? {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        // Position from the bottom: total height - item's bottom position
+        transform: `translateY(${virtualizer.getTotalSize() - virtualRow.end}px)`,
+        borderRadius: '6px'
+      } : {
+        borderRadius: '6px',
+        marginBottom: '1px'
+      }
+    },
+      // Track number
+      React.createElement('span', {
+        className: 'text-right',
+        style: {
+          width: '28px',
+          flexShrink: 0,
+          fontSize: '12px',
+          fontWeight: '500',
+          color: (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
+            ? 'rgba(156, 163, 175, 0.5)' : 'rgba(156, 163, 175, 0.7)'
+        }
+      },
+        listenAlongFriend ? '–' :
+        isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
+        isError ? '⚠' :
+        isCurrentTrack ? '▶' :
+        (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
+          ? '··' : String(index + 1).padStart(2, '0')
+      ),
+      // Track title
+      React.createElement('span', {
+        className: 'truncate group-hover:text-white transition-colors',
+        style: {
+          flex: '1 1 0',
+          minWidth: 0,
+          fontSize: '13px',
+          fontWeight: index === 0 ? '500' : '400',
+          color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
+                 isError ? '#f87171' :
+                 isCurrentTrack ? '#a78bfa' : 'rgba(229, 231, 235, 0.9)'
+        },
+        onClick: () => {
+          if (isLoading || isError) return;
+          if (spinoffMode) exitSpinoff();
+          setDroppingFromIndex(index);
+          setTimeout(() => {
+            setCurrentQueue(prev => prev.slice(index + 1));
+            handlePlay(track);
+            setDroppingFromIndex(null);
+          }, 300);
+        }
+      },
+        isLoading ? 'Loading...' :
+        isError ? 'Could not load track' :
+        track.title
+      ),
+      // Artist name
+      React.createElement('span', {
+        className: 'truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
+        style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
+        onClick: (e) => {
+          e.stopPropagation();
+          if (!isLoading && !isError && track.artist) fetchArtistData(track.artist);
+        }
+      },
+        isLoading ? `from ${track.sourceDomain || 'unknown'}` :
+        isError ? (track.errorMessage || 'Unknown error') :
+        track.artist
+      ),
+      // Duration
+      React.createElement('span', {
+        className: 'text-right tabular-nums',
+        style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.5)' }
+      }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
+      // Resolver icons
+      React.createElement('div', {
+        className: 'flex items-center gap-1 justify-end',
+        style: { width: '90px', flexShrink: 0, minHeight: '20px' }
+      },
+        isError ?
+          React.createElement('button', {
+            onClick: (e) => {
+              e.stopPropagation();
+              if (track.sourceUrl) {
+                removeFromQueue(track.id);
+                handleUrlDrop(track.sourceUrl, 'queue');
+              }
+            },
+            className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
+            title: 'Retry'
+          }, '↻')
+        : isLoading ?
+          React.createElement('div', { className: 'flex items-center gap-1' },
+            React.createElement('div', {
+              className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+              style: { width: '20px', height: '20px' }
+            }),
+            React.createElement('div', {
+              className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+              style: { width: '20px', height: '20px', animationDelay: '0.1s' }
+            })
+          )
+        : availableSources.length > 0 ?
+          availableSources.map(resolverId => {
+            const resolver = allResolvers.find(r => r.id === resolverId);
+            if (!resolver) return null;
+            const source = track.sources?.[resolverId];
+            const confidence = source?.confidence || 0;
+            return React.createElement('button', {
+              key: resolverId,
+              onClick: (e) => {
+                e.stopPropagation();
+                handlePlay({ ...track, preferredResolver: resolverId });
+              },
+              className: 'no-drag',
+              style: {
+                width: '20px',
+                height: '20px',
+                borderRadius: '4px',
+                backgroundColor: resolver.color,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: confidence > 0.8 ? 0.7 : 0.5,
+                filter: 'saturate(0.7)',
+                transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = confidence > 0.8 ? '0.7' : '0.5'; e.currentTarget.style.filter = 'saturate(0.7)'; },
+              title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
+            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+          })
+        :
+          React.createElement('div', { className: 'flex items-center gap-1' },
+            React.createElement('div', {
+              className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+              style: { width: '20px', height: '20px' },
+              title: 'Resolving track...'
+            }),
+            React.createElement('div', {
+              className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
+              style: { width: '20px', height: '20px', animationDelay: '0.1s' }
+            })
+          )
+      ),
+      // Remove button
+      React.createElement('button', {
+        onClick: (e) => {
+          e.stopPropagation();
+          removeFromQueue(track.id);
+        },
+        className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
+        title: isLoading ? 'Cancel' : 'Remove from queue'
+      }, React.createElement(X, { size: 14 }))
+    );
+  };
+
+  // Fallback if ReactVirtual not loaded - render all (original behavior)
+  if (!virtualizer) {
+    console.warn('ReactVirtual not available, falling back to non-virtualized queue');
+    return React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full' },
+      queue.map((track, index) => renderQueueTrackRow(track, index, null))
+    );
+  }
+
+  const virtualItems = virtualizer.getVirtualItems();
+
+  // Virtualized rendering with reversed order display
+  // Items are positioned absolutely with transform to appear bottom-to-top
+  return React.createElement('div', {
+    style: {
+      height: `${virtualizer.getTotalSize()}px`,
+      width: '100%',
+      position: 'relative'
+    }
+  },
+    virtualItems.map(virtualRow => {
+      const track = queue[virtualRow.index];
+      return renderQueueTrackRow(track, virtualRow.index, virtualRow);
+    })
+  );
+});
+
 // ResolverCard component - Tomahawk-style colored card with centered logo
 const ResolverCard = React.memo(({
   resolver,
@@ -9422,6 +9738,8 @@ const Parachord = () => {
 
   // Resolve queue tracks with priority over page resolution
   // This ensures queue tracks get resolved first when user adds tracks to queue
+  // Optimized with batched updates - collects resolved sources for multiple tracks
+  // before updating state, reducing re-renders for large queues
   const resolveQueueTracks = async (queueTracks) => {
     if (!queueTracks || queueTracks.length === 0) return;
 
@@ -9452,8 +9770,59 @@ const Parachord = () => {
         return;
       }
 
+      // Batching config: update state after resolving this many tracks
+      const BATCH_SIZE = 5;
+      let pendingUpdates = new Map(); // trackId -> { sources, duration }
+      let currentTrackUpdate = null;
+
+      // Function to flush pending updates to state
+      const flushUpdates = () => {
+        if (pendingUpdates.size === 0) return;
+
+        const updates = new Map(pendingUpdates);
+        pendingUpdates.clear();
+
+        // Batch update all queue tracks at once
+        setCurrentQueue(prevQueue =>
+          prevQueue.map(queueTrack => {
+            const update = updates.get(queueTrack.id);
+            if (update) {
+              return {
+                ...queueTrack,
+                sources: { ...queueTrack.sources, ...update.sources },
+                duration: queueTrack.duration || update.duration
+              };
+            }
+            return queueTrack;
+          })
+        );
+
+        // Update currentTrack if needed
+        if (currentTrackUpdate) {
+          const trackUpdate = currentTrackUpdate;
+          currentTrackUpdate = null;
+          setCurrentTrack(prev => {
+            if (!prev) return prev;
+            const isSameTrack = (prev.id && prev.id === trackUpdate.trackId) ||
+              (prev.title === trackUpdate.title && prev.artist === trackUpdate.artist);
+            if (isSameTrack) {
+              console.log(`✅ Updated currentTrack with ${Object.keys(trackUpdate.sources).length} resolved sources`);
+              return {
+                ...prev,
+                sources: { ...prev.sources, ...trackUpdate.sources },
+                duration: prev.duration || trackUpdate.duration
+              };
+            }
+            return prev;
+          });
+        }
+
+        console.log(`📦 Flushed batch update for ${updates.size} tracks`);
+      };
+
       // Resolve each queue track
-      for (const track of tracksNeedingResolution) {
+      for (let i = 0; i < tracksNeedingResolution.length; i++) {
+        const track = tracksNeedingResolution[i];
         const artistName = track.artist || 'Unknown Artist';
         const sources = {};
 
@@ -9481,47 +9850,42 @@ const Parachord = () => {
 
         await Promise.all(resolverPromises);
 
-        // Update the queue track with resolved sources and duration
+        // Collect update for this track
         if (Object.keys(sources).length > 0) {
-          // Get duration from first source that has it
           const resolvedDuration = Object.values(sources).find(s => s.duration)?.duration || null;
 
-          setCurrentQueue(prevQueue =>
-            prevQueue.map(queueTrack =>
-              queueTrack.id === track.id
-                ? {
-                    ...queueTrack,
-                    sources: { ...queueTrack.sources, ...sources },
-                    // Update duration if resolved source has it and track doesn't
-                    duration: queueTrack.duration || resolvedDuration
-                  }
-                : queueTrack
-            )
-          );
+          pendingUpdates.set(track.id, { sources, duration: resolvedDuration });
 
-          // Also update currentTrack if this is the currently playing track
-          // This enables the resolver dropdown in the playbar
-          setCurrentTrack(prev => {
-            if (!prev) return prev;
-            const isSameTrack = (prev.id && prev.id === track.id) ||
-              (prev.title === track.title && prev.artist === track.artist);
+          // Check if this is the current playing track
+          const currentTrackRef = currentTrack;
+          if (currentTrackRef) {
+            const isSameTrack = (currentTrackRef.id && currentTrackRef.id === track.id) ||
+              (currentTrackRef.title === track.title && currentTrackRef.artist === track.artist);
             if (isSameTrack) {
-              console.log(`✅ Updated currentTrack with ${Object.keys(sources).length} resolved sources`);
-              return {
-                ...prev,
-                sources: { ...prev.sources, ...sources },
-                duration: prev.duration || resolvedDuration
+              currentTrackUpdate = {
+                trackId: track.id,
+                title: track.title,
+                artist: track.artist,
+                sources,
+                duration: resolvedDuration
               };
             }
-            return prev;
-          });
+          }
 
           console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources${resolvedDuration ? `, ${resolvedDuration}s` : ''})`);
+        }
+
+        // Flush batch if we've reached batch size or it's the last track
+        if (pendingUpdates.size >= BATCH_SIZE || i === tracksNeedingResolution.length - 1) {
+          flushUpdates();
         }
 
         // Small delay between tracks to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 150));
       }
+
+      // Final flush for any remaining updates
+      flushUpdates();
 
       console.log('✅ Queue resolution complete');
     } finally {
@@ -30934,274 +31298,41 @@ React.createElement('div', {
             React.createElement('span', { className: 'text-sm text-gray-500 mt-1' }, 'Play a playlist to add tracks')
           )
         :
-          // flex-col-reverse reverses the main axis (bottom to top)
-          // justify-start pins items to the START of that axis = BOTTOM of the container
-          // min-h-full ensures it fills the container when there's little content
-          React.createElement('div', { className: 'flex flex-col-reverse justify-start min-h-full' },
-            currentQueue.map((track, index) => {
-              const isCurrentTrack = currentTrack?.id === track.id;
-              const isLoading = track.status === 'loading';
-              const isError = track.status === 'error';
-              // Sort by priority order (left to right = highest to lowest priority)
-              const availableSources = Object.keys(track.sources || {}).sort((a, b) => {
-                const aIndex = resolverOrder.indexOf(a);
-                const bIndex = resolverOrder.indexOf(b);
-                return aIndex - bIndex;
-              });
-
-              const isDraggedOver = queueDropTarget === index;
-              const isDragging = draggedQueueTrack === index;
-              const isInserted = insertedTrackId === track.id;
-              // With flex-col-reverse + justify-start, index 0 is at the bottom (near player)
-              // When clicking a track, all tracks at index <= droppingFromIndex fall down into player
-              // Remaining tracks (index > droppingFromIndex) stay in place - they'll naturally be
-              // at the bottom after state change thanks to flex-col-reverse + justify-start
-              const isFallingDown = droppingFromIndex !== null && index <= droppingFromIndex;
-
-              return React.createElement('div', {
-                key: track.id,
-                draggable: !isLoading && !isError,
-                onDragStart: (e) => {
-                  if (!isLoading && !isError) {
-                    setDraggedQueueTrack(index);
-                    setDraggingTrackForPlaylist(track); // Track for potential playlist drop
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
-                  }
-                },
-                onDragEnd: () => {
-                  setDraggedQueueTrack(null);
-                  setQueueDropTarget(null);
-                  setDraggingTrackForPlaylist(null);
-                  setDropTargetPlaylistId(null);
-                  setDropTargetNewPlaylist(false);
-                  // Close panel if it was opened by drag and nothing was dropped
-                  if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                    setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                  }
-                },
-                onDragOver: (e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
-                    setQueueDropTarget(index);
-                  }
-                },
-                onDragLeave: () => {
-                  setQueueDropTarget(null);
-                },
-                onDrop: (e) => {
-                  e.preventDefault();
-                  if (draggedQueueTrack !== null && draggedQueueTrack !== index) {
-                    moveInQueue(draggedQueueTrack, index);
-                  }
-                  setDraggedQueueTrack(null);
-                  setQueueDropTarget(null);
-                },
-                onContextMenu: (e) => {
-                  e.preventDefault();
-                  if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
-                      type: 'track',
-                      track: track
-                    });
-                  }
-                },
-                onClick: () => {
-                  if (isLoading || isError) return;
-                  // Trigger drop animation for all tracks at index <= clicked index
-                  setDroppingFromIndex(index);
-                  // After animation, play the track
-                  setTimeout(() => {
-                    setCurrentQueue(prev => prev.slice(index + 1));
-                    handlePlay(track);
-                    setDroppingFromIndex(null);
-                  }, 300);
-                },
-                className: `group flex items-center gap-3 py-1.5 px-3 hover:bg-white/10 transition-all duration-300 ${
-                  isCurrentTrack ? 'bg-purple-900/40' : ''
-                } ${isDragging ? 'opacity-50 bg-gray-700/50' : ''} ${
-                  isError ? 'opacity-50' : ''
-                } ${isDraggedOver ? 'border-t-2 border-t-purple-400' : ''} ${
-                  isLoading || isError ? 'cursor-default' : 'cursor-pointer'} ${
-                  isFallingDown ? 'queue-track-drop' : ''} ${
-                  isInserted ? 'queue-track-insert' : ''} ${
-                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend') && !isCurrentTrack ? 'opacity-50' : ''} ${
-                  listenAlongFriend ? 'opacity-40 pointer-events-none' : ''}`,
-                style: {
-                  borderRadius: '6px',
-                  marginBottom: '1px'
-                }
-              },
-                // Track number / status indicator - fixed width
-                // In spinoff/listen-along mode, show ·· instead of numbers (queue is "paused")
-                React.createElement('span', {
-                  className: 'text-right',
-                  style: {
-                    width: '28px',
-                    flexShrink: 0,
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
-                      ? 'rgba(156, 163, 175, 0.5)' : 'rgba(156, 163, 175, 0.7)'
-                  }
-                },
-                  listenAlongFriend ? '–' :
-                  isLoading ? React.createElement('span', { className: 'animate-spin inline-block' }, '◌') :
-                  isError ? '⚠' :
-                  isCurrentTrack ? '▶' :
-                  (spinoffMode || playbackContext?.type === 'spinoff' || playbackContext?.type === 'friend')
-                    ? '··' : String(index + 1).padStart(2, '0')
-                ),
-
-                // Track title - flexible column that grows
-                // First track gets font-medium to indicate it's next (matches playbar styling)
-                React.createElement('span', {
-                  className: 'truncate group-hover:text-white transition-colors',
-                  style: {
-                    flex: '1 1 0',
-                    minWidth: 0,
-                    fontSize: '13px',
-                    fontWeight: index === 0 ? '500' : '400',
-                    color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
-                           isError ? '#f87171' :
-                           isCurrentTrack ? '#a78bfa' : 'rgba(229, 231, 235, 0.9)'
-                  },
-                  onClick: () => {
-                    if (isLoading || isError) return;
-                    // Exit spinoff mode when user clicks a track in the queue
-                    if (spinoffMode) {
-                      exitSpinoff();
-                    }
-                    // Trigger drop animation for all tracks at index <= clicked index
-                    // These tracks will fall down into the player together
-                    setDroppingFromIndex(index);
-                    // After animation, play the track
-                    setTimeout(() => {
-                      setCurrentQueue(prev => prev.slice(index + 1));
-                      handlePlay(track);
-                      setDroppingFromIndex(null);
-                    }, 300);
-                  }
-                },
-                  isLoading ? 'Loading...' :
-                  isError ? 'Could not load track' :
-                  track.title
-                ),
-
-                // Artist name - flexible column, clickable
-                React.createElement('span', {
-                  className: 'truncate hover:text-purple-400 hover:underline cursor-pointer transition-colors',
-                  style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.7)' },
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    if (!isLoading && !isError && track.artist) {
-                      fetchArtistData(track.artist);
-                    }
-                  }
-                },
-                  isLoading ? `from ${track.sourceDomain || 'unknown'}` :
-                  isError ? (track.errorMessage || 'Unknown error') :
-                  track.artist
-                ),
-
-                // Duration - fixed width column (before resolver icons)
-                React.createElement('span', {
-                  className: 'text-right tabular-nums',
-                  style: { width: '50px', flexShrink: 0, fontSize: '12px', color: 'rgba(156, 163, 175, 0.5)' }
-                }, !isLoading && !isError ? formatTime(track.duration || 0) : ''),
-
-                // Resolver icons - fixed width column (last before remove button)
-                React.createElement('div', {
-                  className: 'flex items-center gap-1 justify-end',
-                  style: { width: '90px', flexShrink: 0, minHeight: '20px' }
-                },
-                  isError ?
-                    React.createElement('button', {
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        if (track.sourceUrl) {
-                          removeFromQueue(track.id);
-                          handleUrlDrop(track.sourceUrl, 'queue');
-                        }
-                      },
-                      className: 'px-2 py-0.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors',
-                      title: 'Retry'
-                    }, '↻')
-                  : isLoading ?
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1'
-                    },
-                      React.createElement('div', {
-                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '20px', height: '20px' }
-                      }),
-                      React.createElement('div', {
-                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '20px', height: '20px', animationDelay: '0.1s' }
-                      })
-                    )
-                  : availableSources.length > 0 ?
-                    availableSources.map(resolverId => {
-                      const resolver = allResolvers.find(r => r.id === resolverId);
-                      if (!resolver) return null;
-                      const source = track.sources?.[resolverId];
-                      const confidence = source?.confidence || 0;
-                      return React.createElement('button', {
-                        key: resolverId,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          handlePlay({ ...track, preferredResolver: resolverId });
-                        },
-                        className: 'no-drag',
-                        style: {
-                          width: '20px',
-                          height: '20px',
-                          borderRadius: '4px',
-                          backgroundColor: resolver.color,
-                          border: 'none',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          opacity: confidence > 0.8 ? 0.7 : 0.5,
-                          filter: 'saturate(0.7)',
-                          transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
-                        },
-                        onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
-                        onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = confidence > 0.8 ? '0.7' : '0.5'; e.currentTarget.style.filter = 'saturate(0.7)'; },
-                        title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-                      }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                    })
-                  :
-                    // Show shimmer skeletons while resolving (match resolver icon size)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1'
-                    },
-                      React.createElement('div', {
-                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '20px', height: '20px' },
-                        title: 'Resolving track...'
-                      }),
-                      React.createElement('div', {
-                        className: 'rounded bg-gradient-to-r from-gray-700 via-gray-600 to-gray-700 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '20px', height: '20px', animationDelay: '0.1s' }
-                      })
-                    )
-                ),
-
-                // Remove button
-                React.createElement('button', {
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    removeFromQueue(track.id);
-                  },
-                  className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
-                  title: isLoading ? 'Cancel' : 'Remove from queue'
-                }, React.createElement(X, { size: 14 }))
-              );
-            })
-          )
+          // Virtualized queue list - renders only visible items for performance
+          // Uses @tanstack/react-virtual to efficiently handle large queues
+          React.createElement(VirtualizedQueueList, {
+            queue: currentQueue,
+            currentTrack,
+            resolverOrder,
+            allResolvers,
+            queueDropTarget,
+            draggedQueueTrack,
+            insertedTrackId,
+            droppingFromIndex,
+            spinoffMode,
+            playbackContext,
+            listenAlongFriend,
+            addToPlaylistPanel,
+            selectedPlaylistsForAdd,
+            containerHeight: queueDrawerHeight - 44 - (playbackContext ? 32 : 0),
+            parentRef: queueContentRef,
+            // Callbacks
+            setDraggedQueueTrack,
+            setDraggingTrackForPlaylist,
+            setQueueDropTarget,
+            setDropTargetPlaylistId,
+            setDropTargetNewPlaylist,
+            setAddToPlaylistPanel,
+            moveInQueue,
+            setDroppingFromIndex,
+            setCurrentQueue,
+            handlePlay,
+            exitSpinoff,
+            fetchArtistData,
+            removeFromQueue,
+            handleUrlDrop,
+            formatTime
+          })
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
