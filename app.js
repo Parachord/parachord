@@ -7516,6 +7516,8 @@ const Parachord = () => {
     if (userInitiated && listenAlongFriendNow) {
       console.log(`🎧 User skipped track - ending listen-along with ${listenAlongFriendNow.displayName}`);
       showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      // Abort and cleanup pool context
+      abortSchedulerContext('listen-along');
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       listenAlongPendingTrackRef.current = null;
@@ -7607,6 +7609,8 @@ const Parachord = () => {
         if (friendStillOnSameTrack) {
           console.log(`🎧 Listen-along: Song ended but ${listenAlongFriendNow.displayName} hasn't moved on - ending listen-along`);
           showToast(`${listenAlongFriendNow.displayName} hasn't moved on - resuming your queue`);
+          // Abort and cleanup pool context
+          abortSchedulerContext('listen-along');
           setListenAlongFriend(null);
           listenAlongLastTrackRef.current = null;
           listenAlongPendingTrackRef.current = null;
@@ -7632,6 +7636,14 @@ const Parachord = () => {
       if (spinoffModeRef.current && spinoffTracksRef.current.length > 0) {
         const nextSimilar = spinoffTracksRef.current.shift();
         console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
+
+        // Update pool visibility for resolution - next 5 tracks
+        const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t, i) => ({
+          key: `spinoff-${i}`,
+          data: { track: t, artistName: t.artist || 'Unknown Artist' }
+        }));
+        updateSchedulerVisibility('spinoff', poolTracks);
+        setSchedulerPlaybackIndex('spinoff', 0);
 
         handlePlay({
           ...nextSimilar,
@@ -7710,6 +7722,8 @@ const Parachord = () => {
     if (listenAlongFriendNow) {
       console.log(`🎧 User went back - ending listen-along with ${listenAlongFriendNow.displayName}`);
       showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      // Abort and cleanup pool context
+      abortSchedulerContext('listen-along');
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       listenAlongPendingTrackRef.current = null;
@@ -13215,6 +13229,8 @@ ${tracks}
         if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
           console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
           showToast(`${friend.displayName} stopped listening`);
+          // Abort and cleanup pool context
+          abortSchedulerContext('listen-along');
           setListenAlongFriend(null);
           listenAlongLastTrackRef.current = null;
           listenAlongPendingTrackRef.current = null;
@@ -13262,6 +13278,13 @@ ${tracks}
                 if (isPlayingRef.current) {
                   console.log(`🎧 Listen-along: Queuing "${track.title}" to play when current track ends`);
                   listenAlongPendingTrackRef.current = track;
+
+                  // Update pool visibility for resolution - the pending track
+                  const poolTracks = [{
+                    key: 'listen-along-0',
+                    data: { track, artistName: track.artist || 'Unknown Artist' }
+                  }];
+                  updateSchedulerVisibility('listen-along', poolTracks);
                 } else {
                   // Not playing, so our track ended - play friend's track now
                   console.log(`🎧 Listen-along: Playing "${track.title}" immediately`);
@@ -13284,6 +13307,10 @@ ${tracks}
     if (!friend || !friend.cachedRecentTrack) return;
 
     console.log(`🎧 Starting listen-along with ${friend.displayName}`);
+
+    // Register pool context for listen-along resolution
+    registerPoolContext('listen-along', 1);
+
     setListenAlongFriend(friend);
     listenAlongLastTrackRef.current = {
       name: friend.cachedRecentTrack.name,
@@ -13320,6 +13347,9 @@ ${tracks}
   // Deactivate listen-along mode
   const deactivateListenAlong = () => {
     if (!listenAlongFriend) return;
+
+    // Abort and cleanup pool context
+    abortSchedulerContext('listen-along');
 
     const friendName = listenAlongFriend.displayName;
     console.log(`🎧 Stopped listening along with ${friendName}`);
@@ -15004,6 +15034,16 @@ ${tracks}
       setSpinoffSourceTrack({ title: track.title, artist: track.artist });
       spinoffTracksRef.current = similarTracks;
 
+      // Register pool context for spinoff resolution
+      registerPoolContext('spinoff', 5);
+
+      // Update pool visibility for resolution - next 5 tracks
+      const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t, i) => ({
+        key: `spinoff-${i}`,
+        data: { track: t, artistName: t.artist || 'Unknown Artist' }
+      }));
+      updateSchedulerVisibility('spinoff', poolTracks);
+
       // Set playback context
       setPlaybackContext({
         type: 'spinoff',
@@ -15022,6 +15062,9 @@ ${tracks}
 
   // Exit spinoff mode - return to normal queue playback
   const exitSpinoff = () => {
+    // Abort and cleanup pool context
+    abortSchedulerContext('spinoff');
+
     console.log('🔀 Exiting spinoff mode, restoring previous context...');
     setSpinoffMode(false);
     setSpinoffSourceTrack(null);
