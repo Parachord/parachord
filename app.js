@@ -20920,15 +20920,40 @@ React.createElement('div', {
                     }, tab.label)
                   ]).flat().filter(Boolean)
                 ),
-                // Start Collection Station button (pink, matching Artist page)
-                React.createElement('button', {
-                  onClick: () => console.log('Start Collection Station - placeholder'),
-                  className: 'mt-6 px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
-                  style: {
-                    backgroundColor: '#E91E63',
-                    boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-                  }
-                }, 'Start Collection Station')
+                // Buttons row
+                React.createElement('div', {
+                  className: 'mt-6 flex items-center gap-3'
+                },
+                  // Start Collection Station button (pink, matching Artist page)
+                  React.createElement('button', {
+                    onClick: () => console.log('Start Collection Station - placeholder'),
+                    className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
+                    style: {
+                      backgroundColor: '#E91E63',
+                      boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
+                    }
+                  }, 'Start Collection Station'),
+                  // Sync Library button
+                  React.createElement('button', {
+                    onClick: () => openSyncSetupModal('spotify'),
+                    className: 'flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors no-drag'
+                  },
+                    React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', {
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round',
+                        strokeWidth: 2,
+                        d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+                      })
+                    ),
+                    'Sync Library'
+                  )
+                )
               ),
             // COLLAPSED STATE - Inline layout matching Recommendations
             collectionHeaderCollapsed && React.createElement('div', {
@@ -20973,14 +20998,39 @@ React.createElement('div', {
                     }, tab.label)
                   ]).flat().filter(Boolean)
                 ),
-                // Right: Start Collection Station button
-                React.createElement('button', {
-                  onClick: () => console.log('Start Collection Station - placeholder'),
-                  className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90',
-                  style: {
-                    backgroundColor: '#E91E63'
-                  }
-                }, 'Start Station')
+                // Right: Buttons
+                React.createElement('div', {
+                  className: 'ml-auto flex items-center gap-2'
+                },
+                  // Start Collection Station button
+                  React.createElement('button', {
+                    onClick: () => console.log('Start Collection Station - placeholder'),
+                    className: 'px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
+                    style: {
+                      backgroundColor: '#E91E63'
+                    }
+                  }, 'Start Station'),
+                  // Sync Library button
+                  React.createElement('button', {
+                    onClick: () => openSyncSetupModal('spotify'),
+                    className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors no-drag'
+                  },
+                    React.createElement('svg', {
+                      className: 'w-3.5 h-3.5',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', {
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round',
+                        strokeWidth: 2,
+                        d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+                      })
+                    ),
+                    'Sync'
+                  )
+                )
               )
           ),
           // Scrollable content area
