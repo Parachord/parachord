@@ -149,10 +149,6 @@
 ## 👥 Social Features
 
 ### Friends & Sharing
-- [x] **Friends list** - Add/manage friends
-- [x] **Now playing status** - See what friends are listening to
-- [x] **Listen Along** - Sync playback with friends in real-time
-- [x] **Spinoff mode** - Radio-like playback of similar tracks from Last.fm
 - [ ] **Share tracks** - Send tracks to friends
 - [ ] **Collaborative playlists** - Edit playlists together
 - [ ] **Listening parties** - Synchronized group listening
@@ -175,7 +171,6 @@
 ### Architecture
 - [ ] **Database integration** - Use SQLite for local storage
 - [ ] **Backend server** - Optional backend for advanced features
-- [x] **WebSocket support** - Real-time updates
 - [ ] **Plugin system expansion** - More plugin capabilities
 - [ ] **Auto-update** - Electron auto-updater
 - [ ] **Re-implement title bar dragging** - Allow dragging app window by title bar
@@ -221,7 +216,6 @@
 - [ ] **Genre classification** - Auto-tag genres
 
 ### Power User Features
-- [x] **Advanced search** - Boolean operators, filters
 - [ ] **Batch operations** - Bulk edit metadata
 - [ ] **Scripting support** - Automation via scripts
 - [ ] **API webhooks** - Integration with other services
@@ -354,6 +348,13 @@
 - ✅ Auto-pin/unpin friends based on activity
 - ✅ Friend collection page with hex avatars
 - ✅ Context banners for Listen Along and Spinoff sessions
+- ✅ Now playing status - See what friends are listening to
+
+### Architecture
+- ✅ WebSocket support - Real-time updates
+
+### Power User Features
+- ✅ Advanced search - Boolean operators, filters
 
 ---
 
@@ -398,11 +399,6 @@ Want to tackle any of these? Great!
 ## 📅 Roadmap
 
 ### Version 0.2.0 (Q1 2025)
-- [x] Queue management UI ✅
-- [x] Playlist creation/editing ✅
-- [x] Search history ✅
-- [x] Last.fm/ListenBrainz scrobbling ✅
-- [x] Volume control fixes ✅
 - [ ] Keyboard shortcuts
 - [ ] Lyrics display
 
