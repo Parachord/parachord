@@ -3672,7 +3672,6 @@ const Parachord = () => {
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
-  const queueResolutionActiveRef = useRef(false); // When true, queue resolution takes priority over page resolution
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
 
   // Refs for collection tracks visibility tracking
@@ -8167,14 +8166,7 @@ const Parachord = () => {
     setTimeout(() => setQueueAnimating(false), 600);
     console.log(`➕ Added ${tracksArray.length} track(s) to queue`);
 
-    // Resolve queue tracks with priority over page resolution
-    // Filter to only tracks that need resolution
-    const tracksNeedingResolution = tracksArray.filter(track =>
-      !track.sources || Object.keys(track.sources).length === 0
-    );
-    if (tracksNeedingResolution.length > 0) {
-      resolveQueueTracks(tracksNeedingResolution);
-    }
+    // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
     // If nothing is playing, auto-start the first track
     if (nothingPlaying && taggedTracks.length > 0) {
@@ -9576,8 +9568,7 @@ const Parachord = () => {
       setCurrentRelease(releaseInfo);
       setLoadingRelease(false);
 
-      // Start resolving tracks in background
-      resolveAllTracks(releaseInfo, artist.name);
+      // Track resolution is now handled by ResolutionScheduler via page context visibility
 
       // Fetch album art in background (don't block track display)
       (async () => {
@@ -10142,12 +10133,6 @@ const Parachord = () => {
     const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position}`;
     const currentResolverHash = getResolverSettingsHash();
 
-    // If this is a page resolution and queue resolution is active, skip to let queue take priority
-    if (!isQueueResolution && queueResolutionActiveRef.current) {
-      console.log(`⏸️ Yielding page resolution for "${track.title}" - queue resolution has priority`);
-      return;
-    }
-
     // Check cache first (unless force refresh)
     const cachedData = trackSourcesCache.current[cacheKey];
     const now = Date.now();
@@ -10599,201 +10584,6 @@ const Parachord = () => {
     return 0.50;
   };
 
-  // Resolve all tracks in a release
-  const resolveAllTracks = async (release, artistName, forceRefresh = false) => {
-    console.log(`🔍 Starting resolution for ${release.tracks.length} tracks...${forceRefresh ? ' (force refresh)' : ''}`);
-
-    // Clear previous track sources only if force refresh
-    if (forceRefresh) {
-      setTrackSources({});
-    }
-
-    // Resolve tracks one at a time with small delay
-    for (const track of release.tracks) {
-      // Check if queue resolution has priority - if so, pause page resolution
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing page resolution - queue resolution has priority`);
-        // Wait for queue resolution to complete before continuing
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming page resolution`);
-      }
-
-      await resolveTrack(track, artistName, { forceRefresh });
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    console.log('✅ Track resolution complete');
-  };
-
-  // Resolve queue tracks with priority over page resolution
-  // This ensures queue tracks get resolved first when user adds tracks to queue
-  // Optimized with batched updates - collects resolved sources for multiple tracks
-  // before updating state, reducing re-renders for large queues
-  const resolveQueueTracks = async (queueTracks) => {
-    if (!queueTracks || queueTracks.length === 0) return;
-
-    // Filter to tracks that need resolution (no sources or empty sources)
-    const tracksNeedingResolution = queueTracks.filter(track =>
-      !track.sources || Object.keys(track.sources).length === 0
-    );
-
-    if (tracksNeedingResolution.length === 0) {
-      console.log('✅ All queue tracks already have sources');
-      return;
-    }
-
-    console.log(`🎯 Queue resolution: ${tracksNeedingResolution.length} tracks need sources (priority mode)`);
-
-    // Set priority flag to pause page resolution
-    queueResolutionActiveRef.current = true;
-
-    try {
-      // Get enabled resolvers
-      const enabledResolvers = resolverOrder
-        .filter(id => activeResolvers.includes(id))
-        .map(id => allResolvers.find(r => r.id === id))
-        .filter(Boolean);
-
-      if (enabledResolvers.length === 0) {
-        console.log('⚠️ No active resolvers for queue resolution');
-        return;
-      }
-
-      // Batching config: update state after resolving this many tracks
-      const BATCH_SIZE = 5;
-      let pendingUpdates = new Map(); // trackId -> { sources, duration }
-      let currentTrackUpdate = null;
-
-      // Function to flush pending updates to state
-      const flushUpdates = () => {
-        if (pendingUpdates.size === 0) return;
-
-        const updates = new Map(pendingUpdates);
-        pendingUpdates.clear();
-
-        // Batch update all queue tracks at once
-        setCurrentQueue(prevQueue =>
-          prevQueue.map(queueTrack => {
-            const update = updates.get(queueTrack.id);
-            if (update) {
-              return {
-                ...queueTrack,
-                sources: { ...queueTrack.sources, ...update.sources },
-                duration: queueTrack.duration || update.duration,
-                album: queueTrack.album || update.album,
-                albumArt: queueTrack.albumArt || update.albumArt
-              };
-            }
-            return queueTrack;
-          })
-        );
-
-        // Update currentTrack if needed
-        if (currentTrackUpdate) {
-          const trackUpdate = currentTrackUpdate;
-          currentTrackUpdate = null;
-          setCurrentTrack(prev => {
-            if (!prev) return prev;
-            const isSameTrack = (prev.id && prev.id === trackUpdate.trackId) ||
-              (prev.title === trackUpdate.title && prev.artist === trackUpdate.artist);
-            if (isSameTrack) {
-              console.log(`✅ Updated currentTrack with ${Object.keys(trackUpdate.sources).length} resolved sources`);
-              return {
-                ...prev,
-                sources: { ...prev.sources, ...trackUpdate.sources },
-                duration: prev.duration || trackUpdate.duration,
-                album: prev.album || trackUpdate.album,
-                albumArt: prev.albumArt || trackUpdate.albumArt
-              };
-            }
-            return prev;
-          });
-        }
-
-        console.log(`📦 Flushed batch update for ${updates.size} tracks`);
-      };
-
-      // Resolve each queue track
-      for (let i = 0; i < tracksNeedingResolution.length; i++) {
-        const track = tracksNeedingResolution[i];
-        const artistName = track.artist || 'Unknown Artist';
-        const sources = {};
-
-        console.log(`🎯 Queue resolving: ${artistName} - ${track.title}`);
-
-        // Query all resolvers in parallel
-        const resolverPromises = enabledResolvers.map(async (resolver) => {
-          if (!resolver.capabilities?.resolve || !resolver.play) return;
-
-          try {
-            const config = await getResolverConfig(resolver.id);
-            const result = await resolver.resolve(artistName, track.title, track.album || null, config);
-
-            if (result) {
-              sources[resolver.id] = {
-                ...result,
-                confidence: typeof result.confidence === 'number' ? result.confidence : 0.85
-              };
-              console.log(`  ✅ ${resolver.name}: Found match for queue track`);
-            }
-          } catch (error) {
-            console.error(`  ❌ ${resolver.name} queue resolve error:`, error);
-          }
-        });
-
-        await Promise.all(resolverPromises);
-
-        // Collect update for this track
-        if (Object.keys(sources).length > 0) {
-          const resolvedDuration = Object.values(sources).find(s => s.duration)?.duration || null;
-          const resolvedAlbum = Object.values(sources).find(s => s.album)?.album || null;
-          const resolvedAlbumArt = Object.values(sources).find(s => s.albumArt)?.albumArt || null;
-
-          pendingUpdates.set(track.id, { sources, duration: resolvedDuration, album: resolvedAlbum, albumArt: resolvedAlbumArt });
-
-          // Check if this is the current playing track
-          const currentTrackRef = currentTrack;
-          if (currentTrackRef) {
-            const isSameTrack = (currentTrackRef.id && currentTrackRef.id === track.id) ||
-              (currentTrackRef.title === track.title && currentTrackRef.artist === track.artist);
-            if (isSameTrack) {
-              currentTrackUpdate = {
-                trackId: track.id,
-                title: track.title,
-                artist: track.artist,
-                sources,
-                duration: resolvedDuration,
-                album: resolvedAlbum,
-                albumArt: resolvedAlbumArt
-              };
-            }
-          }
-
-          console.log(`✅ Queue track resolved: ${track.title} (${Object.keys(sources).length} sources${resolvedDuration ? `, ${resolvedDuration}s` : ''})`);
-        }
-
-        // Flush batch if we've reached batch size or it's the last track
-        if (pendingUpdates.size >= BATCH_SIZE || i === tracksNeedingResolution.length - 1) {
-          flushUpdates();
-        }
-
-        // Small delay between tracks to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 150));
-      }
-
-      // Final flush for any remaining updates
-      flushUpdates();
-
-      console.log('✅ Queue resolution complete');
-    } finally {
-      // Always clear priority flag
-      queueResolutionActiveRef.current = false;
-    }
-  };
-
   // Resolve library tracks against active resolvers (for local files)
   const resolveLibraryTracks = async () => {
     if (!allResolvers || allResolvers.length === 0) return;
@@ -11048,17 +10838,11 @@ const Parachord = () => {
     }
   }, [id3EditorOpen]);
 
-  // Effect to resolve library and collection tracks when they or resolvers change
+  // Effect to resolve library and collection tracks when they change
   useEffect(() => {
-    const totalTracks = library.length + collectionData.tracks.length;
-    if (totalTracks > 0 && allResolvers.length > 0 && activeResolvers.length > 0) {
-      // Delay to let UI render first, then resolve in background
-      const timer = setTimeout(() => {
-        resolveLibraryTracks();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [library.length, collectionData.tracks.length, allResolvers.length, activeResolvers.length]);
+    // This is now handled by the page context when viewing collection
+    // No need for blanket resolution of all tracks
+  }, []);
 
   // Lazy load album art after page is displayed
   const fetchAlbumArtLazy = async (releases) => {
@@ -12464,15 +12248,6 @@ ${tracks}
     console.log(`⭐ Resolving ${tracks.length} recommendation tracks...`);
 
     for (const track of tracks) {
-      // Check if queue resolution has priority - if so, pause
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing recommendations resolution - queue resolution has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming recommendations resolution`);
-      }
-
       console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
       // Resolve all sources for this track
@@ -13214,14 +12989,6 @@ ${tracks}
     const sources = {};
 
     for (const resolverId of activeResolvers) {
-      // Yield to queue resolution if active
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing friend track resolution - queue has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
-
       const resolver = allResolvers.find(r => r.id === resolverId);
       if (!resolver || !resolver.capabilities.resolve) continue;
 
@@ -13764,14 +13531,6 @@ ${tracks}
     console.log(`📊 Resolving ${tracks.length} top tracks...`);
 
     for (const track of tracks) {
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing top tracks resolution - queue resolution has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming top tracks resolution`);
-      }
-
       for (const resolverId of activeResolvers) {
         const resolver = allResolvers.find(r => r.id === resolverId);
         if (!resolver || !resolver.capabilities.resolve) continue;
@@ -13855,15 +13614,6 @@ ${tracks}
     console.log(`📜 Resolving ${tracks.length} history tracks...`);
 
     for (const track of tracks) {
-      // Check if queue resolution has priority - if so, pause
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing history resolution - queue resolution has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming history resolution`);
-      }
-
       console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
       // Resolve all sources for this track
@@ -13907,15 +13657,6 @@ ${tracks}
     console.log(`👥 Resolving ${tracks.length} friend ${dataKey} tracks...`);
 
     for (const track of tracks) {
-      // Check if queue resolution has priority - if so, pause
-      if (queueResolutionActiveRef.current) {
-        console.log(`⏸️ Pausing friend history resolution - queue resolution has priority`);
-        while (queueResolutionActiveRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        console.log(`▶️ Resuming friend history resolution`);
-      }
-
       // Resolve all sources for this track
       for (const resolverId of activeResolvers) {
         const resolver = allResolvers.find(r => r.id === resolverId);
@@ -15397,15 +15138,6 @@ ${tracks}
 
         // Step 2: Resolve sources in the background for each track
         for (const track of tracksWithIds) {
-          // Check if queue resolution has priority - if so, pause page resolution
-          if (queueResolutionActiveRef.current) {
-            console.log(`⏸️ Pausing playlist resolution - queue resolution has priority`);
-            while (queueResolutionActiveRef.current) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            console.log(`▶️ Resuming playlist resolution`);
-          }
-
           console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
           // Resolve all sources for this track
@@ -15477,15 +15209,6 @@ ${tracks}
 
       // Resolve sources in background
       for (const track of tracksWithIds) {
-        // Check if queue resolution has priority - if so, pause page resolution
-        if (queueResolutionActiveRef.current) {
-          console.log(`⏸️ Pausing playlist resolution - queue resolution has priority`);
-          while (queueResolutionActiveRef.current) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-          console.log(`▶️ Resuming playlist resolution`);
-        }
-
         console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
 
         for (const resolverId of activeResolvers) {
@@ -15589,22 +15312,8 @@ ${tracks}
     }
   }, [trackSources]);
 
-  // Watch for queue changes and resolve any unresolved tracks with priority
-  // This handles cases where setCurrentQueue is called directly (e.g., clicking a track to play)
-  useEffect(() => {
-    if (currentQueue.length === 0) return;
-    if (queueResolutionActiveRef.current) return; // Already resolving
-
-    // Find tracks that need resolution
-    const unresolvedTracks = currentQueue.filter(track =>
-      !track.sources || Object.keys(track.sources).length === 0
-    );
-
-    if (unresolvedTracks.length > 0) {
-      console.log(`🎯 Queue has ${unresolvedTracks.length} unresolved tracks, starting priority resolution`);
-      resolveQueueTracks(unresolvedTracks);
-    }
-  }, [currentQueue]);
+  // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
+  // The scheduler monitors queue tracks and resolves them based on priority
 
   // Navigation helpers
   const navigateTo = (view) => {
