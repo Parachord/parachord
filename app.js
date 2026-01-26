@@ -5657,10 +5657,17 @@ const Parachord = () => {
 
           if (!response.ok) {
             if (response.status === 401) {
-              // Token expired
-              console.error('Spotify token expired during polling');
+              // Token expired - attempt refresh and restart polling
+              console.log('🔄 Spotify token expired during polling, attempting refresh...');
               clearInterval(pollInterval);
               playbackPollerRef.current = null;
+              const newToken = await refreshSpotifyToken();
+              if (newToken) {
+                console.log('✅ Token refreshed, restarting auto-advance polling');
+                startAutoAdvancePolling(resolverId, track, { ...config, token: newToken });
+              } else {
+                console.error('❌ Token refresh failed, auto-advance disabled');
+              }
               return;
             }
             throw new Error(`Spotify API error: ${response.status}`);
@@ -5876,10 +5883,19 @@ const Parachord = () => {
             if (handleNextRef.current) handleNextRef.current();
           }
         } else if (response.status === 401) {
-          // Token expired - stop recovery, user needs to re-auth
-          console.log('🔄 Recovery: Token expired, stopping recovery');
-          clearInterval(recoveryInterval);
-          pollingRecoveryRef.current = null;
+          // Token expired - attempt refresh
+          console.log('🔄 Recovery: Token expired, attempting refresh...');
+          const newToken = await refreshSpotifyToken();
+          if (newToken) {
+            console.log('✅ Recovery: Token refreshed, restarting polling');
+            clearInterval(recoveryInterval);
+            pollingRecoveryRef.current = null;
+            startAutoAdvancePolling('spotify', track, { ...config, token: newToken });
+          } else {
+            console.log('❌ Recovery: Token refresh failed, stopping recovery');
+            clearInterval(recoveryInterval);
+            pollingRecoveryRef.current = null;
+          }
         }
         // Other errors: keep trying
       } catch (error) {
