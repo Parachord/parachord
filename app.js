@@ -6248,39 +6248,13 @@ const Parachord = () => {
       let availableResolvers = Object.keys(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
-        // No sources available - try resolving on-demand
+        // No sources available - try resolving on-demand using shared resolution
         console.log('🔄 No sources found, attempting on-demand resolution...');
 
-        const enabledResolvers = resolverOrder
-          .filter(id => activeResolvers.includes(id))
-          .map(id => currentResolvers.find(r => r.id === id))
-          .filter(Boolean);
-
-        const resolverPromises = enabledResolvers.map(async (resolver) => {
-          if (!resolver.capabilities.resolve) return;
-
-          try {
-            const config = await getResolverConfig(resolver.id);
-            const result = await resolver.resolve(
-              trackOrSource.artist,
-              trackOrSource.title,
-              trackOrSource.album || null,
-              config
-            );
-
-            if (result) {
-              trackOrSource.sources[resolver.id] = {
-                ...result,
-                confidence: calculateConfidence(trackOrSource, result)
-              };
-              console.log(`  ✅ ${resolver.name}: Found match`);
-            }
-          } catch (error) {
-            console.error(`  ❌ ${resolver.name} resolve error:`, error);
-          }
-        });
-
-        await Promise.all(resolverPromises);
+        const sources = await resolveTrack(trackOrSource, trackOrSource.artist, {});
+        if (sources && Object.keys(sources).length > 0) {
+          trackOrSource.sources = sources;
+        }
 
         // Update availableResolvers after resolution
         availableResolvers = Object.keys(trackOrSource.sources);
@@ -10190,7 +10164,7 @@ const Parachord = () => {
         setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
       }
 
-      return;
+      return cachedData.sources;
     }
 
     // Check abort after cache check
@@ -10266,7 +10240,7 @@ const Parachord = () => {
         resolverHash: getResolverSettingsHash()
       };
 
-      return;
+      return sources;
     }
 
     if (cachedData && cachedData.resolverHash !== currentResolverHash) {
@@ -10350,6 +10324,8 @@ const Parachord = () => {
 
       console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
     }
+
+    return sources;
   };
 
   // Resolution scheduler hook - manages viewport-based resolution
@@ -12185,37 +12161,35 @@ ${tracks}
 
     for (const track of tracks) {
       console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+      const sources = await resolveTrack(track, track.artist, {});
 
-      // Resolve all sources for this track
-      for (const resolverId of activeResolvers) {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.resolve) continue;
+      if (sources && Object.keys(sources).length > 0) {
+        console.log(`  ✅ Found ${Object.keys(sources).length} source(s) for "${track.title}"`);
 
-        try {
-          const config = await getResolverConfig(resolverId);
-          const resolved = await resolver.resolve(track.artist, track.title, null, config);
-
-          if (resolved) {
-            console.log(`  ✅ ${resolver.name}: Found match for "${track.title}"`);
-            // Update the track's sources and trigger re-render
-            setRecommendations(prev => ({
-              ...prev,
-              tracks: prev.tracks.map(t =>
-                t.id === track.id
-                  ? {
-                      ...t,
-                      sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null,
-                      album: t.album || resolved.album || null,
-                      albumArt: t.albumArt || resolved.albumArt || null
-                    }
-                  : t
-              )
-            }));
-          }
-        } catch (error) {
-          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        // Get metadata from first source that has them
+        let durationFromSource = null;
+        let albumFromSource = null;
+        let albumArtFromSource = null;
+        for (const source of Object.values(sources)) {
+          if (!durationFromSource && source.duration) durationFromSource = source.duration;
+          if (!albumFromSource && source.album) albumFromSource = source.album;
+          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
         }
+
+        setRecommendations(prev => ({
+          ...prev,
+          tracks: prev.tracks.map(t =>
+            t.id === track.id
+              ? {
+                  ...t,
+                  sources: sources,
+                  duration: t.duration || durationFromSource,
+                  album: t.album || albumFromSource,
+                  albumArt: t.albumArt || albumArtFromSource
+                }
+              : t
+          )
+        }));
       }
     }
 
@@ -12288,44 +12262,17 @@ ${tracks}
       if (Object.keys(track.sources || {}).length > 0) continue;
 
       console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-
-      // Query all enabled resolvers in priority order
-      const enabledResolvers = resolverOrder
-        .filter(id => activeResolvers.includes(id))
-        .map(id => allResolvers.find(r => r.id === id))
-        .filter(Boolean);
-
-      const newSources = {};
-
-      // Parallel resolution
-      const resolverPromises = enabledResolvers.map(async (resolver) => {
-        if (!resolver.capabilities.resolve || !resolver.play) return;
-
-        try {
-          const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(track.artist, track.title, track.album, config);
-
-          if (result) {
-            const confidence = calculateConfidence(track, result);
-            newSources[resolver.id] = { ...result, confidence };
-            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
-          }
-        } catch (error) {
-          console.error(`  ❌ ${resolver.name} resolve error:`, error);
-        }
-      });
-
-      await Promise.all(resolverPromises);
+      const sources = await resolveTrack(track, track.artist, {});
 
       // Update track in searchResults
-      if (Object.keys(newSources).length > 0) {
+      if (sources && Object.keys(sources).length > 0) {
         setSearchResults(prev => ({
           ...prev,
           tracks: prev.tracks.map(t =>
-            t.id === track.id ? { ...t, sources: newSources } : t
+            t.id === track.id ? { ...t, sources: sources } : t
           )
         }));
-        console.log(`✅ Found ${Object.keys(newSources).length} source(s) for: ${track.title}`);
+        console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title}`);
       } else {
         // Mark as resolved even with no sources to prevent re-resolving
         setSearchResults(prev => ({
@@ -13468,28 +13415,30 @@ ${tracks}
     console.log(`📊 Resolving ${tracks.length} top tracks...`);
 
     for (const track of tracks) {
-      for (const resolverId of activeResolvers) {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.resolve) continue;
-        if (resolverId === 'localfiles') continue;
+      const sources = await resolveTrack(track, track.artist, {});
 
-        try {
-          const config = await getResolverConfig(resolverId);
-          const result = await resolver.resolve(track.artist, track.title, track.album, config);
-
-          if (result) {
-            setTopTracks(prev => ({
-              ...prev,
-              tracks: prev.tracks.map(t =>
-                t.id === track.id
-                  ? { ...t, sources: { ...t.sources, [resolverId]: result }, album: t.album || result.album, albumArt: t.albumArt || result.albumArt }
-                  : t
-              )
-            }));
-          }
-        } catch (err) {
-          console.error(`Error resolving top track with ${resolverId}:`, err);
+      if (sources && Object.keys(sources).length > 0) {
+        // Get album/albumArt from first source that has them
+        let albumFromSource = null;
+        let albumArtFromSource = null;
+        for (const source of Object.values(sources)) {
+          if (!albumFromSource && source.album) albumFromSource = source.album;
+          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
         }
+
+        setTopTracks(prev => ({
+          ...prev,
+          tracks: prev.tracks.map(t =>
+            t.id === track.id
+              ? {
+                  ...t,
+                  sources: sources,
+                  album: t.album || albumFromSource,
+                  albumArt: t.albumArt || albumArtFromSource
+                }
+              : t
+          )
+        }));
       }
     }
     console.log(`📊 Finished resolving top tracks`);
@@ -13552,37 +13501,35 @@ ${tracks}
 
     for (const track of tracks) {
       console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+      const sources = await resolveTrack(track, track.artist, {});
 
-      // Resolve all sources for this track
-      for (const resolverId of activeResolvers) {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.resolve) continue;
+      if (sources && Object.keys(sources).length > 0) {
+        console.log(`  ✅ Found ${Object.keys(sources).length} source(s) for "${track.title}"`);
 
-        try {
-          const config = await getResolverConfig(resolverId);
-          const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-          if (resolved) {
-            console.log(`  ✅ ${resolver.name}: Found match for "${track.title}"`);
-            // Update the track's sources and trigger re-render
-            setListeningHistory(prev => ({
-              ...prev,
-              tracks: prev.tracks.map(t =>
-                t.id === track.id
-                  ? {
-                      ...t,
-                      sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null,
-                      album: t.album || resolved.album || null,
-                      albumArt: t.albumArt || resolved.albumArt || null
-                    }
-                  : t
-              )
-            }));
-          }
-        } catch (error) {
-          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        // Get metadata from first source that has them
+        let durationFromSource = null;
+        let albumFromSource = null;
+        let albumArtFromSource = null;
+        for (const source of Object.values(sources)) {
+          if (!durationFromSource && source.duration) durationFromSource = source.duration;
+          if (!albumFromSource && source.album) albumFromSource = source.album;
+          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
         }
+
+        setListeningHistory(prev => ({
+          ...prev,
+          tracks: prev.tracks.map(t =>
+            t.id === track.id
+              ? {
+                  ...t,
+                  sources: sources,
+                  duration: t.duration || durationFromSource,
+                  album: t.album || albumFromSource,
+                  albumArt: t.albumArt || albumArtFromSource
+                }
+              : t
+          )
+        }));
       }
     }
 
@@ -13594,35 +13541,33 @@ ${tracks}
     console.log(`👥 Resolving ${tracks.length} friend ${dataKey} tracks...`);
 
     for (const track of tracks) {
-      // Resolve all sources for this track
-      for (const resolverId of activeResolvers) {
-        const resolver = allResolvers.find(r => r.id === resolverId);
-        if (!resolver || !resolver.capabilities.resolve) continue;
+      const sources = await resolveTrack(track, track.artist, {});
 
-        try {
-          const config = await getResolverConfig(resolverId);
-          const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-          if (resolved) {
-            // Update the track's sources in friendHistoryData
-            setFriendHistoryData(prev => ({
-              ...prev,
-              [dataKey]: prev[dataKey].map(t =>
-                t.id === track.id
-                  ? {
-                      ...t,
-                      sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null,
-                      album: t.album || resolved.album || null,
-                      albumArt: t.albumArt || resolved.albumArt || null
-                    }
-                  : t
-              )
-            }));
-          }
-        } catch (error) {
-          // Silent fail for resolution errors
+      if (sources && Object.keys(sources).length > 0) {
+        // Get metadata from first source that has them
+        let durationFromSource = null;
+        let albumFromSource = null;
+        let albumArtFromSource = null;
+        for (const source of Object.values(sources)) {
+          if (!durationFromSource && source.duration) durationFromSource = source.duration;
+          if (!albumFromSource && source.album) albumFromSource = source.album;
+          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
         }
+
+        setFriendHistoryData(prev => ({
+          ...prev,
+          [dataKey]: prev[dataKey].map(t =>
+            t.id === track.id
+              ? {
+                  ...t,
+                  sources: sources,
+                  duration: t.duration || durationFromSource,
+                  album: t.album || albumFromSource,
+                  albumArt: t.albumArt || albumArtFromSource
+                }
+              : t
+          )
+        }));
       }
     }
 
@@ -15077,37 +15022,32 @@ ${tracks}
         // Step 2: Resolve sources in the background for each track
         for (const track of tracksWithIds) {
           console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+          const sources = await resolveTrack(track, track.artist, {});
 
-          // Resolve all sources for this track
-          for (const resolverId of activeResolvers) {
-            const resolver = allResolvers.find(r => r.id === resolverId);
-            if (!resolver || !resolver.capabilities.resolve) continue;
-
-            try {
-              const config = await getResolverConfig(resolverId);
-              const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-              if (resolved) {
-                console.log(`  ✅ ${resolver.name}: Found match`);
-                // Update the track's sources, duration, album info (if available) and trigger re-render
-                setPlaylistTracks(prevTracks =>
-                  prevTracks.map(t =>
-                    t.id === track.id
-                      ? {
-                          ...t,
-                          sources: { ...t.sources, [resolverId]: resolved },
-                          // Update duration if resolved source has it and track doesn't
-                          duration: t.duration || resolved.duration || 0,
-                          album: t.album || resolved.album || null,
-                          albumArt: t.albumArt || resolved.albumArt || null
-                        }
-                      : t
-                  )
-                );
-              }
-            } catch (error) {
-              console.error(`  ❌ ${resolver.name} resolve error:`, error);
+          if (sources && Object.keys(sources).length > 0) {
+            // Get metadata from first source that has them
+            let durationFromSource = null;
+            let albumFromSource = null;
+            let albumArtFromSource = null;
+            for (const source of Object.values(sources)) {
+              if (!durationFromSource && source.duration) durationFromSource = source.duration;
+              if (!albumFromSource && source.album) albumFromSource = source.album;
+              if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
             }
+
+            setPlaylistTracks(prevTracks =>
+              prevTracks.map(t =>
+                t.id === track.id
+                  ? {
+                      ...t,
+                      sources: sources,
+                      duration: t.duration || durationFromSource || 0,
+                      album: t.album || albumFromSource,
+                      albumArt: t.albumArt || albumArtFromSource
+                    }
+                  : t
+              )
+            );
           }
         }
 
@@ -15148,34 +15088,32 @@ ${tracks}
       // Resolve sources in background
       for (const track of tracksWithIds) {
         console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
+        const sources = await resolveTrack(track, track.artist, {});
 
-        for (const resolverId of activeResolvers) {
-          const resolver = allResolvers.find(r => r.id === resolverId);
-          if (!resolver || !resolver.capabilities.resolve) continue;
-
-          try {
-            const config = await getResolverConfig(resolverId);
-            const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-            if (resolved) {
-              console.log(`  ✅ ${resolver.name}: Found match`);
-              setPlaylistTracks(prevTracks =>
-                prevTracks.map(t =>
-                  t.id === track.id
-                    ? {
-                        ...t,
-                        sources: { ...t.sources, [resolverId]: resolved },
-                        duration: t.duration || resolved.duration || 0,
-                        album: t.album || resolved.album || null,
-                        albumArt: t.albumArt || resolved.albumArt || null
-                      }
-                    : t
-                )
-              );
-            }
-          } catch (error) {
-            console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        if (sources && Object.keys(sources).length > 0) {
+          // Get metadata from first source that has them
+          let durationFromSource = null;
+          let albumFromSource = null;
+          let albumArtFromSource = null;
+          for (const source of Object.values(sources)) {
+            if (!durationFromSource && source.duration) durationFromSource = source.duration;
+            if (!albumFromSource && source.album) albumFromSource = source.album;
+            if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
           }
+
+          setPlaylistTracks(prevTracks =>
+            prevTracks.map(t =>
+              t.id === track.id
+                ? {
+                    ...t,
+                    sources: sources,
+                    duration: t.duration || durationFromSource || 0,
+                    album: t.album || albumFromSource,
+                    albumArt: t.albumArt || albumArtFromSource
+                  }
+                : t
+            )
+          );
         }
       }
 
@@ -15582,26 +15520,24 @@ ${tracks}
 
           // Re-resolve sources in background
           for (const track of tracksWithIds) {
-            for (const resolverId of activeResolvers) {
-              const resolver = allResolvers.find(r => r.id === resolverId);
-              if (!resolver || !resolver.capabilities.resolve) continue;
+            const sources = await resolveTrack(track, track.artist, {});
 
-              try {
-                const config = await getResolverConfig(resolverId);
-                const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
-                if (resolved) {
-                  setPlaylistTracks(prevTracks =>
-                    prevTracks.map(t =>
-                      t.id === track.id
-                        ? { ...t, sources: { ...t.sources, [resolverId]: resolved }, album: t.album || resolved.album || null, albumArt: t.albumArt || resolved.albumArt || null }
-                        : t
-                    )
-                  );
-                }
-              } catch (error) {
-                console.error(`  ❌ ${resolver.name} resolve error:`, error);
+            if (sources && Object.keys(sources).length > 0) {
+              // Get metadata from first source that has them
+              let albumFromSource = null;
+              let albumArtFromSource = null;
+              for (const source of Object.values(sources)) {
+                if (!albumFromSource && source.album) albumFromSource = source.album;
+                if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
               }
+
+              setPlaylistTracks(prevTracks =>
+                prevTracks.map(t =>
+                  t.id === track.id
+                    ? { ...t, sources: sources, album: t.album || albumFromSource, albumArt: t.albumArt || albumArtFromSource }
+                    : t
+                )
+              );
             }
           }
         }
