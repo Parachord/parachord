@@ -3177,13 +3177,7 @@ const Parachord = () => {
   // Resolve unresolved tracks when songs tab is selected in search results
   useEffect(() => {
     if (searchDetailCategory === 'tracks' && searchResults.tracks.length > 0) {
-      // Check if any tracks need resolution (no sources and not already marked resolved)
-      const tracksNeedingResolution = searchResults.tracks.filter(t =>
-        Object.keys(t.sources || {}).length === 0 && !t.resolved
-      );
-      if (tracksNeedingResolution.length > 0) {
-        resolveSearchTracks(tracksNeedingResolution);
-      }
+      // Resolution is now handled by scheduler via IntersectionObserver
     }
   }, [searchDetailCategory, searchResults.tracks.length]);
 
@@ -3695,6 +3689,36 @@ const Parachord = () => {
   const friendEntryRefs = useRef(new Map());
   const friendsObserverRef = useRef(null);
   const visibleFriendIds = useRef(new Set());
+
+  // Refs for recommendations tracks visibility tracking
+  const recommendationsTrackRowRefs = useRef(new Map());
+  const recommendationsObserverRef = useRef(null);
+  const visibleRecommendationsTrackIds = useRef(new Set());
+
+  // Refs for history tracks visibility tracking
+  const historyTrackRowRefs = useRef(new Map());
+  const historyObserverRef = useRef(null);
+  const visibleHistoryTrackIds = useRef(new Set());
+
+  // Refs for top tracks visibility tracking
+  const topTracksRowRefs = useRef(new Map());
+  const topTracksObserverRef = useRef(null);
+  const visibleTopTrackIds = useRef(new Set());
+
+  // Refs for friend history tracks visibility tracking
+  const friendHistoryTrackRowRefs = useRef(new Map());
+  const friendHistoryObserverRef = useRef(null);
+  const visibleFriendHistoryTrackIds = useRef(new Set());
+
+  // Refs for search results tracks visibility tracking
+  const searchTracksRowRefs = useRef(new Map());
+  const searchTracksObserverRef = useRef(null);
+  const visibleSearchTrackIds = useRef(new Set());
+
+  // Refs for playlist tracks visibility tracking
+  const playlistTrackRowRefs = useRef(new Map());
+  const playlistObserverRef = useRef(null);
+  const visiblePlaylistTrackIds = useRef(new Set());
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
@@ -10621,6 +10645,395 @@ const Parachord = () => {
     return () => friendsObserverRef.current?.disconnect();
   }, [pinnedFriendIds, friends, updateSchedulerVisibility]);
 
+  // Register page context for recommendations tracks resolution
+  useEffect(() => {
+    if (activeView === 'recommendations' && recommendationsTab === 'songs' && recommendations.tracks.length > 0) {
+      const cleanup = registerPageContext('recommendations-tracks');
+      return () => {
+        abortSchedulerContext('recommendations-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, recommendationsTab, recommendations.tracks.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for recommendations tracks visibility
+  useEffect(() => {
+    if (activeView !== 'recommendations' || recommendationsTab !== 'songs') {
+      recommendationsObserverRef.current?.disconnect();
+      visibleRecommendationsTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = recommendations.tracks;
+    if (tracks.length === 0) return;
+
+    recommendationsObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleRecommendationsTrackIds.current.has(trackId)) {
+              visibleRecommendationsTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleRecommendationsTrackIds.current.has(trackId)) {
+              visibleRecommendationsTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleRecommendationsTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('recommendations-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    recommendationsTrackRowRefs.current.forEach((element) => {
+      if (element) recommendationsObserverRef.current.observe(element);
+    });
+
+    return () => recommendationsObserverRef.current?.disconnect();
+  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility]);
+
+  // Register page context for history tracks resolution
+  useEffect(() => {
+    if (activeView === 'history' && historyTab === 'recent' && listeningHistory.tracks.length > 0) {
+      const cleanup = registerPageContext('history-tracks');
+      return () => {
+        abortSchedulerContext('history-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, historyTab, listeningHistory.tracks.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for history tracks visibility
+  useEffect(() => {
+    if (activeView !== 'history' || historyTab !== 'recent') {
+      historyObserverRef.current?.disconnect();
+      visibleHistoryTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = listeningHistory.tracks;
+    if (tracks.length === 0) return;
+
+    historyObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleHistoryTrackIds.current.has(trackId)) {
+              visibleHistoryTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleHistoryTrackIds.current.has(trackId)) {
+              visibleHistoryTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleHistoryTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('history-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    historyTrackRowRefs.current.forEach((element) => {
+      if (element) historyObserverRef.current.observe(element);
+    });
+
+    return () => historyObserverRef.current?.disconnect();
+  }, [activeView, historyTab, listeningHistory.tracks, updateSchedulerVisibility]);
+
+  // Register page context for top tracks resolution
+  useEffect(() => {
+    if (activeView === 'history' && historyTab === 'topTracks' && topTracks.tracks.length > 0) {
+      const cleanup = registerPageContext('top-tracks');
+      return () => {
+        abortSchedulerContext('top-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, historyTab, topTracks.tracks.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for top tracks visibility
+  useEffect(() => {
+    if (activeView !== 'history' || historyTab !== 'topTracks') {
+      topTracksObserverRef.current?.disconnect();
+      visibleTopTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = topTracks.tracks;
+    if (tracks.length === 0) return;
+
+    topTracksObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleTopTrackIds.current.has(trackId)) {
+              visibleTopTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleTopTrackIds.current.has(trackId)) {
+              visibleTopTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleTopTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('top-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    topTracksRowRefs.current.forEach((element) => {
+      if (element) topTracksObserverRef.current.observe(element);
+    });
+
+    return () => topTracksObserverRef.current?.disconnect();
+  }, [activeView, historyTab, topTracks.tracks, updateSchedulerVisibility]);
+
+  // Register page context for friend history tracks resolution
+  useEffect(() => {
+    if (activeView === 'friendHistory' && currentFriend) {
+      const dataKey = friendHistoryTab === 'recent' ? 'recent' : 'topTracks';
+      const tracks = friendHistoryData[dataKey] || [];
+      if (tracks.length > 0) {
+        const cleanup = registerPageContext('friend-history-tracks');
+        return () => {
+          abortSchedulerContext('friend-history-tracks', { afterCurrentBatch: true });
+          cleanup();
+        };
+      }
+    }
+  }, [activeView, currentFriend?.id, friendHistoryTab, friendHistoryData.recent?.length, friendHistoryData.topTracks?.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for friend history tracks visibility
+  useEffect(() => {
+    if (activeView !== 'friendHistory' || !currentFriend) {
+      friendHistoryObserverRef.current?.disconnect();
+      visibleFriendHistoryTrackIds.current.clear();
+      return;
+    }
+
+    const dataKey = friendHistoryTab === 'recent' ? 'recent' : 'topTracks';
+    const tracks = friendHistoryData[dataKey] || [];
+    if (tracks.length === 0) return;
+
+    friendHistoryObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleFriendHistoryTrackIds.current.has(trackId)) {
+              visibleFriendHistoryTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleFriendHistoryTrackIds.current.has(trackId)) {
+              visibleFriendHistoryTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleFriendHistoryTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('friend-history-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    friendHistoryTrackRowRefs.current.forEach((element) => {
+      if (element) friendHistoryObserverRef.current.observe(element);
+    });
+
+    return () => friendHistoryObserverRef.current?.disconnect();
+  }, [activeView, currentFriend?.id, friendHistoryTab, friendHistoryData, updateSchedulerVisibility]);
+
+  // Register page context for search results tracks resolution
+  useEffect(() => {
+    if (activeView === 'search' && searchDetailCategory === 'tracks' && searchResults.tracks.length > 0) {
+      const cleanup = registerPageContext('search-tracks');
+      return () => {
+        abortSchedulerContext('search-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, searchDetailCategory, searchResults.tracks.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for search results tracks visibility
+  useEffect(() => {
+    if (activeView !== 'search' || searchDetailCategory !== 'tracks') {
+      searchTracksObserverRef.current?.disconnect();
+      visibleSearchTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = searchResults.tracks;
+    if (tracks.length === 0) return;
+
+    searchTracksObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleSearchTrackIds.current.has(trackId)) {
+              visibleSearchTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleSearchTrackIds.current.has(trackId)) {
+              visibleSearchTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleSearchTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('search-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    searchTracksRowRefs.current.forEach((element) => {
+      if (element) searchTracksObserverRef.current.observe(element);
+    });
+
+    return () => searchTracksObserverRef.current?.disconnect();
+  }, [activeView, searchDetailCategory, searchResults.tracks, updateSchedulerVisibility]);
+
+  // Register page context for playlist tracks resolution
+  useEffect(() => {
+    if (selectedPlaylist && playlistTracks.length > 0) {
+      const cleanup = registerPageContext('playlist-tracks');
+      return () => {
+        abortSchedulerContext('playlist-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [selectedPlaylist?.id, playlistTracks.length, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for playlist tracks visibility
+  useEffect(() => {
+    if (!selectedPlaylist) {
+      playlistObserverRef.current?.disconnect();
+      visiblePlaylistTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = playlistTracks;
+    if (tracks.length === 0) return;
+
+    playlistObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visiblePlaylistTrackIds.current.has(trackId)) {
+              visiblePlaylistTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visiblePlaylistTrackIds.current.has(trackId)) {
+              visiblePlaylistTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visiblePlaylistTrackIds.current.forEach(trackId => {
+            const track = tracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('playlist-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    playlistTrackRowRefs.current.forEach((element) => {
+      if (element) playlistObserverRef.current.observe(element);
+    });
+
+    return () => playlistObserverRef.current?.disconnect();
+  }, [selectedPlaylist?.id, playlistTracks, updateSchedulerVisibility]);
+
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
     // If the resolver already provided a confidence score, use it
@@ -12030,7 +12443,7 @@ ${tracks}
 
       console.log(`⭐ Extracted ${artists.length} unique artists`);
 
-      // Set initial state with tracks (sources empty, will resolve in background)
+      // Set initial state with tracks (sources empty, will resolve via scheduler)
       setRecommendations({
         artists,
         tracks,
@@ -12038,10 +12451,7 @@ ${tracks}
         error: null
       });
 
-      // Resolve tracks in background using the resolver pipeline
-      resolveRecommendationTracks(tracks);
-
-      // Fetch artist images in background
+      // Fetch artist images in background (resolution handled by scheduler via IntersectionObserver)
       resolveRecommendationArtistImages(artists);
 
     } catch (error) {
@@ -12156,46 +12566,6 @@ ${tracks}
   }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
   // Resolve recommendation tracks using the resolver pipeline
-  const resolveRecommendationTracks = async (tracks) => {
-    console.log(`⭐ Resolving ${tracks.length} recommendation tracks...`);
-
-    for (const track of tracks) {
-      console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-      const sources = await resolveTrack(track, track.artist, {});
-
-      if (sources && Object.keys(sources).length > 0) {
-        console.log(`  ✅ Found ${Object.keys(sources).length} source(s) for "${track.title}"`);
-
-        // Get metadata from first source that has them
-        let durationFromSource = null;
-        let albumFromSource = null;
-        let albumArtFromSource = null;
-        for (const source of Object.values(sources)) {
-          if (!durationFromSource && source.duration) durationFromSource = source.duration;
-          if (!albumFromSource && source.album) albumFromSource = source.album;
-          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-        }
-
-        setRecommendations(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t =>
-            t.id === track.id
-              ? {
-                  ...t,
-                  sources: sources,
-                  duration: t.duration || durationFromSource,
-                  album: t.album || albumFromSource,
-                  albumArt: t.albumArt || albumArtFromSource
-                }
-              : t
-          )
-        }));
-      }
-    }
-
-    console.log(`⭐ Finished resolving recommendation tracks`);
-  };
-
   // Fetch images for recommended artists
   const resolveRecommendationArtistImages = async (artists) => {
     console.log(`⭐ Fetching images for ${artists.length} recommended artists...`);
@@ -12251,39 +12621,6 @@ ${tracks}
       }
     }
     console.log(`🔍 Finished fetching search result artist images`);
-  };
-
-  // Resolve unresolved search tracks (when songs tab is selected)
-  const resolveSearchTracks = async (tracks) => {
-    console.log(`🔍 Resolving ${tracks.length} unresolved search tracks...`);
-
-    for (const track of tracks) {
-      // Skip if already has sources
-      if (Object.keys(track.sources || {}).length > 0) continue;
-
-      console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-      const sources = await resolveTrack(track, track.artist, {});
-
-      // Update track in searchResults
-      if (sources && Object.keys(sources).length > 0) {
-        setSearchResults(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t =>
-            t.id === track.id ? { ...t, sources: sources } : t
-          )
-        }));
-        console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title}`);
-      } else {
-        // Mark as resolved even with no sources to prevent re-resolving
-        setSearchResults(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t =>
-            t.id === track.id ? { ...t, sources: {}, resolved: true } : t
-          )
-        }));
-      }
-    }
-    console.log(`🔍 Finished resolving search tracks`);
   };
 
   // Load Listening History from Last.fm and/or ListenBrainz (merged and de-duped)
@@ -12359,15 +12696,12 @@ ${tracks}
 
       console.log(`📜 Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm listens → ${tracks.length} unique listens`);
 
-      // Set initial state with tracks
+      // Set initial state with tracks (resolution handled by scheduler via IntersectionObserver)
       setListeningHistory({
         tracks,
         loading: false,
         error: null
       });
-
-      // Resolve tracks in background using the resolver pipeline
-      resolveHistoryTracks(tracks);
 
     } catch (error) {
       console.error('Failed to load Listening History:', error);
@@ -12428,8 +12762,8 @@ ${tracks}
         sources: {}
       }));
 
+      // Resolution handled by scheduler via IntersectionObserver
       setTopTracks({ tracks, loading: false, error: null });
-      resolveTopTracks(tracks);
     } catch (error) {
       console.error('Failed to load Top Tracks:', error);
       setTopTracks({ tracks: [], loading: false, error: error.message });
@@ -13155,12 +13489,8 @@ ${tracks}
         }));
       }
 
+      // Resolution handled by scheduler via IntersectionObserver
       setFriendHistoryData(prev => ({ ...prev, recent: tracks }));
-
-      // Resolve tracks in background
-      if (tracks.length > 0) {
-        resolveFriendHistoryTracks(tracks, 'recent');
-      }
     } catch (error) {
       console.error('Failed to load friend recent tracks:', error);
       showToast('Failed to load listening history', 'error');
@@ -13198,12 +13528,8 @@ ${tracks}
         sources: {}
       }));
 
+      // Resolution handled by scheduler via IntersectionObserver
       setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
-
-      // Resolve tracks in background
-      if (tracks.length > 0) {
-        resolveFriendHistoryTracks(tracks, 'topTracks');
-      }
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
       showToast('Failed to load top tracks', 'error');
@@ -13242,12 +13568,8 @@ ${tracks}
         sources: {}
       }));
 
+      // Resolution handled by scheduler via IntersectionObserver
       setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
-
-      // Resolve tracks in background
-      if (tracks.length > 0) {
-        resolveFriendHistoryTracks(tracks, 'topTracks');
-      }
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
       showToast('Failed to load top tracks', 'error');
@@ -13410,40 +13732,6 @@ ${tracks}
   };
   navigateToFriendRef.current = navigateToFriend;
 
-  // Resolve top tracks using the resolver pipeline
-  const resolveTopTracks = async (tracks) => {
-    console.log(`📊 Resolving ${tracks.length} top tracks...`);
-
-    for (const track of tracks) {
-      const sources = await resolveTrack(track, track.artist, {});
-
-      if (sources && Object.keys(sources).length > 0) {
-        // Get album/albumArt from first source that has them
-        let albumFromSource = null;
-        let albumArtFromSource = null;
-        for (const source of Object.values(sources)) {
-          if (!albumFromSource && source.album) albumFromSource = source.album;
-          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-        }
-
-        setTopTracks(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t =>
-            t.id === track.id
-              ? {
-                  ...t,
-                  sources: sources,
-                  album: t.album || albumFromSource,
-                  albumArt: t.albumArt || albumArtFromSource
-                }
-              : t
-          )
-        }));
-      }
-    }
-    console.log(`📊 Finished resolving top tracks`);
-  };
-
   // Load listening history from Last.fm
   const loadLastfmHistory = async (username, apiKey) => {
     const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=50`;
@@ -13493,85 +13781,6 @@ ${tracks}
       sources: {},
       mbid: listen.track_metadata?.additional_info?.recording_mbid || null
     }));
-  };
-
-  // Resolve history tracks using the resolver pipeline
-  const resolveHistoryTracks = async (tracks) => {
-    console.log(`📜 Resolving ${tracks.length} history tracks...`);
-
-    for (const track of tracks) {
-      console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-      const sources = await resolveTrack(track, track.artist, {});
-
-      if (sources && Object.keys(sources).length > 0) {
-        console.log(`  ✅ Found ${Object.keys(sources).length} source(s) for "${track.title}"`);
-
-        // Get metadata from first source that has them
-        let durationFromSource = null;
-        let albumFromSource = null;
-        let albumArtFromSource = null;
-        for (const source of Object.values(sources)) {
-          if (!durationFromSource && source.duration) durationFromSource = source.duration;
-          if (!albumFromSource && source.album) albumFromSource = source.album;
-          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-        }
-
-        setListeningHistory(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t =>
-            t.id === track.id
-              ? {
-                  ...t,
-                  sources: sources,
-                  duration: t.duration || durationFromSource,
-                  album: t.album || albumFromSource,
-                  albumArt: t.albumArt || albumArtFromSource
-                }
-              : t
-          )
-        }));
-      }
-    }
-
-    console.log(`📜 Finished resolving history tracks`);
-  };
-
-  // Resolve friend history tracks - similar to resolveHistoryTracks but updates friendHistoryData
-  const resolveFriendHistoryTracks = async (tracks, dataKey) => {
-    console.log(`👥 Resolving ${tracks.length} friend ${dataKey} tracks...`);
-
-    for (const track of tracks) {
-      const sources = await resolveTrack(track, track.artist, {});
-
-      if (sources && Object.keys(sources).length > 0) {
-        // Get metadata from first source that has them
-        let durationFromSource = null;
-        let albumFromSource = null;
-        let albumArtFromSource = null;
-        for (const source of Object.values(sources)) {
-          if (!durationFromSource && source.duration) durationFromSource = source.duration;
-          if (!albumFromSource && source.album) albumFromSource = source.album;
-          if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-        }
-
-        setFriendHistoryData(prev => ({
-          ...prev,
-          [dataKey]: prev[dataKey].map(t =>
-            t.id === track.id
-              ? {
-                  ...t,
-                  sources: sources,
-                  duration: t.duration || durationFromSource,
-                  album: t.album || albumFromSource,
-                  albumArt: t.albumArt || albumArtFromSource
-                }
-              : t
-          )
-        }));
-      }
-    }
-
-    console.log(`👥 Finished resolving friend ${dataKey} tracks`);
   };
 
   // Helper function to search MusicBrainz with fallback for multi-artist names
@@ -15019,39 +15228,8 @@ ${tracks}
           }
         });
 
-        // Step 2: Resolve sources in the background for each track
-        for (const track of tracksWithIds) {
-          console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-          const sources = await resolveTrack(track, track.artist, {});
-
-          if (sources && Object.keys(sources).length > 0) {
-            // Get metadata from first source that has them
-            let durationFromSource = null;
-            let albumFromSource = null;
-            let albumArtFromSource = null;
-            for (const source of Object.values(sources)) {
-              if (!durationFromSource && source.duration) durationFromSource = source.duration;
-              if (!albumFromSource && source.album) albumFromSource = source.album;
-              if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-            }
-
-            setPlaylistTracks(prevTracks =>
-              prevTracks.map(t =>
-                t.id === track.id
-                  ? {
-                      ...t,
-                      sources: sources,
-                      duration: t.duration || durationFromSource || 0,
-                      album: t.album || albumFromSource,
-                      albumArt: t.albumArt || albumArtFromSource
-                    }
-                  : t
-              )
-            );
-          }
-        }
-
-        console.log(`✅ Finished resolving ${tracksWithIds.length} tracks`);
+        // Resolution handled by scheduler via IntersectionObserver
+        console.log(`✅ Loaded ${tracksWithIds.length} tracks (resolution via scheduler)`);
       }
     } else if (playlist.tracks && playlist.tracks.length > 0) {
       // Handle playlists with tracks array directly (e.g., newly created playlists)
@@ -15085,39 +15263,8 @@ ${tracks}
         }
       });
 
-      // Resolve sources in background
-      for (const track of tracksWithIds) {
-        console.log(`🔍 Resolving: ${track.artist} - ${track.title}`);
-        const sources = await resolveTrack(track, track.artist, {});
-
-        if (sources && Object.keys(sources).length > 0) {
-          // Get metadata from first source that has them
-          let durationFromSource = null;
-          let albumFromSource = null;
-          let albumArtFromSource = null;
-          for (const source of Object.values(sources)) {
-            if (!durationFromSource && source.duration) durationFromSource = source.duration;
-            if (!albumFromSource && source.album) albumFromSource = source.album;
-            if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-          }
-
-          setPlaylistTracks(prevTracks =>
-            prevTracks.map(t =>
-              t.id === track.id
-                ? {
-                    ...t,
-                    sources: sources,
-                    duration: t.duration || durationFromSource || 0,
-                    album: t.album || albumFromSource,
-                    albumArt: t.albumArt || albumArtFromSource
-                  }
-                : t
-            )
-          );
-        }
-      }
-
-      console.log(`✅ Finished resolving ${tracksWithIds.length} tracks`);
+      // Resolution handled by scheduler via IntersectionObserver
+      console.log(`✅ Loaded ${tracksWithIds.length} tracks (resolution via scheduler)`);
     } else {
       // No tracks to display
       console.log('⚠️ Playlist has no tracks');
@@ -15293,14 +15440,14 @@ ${tracks}
 
     if (viewHistory.length > 1) {
       const newHistory = [...viewHistory];
-      const currentView = newHistory.pop(); // Remove current view
+      const activeView = newHistory.pop(); // Remove current view
       const previousView = newHistory[newHistory.length - 1];
       setViewHistory(newHistory);
-      setForwardHistory(prev => [...prev, currentView]); // Add current view to forward history
+      setForwardHistory(prev => [...prev, activeView]); // Add current view to forward history
       setActiveView(previousView);
 
       // Clear associated state when leaving certain views
-      if (currentView === 'artist') {
+      if (activeView === 'artist') {
         setCurrentArtist(null);
         setArtistImage(null);
         setArtistImagePosition('center 25%');
@@ -15308,10 +15455,10 @@ ${tracks}
         setReleaseTypeFilter('all');
         setArtistHistory([]); // Clear artist history when leaving artist view
       }
-      if (currentView === 'release') {
+      if (activeView === 'release') {
         setCurrentRelease(null);
       }
-      if (currentView === 'playlist-view') {
+      if (activeView === 'playlist-view') {
         setSelectedPlaylist(null);
         setPlaylistTracks([]);
       }
@@ -15516,30 +15663,8 @@ ${tracks}
             const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
             return { ...track, id: trackId, sources: {} };
           });
+          // Resolution handled by scheduler via IntersectionObserver
           setPlaylistTracks(tracksWithIds);
-
-          // Re-resolve sources in background
-          for (const track of tracksWithIds) {
-            const sources = await resolveTrack(track, track.artist, {});
-
-            if (sources && Object.keys(sources).length > 0) {
-              // Get metadata from first source that has them
-              let albumFromSource = null;
-              let albumArtFromSource = null;
-              for (const source of Object.values(sources)) {
-                if (!albumFromSource && source.album) albumFromSource = source.album;
-                if (!albumArtFromSource && source.albumArt) albumArtFromSource = source.albumArt;
-              }
-
-              setPlaylistTracks(prevTracks =>
-                prevTracks.map(t =>
-                  t.id === track.id
-                    ? { ...t, sources: sources, album: t.album || albumFromSource, albumArt: t.albumArt || albumArtFromSource }
-                    : t
-                )
-              );
-            }
-          }
         }
       }
 
@@ -18038,6 +18163,17 @@ useEffect(() => {
 
                     return React.createElement('div', {
                       key: track.id,
+                      'data-track-id': track.id,
+                      ref: (el) => {
+                        if (el) {
+                          searchTracksRowRefs.current.set(track.id, el);
+                          if (searchTracksObserverRef.current) {
+                            searchTracksObserverRef.current.observe(el);
+                          }
+                        } else {
+                          searchTracksRowRefs.current.delete(track.id);
+                        }
+                      },
                       draggable: true,
                       onDragStart: (e) => {
                         setDraggingTrackForPlaylist(track);
@@ -20988,6 +21124,17 @@ React.createElement('div', {
 
                     return React.createElement('div', {
                       key: track.id || index,
+                      'data-track-id': track.id,
+                      ref: (el) => {
+                        if (el && track.id) {
+                          playlistTrackRowRefs.current.set(track.id, el);
+                          if (playlistObserverRef.current) {
+                            playlistObserverRef.current.observe(el);
+                          }
+                        } else if (track.id) {
+                          playlistTrackRowRefs.current.delete(track.id);
+                        }
+                      },
                       draggable: true,
                       onDragStart: (e) => {
                         // Always allow dragging to other playlists
@@ -24285,6 +24432,17 @@ React.createElement('div', {
 
                       return React.createElement('div', {
                         key: track.id,
+                        'data-track-id': track.id,
+                        ref: (el) => {
+                          if (el) {
+                            recommendationsTrackRowRefs.current.set(track.id, el);
+                            if (recommendationsObserverRef.current) {
+                              recommendationsObserverRef.current.observe(el);
+                            }
+                          } else {
+                            recommendationsTrackRowRefs.current.delete(track.id);
+                          }
+                        },
                         draggable: true,
                         onDragStart: (e) => {
                           setDraggingTrackForPlaylist(track); // Enable playlist drop target
@@ -24760,6 +24918,17 @@ React.createElement('div', {
 
                       return React.createElement('div', {
                         key: track.id,
+                        'data-track-id': track.id,
+                        ref: (el) => {
+                          if (el) {
+                            historyTrackRowRefs.current.set(track.id, el);
+                            if (historyObserverRef.current) {
+                              historyObserverRef.current.observe(el);
+                            }
+                          } else {
+                            historyTrackRowRefs.current.delete(track.id);
+                          }
+                        },
                         draggable: true,
                         onDragStart: (e) => {
                           setDraggingTrackForPlaylist(track);
@@ -24887,6 +25056,17 @@ React.createElement('div', {
                       const hasResolved = Object.keys(track.sources || {}).length > 0;
                       return React.createElement('div', {
                         key: track.id,
+                        'data-track-id': track.id,
+                        ref: (el) => {
+                          if (el) {
+                            topTracksRowRefs.current.set(track.id, el);
+                            if (topTracksObserverRef.current) {
+                              topTracksObserverRef.current.observe(el);
+                            }
+                          } else {
+                            topTracksRowRefs.current.delete(track.id);
+                          }
+                        },
                         draggable: true,
                         onDragStart: (e) => {
                           setDraggingTrackForPlaylist(track);
@@ -25555,6 +25735,17 @@ React.createElement('div', {
 
                       return React.createElement('div', {
                         key: track.id || index,
+                        'data-track-id': track.id,
+                        ref: (el) => {
+                          if (el && track.id) {
+                            friendHistoryTrackRowRefs.current.set(track.id, el);
+                            if (friendHistoryObserverRef.current) {
+                              friendHistoryObserverRef.current.observe(el);
+                            }
+                          } else if (track.id) {
+                            friendHistoryTrackRowRefs.current.delete(track.id);
+                          }
+                        },
                         draggable: true,
                         onDragStart: (e) => {
                           setDraggingTrackForPlaylist(track);
@@ -25645,6 +25836,17 @@ React.createElement('div', {
 
                         return React.createElement('div', {
                           key: track.id || index,
+                          'data-track-id': track.id,
+                          ref: (el) => {
+                            if (el && track.id) {
+                              friendHistoryTrackRowRefs.current.set(track.id, el);
+                              if (friendHistoryObserverRef.current) {
+                                friendHistoryObserverRef.current.observe(el);
+                              }
+                            } else if (track.id) {
+                              friendHistoryTrackRowRefs.current.delete(track.id);
+                            }
+                          },
                           draggable: true,
                           onDragStart: (e) => {
                             setDraggingTrackForPlaylist(track);
