@@ -609,16 +609,49 @@ class ResolutionScheduler {
   }
 }
 
-// Function to load built-in resolvers from resolvers/builtin/ directory
+// Function to sync plugins with marketplace (runs in background)
+const syncPluginsWithMarketplace = async () => {
+  if (window.electron?.resolvers?.syncMarketplace) {
+    console.log('🔄 Syncing plugins with marketplace...');
+    try {
+      const result = await window.electron.resolvers.syncMarketplace();
+      if (result.success) {
+        const { added, updated, failed } = result;
+        if (added.length > 0 || updated.length > 0) {
+          console.log(`✅ Plugin sync complete: ${added.length} added, ${updated.length} updated`);
+          // Reload plugins after sync if there were changes
+          return true; // Signal that plugins were updated
+        }
+        console.log('✅ All plugins up to date');
+      } else {
+        console.log('⚠️ Plugin sync failed (offline?):', result.error);
+      }
+    } catch (error) {
+      console.error('⚠️ Plugin sync error:', error);
+    }
+  }
+  return false;
+};
+
+// Function to load plugins from cache
 const loadBuiltinResolvers = async () => {
   // Check if we're in Electron
   if (window.electron?.resolvers?.loadBuiltin) {
-    console.log('📁 Loading resolvers via Electron IPC...');
+    console.log('📁 Loading plugins from cache...');
     try {
+      // First sync with marketplace (in background, don't block)
+      syncPluginsWithMarketplace().then(async (pluginsUpdated) => {
+        if (pluginsUpdated) {
+          // Plugins were updated, notify user they may want to restart
+          console.log('🔄 New plugin versions available - restart app to use them');
+        }
+      });
+
+      // Load cached plugins immediately
       const resolvers = await window.electron.resolvers.loadBuiltin();
       return resolvers;
     } catch (error) {
-      console.error('❌ Failed to load via Electron IPC:', error);
+      console.error('❌ Failed to load plugins:', error);
       return [];
     }
   } else {
