@@ -1,0 +1,282 @@
+/**
+ * Spotify Sync Provider
+ * Implements the SyncProvider interface for Spotify library sync.
+ */
+
+const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
+
+/**
+ * Normalize a string for ID generation (lowercase, remove special chars)
+ */
+const normalizeForId = (str) => {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+};
+
+/**
+ * Generate a consistent ID from artist, title, album
+ */
+const generateTrackId = (artist, title, album) => {
+  return `${normalizeForId(artist)}-${normalizeForId(title)}-${normalizeForId(album)}`;
+};
+
+/**
+ * Make an authenticated Spotify API request with pagination support
+ */
+const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
+  const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      // Rate limited - get retry-after header
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      return spotifyFetch(endpoint, token, allItems, onProgress);
+    }
+    throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const items = data.items || [];
+  const combined = [...allItems, ...items];
+
+  if (onProgress) {
+    onProgress({ current: combined.length, total: data.total || combined.length });
+  }
+
+  // Handle pagination
+  if (data.next) {
+    // Small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return spotifyFetch(data.next, token, combined, onProgress);
+  }
+
+  return combined;
+};
+
+/**
+ * Transform Spotify track object to SyncTrack
+ */
+const transformTrack = (item, addedAt) => {
+  const track = item.track || item;
+  return {
+    id: generateTrackId(track.artists?.[0]?.name, track.name, track.album?.name),
+    externalId: track.id,
+    title: track.name,
+    artist: track.artists?.map(a => a.name).join(', ') || 'Unknown Artist',
+    album: track.album?.name || 'Unknown Album',
+    duration: Math.round((track.duration_ms || 0) / 1000),
+    albumArt: track.album?.images?.[0]?.url || null,
+    addedAt: addedAt ? new Date(addedAt).getTime() : Date.now(),
+    spotifyUri: track.uri,
+    spotifyId: track.id
+  };
+};
+
+/**
+ * Transform Spotify album object to SyncAlbum
+ */
+const transformAlbum = (item) => {
+  const album = item.album || item;
+  return {
+    id: `${normalizeForId(album.artists?.[0]?.name)}-${normalizeForId(album.name)}`,
+    externalId: album.id,
+    title: album.name,
+    artist: album.artists?.map(a => a.name).join(', ') || 'Unknown Artist',
+    year: album.release_date ? parseInt(album.release_date.substring(0, 4), 10) : null,
+    art: album.images?.[0]?.url || null,
+    addedAt: item.added_at ? new Date(item.added_at).getTime() : Date.now(),
+    spotifyUri: album.uri,
+    spotifyId: album.id
+  };
+};
+
+/**
+ * Transform Spotify artist object to SyncArtist
+ */
+const transformArtist = (artist) => {
+  return {
+    id: normalizeForId(artist.name),
+    externalId: artist.id,
+    name: artist.name,
+    image: artist.images?.[0]?.url || null,
+    addedAt: Date.now(), // Spotify doesn't provide follow date
+    spotifyUri: artist.uri,
+    spotifyId: artist.id
+  };
+};
+
+/**
+ * Transform Spotify playlist object to SyncPlaylist
+ */
+const transformPlaylist = (playlist, folderId = null, folderName = null) => {
+  return {
+    id: `spotify-${playlist.id}`,
+    externalId: playlist.id,
+    name: playlist.name,
+    description: playlist.description || '',
+    image: playlist.images?.[0]?.url || null,
+    trackCount: playlist.tracks?.total || 0,
+    snapshotId: playlist.snapshot_id,
+    folderId,
+    folderName,
+    isOwnedByUser: playlist.owner?.id === playlist.owner?.id, // Will be set properly during fetch
+    spotifyUri: playlist.uri
+  };
+};
+
+/**
+ * Spotify Sync Provider implementation
+ */
+const SpotifySyncProvider = {
+  id: 'spotify',
+  displayName: 'Spotify',
+
+  capabilities: {
+    tracks: true,
+    albums: true,
+    artists: true,
+    playlists: true,
+    playlistFolders: true
+  },
+
+  /**
+   * Fetch all liked/saved tracks from Spotify
+   */
+  async fetchTracks(token, onProgress) {
+    const items = await spotifyFetch('/me/tracks?limit=50', token, [], onProgress);
+    return items.map(item => transformTrack(item, item.added_at));
+  },
+
+  /**
+   * Fetch all saved albums from Spotify
+   */
+  async fetchAlbums(token, onProgress) {
+    const items = await spotifyFetch('/me/albums?limit=50', token, [], onProgress);
+    return items.map(transformAlbum);
+  },
+
+  /**
+   * Fetch all followed artists from Spotify
+   */
+  async fetchArtists(token, onProgress) {
+    // Artists use cursor-based pagination, different from other endpoints
+    const fetchArtistsPage = async (after = null, allArtists = []) => {
+      const url = `/me/following?type=artist&limit=50${after ? `&after=${after}` : ''}`;
+      const response = await fetch(`${SPOTIFY_API_BASE}${url}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Spotify API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const artists = data.artists?.items || [];
+      const combined = [...allArtists, ...artists];
+
+      if (onProgress) {
+        onProgress({ current: combined.length, total: data.artists?.total || combined.length });
+      }
+
+      if (data.artists?.cursors?.after) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return fetchArtistsPage(data.artists.cursors.after, combined);
+      }
+
+      return combined;
+    };
+
+    const artists = await fetchArtistsPage();
+    return artists.map(transformArtist);
+  },
+
+  /**
+   * Fetch all user playlists from Spotify
+   * Note: Spotify API doesn't expose folder structure directly via standard endpoints
+   * Folders are only available in the desktop app's internal API
+   */
+  async fetchPlaylists(token, onProgress) {
+    const items = await spotifyFetch('/me/playlists?limit=50', token, [], onProgress);
+
+    // Get current user ID for ownership check
+    const userResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const userData = await userResponse.json();
+    const userId = userData.id;
+
+    const playlists = items.map(playlist => ({
+      ...transformPlaylist(playlist),
+      isOwnedByUser: playlist.owner?.id === userId
+    }));
+
+    // Spotify's public API doesn't expose folders
+    // Return empty folders array - folders would require unofficial API access
+    return {
+      playlists,
+      folders: []
+    };
+  },
+
+  /**
+   * Fetch tracks for a specific playlist
+   */
+  async fetchPlaylistTracks(playlistId, token, onProgress) {
+    const items = await spotifyFetch(`/playlists/${playlistId}/tracks?limit=100`, token, [], onProgress);
+    return items
+      .filter(item => item.track) // Filter out null tracks (deleted/unavailable)
+      .map(item => transformTrack(item, item.added_at));
+  },
+
+  /**
+   * Get current snapshot ID for a playlist
+   */
+  async getPlaylistSnapshot(playlistId, token) {
+    const response = await fetch(`${SPOTIFY_API_BASE}/playlists/${playlistId}?fields=snapshot_id`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Spotify API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.snapshot_id;
+  },
+
+  /**
+   * Get recommended delay between API calls
+   */
+  getRateLimitDelay() {
+    return 100; // 100ms between calls
+  },
+
+  /**
+   * Check if token is valid
+   */
+  async checkAuth(token) {
+    try {
+      const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+};
+
+module.exports = SpotifySyncProvider;
