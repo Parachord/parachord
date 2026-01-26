@@ -2128,15 +2128,21 @@ const Parachord = () => {
       // Check each enabled provider
       for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
         if (settings.enabled) {
-          const authStatus = await window.electron.sync.checkAuth(providerId);
-          if (authStatus.authenticated) {
-            console.log(`[Sync] Starting background sync for ${providerId}`);
-            const result = await window.electron.sync.start(providerId, { settings });
-            if (result.success) {
-              // Reload collection
-              const newCollection = await window.electron.collection.load();
-              setCollectionData(newCollection);
+          try {
+            const authStatus = await window.electron.sync.checkAuth(providerId);
+            if (authStatus.authenticated) {
+              console.log(`[Sync] Starting background sync for ${providerId}`);
+              const result = await window.electron.sync.start(providerId, { settings });
+              if (result.success) {
+                // Reload collection
+                const newCollection = await window.electron.collection.load();
+                setCollectionData(newCollection);
+              } else {
+                console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
+              }
             }
+          } catch (error) {
+            console.error(`[Sync] Background sync failed for ${providerId}:`, error);
           }
         }
       }
