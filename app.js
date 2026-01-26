@@ -4616,7 +4616,9 @@ const Parachord = () => {
   // Helper to determine resolver ID from track properties
   const determineResolverIdFromTrack = (track) => {
     if (!track) return null;
-    // Check for resolver-specific properties at top level OR nested in sources
+    // First check if we have an explicitly set active resolver (set during playback)
+    if (track._activeResolver) return track._activeResolver;
+    // Fall back to checking resolver-specific properties at top level OR nested in sources
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
@@ -5398,6 +5400,11 @@ const Parachord = () => {
             setIsPlaying(true);
             setBrowserPlaybackActive(true);
             setIsExternalPlayback(true);
+            // Clear the waiting flag - playback window is now connected and playing
+            if (waitingForBrowserPlaybackRef.current) {
+              console.log('✅ Playback window playing, clearing wait flag');
+              waitingForBrowserPlaybackRef.current = false;
+            }
             break;
           case 'paused':
             setIsPlaying(false);
@@ -6560,8 +6567,9 @@ const Parachord = () => {
           duration: duration,
           albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
-          _playbackContext: trackOrSource._playbackContext // Preserve playback context
-        } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
+          _playbackContext: trackOrSource._playbackContext, // Preserve playback context
+          _activeResolver: resolverId // Track which resolver is actually playing
+        } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
 
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
@@ -6654,9 +6662,10 @@ const Parachord = () => {
           duration: sourceToPlay.duration || trackOrSource.duration,
           albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
-          _playbackContext: trackOrSource._playbackContext // Preserve playback context
+          _playbackContext: trackOrSource._playbackContext, // Preserve playback context
+          _activeResolver: resolverId // Track which resolver is actually playing
         } :
-        { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
+        { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
       setTrackLoading(false); // Clear loading state when showing prompt
@@ -6711,9 +6720,10 @@ const Parachord = () => {
             duration: sourceToPlay.duration || trackOrSource.duration,
             albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
             sources: trackOrSource.sources,
-            _playbackContext: trackOrSource._playbackContext // Preserve playback context
+            _playbackContext: trackOrSource._playbackContext, // Preserve playback context
+            _activeResolver: resolverId // Track which resolver is actually playing
           } :
-          { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
+          { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
@@ -6771,8 +6781,9 @@ const Parachord = () => {
               album: trackOrSource.album,
               duration: sourceToPlay.duration || trackOrSource.duration,
               sources: trackOrSource.sources,
-              _playbackContext: trackOrSource._playbackContext // Preserve playback context
-            } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext };
+              _playbackContext: trackOrSource._playbackContext, // Preserve playback context
+              _activeResolver: resolverId // Track which resolver is actually playing
+            } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
             setCurrentTrack(trackToSet);
             setIsPlaying(true);
             setProgress(0);
@@ -7327,7 +7338,7 @@ const Parachord = () => {
       setPendingExternalResolverId(null);
       setIsExternalPlayback(true);
       setIsPlaying(true);
-      setCurrentTrack(track);
+      setCurrentTrack({ ...track, _activeResolver: resolverId });
     } catch (error) {
       console.error('❌ Failed to open external track:', error);
       // Clear the waiting flag on error
