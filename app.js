@@ -5385,7 +5385,7 @@ const Parachord = () => {
     if (resolverId === 'spotify') {
       let token = spotifyToken;
 
-      // Always check with the IPC handler which will refresh if needed
+      // Try to get a fresh/refreshed token from the IPC handler
       if (window.electron?.spotify) {
         const tokenData = await window.electron.spotify.checkToken();
         if (tokenData && tokenData.token) {
@@ -5395,9 +5395,9 @@ const Parachord = () => {
             console.log('🔄 Token was refreshed, updating state');
             setSpotifyToken(token);
           }
-        } else {
-          token = null;
         }
+        // If checkToken() fails but we have a token in React state, keep using it
+        // Don't discard a working token just because refresh failed
       }
 
       console.log('🔑 Spotify token status:', {
