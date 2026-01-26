@@ -4705,8 +4705,12 @@ const Parachord = () => {
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
-    playlistCover: 30 * 24 * 60 * 60 * 1000 // 30 days
+    playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
+    recommendations: 60 * 60 * 1000         // 1 hour (recommendations change based on listening)
   };
+
+  // Cache for recommendations data (tracks from API)
+  const recommendationsCache = useRef({ tracks: null, timestamp: 0 });
 
   // Get meta services with AI generation capability
   const getAiServices = () => {
@@ -12497,7 +12501,7 @@ ${tracks}
   };
 
   // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
-  const loadRecommendations = async () => {
+  const loadRecommendations = async (forceRefresh = false) => {
     // Check if Last.fm or ListenBrainz is configured
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
@@ -12510,6 +12514,49 @@ ${tracks}
         loading: false,
         error: 'not_configured'
       });
+      return;
+    }
+
+    // Check if we have valid cached data
+    const now = Date.now();
+    const cacheValid = !forceRefresh &&
+                       recommendationsCache.current.tracks &&
+                       (now - recommendationsCache.current.timestamp) < CACHE_TTL.recommendations;
+
+    if (cacheValid) {
+      console.log(`⭐ Using cached recommendations (${Math.round((now - recommendationsCache.current.timestamp) / 60000)}m old)`);
+      const tracks = recommendationsCache.current.tracks;
+
+      // Extract unique artists, pre-populating images from cache for instant display
+      const artistMap = new Map();
+      tracks.forEach(track => {
+        if (track.artist && !artistMap.has(track.artist)) {
+          const normalizedName = track.artist.trim().toLowerCase();
+          const cachedImage = artistImageCache.current[normalizedName];
+          const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
+          artistMap.set(track.artist, {
+            id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            name: track.artist,
+            image: imageCacheValid ? cachedImage.url : null,
+            imageLoaded: imageCacheValid
+          });
+        }
+      });
+      const artists = Array.from(artistMap.values());
+
+      setRecommendations({
+        artists,
+        tracks,
+        loading: false,
+        error: null
+      });
+
+      // Fetch images for artists not in cache
+      const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
+      if (artistsNeedingImages.length > 0) {
+        resolveRecommendationArtistImages(artistsNeedingImages);
+      }
       return;
     }
 
@@ -12563,21 +12610,33 @@ ${tracks}
 
       console.log(`⭐ Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm tracks → ${tracks.length} unique tracks`);
 
-      // Extract unique artists
+      // Cache the merged tracks for quick reload
+      recommendationsCache.current = {
+        tracks,
+        timestamp: Date.now()
+      };
+
+      // Extract unique artists, pre-populating images from cache for instant display
       const artistMap = new Map();
+      const now = Date.now();
       tracks.forEach(track => {
         if (track.artist && !artistMap.has(track.artist)) {
+          const normalizedName = track.artist.trim().toLowerCase();
+          const cachedImage = artistImageCache.current[normalizedName];
+          const cacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+
           artistMap.set(track.artist, {
             id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
             name: track.artist,
-            image: null,
-            imageLoaded: false // Track whether image lookup has completed
+            image: cacheValid ? cachedImage.url : null,
+            imageLoaded: cacheValid // Already loaded if we have valid cache
           });
         }
       });
       const artists = Array.from(artistMap.values());
+      const cachedCount = artists.filter(a => a.imageLoaded).length;
 
-      console.log(`⭐ Extracted ${artists.length} unique artists`);
+      console.log(`⭐ Extracted ${artists.length} unique artists (${cachedCount} with cached images)`);
 
       // Set initial state with tracks (sources empty, will resolve via scheduler)
       setRecommendations({
@@ -12587,8 +12646,13 @@ ${tracks}
         error: null
       });
 
-      // Fetch artist images in background (resolution handled by scheduler via IntersectionObserver)
-      resolveRecommendationArtistImages(artists);
+      // Only fetch images for artists not already in cache
+      const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
+      if (artistsNeedingImages.length > 0) {
+        resolveRecommendationArtistImages(artistsNeedingImages);
+      } else {
+        console.log(`⭐ All artist images loaded from cache`);
+      }
 
     } catch (error) {
       console.error('Failed to load Recommendations:', error);
