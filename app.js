@@ -21099,7 +21099,7 @@ React.createElement('div', {
                       boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
                     }
                   }, 'Start Collection Station'),
-                  // Sync Library button
+                  // Sync Collection button
                   React.createElement('button', {
                     onClick: () => openSyncSetupModal('spotify'),
                     className: 'flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors no-drag'
@@ -21117,7 +21117,7 @@ React.createElement('div', {
                         d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
                       })
                     ),
-                    'Sync Library'
+                    'Sync Collection'
                   )
                 )
               ),
@@ -21176,7 +21176,7 @@ React.createElement('div', {
                       backgroundColor: '#E91E63'
                     }
                   }, 'Start Station'),
-                  // Sync Library button
+                  // Sync Collection button
                   React.createElement('button', {
                     onClick: () => openSyncSetupModal('spotify'),
                     className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors no-drag'
