@@ -19884,11 +19884,13 @@ React.createElement('div', {
                 className: 'px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors'
               }, 'Update'),
               React.createElement('button', {
-                onClick: () => {
+                onClick: async () => {
+                  const updatedPlaylist = { ...selectedPlaylist, hasUpdates: false };
                   setPlaylists(prev => prev.map(p =>
                     p.id === selectedPlaylist.id ? { ...p, hasUpdates: false } : p
                   ));
                   setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false }));
+                  await savePlaylistToStore(updatedPlaylist);
                 },
                 className: 'px-3 py-1 text-blue-600 text-sm hover:text-blue-700 transition-colors'
               }, 'Dismiss')
