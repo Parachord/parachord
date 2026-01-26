@@ -4733,6 +4733,9 @@ const Parachord = () => {
             return updatedPlaylists;
           });
 
+          // Mark synced playlist as locally modified
+          markPlaylistAsLocallyModified(data.playlistId);
+
           // Update selectedPlaylist if viewing this playlist
           if (selectedPlaylist?.id === data.playlistId) {
             setSelectedPlaylist(prev => ({
@@ -6715,6 +6718,8 @@ const Parachord = () => {
         }
         return p;
       }));
+      // Mark synced playlist as locally modified
+      markPlaylistAsLocallyModified(selectedPlaylist.id);
     }
   };
 
@@ -6729,6 +6734,16 @@ const Parachord = () => {
       console.log(`🔀 Moved track in edit buffer from index ${fromIndex} to ${toIndex}`);
       return { ...prev, tracks: newTracks };
     });
+  };
+
+  // Mark a synced playlist as locally modified (for sync disconnect handling)
+  // Only affects playlists with syncedFrom - local playlists are unaffected
+  const markPlaylistAsLocallyModified = (playlistId) => {
+    setPlaylists(prev => prev.map(p =>
+      p.id === playlistId && p.syncedFrom
+        ? { ...p, locallyModified: true, lastModified: Date.now() }
+        : p
+    ));
   };
 
   const clearQueue = () => {
@@ -19561,6 +19576,8 @@ React.createElement('div', {
                       setPlaylistTracks(editedPlaylistData.tracks);
                       setPlaylists(prev => prev.map(p => p.id === updated.id ? updated : p));
                       await savePlaylistToStore(updated);
+                      // Mark synced playlist as locally modified
+                      markPlaylistAsLocallyModified(updated.id);
                     }
                     setPlaylistEditMode(false);
                     setEditedPlaylistData(null);
@@ -28927,6 +28944,9 @@ React.createElement('div', {
                     return p;
                   }));
 
+                  // Mark synced playlists as locally modified
+                  selectedPlaylistsForAdd.forEach(id => markPlaylistAsLocallyModified(id));
+
                   // Show sidebar badge with total tracks added
                   showSidebarBadge('playlists', tracksToAdd.length * selectedPlaylistsForAdd.length);
                 }
@@ -29296,6 +29316,9 @@ React.createElement('div', {
 
                 // Save to disk
                 savePlaylistToStore(updatedPlaylist);
+
+                // Mark synced playlist as locally modified
+                markPlaylistAsLocallyModified(playlist.id);
 
                 // Mark as added
                 setSelectedPlaylistsForAdd(prev => [...prev, playlist.id]);
