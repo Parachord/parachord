@@ -4426,16 +4426,45 @@ const Parachord = () => {
             return track;
           }) || [];
 
-          if (cleanedCount > 0) {
-            console.log(`🧹 Cleaned ${cleanedCount} corrupted source entries from collection`);
-            const cleanedData = { ...data, tracks: cleanedTracks };
-            setCollectionData(cleanedData);
-            // Save the cleaned data
-            if (window.electron?.collection?.save) {
-              await window.electron.collection.save(cleanedData);
+          // Migrate collection items to include syncSources field
+          // Items without syncSources are assumed to be manually added
+          let migratedCount = 0;
+          const migrateItem = (item) => {
+            if (!item.syncSources) {
+              migratedCount++;
+              return {
+                ...item,
+                syncSources: {
+                  manual: { addedAt: item.addedAt || Date.now() }
+                }
+              };
             }
-          } else {
-            setCollectionData(data);
+            return item;
+          };
+
+          const migratedTracks = (cleanedCount > 0 ? cleanedTracks : data.tracks || []).map(migrateItem);
+          const migratedAlbums = (data.albums || []).map(migrateItem);
+          const migratedArtists = (data.artists || []).map(migrateItem);
+
+          const needsSave = cleanedCount > 0 || migratedCount > 0;
+          const finalData = {
+            tracks: migratedTracks,
+            albums: migratedAlbums,
+            artists: migratedArtists
+          };
+
+          if (cleanedCount > 0) {
+            console.log(`Cleaned ${cleanedCount} corrupted source entries from collection`);
+          }
+          if (migratedCount > 0) {
+            console.log(`Migrated ${migratedCount} collection items to include syncSources`);
+          }
+
+          setCollectionData(finalData);
+
+          // Save if any cleaning or migration occurred
+          if (needsSave && window.electron?.collection?.save) {
+            await window.electron.collection.save(finalData);
           }
         } catch (error) {
           console.error('Failed to load collection:', error);
