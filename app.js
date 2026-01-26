@@ -1553,22 +1553,19 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
 
 // RelatedArtistCard component - Shows artist image with name below
 const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  // undefined = loading, null = no image found, string = image URL
+  const [imageUrl, setImageUrl] = useState(undefined);
 
   // Generate unique pattern for this artist (memoized)
   const pattern = useMemo(() => generateArtistPattern(artist.name), [artist.name]);
 
   useEffect(() => {
     let cancelled = false;
+    setImageUrl(undefined); // Reset to loading state on artist change
     const loadImage = async () => {
-      setImageLoading(true);
       const result = await getArtistImage(artist.name);
-      if (!cancelled && result?.url) {
-        setImageUrl(result.url);
-      }
       if (!cancelled) {
-        setImageLoading(false);
+        setImageUrl(result?.url || null); // null = no image, string = image URL
       }
     };
     loadImage();
@@ -1609,15 +1606,15 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
     // Artist image square - gray bg while loading, pattern only when no image found
     React.createElement('div', {
       className: 'w-full aspect-square mb-2 relative overflow-hidden rounded-lg',
-      style: { background: !imageLoading && !imageUrl ? pattern.gradient : '#e5e7eb' }
+      style: { background: imageUrl === null ? pattern.gradient : '#e5e7eb' }
     },
-      // Loading shimmer (gray gradient while fetching)
-      imageLoading && React.createElement('div', {
+      // Loading shimmer (only while fetching - imageUrl is undefined)
+      imageUrl === undefined && React.createElement('div', {
         className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
-      // Image (fades in when loaded)
-      !imageLoading && imageUrl && React.createElement('img', {
+      // Image (fades in when loaded - imageUrl is a string)
+      typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
         className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
@@ -1625,8 +1622,8 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; }
       }),
-      // Initials fallback when no image found (not during loading)
-      !imageLoading && !imageUrl && React.createElement('div', {
+      // Initials fallback when no image found (imageUrl is null)
+      imageUrl === null && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 }
       },
@@ -1643,20 +1640,19 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
 
 // SearchArtistCard component - Square card design with rounded corners
 const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPlayTopTracks, onAddToQueue, itemWidth, animationDelay = 0 }) => {
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageLoading, setImageLoading] = useState(true);
+  // undefined = loading, null = no image found, string = image URL
+  const [imageUrl, setImageUrl] = useState(undefined);
 
   // Generate unique pattern for this artist (memoized)
   const pattern = useMemo(() => generateArtistPattern(artist.name), [artist.name]);
 
   useEffect(() => {
     let cancelled = false;
+    setImageUrl(undefined); // Reset to loading state on artist change
     const loadImage = async () => {
-      setImageLoading(true);
       const result = await getArtistImage(artist.name);
       if (!cancelled) {
-        setImageUrl(result?.url || null);
-        setImageLoading(false);
+        setImageUrl(result?.url || null); // null = no image, string = image URL
       }
     };
     loadImage();
@@ -1690,10 +1686,10 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
     // Square image container - gray bg while loading, pattern only when no image found
     React.createElement('div', {
       className: 'aspect-square relative group/art',
-      style: { background: !imageLoading && !imageUrl ? pattern.gradient : '#e5e7eb' }
+      style: { background: imageUrl === null ? pattern.gradient : '#e5e7eb' }
     },
-      // Initials overlay (only show when no image found, not while loading)
-      !imageLoading && !imageUrl && React.createElement('div', {
+      // Initials overlay (only show when no image found - imageUrl is null)
+      imageUrl === null && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 }
       },
@@ -1702,8 +1698,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
           style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
         }, pattern.initials)
       ),
-      // Image (fades in on load)
-      imageUrl && React.createElement('img', {
+      // Image (fades in on load - imageUrl is a string)
+      typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: artist.name,
         className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
@@ -1712,8 +1708,8 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
         onLoad: (e) => { e.target.style.opacity = '1'; },
         onError: (e) => { e.target.style.display = 'none'; }
       }),
-      // Shimmer loading state (only while fetching)
-      imageLoading && React.createElement('div', {
+      // Shimmer loading state (only while fetching - imageUrl is undefined)
+      imageUrl === undefined && React.createElement('div', {
         className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
@@ -1847,8 +1843,8 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 
   useEffect(() => {
     let cancelled = false;
+    setImageUrl(undefined); // Reset to loading state immediately on artist change
     const loadImage = async () => {
-      setImageUrl(undefined); // Loading state
       const result = await getArtistImage(artist.name);
       if (!cancelled) {
         setImageUrl(result?.url || null); // null if not found
