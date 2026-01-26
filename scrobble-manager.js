@@ -95,10 +95,13 @@ class ScrobbleManager {
       return;
     }
 
-    // Scrobble threshold: 50% of track OR 4 minutes, whichever is earlier
+    // Scrobble threshold per Last.fm/ListenBrainz spec:
+    // - At least 30 seconds of listening
+    // - At least 50% of track OR 4 minutes, whichever is earlier
     const halfDuration = duration / 2;
     const fourMinutes = 240;
-    const threshold = Math.min(halfDuration, fourMinutes);
+    const minListenTime = 30;
+    const threshold = Math.max(minListenTime, Math.min(halfDuration, fourMinutes));
 
     if (progressSeconds >= threshold) {
       await this.submitScrobble();
