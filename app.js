@@ -2097,6 +2097,10 @@ const Parachord = () => {
     friends: 'alpha-asc'
   });
 
+  // Resolver sync settings
+  const [resolverSyncSettings, setResolverSyncSettings] = useState({});
+  const [syncStatus, setSyncStatus] = useState({}); // { spotify: { lastSyncAt, inProgress, error } }
+
   // Friends state
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
@@ -4474,6 +4478,19 @@ const Parachord = () => {
       setCollectionLoading(false);
     };
     loadCollection();
+
+    // Load sync settings
+    const loadSyncSettings = async () => {
+      if (window.electron?.syncSettings?.load) {
+        try {
+          const settings = await window.electron.syncSettings.load();
+          setResolverSyncSettings(settings);
+        } catch (error) {
+          console.error('Failed to load sync settings:', error);
+        }
+      }
+    };
+    loadSyncSettings();
   }, []);
 
   useEffect(() => {

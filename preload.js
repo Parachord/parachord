@@ -141,6 +141,14 @@ contextBridge.exposeInMainWorld('electron', {
     save: (collection) => ipcRenderer.invoke('collection:save', collection)
   },
 
+  // Sync settings operations
+  syncSettings: {
+    load: () => ipcRenderer.invoke('sync-settings:load'),
+    save: (settings) => ipcRenderer.invoke('sync-settings:save', settings),
+    getProvider: (providerId) => ipcRenderer.invoke('sync-settings:get-provider', providerId),
+    setProvider: (providerId, settings) => ipcRenderer.invoke('sync-settings:set-provider', providerId, settings)
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),

@@ -1840,3 +1840,25 @@ ipcMain.handle('collection:save', async (event, collection) => {
     return { success: false, error: error.message };
   }
 });
+
+// Resolver sync settings
+ipcMain.handle('sync-settings:load', async () => {
+  return store.get('resolver_sync_settings') || {};
+});
+
+ipcMain.handle('sync-settings:save', async (event, settings) => {
+  store.set('resolver_sync_settings', settings);
+  return { success: true };
+});
+
+ipcMain.handle('sync-settings:get-provider', async (event, providerId) => {
+  const settings = store.get('resolver_sync_settings') || {};
+  return settings[providerId] || null;
+});
+
+ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerSettings) => {
+  const settings = store.get('resolver_sync_settings') || {};
+  settings[providerId] = providerSettings;
+  store.set('resolver_sync_settings', settings);
+  return { success: true };
+});
