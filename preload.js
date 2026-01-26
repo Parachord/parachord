@@ -156,6 +156,7 @@ contextBridge.exposeInMainWorld('electron', {
     start: (providerId, options) => ipcRenderer.invoke('sync:start', providerId, options),
     cancel: (providerId) => ipcRenderer.invoke('sync:cancel', providerId),
     fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
+    fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
     onProgress: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('sync:progress', handler);

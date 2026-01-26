@@ -2012,6 +2012,66 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       results.artists = artistResult.stats;
     }
 
+    // Sync playlists
+    if (settings.syncPlaylists && settings.selectedPlaylistIds?.length > 0 && provider.capabilities.playlists) {
+      sendProgress({ phase: 'fetching', type: 'playlists', message: 'Syncing playlists...' });
+
+      // Load current playlists
+      const currentPlaylists = store.get('local_playlists') || [];
+
+      // Fetch playlist metadata to check for updates
+      const { playlists: remotePlaylists } = await provider.fetchPlaylists(token);
+      const selectedRemote = remotePlaylists.filter(p => settings.selectedPlaylistIds.includes(p.externalId));
+
+      for (const remotePlaylist of selectedRemote) {
+        const localPlaylist = currentPlaylists.find(p => p.syncedFrom?.externalId === remotePlaylist.externalId);
+
+        if (!localPlaylist) {
+          // New playlist - fetch tracks and add
+          sendProgress({ phase: 'fetching', type: 'playlists', message: `Importing "${remotePlaylist.name}"...` });
+          const tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token);
+
+          const newPlaylist = {
+            id: remotePlaylist.id,
+            title: remotePlaylist.name,
+            description: remotePlaylist.description,
+            tracks: tracks,
+            syncedFrom: {
+              resolver: providerId,
+              externalId: remotePlaylist.externalId,
+              snapshotId: remotePlaylist.snapshotId
+            },
+            hasUpdates: false,
+            locallyModified: false,
+            syncSources: {
+              [providerId]: { addedAt: Date.now(), syncedAt: Date.now() }
+            },
+            createdAt: Date.now(),
+            addedAt: Date.now()
+          };
+
+          currentPlaylists.push(newPlaylist);
+        } else if (localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId) {
+          // Playlist has updates
+          const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
+          if (idx >= 0) {
+            currentPlaylists[idx] = {
+              ...currentPlaylists[idx],
+              hasUpdates: true,
+              syncSources: {
+                ...currentPlaylists[idx].syncSources,
+                [providerId]: { ...currentPlaylists[idx].syncSources?.[providerId], syncedAt: Date.now() }
+              }
+            };
+          }
+        }
+      }
+
+      // Save playlists
+      store.set('local_playlists', currentPlaylists);
+      results.playlists = { synced: selectedRemote.length };
+    }
+
     // Save collection
     sendProgress({ phase: 'saving', message: 'Saving collection...' });
     await fsPromises.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
@@ -2063,6 +2123,31 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
   try {
     const { playlists, folders } = await provider.fetchPlaylists(token);
     return { success: true, playlists, folders };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistExternalId) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.playlists) {
+    return { success: false, error: 'Provider does not support playlists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const tracks = await provider.fetchPlaylistTracks(playlistExternalId, token);
+    // Also fetch the current snapshot ID
+    const snapshotId = await provider.getPlaylistSnapshot?.(playlistExternalId, token);
+    return { success: true, tracks, snapshotId };
   } catch (error) {
     return { success: false, error: error.message };
   }

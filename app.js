@@ -19841,6 +19841,60 @@ React.createElement('div', {
             )
           ),
 
+          // Playlist update banner (shown when playlist has updates from sync source)
+          selectedPlaylist?.hasUpdates && React.createElement('div', {
+            className: 'mx-4 mb-4 p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg flex items-center justify-between'
+          },
+            React.createElement('span', {
+              className: 'text-blue-600 text-sm'
+            }, `This playlist has been updated on ${selectedPlaylist.syncedFrom?.resolver || 'the source'}.`),
+            React.createElement('div', { className: 'flex gap-2' },
+              React.createElement('button', {
+                onClick: async () => {
+                  // Fetch updated tracks from sync source
+                  const provider = selectedPlaylist.syncedFrom?.resolver;
+                  const externalId = selectedPlaylist.syncedFrom?.externalId;
+                  if (provider && externalId) {
+                    try {
+                      const result = await window.electron.sync.fetchPlaylistTracks?.(provider, externalId);
+                      if (result?.success && result.tracks) {
+                        // Update playlist with new tracks and clear hasUpdates
+                        const updatedPlaylist = {
+                          ...selectedPlaylist,
+                          tracks: result.tracks,
+                          hasUpdates: false,
+                          syncedFrom: {
+                            ...selectedPlaylist.syncedFrom,
+                            snapshotId: result.snapshotId
+                          },
+                          lastModified: Date.now()
+                        };
+                        setSelectedPlaylist(updatedPlaylist);
+                        setPlaylistTracks(result.tracks);
+                        setPlaylists(prev => prev.map(p =>
+                          p.id === selectedPlaylist.id ? updatedPlaylist : p
+                        ));
+                        await savePlaylistToStore(updatedPlaylist);
+                      }
+                    } catch (err) {
+                      console.error('Failed to fetch playlist updates:', err);
+                    }
+                  }
+                },
+                className: 'px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 transition-colors'
+              }, 'Update'),
+              React.createElement('button', {
+                onClick: () => {
+                  setPlaylists(prev => prev.map(p =>
+                    p.id === selectedPlaylist.id ? { ...p, hasUpdates: false } : p
+                  ));
+                  setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false }));
+                },
+                className: 'px-3 py-1 text-blue-600 text-sm hover:text-blue-700 transition-colors'
+              }, 'Dismiss')
+            )
+          ),
+
           // Two-column layout: playlist cover + metadata on left, tracklist on right
           React.createElement('div', { className: 'flex gap-0 p-6' },
             // LEFT COLUMN: 2x2 album art grid and metadata
