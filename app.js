@@ -20659,8 +20659,8 @@ React.createElement('div', {
                                   handlePlay({ ...track, preferredResolver: resolverId });
                                 },
                                 style: {
-                                  width: '24px',
-                                  height: '24px',
+                                  width: '20px',
+                                  height: '20px',
                                   borderRadius: '4px',
                                   backgroundColor: resolver.color,
                                   border: 'none',
@@ -20675,7 +20675,7 @@ React.createElement('div', {
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                 onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                 title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                             })
                         :
                           // Show shimmer skeletons while resolving (match resolver icon size)
@@ -23876,8 +23876,8 @@ React.createElement('div', {
                                     handlePlay({ ...track, preferredResolver: resolverId });
                                   },
                                   style: {
-                                    width: '24px',
-                                    height: '24px',
+                                    width: '20px',
+                                    height: '20px',
                                     borderRadius: '4px',
                                     backgroundColor: resolver.color,
                                     border: 'none',
@@ -23892,7 +23892,7 @@ React.createElement('div', {
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               })
                           :
                             // Show shimmer skeletons while resolving
@@ -25096,11 +25096,11 @@ React.createElement('div', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               })
                             :
                               React.createElement('div', { className: 'flex items-center gap-1' },
@@ -25182,11 +25182,11 @@ React.createElement('div', {
                                   key: resolverId,
                                   className: 'no-drag',
                                   onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '24px', height: '24px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
                                   onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                                   onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                                   title: `Play from ${resolver.name}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 14 }));
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                               })
                             :
                               React.createElement('div', { className: 'flex items-center gap-1' },
