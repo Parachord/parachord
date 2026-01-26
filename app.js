@@ -679,25 +679,25 @@ const VirtualizedQueueList = React.memo(({
   }
 
   const virtualItems = virtualizer.getVirtualItems();
-  const totalSize = virtualizer.getTotalSize();
 
   // Virtualized rendering with reversed order display
-  // Items are positioned absolutely with transform to appear bottom-to-top
-  // Index 0 (next track) should be at the bottom, last index at top
-  // We keep the same indices for click/drag handlers, just reverse visual positions
+  // The virtualizer gives us indices 0, 1, 2... from top of scroll area
+  // We want index 0 (next track) at the BOTTOM, so we reverse the mapping:
+  // - virtualRow.index 0 (top of scroll) -> queue[queue.length - 1] (last track)
+  // - virtualRow.index N (bottom of scroll) -> queue[0] (next track)
   return React.createElement('div', {
     style: {
-      height: `${totalSize}px`,
+      height: `${virtualizer.getTotalSize()}px`,
       width: '100%',
       position: 'relative'
     }
   },
     virtualItems.map(virtualRow => {
-      const track = queue[virtualRow.index];
-      // Reverse the visual position: index 0 appears at bottom, last index at top
-      const reversedStart = totalSize - virtualRow.start - virtualRow.size;
-      const reversedVirtualRow = { ...virtualRow, start: reversedStart };
-      return renderQueueTrackRow(track, virtualRow.index, reversedVirtualRow);
+      // Map virtual index to reversed queue index
+      const reversedQueueIndex = queue.length - 1 - virtualRow.index;
+      const track = queue[reversedQueueIndex];
+      // Use original virtualRow positioning (top-to-bottom), but with reversed queue data
+      return renderQueueTrackRow(track, reversedQueueIndex, virtualRow);
     })
   );
 });
