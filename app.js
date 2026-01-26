@@ -26158,7 +26158,7 @@ React.createElement('div', {
                     }, 'Configure how external tracks are handled')
                   ),
                   // Skip external prompt toggle - refined
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0', borderBottom: '1px solid rgba(0, 0, 0, 0.04)' } },
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0' } },
                     React.createElement('div', null,
                       React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } },
                         'Auto-open external tracks'
@@ -26179,36 +26179,6 @@ React.createElement('div', {
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${skipExternalPrompt ? 'translate-x-5' : 'translate-x-0'}`
-                      })
-                    )
-                  ),
-                  // Auto-launch Spotify toggle
-                  React.createElement('div', { className: 'flex items-center justify-between', style: { padding: '12px 0' } },
-                    React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } },
-                        'Auto-launch Spotify'
-                      ),
-                      React.createElement('p', { style: { fontSize: '12px', color: '#9ca3af', marginTop: '2px' } },
-                        'Start Spotify in background when Parachord opens'
-                      )
-                    ),
-                    React.createElement('button', {
-                      onClick: async () => {
-                        const newValue = !autoLaunchSpotify;
-                        setAutoLaunchSpotify(newValue);
-                        if (window.electron?.store) {
-                          await window.electron.store.set('auto_launch_spotify', newValue);
-                        }
-                        // If enabling, offer to launch now
-                        if (newValue && window.electron?.spotify?.launchInBackground) {
-                          window.electron.spotify.launchInBackground();
-                          showToast('Spotify launched in background', 'success');
-                        }
-                      },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-purple-600' : 'bg-gray-300'}`
-                    },
-                      React.createElement('span', {
-                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   ),
@@ -28424,6 +28394,58 @@ React.createElement('div', {
                   onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
                   onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
                 }, 'Set Up Library Sync')
+          ),
+
+          // Auto-launch Spotify section
+          selectedResolver.id === 'spotify' && React.createElement('div', {
+            style: {
+              marginTop: '20px',
+              padding: '16px',
+              backgroundColor: 'rgba(0, 0, 0, 0.02)',
+              borderRadius: '12px',
+              border: '1px solid rgba(0, 0, 0, 0.04)'
+            }
+          },
+            React.createElement('h4', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#9ca3af',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginBottom: '14px'
+              }
+            }, 'Startup'),
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } },
+                  'Auto-launch Spotify'
+                ),
+                React.createElement('p', { style: { fontSize: '12px', color: '#6b7280', marginTop: '2px', lineHeight: '1.5' } },
+                  'Start Spotify in background when Parachord opens. Ensures a device is always available for playback.'
+                )
+              ),
+              React.createElement('button', {
+                onClick: async () => {
+                  const newValue = !autoLaunchSpotify;
+                  setAutoLaunchSpotify(newValue);
+                  if (window.electron?.store) {
+                    await window.electron.store.set('auto_launch_spotify', newValue);
+                  }
+                  // If enabling, launch Spotify now
+                  if (newValue && window.electron?.spotify?.launchInBackground) {
+                    window.electron.spotify.launchInBackground();
+                    showToast('Spotify launched in background', 'success');
+                  }
+                },
+                className: `relative w-11 h-6 rounded-full transition-colors ${autoLaunchSpotify ? 'bg-green-500' : 'bg-gray-300'}`,
+                style: { flexShrink: 0, marginLeft: '16px' }
+              },
+                React.createElement('span', {
+                  className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
+                })
+              )
+            )
           ),
 
           // Qobuz authentication section
