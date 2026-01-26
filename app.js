@@ -4712,6 +4712,12 @@ const Parachord = () => {
   // Cache for recommendations data (tracks from API)
   const recommendationsCache = useRef({ tracks: null, timestamp: 0 });
 
+  // Cache for listening history data
+  const listeningHistoryCache = useRef({ tracks: null, timestamp: 0 });
+
+  // Cache for top tracks data (keyed by period)
+  const topTracksCache = useRef({});
+
   // Get meta services with AI generation capability
   const getAiServices = () => {
     // AI services are meta-services loaded into the resolver loader
@@ -12824,25 +12830,41 @@ ${tracks}
   };
 
   // Load Listening History from Last.fm and/or ListenBrainz (merged and de-duped)
-  const loadListeningHistory = async () => {
+  const loadListeningHistory = async (forceRefresh = false) => {
+    // Get configs from metaServiceConfigs
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+
+    // If no service is configured
+    if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
+      setListeningHistory({
+        tracks: [],
+        loading: false,
+        error: 'No listening history service connected. Configure Last.fm or ListenBrainz in Settings > Resolvers.'
+      });
+      return;
+    }
+
+    // Check if we have valid cached data (cache for 5 minutes - recent history changes frequently)
+    const now = Date.now();
+    const cacheValid = !forceRefresh &&
+                       listeningHistoryCache.current.tracks &&
+                       (now - listeningHistoryCache.current.timestamp) < (5 * 60 * 1000);
+
+    if (cacheValid) {
+      console.log(`📜 Using cached listening history (${Math.round((now - listeningHistoryCache.current.timestamp) / 60000)}m old)`);
+      setListeningHistory({
+        tracks: listeningHistoryCache.current.tracks,
+        loading: false,
+        error: null
+      });
+      return;
+    }
+
     setListeningHistory(prev => ({ ...prev, loading: true, error: null }));
     console.log('📜 Loading Listening History...');
 
     try {
-      // Get configs from metaServiceConfigs
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-
-      // If no service is configured
-      if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
-        setListeningHistory({
-          tracks: [],
-          loading: false,
-          error: 'No listening history service connected. Configure Last.fm or ListenBrainz in Settings > Resolvers.'
-        });
-        return;
-      }
-
       // Fetch from both services in parallel if both are configured
       const fetchPromises = [];
 
@@ -12896,6 +12918,9 @@ ${tracks}
 
       console.log(`📜 Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm listens → ${tracks.length} unique listens`);
 
+      // Cache the tracks
+      listeningHistoryCache.current = { tracks, timestamp: Date.now() };
+
       // Set initial state with tracks (resolution handled by scheduler via IntersectionObserver)
       setListeningHistory({
         tracks,
@@ -12924,23 +12949,40 @@ ${tracks}
   ];
 
   // Load Top Tracks from Last.fm
-  const loadTopTracks = async (period = historyPeriod) => {
+  const loadTopTracks = async (period = historyPeriod, forceRefresh = false) => {
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    if (!lastfmConfig?.username) {
+      setTopTracks({ tracks: [], loading: false, error: 'No Last.fm account connected.' });
+      return;
+    }
+
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) {
+      setTopTracks({ tracks: [], loading: false, error: 'Last.fm API key not configured.' });
+      return;
+    }
+
+    // Check if we have valid cached data for this period (cache for 30 minutes)
+    const now = Date.now();
+    const cachedEntry = topTracksCache.current[period];
+    const cacheValid = !forceRefresh &&
+                       cachedEntry?.tracks &&
+                       (now - cachedEntry.timestamp) < (30 * 60 * 1000);
+
+    if (cacheValid) {
+      console.log(`📊 Using cached top tracks for ${period} (${Math.round((now - cachedEntry.timestamp) / 60000)}m old)`);
+      setTopTracks({
+        tracks: cachedEntry.tracks,
+        loading: false,
+        error: null
+      });
+      return;
+    }
+
     setTopTracks(prev => ({ ...prev, loading: true, error: null }));
     console.log(`📊 Loading Top Tracks (${period})...`);
 
     try {
-      const lastfmConfig = metaServiceConfigs.lastfm;
-      if (!lastfmConfig?.username) {
-        setTopTracks({ tracks: [], loading: false, error: 'No Last.fm account connected.' });
-        return;
-      }
-
-      const apiKey = lastfmApiKey.current;
-      if (!apiKey) {
-        setTopTracks({ tracks: [], loading: false, error: 'Last.fm API key not configured.' });
-        return;
-      }
-
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
       const response = await fetch(url);
 
@@ -12961,6 +13003,9 @@ ${tracks}
         rank: index + 1,
         sources: {}
       }));
+
+      // Cache the tracks for this period
+      topTracksCache.current[period] = { tracks, timestamp: Date.now() };
 
       // Resolution handled by scheduler via IntersectionObserver
       setTopTracks({ tracks, loading: false, error: null });
