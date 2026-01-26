@@ -2101,6 +2101,25 @@ const Parachord = () => {
   const [resolverSyncSettings, setResolverSyncSettings] = useState({});
   const [syncStatus, setSyncStatus] = useState({}); // { spotify: { lastSyncAt, inProgress, error } }
 
+  // Sync setup modal state
+  const [syncSetupModal, setSyncSetupModal] = useState({
+    open: false,
+    providerId: null,
+    step: 'options', // 'options' | 'playlists' | 'syncing' | 'complete'
+    playlists: [],
+    folders: [],
+    selectedPlaylists: [],
+    settings: {
+      syncTracks: true,
+      syncAlbums: true,
+      syncArtists: true,
+      syncPlaylists: true
+    },
+    progress: null,
+    results: null,
+    error: null
+  });
+
   // Friends state
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
@@ -4006,6 +4025,17 @@ const Parachord = () => {
     }
   }, [loadedResolvers, cacheLoaded, resolverOrder]);
 
+  // Listen for sync progress
+  useEffect(() => {
+    const unsubscribe = window.electron.sync.onProgress((progress) => {
+      setSyncSetupModal(prev => ({
+        ...prev,
+        progress
+      }));
+    });
+    return unsubscribe;
+  }, []);
+
   // Handle "Send to Parachord" from browser extension
   const handleSendToParachord = async (url) => {
     console.log('🌐 Processing URL from browser:', url);
@@ -4023,6 +4053,79 @@ const Parachord = () => {
     // Always add to queue - handleUrlDrop will insert at position 1 (next up)
     // If queue is empty, it will play immediately
     await handleUrlDrop(url, 'queue');
+  };
+
+  // Open sync setup modal
+  const openSyncSetupModal = async (providerId) => {
+    // Check auth first
+    const authStatus = await window.electron.sync.checkAuth(providerId);
+    if (!authStatus.authenticated) {
+      // Trigger auth flow
+      if (providerId === 'spotify') {
+        await window.electron.spotify.auth();
+      }
+      return;
+    }
+
+    // Load existing settings
+    const existingSettings = await window.electron.syncSettings.getProvider(providerId);
+
+    setSyncSetupModal({
+      open: true,
+      providerId,
+      step: 'options',
+      playlists: [],
+      folders: [],
+      selectedPlaylists: existingSettings?.selectedPlaylistIds || [],
+      settings: {
+        syncTracks: existingSettings?.syncTracks ?? true,
+        syncAlbums: existingSettings?.syncAlbums ?? true,
+        syncArtists: existingSettings?.syncArtists ?? true,
+        syncPlaylists: existingSettings?.syncPlaylists ?? true
+      },
+      progress: null,
+      results: null,
+      error: null
+    });
+  };
+
+  // Start sync from modal
+  const startSync = async () => {
+    const { providerId, settings, selectedPlaylists } = syncSetupModal;
+
+    // Save settings first
+    await window.electron.syncSettings.setProvider(providerId, {
+      enabled: true,
+      ...settings,
+      selectedPlaylistIds: selectedPlaylists
+    });
+
+    setSyncSetupModal(prev => ({ ...prev, step: 'syncing' }));
+
+    const result = await window.electron.sync.start(providerId, {
+      settings: {
+        ...settings,
+        selectedPlaylistIds: selectedPlaylists
+      }
+    });
+
+    if (result.success) {
+      // Reload collection data
+      const newCollection = await window.electron.collection.load();
+      setCollectionData(newCollection);
+
+      setSyncSetupModal(prev => ({
+        ...prev,
+        step: 'complete',
+        results: result.results
+      }));
+    } else {
+      setSyncSetupModal(prev => ({
+        ...prev,
+        step: 'options',
+        error: result.error
+      }));
+    }
   };
 
   // Browser extension event handlers
