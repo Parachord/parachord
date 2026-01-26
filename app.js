@@ -15008,6 +15008,7 @@ ${tracks}
     // If we're in listen-along mode, exit it first (we're leaving to explore similar music)
     if (listenAlongFriend) {
       console.log(`🔀 Exiting listen-along with ${listenAlongFriend.displayName} to start spinoff`);
+      abortSchedulerContext('listen-along');
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       // Don't show the "stopped listening along" toast since we'll show the spinoff toast
