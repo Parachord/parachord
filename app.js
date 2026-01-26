@@ -1,6 +1,26 @@
 // Parachord Desktop App - Electron Version
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+// Normalize a string for ID generation (must match sync-providers/spotify.js)
+const normalizeForId = (str) => {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+};
+
+// Generate a consistent track ID (must match sync-providers/spotify.js)
+const generateTrackId = (artist, title, album) => {
+  return `${normalizeForId(artist || 'unknown')}-${normalizeForId(title || 'untitled')}-${normalizeForId(album || 'noalbum')}`;
+};
+
+// Generate a consistent album ID (must match sync-providers/spotify.js)
+const generateAlbumId = (artist, title) => {
+  return `${normalizeForId(artist || 'unknown')}-${normalizeForId(title || 'untitled')}`;
+};
+
+// Generate a consistent artist ID (must match sync-providers/spotify.js)
+const generateArtistId = (name) => {
+  return normalizeForId(name || 'unknown');
+};
+
 // Global Set to track prefetch in-progress state (on window to survive any reloads)
 window._prefetchInProgress = window._prefetchInProgress || new Set();
 const prefetchInProgress = window._prefetchInProgress;
@@ -5154,7 +5174,7 @@ const Parachord = () => {
 
   // Add track to collection
   const addTrackToCollection = useCallback((track) => {
-    const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const trackId = generateTrackId(track.artist, track.title, track.album);
 
     setCollectionData(prev => {
       // Check for duplicate
@@ -5185,7 +5205,7 @@ const Parachord = () => {
 
   // Add album to collection
   const addAlbumToCollection = useCallback((album) => {
-    const albumId = `${album.artist || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const albumId = generateAlbumId(album.artist, album.title);
 
     setCollectionData(prev => {
       // Check for duplicate
@@ -5214,7 +5234,7 @@ const Parachord = () => {
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
-    const artistId = (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const artistId = generateArtistId(artist.name);
 
     setCollectionData(prev => {
       // Check for duplicate
@@ -26969,7 +26989,7 @@ React.createElement('div', {
           // Heart/favorite button
           (() => {
             if (!currentTrack) return null;
-            const trackId = `${currentTrack.artist || 'unknown'}-${currentTrack.title || 'untitled'}-${currentTrack.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
             const isInCollection = collectionData.tracks.some(t => t.id === trackId);
             return React.createElement(Tooltip, {
               content: isInCollection ? 'In your collection' : 'Save to collection',
