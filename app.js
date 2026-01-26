@@ -3332,10 +3332,11 @@ const Parachord = () => {
   useEffect(() => {
     if (!currentArtist) return;
 
-    if (artistPageTab === 'biography' && !artistBio && !loadingBio) {
+    if (artistPageTab === 'biography' && artistBio === null && !loadingBio) {
+      setLoadingBio(true); // Set loading immediately before async call
       (async () => {
         const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-        setArtistBio(bioData); // Set even if null to prevent refetching
+        setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
       })();
     }
 
@@ -18766,9 +18767,10 @@ useEffect(() => {
                   onClick: async () => {
                     setArtistPageTab(tab);
                     // Lazy load data when tab is first clicked
-                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
+                    if (tab === 'biography' && artistBio === null && !loadingBio && currentArtist) {
+                      setLoadingBio(true); // Set loading immediately before async call
                       const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-                      setArtistBio(bioData);
+                      setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -18842,9 +18844,10 @@ useEffect(() => {
                   key: `collapsed-${tab}`,
                   onClick: async () => {
                     setArtistPageTab(tab);
-                    if (tab === 'biography' && !artistBio && !loadingBio && currentArtist) {
+                    if (tab === 'biography' && artistBio === null && !loadingBio && currentArtist) {
+                      setLoadingBio(true); // Set loading immediately before async call
                       const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-                      setArtistBio(bioData);
+                      setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && currentArtist) {
                       const related = await getRelatedArtists(currentArtist.name, currentArtist.mbid);
@@ -19113,13 +19116,14 @@ React.createElement('div', {
                     if (tab === 'music' && artistName && artistReleases.length === 0) {
                       fetchArtistData(artistName);
                     }
-                    if (tab === 'biography' && !artistBio && !loadingBio && artistName) {
+                    if (tab === 'biography' && artistBio === null && !loadingBio && artistName) {
                       // Ensure artist data is loaded first
                       if (artistReleases.length === 0) {
                         fetchArtistData(artistName);
                       }
+                      setLoadingBio(true); // Set loading immediately before async call
                       const bioData = await getArtistBio(artistName, currentArtist?.mbid);
-                      setArtistBio(bioData);
+                      setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
                     }
                     if (tab === 'related' && relatedArtists.length === 0 && artistName) {
                       // Ensure artist data is loaded first
@@ -19691,8 +19695,8 @@ React.createElement('div', {
                 React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3', style: { backgroundSize: '200% 100%', animationDelay: '400ms' } })
               )
             ),
-            // Bio content
-            !loadingBio && artistBio && React.createElement('div', { className: 'space-y-4' },
+            // Bio content (artistBio is an object when bio exists)
+            !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
               React.createElement('div', {
                 className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
               }, artistBio.bio),
@@ -19709,8 +19713,8 @@ React.createElement('div', {
                 }, 'Read more →')
               )
             ),
-            // No bio found
-            !loadingBio && !artistBio && React.createElement('div', {
+            // No bio found (artistBio === false means we fetched but found nothing)
+            !loadingBio && artistBio === false && React.createElement('div', {
               className: 'text-center py-12 text-gray-400'
             }, 'No biography available for this artist.')
           ),
