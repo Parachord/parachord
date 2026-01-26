@@ -25992,112 +25992,63 @@ React.createElement('div', {
                     }
                   }, 'Adjust volume offsets per resolver to balance loudness. Negative values reduce volume for louder sources.'),
 
-                  // Resolver volume offset sliders - refined
+                  // Resolver volume offset sliders - only show enabled content resolvers
                   React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                    // Spotify
-                    React.createElement('div', {
-                      className: 'flex items-center gap-4 transition-colors',
-                      style: { padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.02)' }
-                    },
-                      React.createElement('span', { style: { width: '100px', fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Spotify'),
-                      React.createElement('input', {
-                        type: 'range',
-                        min: '-12',
-                        max: '6',
-                        step: '1',
-                        value: resolverVolumeOffsets.spotify || 0,
-                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, spotify: Number(e.target.value) })),
-                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
-                      }),
-                      React.createElement('span', {
-                        style: { width: '56px', fontSize: '12px', color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }
-                      }, `${resolverVolumeOffsets.spotify > 0 ? '+' : ''}${resolverVolumeOffsets.spotify || 0} dB`)
-                    ),
+                    // Filter to only show content resolvers (have resolve capability) that are enabled
+                    loadedResolvers
+                      .filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id))
+                      .map(resolver => {
+                        // Browser-based resolvers can't have volume controlled
+                        const isBrowserBased = !resolver.capabilities?.stream;
+                        const offset = resolverVolumeOffsets[resolver.id] || 0;
 
-                    // Local Files
-                    React.createElement('div', {
-                      className: 'flex items-center gap-4 transition-colors',
-                      style: { padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.02)' }
-                    },
-                      React.createElement('span', { style: { width: '100px', fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Local Files'),
-                      React.createElement('input', {
-                        type: 'range',
-                        min: '-12',
-                        max: '6',
-                        step: '1',
-                        value: resolverVolumeOffsets.localfiles || 0,
-                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, localfiles: Number(e.target.value) })),
-                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
-                      }),
-                      React.createElement('span', {
-                        style: { width: '56px', fontSize: '12px', color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }
-                      }, `${resolverVolumeOffsets.localfiles > 0 ? '+' : ''}${resolverVolumeOffsets.localfiles || 0} dB`)
-                    ),
-
-                    // Bandcamp - disabled (browser)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-4',
-                      style: { padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.02)', opacity: 0.5 }
-                    },
-                      React.createElement('span', { style: { width: '100px', fontSize: '13px', fontWeight: '500', color: '#9ca3af' } }, 'Bandcamp'),
-                      React.createElement('input', {
-                        type: 'range',
-                        min: '-12',
-                        max: '6',
-                        step: '1',
-                        value: resolverVolumeOffsets.bandcamp || 0,
-                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, bandcamp: Number(e.target.value) })),
-                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-not-allowed',
-                        disabled: true,
-                        title: 'Browser playback - volume control not available'
-                      }),
-                      React.createElement('span', {
-                        style: { width: '56px', fontSize: '11px', color: '#9ca3af', textAlign: 'right', fontStyle: 'italic' }
-                      }, 'Browser')
-                    ),
-
-                    // YouTube - disabled (browser)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-4',
-                      style: { padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.02)', opacity: 0.5 }
-                    },
-                      React.createElement('span', { style: { width: '100px', fontSize: '13px', fontWeight: '500', color: '#9ca3af' } }, 'YouTube'),
-                      React.createElement('input', {
-                        type: 'range',
-                        min: '-12',
-                        max: '6',
-                        step: '1',
-                        value: resolverVolumeOffsets.youtube || 0,
-                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, youtube: Number(e.target.value) })),
-                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-not-allowed',
-                        disabled: true,
-                        title: 'Browser playback - volume control not available'
-                      }),
-                      React.createElement('span', {
-                        style: { width: '56px', fontSize: '11px', color: '#9ca3af', textAlign: 'right', fontStyle: 'italic' }
-                      }, 'Browser')
-                    ),
-
-                    // Qobuz
-                    React.createElement('div', {
-                      className: 'flex items-center gap-4 transition-colors',
-                      style: { padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(0, 0, 0, 0.02)' }
-                    },
-                      React.createElement('span', { style: { width: '100px', fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Qobuz'),
-                      React.createElement('input', {
-                        type: 'range',
-                        min: '-12',
-                        max: '6',
-                        step: '1',
-                        value: resolverVolumeOffsets.qobuz || 0,
-                        onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, qobuz: Number(e.target.value) })),
-                        className: 'flex-1 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-purple-600'
-                      }),
-                      React.createElement('span', {
-                        style: { width: '56px', fontSize: '12px', color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }
-                      }, `${resolverVolumeOffsets.qobuz > 0 ? '+' : ''}${resolverVolumeOffsets.qobuz || 0} dB`)
-                    )
+                        return React.createElement('div', {
+                          key: resolver.id,
+                          className: 'flex items-center gap-4 transition-colors',
+                          style: {
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                            opacity: isBrowserBased ? 0.5 : 1
+                          }
+                        },
+                          React.createElement('span', {
+                            style: {
+                              width: '100px',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              color: isBrowserBased ? '#9ca3af' : '#374151'
+                            }
+                          }, resolver.name),
+                          React.createElement('input', {
+                            type: 'range',
+                            min: '-12',
+                            max: '6',
+                            step: '1',
+                            value: offset,
+                            onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
+                            className: `flex-1 h-2 bg-gray-200 rounded-full appearance-none ${isBrowserBased ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
+                            disabled: isBrowserBased,
+                            title: isBrowserBased ? 'Browser playback - volume control not available' : undefined
+                          }),
+                          React.createElement('span', {
+                            style: {
+                              width: '56px',
+                              fontSize: isBrowserBased ? '11px' : '12px',
+                              color: isBrowserBased ? '#9ca3af' : '#6b7280',
+                              textAlign: 'right',
+                              fontFamily: isBrowserBased ? 'inherit' : 'monospace',
+                              fontStyle: isBrowserBased ? 'italic' : 'normal'
+                            }
+                          }, isBrowserBased ? 'Browser' : `${offset > 0 ? '+' : ''}${offset} dB`)
+                        );
+                      })
                   ),
+                  // Show message if no content resolvers are enabled
+                  loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length === 0 &&
+                    React.createElement('p', {
+                      style: { fontSize: '13px', color: '#9ca3af', fontStyle: 'italic', padding: '12px 0' }
+                    }, 'No content resolvers enabled. Enable resolvers in Settings → Resolvers.'),
 
                   // Reset button - refined
                   React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' } },
