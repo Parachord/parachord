@@ -4921,6 +4921,47 @@ const Parachord = () => {
     loadScrobblerConfigs();
   }, [scrobblersInitialized]);
 
+  // Register scrobble callback to update listening history cache when you scrobble
+  useEffect(() => {
+    if (!scrobblersInitialized || !window.scrobbleManager) return;
+
+    window.scrobbleManager.setOnScrobbleCallback((track, timestamp) => {
+      console.log(`📜 Scrobble detected, updating listening history cache`);
+
+      // Prepend the scrobbled track to the cached listening history
+      if (listeningHistoryCache.current.tracks) {
+        const newTrack = {
+          id: `history-${timestamp}-${track.title}`.replace(/\s+/g, '-'),
+          title: track.title,
+          artist: track.artist,
+          album: track.album || null,
+          albumArt: track.albumArt || null,
+          playedAt: timestamp * 1000, // Convert to milliseconds
+          source: 'local'
+        };
+
+        // Add to front of cache and update state
+        const updatedTracks = [newTrack, ...listeningHistoryCache.current.tracks];
+        listeningHistoryCache.current = {
+          tracks: updatedTracks,
+          timestamp: Date.now()
+        };
+
+        // Also update the UI state if on the history page
+        setListeningHistory(prev => ({
+          ...prev,
+          tracks: [newTrack, ...prev.tracks]
+        }));
+      }
+    });
+
+    return () => {
+      if (window.scrobbleManager) {
+        window.scrobbleManager.setOnScrobbleCallback(null);
+      }
+    };
+  }, [scrobblersInitialized]);
+
   // Sync meta service configs with scrobblers when both are available
   // This ensures Last.fm API credentials and ListenBrainz tokens are applied to scrobblers
   useEffect(() => {

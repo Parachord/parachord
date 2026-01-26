@@ -9,6 +9,12 @@ class ScrobbleManager {
     this.scrobbleSubmitted = false;
     this.nowPlayingSent = false;
     this.progressCheckInterval = null;
+    this.onScrobbleCallback = null; // Callback for when scrobble is submitted
+  }
+
+  // Set callback to be notified when a scrobble is submitted
+  setOnScrobbleCallback(callback) {
+    this.onScrobbleCallback = callback;
   }
 
   // Register a scrobbler plugin
@@ -112,14 +118,25 @@ class ScrobbleManager {
     console.log(`[ScrobbleManager] Submitting scrobble: ${track.artist} - ${track.title}`);
 
     const enabledPlugins = await this.getEnabledPlugins();
+    let anySuccess = false;
     for (const plugin of enabledPlugins) {
       try {
         await plugin.scrobble(track, timestamp);
         console.log(`[ScrobbleManager] Scrobble submitted to ${plugin.id}`);
+        anySuccess = true;
       } catch (error) {
         console.error(`[ScrobbleManager] Scrobble failed for ${plugin.id}:`, error);
         // Queue for retry
         await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
+      }
+    }
+
+    // Notify callback if any scrobble succeeded
+    if (anySuccess && this.onScrobbleCallback) {
+      try {
+        this.onScrobbleCallback(track, timestamp);
+      } catch (error) {
+        console.error('[ScrobbleManager] onScrobbleCallback error:', error);
       }
     }
   }
