@@ -21480,27 +21480,7 @@ React.createElement('div', {
                       backgroundColor: '#E91E63',
                       boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
                     }
-                  }, 'Start Collection Station'),
-                  // Sync Collection button
-                  React.createElement('button', {
-                    onClick: () => openSyncSetupModal('spotify'),
-                    className: 'flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors no-drag'
-                  },
-                    React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', {
-                        strokeLinecap: 'round',
-                        strokeLinejoin: 'round',
-                        strokeWidth: 2,
-                        d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
-                      })
-                    ),
-                    'Sync Collection'
-                  )
+                  }, 'Start Collection Station')
                 )
               ),
             // COLLAPSED STATE - Inline layout matching Recommendations
@@ -21546,39 +21526,14 @@ React.createElement('div', {
                     }, tab.label)
                   ]).flat().filter(Boolean)
                 ),
-                // Right: Buttons
-                React.createElement('div', {
-                  className: 'ml-auto flex items-center gap-2'
-                },
-                  // Start Collection Station button
-                  React.createElement('button', {
-                    onClick: () => console.log('Start Collection Station - placeholder'),
-                    className: 'px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
-                    style: {
-                      backgroundColor: '#E91E63'
-                    }
-                  }, 'Start Station'),
-                  // Sync Collection button
-                  React.createElement('button', {
-                    onClick: () => openSyncSetupModal('spotify'),
-                    className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors no-drag'
-                  },
-                    React.createElement('svg', {
-                      className: 'w-3.5 h-3.5',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', {
-                        strokeLinecap: 'round',
-                        strokeLinejoin: 'round',
-                        strokeWidth: 2,
-                        d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
-                      })
-                    ),
-                    'Sync'
-                  )
-                )
+                // Right: Start Collection Station button
+                React.createElement('button', {
+                  onClick: () => console.log('Start Collection Station - placeholder'),
+                  className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
+                  style: {
+                    backgroundColor: '#E91E63'
+                  }
+                }, 'Start Station')
               )
           ),
           // Scrollable content area
@@ -21640,6 +21595,31 @@ React.createElement('div', {
               ),
               // Spacer
               React.createElement('div', { className: 'flex-1' }),
+              // Sync Collection button - pill toggle style matching Pinned button
+              React.createElement('button', {
+                onClick: () => openSyncSetupModal('spotify'),
+                className: `flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors ${
+                  resolverSyncSettings.spotify?.enabled
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`,
+                title: 'Sync your Spotify library'
+              },
+                React.createElement('svg', {
+                  className: 'w-4 h-4',
+                  fill: 'none',
+                  viewBox: '0 0 24 24',
+                  stroke: 'currentColor'
+                },
+                  React.createElement('path', {
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    strokeWidth: 2,
+                    d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+                  })
+                ),
+                resolverSyncSettings.spotify?.enabled ? 'Synced' : 'Sync'
+              ),
               // Search toggle/field
               React.createElement('div', { className: 'flex items-center' },
                 collectionSearchOpen ?
@@ -28166,41 +28146,39 @@ React.createElement('div', {
             )
           ),
 
-          // Library Sync Section - shown for Spotify
+          // Library Sync Section - shown for Spotify - Cinematic Light design
           selectedResolver.id === 'spotify' && React.createElement('div', {
-            className: 'mt-4 p-4 bg-zinc-800/50 rounded-lg',
             style: {
-              marginTop: '16px',
+              marginTop: '20px',
               padding: '16px',
-              backgroundColor: 'rgba(63, 63, 70, 0.5)',
-              borderRadius: '8px'
+              backgroundColor: 'rgba(0, 0, 0, 0.02)',
+              borderRadius: '12px',
+              border: '1px solid rgba(0, 0, 0, 0.04)'
             }
           },
             React.createElement('h4', {
-              className: 'text-sm font-medium text-white mb-3',
               style: {
-                fontSize: '14px',
-                fontWeight: '500',
-                color: '#1f2937',
-                marginBottom: '12px'
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#9ca3af',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginBottom: '14px'
               }
             }, 'Library Sync'),
             resolverSyncSettings.spotify?.enabled
               ? React.createElement('div', {
-                  className: 'space-y-3',
                   style: { display: 'flex', flexDirection: 'column', gap: '12px' }
                 },
                   // Status row
                   React.createElement('div', {
-                    className: 'flex items-center justify-between text-sm',
                     style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
                   },
                     React.createElement('span', {
                       style: { color: '#6b7280' }
                     }, 'Status'),
                     React.createElement('span', {
-                      className: 'text-green-400 flex items-center gap-1',
-                      style: { color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }
+                      style: { color: '#22c55e', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }
                     },
                       React.createElement('span', {
                         style: { width: '8px', height: '8px', backgroundColor: '#22c55e', borderRadius: '50%' }
@@ -28210,7 +28188,6 @@ React.createElement('div', {
                   ),
                   // Last synced row
                   React.createElement('div', {
-                    className: 'flex items-center justify-between text-sm',
                     style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
                   },
                     React.createElement('span', {
@@ -28226,50 +28203,57 @@ React.createElement('div', {
                   ),
                   // Action buttons
                   React.createElement('div', {
-                    className: 'flex gap-2 mt-3',
-                    style: { display: 'flex', gap: '8px', marginTop: '12px' }
+                    style: { display: 'flex', gap: '8px', marginTop: '4px' }
                   },
                     React.createElement('button', {
                       onClick: () => openSyncSetupModal('spotify'),
-                      className: 'px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded transition-colors',
                       style: {
-                        padding: '6px 12px',
-                        backgroundColor: '#3f3f46',
-                        color: '#ffffff',
+                        padding: '8px 14px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        color: '#1f2937',
                         fontSize: '13px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        cursor: 'pointer'
-                      }
+                        fontWeight: '500',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(0, 0, 0, 0.06)',
+                        cursor: 'pointer',
+                        transition: 'all 150ms ease'
+                      },
+                      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'; },
+                      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; }
                     }, 'Manage Sync'),
                     React.createElement('button', {
                       onClick: () => setStopSyncDialog({ open: true, providerId: 'spotify' }),
-                      className: 'px-3 py-1.5 text-zinc-400 hover:text-red-400 text-sm transition-colors',
                       style: {
-                        padding: '6px 12px',
+                        padding: '8px 14px',
                         backgroundColor: 'transparent',
                         color: '#9ca3af',
                         fontSize: '13px',
+                        fontWeight: '500',
                         border: 'none',
-                        cursor: 'pointer'
-                      }
+                        cursor: 'pointer',
+                        transition: 'color 150ms ease'
+                      },
+                      onMouseEnter: (e) => e.currentTarget.style.color = '#dc2626',
+                      onMouseLeave: (e) => e.currentTarget.style.color = '#9ca3af'
                     }, 'Stop Syncing')
                   )
                 )
               : React.createElement('button', {
                   onClick: () => openSyncSetupModal('spotify'),
-                  className: 'w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors',
                   style: {
                     width: '100%',
-                    padding: '8px 16px',
-                    backgroundColor: '#22c55e',
+                    padding: '10px 16px',
+                    backgroundColor: '#1DB954',
                     color: '#ffffff',
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     fontWeight: '500',
                     fontSize: '13px',
                     border: 'none',
-                    cursor: 'pointer'
-                  }
+                    cursor: 'pointer',
+                    transition: 'background-color 150ms ease'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
+                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
                 }, 'Set Up Library Sync')
           ),
 
@@ -29617,7 +29601,7 @@ React.createElement('div', {
         style: {
           left: '256px',
           pointerEvents: 'auto',
-          backgroundColor: 'rgba(0, 0, 0, 0.25)'
+          backgroundColor: 'rgba(0, 0, 0, 0.4)'
         },
         onClick: () => {
           setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
@@ -29645,7 +29629,9 @@ React.createElement('div', {
           width: '384px',
           pointerEvents: 'auto',
           backgroundColor: '#ffffff',
-          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.12), 8px 0 48px rgba(0, 0, 0, 0.08)'
+          borderRadius: '0 16px 16px 0',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          overflow: 'hidden'
         },
         onDragOver: (e) => {
           // Allow drag events to pass through to children
@@ -29655,38 +29641,50 @@ React.createElement('div', {
           e.preventDefault();
         }
       },
-        // Header with title - refined
+        // Header with title - matches Playlists view header gradient
         React.createElement('div', {
           style: {
-            padding: '16px 20px',
-            backgroundColor: '#374151',
+            padding: '20px 24px',
+            background: 'linear-gradient(135deg, #f43f5e 0%, #ec4899 50%, #c026d3 100%)',
             borderBottom: '1px solid rgba(0, 0, 0, 0.1)'
           }
         },
           React.createElement('div', {
-            className: 'flex items-center gap-2'
+            className: 'flex items-center gap-3'
           },
+            React.createElement('div', {
+              style: {
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
+            },
+              React.createElement('svg', {
+                width: 18,
+                height: 18,
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: '#ffffff',
+                strokeWidth: 2,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
+              },
+                React.createElement('path', { d: 'M11 12H3' }),
+                React.createElement('path', { d: 'M16 6H3' }),
+                React.createElement('path', { d: 'M16 18H3' }),
+                React.createElement('path', { d: 'M18 9v6' }),
+                React.createElement('path', { d: 'M21 12h-6' })
+              )
+            ),
             React.createElement('span', {
               style: {
                 fontSize: '16px',
-                color: '#ffffff'
-              }
-            }, '+'),
-            React.createElement('span', {
-              style: {
-                width: '16px',
-                height: '16px',
-                borderRadius: '50%',
-                backgroundColor: '#6b7280'
-              }
-            }),
-            React.createElement('span', {
-              style: {
-                fontSize: '12px',
                 fontWeight: '600',
-                color: '#ffffff',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase'
+                color: '#ffffff'
               }
             }, 'Add to Playlist')
           )
@@ -29786,16 +29784,14 @@ React.createElement('div', {
               },
               className: 'transition-colors',
               style: {
-                padding: '8px 16px',
-                fontSize: '12px',
-                fontWeight: '600',
+                padding: '8px 14px',
+                fontSize: '13px',
+                fontWeight: '500',
                 color: '#ffffff',
-                backgroundColor: '#22c55e',
+                backgroundColor: selectedPlaylistsForAdd.length > 0 ? '#7c3aed' : 'rgba(0, 0, 0, 0.04)',
                 border: 'none',
-                borderRadius: '20px',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em'
+                borderRadius: '8px',
+                cursor: 'pointer'
               }
             }, selectedPlaylistsForAdd.length > 0
               ? `Add to ${selectedPlaylistsForAdd.length} Playlist${selectedPlaylistsForAdd.length > 1 ? 's' : ''}`
@@ -29805,8 +29801,8 @@ React.createElement('div', {
 
         // Filter bar (sticky) - sort dropdown and search
         React.createElement('div', {
-          className: 'flex items-center px-5 py-2 bg-white border-b border-gray-200',
-          style: { flexShrink: 0 }
+          className: 'flex items-center px-5 py-2 bg-white',
+          style: { flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
         },
           // Sort dropdown
           React.createElement('div', { className: 'relative' },
@@ -29820,7 +29816,8 @@ React.createElement('div', {
               )
             ),
             addToPlaylistSortDropdownOpen && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
+              className: 'absolute left-0 top-full mt-1 bg-white py-1 min-w-[140px] z-30',
+              style: { borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', border: '1px solid rgba(0, 0, 0, 0.1)' }
             },
               playlistsSortOptions.map(option =>
                 React.createElement('button', {
@@ -29851,7 +29848,7 @@ React.createElement('div', {
           // Search
           React.createElement('div', { className: 'flex items-center' },
             addToPlaylistSearchOpen ?
-              React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-2 py-1' },
+              React.createElement('div', { className: 'flex items-center px-2 py-1', style: { border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '8px' } },
                 React.createElement('input', {
                   type: 'text',
                   value: addToPlaylistSearch,
@@ -30799,66 +30796,98 @@ React.createElement('div', {
       )
     ),
 
-    // Sync Setup Modal
+    // Sync Setup Modal - Cinematic Light design
     syncSetupModal.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center'
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
+      onClick: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false }))
     },
-      // Backdrop
-      React.createElement('div', {
-        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
-        onClick: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false }))
-      }),
-
       // Modal
       React.createElement('div', {
-        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        className: 'relative w-full max-w-lg mx-4 overflow-hidden',
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
         onClick: (e) => e.stopPropagation()
       },
-        // Header
+        // Header with Spotify green accent bar
         React.createElement('div', {
-          className: 'px-6 py-4 border-b border-zinc-700/50 flex items-center gap-3'
+          style: {
+            height: '4px',
+            background: 'linear-gradient(90deg, #1DB954 0%, #1ed760 100%)'
+          }
+        }),
+        React.createElement('div', {
+          className: 'flex items-center justify-between',
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
         },
-          React.createElement('div', {
-            className: 'w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center'
-          },
-            // Spotify icon
-            React.createElement('svg', {
-              className: 'w-6 h-6 text-white',
-              viewBox: '0 0 24 24',
-              fill: 'currentColor'
+          React.createElement('div', { className: 'flex items-center gap-3' },
+            React.createElement('div', {
+              className: 'w-10 h-10 rounded-xl flex items-center justify-center',
+              style: { backgroundColor: '#1DB954' }
             },
-              React.createElement('path', {
-                d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z'
-              })
+              // Spotify icon
+              React.createElement('svg', {
+                className: 'w-6 h-6',
+                viewBox: '0 0 24 24',
+                fill: '#ffffff'
+              },
+                React.createElement('path', {
+                  d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z'
+                })
+              )
+            ),
+            React.createElement('div', null,
+              React.createElement('h2', {
+                style: { fontSize: '17px', fontWeight: '600', color: '#1f2937' }
+              }, syncSetupModal.step === 'complete' ? 'Sync Complete' : 'Sync Your Spotify Library'),
+              React.createElement('p', {
+                style: { fontSize: '13px', color: '#6b7280', marginTop: '2px' }
+              },
+                syncSetupModal.step === 'options' && 'Choose what to sync',
+                syncSetupModal.step === 'playlists' && 'Select playlists to sync',
+                syncSetupModal.step === 'syncing' && 'Syncing your library...',
+                syncSetupModal.step === 'complete' && 'Your library has been synced'
+              )
             )
           ),
-          React.createElement('div', null,
-            React.createElement('h2', {
-              className: 'text-lg font-semibold text-white'
-            }, syncSetupModal.step === 'complete' ? 'Sync Complete' : 'Sync Your Spotify Library'),
-            React.createElement('p', {
-              className: 'text-sm text-zinc-400'
-            },
-              syncSetupModal.step === 'options' && 'Choose what to sync',
-              syncSetupModal.step === 'playlists' && 'Select playlists to sync',
-              syncSetupModal.step === 'syncing' && 'Syncing your library...',
-              syncSetupModal.step === 'complete' && 'Your library has been synced'
+          // Close button
+          !syncSetupModal.progress && React.createElement('button', {
+            onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
+            className: 'transition-colors',
+            style: { padding: '6px', color: '#9ca3af', borderRadius: '8px' },
+            onMouseEnter: (e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.backgroundColor = 'transparent'; }
+          },
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
             )
           )
         ),
 
         // Content
         React.createElement('div', {
-          className: 'px-6 py-4 max-h-96 overflow-y-auto'
+          className: 'scrollable-content',
+          style: { padding: '20px 24px', maxHeight: '400px', overflowY: 'auto' }
         },
           // Error message
           syncSetupModal.error && React.createElement('div', {
-            className: 'mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm'
+            style: {
+              marginBottom: '16px',
+              padding: '12px 16px',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '10px',
+              fontSize: '13px',
+              color: '#dc2626'
+            }
           }, syncSetupModal.error),
 
           // Options step
           syncSetupModal.step === 'options' && React.createElement('div', {
-            className: 'space-y-3'
+            style: { display: 'flex', flexDirection: 'column', gap: '10px' }
           },
             [
               { key: 'syncTracks', label: 'Liked Songs', desc: 'Your saved tracks' },
@@ -30868,7 +30897,13 @@ React.createElement('div', {
             ].map(option =>
               React.createElement('label', {
                 key: option.key,
-                className: 'flex items-center gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 cursor-pointer transition-colors'
+                className: 'flex items-center gap-3 cursor-pointer transition-colors',
+                style: {
+                  padding: '14px 16px',
+                  backgroundColor: syncSetupModal.settings[option.key] ? 'rgba(29, 185, 84, 0.06)' : 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '12px',
+                  border: syncSetupModal.settings[option.key] ? '1px solid rgba(29, 185, 84, 0.3)' : '1px solid rgba(0, 0, 0, 0.06)'
+                }
               },
                 React.createElement('input', {
                   type: 'checkbox',
@@ -30877,11 +30912,16 @@ React.createElement('div', {
                     ...prev,
                     settings: { ...prev.settings, [option.key]: e.target.checked }
                   })),
-                  className: 'w-5 h-5 rounded bg-zinc-700 border-zinc-600 text-green-500 focus:ring-green-500 focus:ring-offset-zinc-900'
+                  style: {
+                    width: '18px',
+                    height: '18px',
+                    accentColor: '#1DB954',
+                    cursor: 'pointer'
+                  }
                 }),
                 React.createElement('div', null,
-                  React.createElement('div', { className: 'text-white font-medium' }, option.label),
-                  React.createElement('div', { className: 'text-sm text-zinc-400' }, option.desc)
+                  React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' } }, option.label),
+                  React.createElement('div', { style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' } }, option.desc)
                 )
               )
             )
@@ -30889,16 +30929,23 @@ React.createElement('div', {
 
           // Playlists step
           syncSetupModal.step === 'playlists' && React.createElement('div', {
-            className: 'space-y-2'
+            style: { display: 'flex', flexDirection: 'column', gap: '8px' }
           },
             syncSetupModal.playlists.length === 0
               ? React.createElement('div', {
-                  className: 'text-center py-8 text-zinc-400'
+                  style: { textAlign: 'center', padding: '32px 0', color: '#6b7280', fontSize: '14px' }
                 }, 'Loading playlists...')
               : syncSetupModal.playlists.map(playlist =>
                   React.createElement('label', {
                     key: playlist.externalId,
-                    className: 'flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer'
+                    className: 'flex items-center gap-3 cursor-pointer transition-colors',
+                    style: {
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? 'rgba(29, 185, 84, 0.06)' : 'transparent'
+                    },
+                    onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)'; },
+                    onMouseLeave: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'transparent'; }
                   },
                     React.createElement('input', {
                       type: 'checkbox',
@@ -30911,18 +30958,16 @@ React.createElement('div', {
                             : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
                         }));
                       },
-                      className: 'w-4 h-4 rounded bg-zinc-700 border-zinc-600 text-green-500'
+                      style: { width: '16px', height: '16px', accentColor: '#1DB954', cursor: 'pointer' }
                     }),
                     playlist.image && React.createElement('img', {
                       src: playlist.image,
-                      className: 'w-10 h-10 rounded',
+                      style: { width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' },
                       alt: ''
                     }),
-                    React.createElement('div', {
-                      className: 'flex-1 min-w-0'
-                    },
-                      React.createElement('div', { className: 'text-white truncate' }, playlist.name),
-                      React.createElement('div', { className: 'text-sm text-zinc-400' }, `${playlist.trackCount} tracks`)
+                    React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                      React.createElement('div', { style: { fontSize: '14px', color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, playlist.name),
+                      React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af' } }, `${playlist.trackCount} tracks`)
                     )
                   )
                 )
@@ -30930,63 +30975,112 @@ React.createElement('div', {
 
           // Syncing step
           syncSetupModal.step === 'syncing' && syncSetupModal.progress && React.createElement('div', {
-            className: 'py-8'
+            style: { padding: '32px 0', textAlign: 'center' }
           },
+            // Animated sync icon
             React.createElement('div', {
-              className: 'text-center mb-4'
+              style: {
+                width: '48px',
+                height: '48px',
+                margin: '0 auto 16px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
             },
-              React.createElement('div', {
-                className: 'text-white font-medium'
-              }, syncSetupModal.progress.message),
-              syncSetupModal.progress.total > 0 && React.createElement('div', {
-                className: 'text-sm text-zinc-400 mt-1'
-              }, `${syncSetupModal.progress.current} of ${syncSetupModal.progress.total}`)
+              React.createElement('svg', {
+                className: 'animate-spin',
+                style: { width: '24px', height: '24px', color: '#1DB954' },
+                fill: 'none',
+                viewBox: '0 0 24 24'
+              },
+                React.createElement('circle', { cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '3', opacity: 0.2 }),
+                React.createElement('path', { fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
+              )
             ),
+            React.createElement('div', {
+              style: { fontSize: '15px', fontWeight: '500', color: '#1f2937' }
+            }, syncSetupModal.progress.message),
             syncSetupModal.progress.total > 0 && React.createElement('div', {
-              className: 'h-2 bg-zinc-700 rounded-full overflow-hidden'
+              style: { fontSize: '13px', color: '#6b7280', marginTop: '4px' }
+            }, `${syncSetupModal.progress.current} of ${syncSetupModal.progress.total}`),
+            syncSetupModal.progress.total > 0 && React.createElement('div', {
+              style: { height: '6px', backgroundColor: 'rgba(0, 0, 0, 0.06)', borderRadius: '3px', overflow: 'hidden', marginTop: '16px' }
             },
               React.createElement('div', {
-                className: 'h-full bg-green-500 transition-all duration-300',
-                style: { width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%` }
+                style: {
+                  height: '100%',
+                  backgroundColor: '#1DB954',
+                  borderRadius: '3px',
+                  transition: 'width 300ms ease-out',
+                  width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%`
+                }
               })
             )
           ),
 
           // Complete step
           syncSetupModal.step === 'complete' && syncSetupModal.results && React.createElement('div', {
-            className: 'py-4 space-y-3'
+            style: { padding: '16px 0' }
           },
-            syncSetupModal.results.tracks && React.createElement('div', {
-              className: 'flex justify-between text-sm'
+            // Success icon
+            React.createElement('div', {
+              style: {
+                width: '48px',
+                height: '48px',
+                margin: '0 auto 20px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
             },
-              React.createElement('span', { className: 'text-zinc-400' }, 'Tracks'),
-              React.createElement('span', { className: 'text-white' },
-                `+${syncSetupModal.results.tracks.added} added, -${syncSetupModal.results.tracks.removed} removed`
+              React.createElement('svg', {
+                style: { width: '24px', height: '24px', color: '#1DB954' },
+                fill: 'none',
+                viewBox: '0 0 24 24',
+                stroke: 'currentColor'
+              },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
               )
             ),
-            syncSetupModal.results.albums && React.createElement('div', {
-              className: 'flex justify-between text-sm'
-            },
-              React.createElement('span', { className: 'text-zinc-400' }, 'Albums'),
-              React.createElement('span', { className: 'text-white' },
-                `+${syncSetupModal.results.albums.added} added, -${syncSetupModal.results.albums.removed} removed`
-              )
-            ),
-            syncSetupModal.results.artists && React.createElement('div', {
-              className: 'flex justify-between text-sm'
-            },
-              React.createElement('span', { className: 'text-zinc-400' }, 'Artists'),
-              React.createElement('span', { className: 'text-white' },
-                `+${syncSetupModal.results.artists.added} added, -${syncSetupModal.results.artists.removed} removed`
-              )
-            ),
-            syncSetupModal.results.playlists && React.createElement('div', {
-              className: 'flex justify-between text-sm'
-            },
-              React.createElement('span', { className: 'text-zinc-400' }, 'Playlists'),
-              React.createElement('span', { className: 'text-white' },
-                `+${syncSetupModal.results.playlists.added} added` +
-                (syncSetupModal.results.playlists.updated > 0 ? `, ${syncSetupModal.results.playlists.updated} with updates` : '')
+            // Results
+            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+              syncSetupModal.results.tracks && React.createElement('div', {
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+              },
+                React.createElement('span', { style: { color: '#6b7280' } }, 'Tracks'),
+                React.createElement('span', { style: { color: '#1f2937', fontWeight: '500' } },
+                  `+${syncSetupModal.results.tracks.added} added, -${syncSetupModal.results.tracks.removed} removed`
+                )
+              ),
+              syncSetupModal.results.albums && React.createElement('div', {
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+              },
+                React.createElement('span', { style: { color: '#6b7280' } }, 'Albums'),
+                React.createElement('span', { style: { color: '#1f2937', fontWeight: '500' } },
+                  `+${syncSetupModal.results.albums.added} added, -${syncSetupModal.results.albums.removed} removed`
+                )
+              ),
+              syncSetupModal.results.artists && React.createElement('div', {
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+              },
+                React.createElement('span', { style: { color: '#6b7280' } }, 'Artists'),
+                React.createElement('span', { style: { color: '#1f2937', fontWeight: '500' } },
+                  `+${syncSetupModal.results.artists.added} added, -${syncSetupModal.results.artists.removed} removed`
+                )
+              ),
+              syncSetupModal.results.playlists && React.createElement('div', {
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+              },
+                React.createElement('span', { style: { color: '#6b7280' } }, 'Playlists'),
+                React.createElement('span', { style: { color: '#1f2937', fontWeight: '500' } },
+                  `+${syncSetupModal.results.playlists.added} added` +
+                  (syncSetupModal.results.playlists.updated > 0 ? `, ${syncSetupModal.results.playlists.updated} with updates` : '')
+                )
               )
             )
           )
@@ -30994,13 +31088,25 @@ React.createElement('div', {
 
         // Footer
         React.createElement('div', {
-          className: 'px-6 py-4 border-t border-zinc-700/50 flex justify-end gap-3'
+          className: 'flex justify-end gap-3',
+          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
         },
           // Options step buttons
           syncSetupModal.step === 'options' && React.createElement(React.Fragment, null,
             React.createElement('button', {
               onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
-              className: 'px-4 py-2 text-zinc-400 hover:text-white transition-colors'
+              style: {
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+              onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             }, 'Cancel'),
             React.createElement('button', {
               onClick: async () => {
@@ -31026,7 +31132,19 @@ React.createElement('div', {
                   startSync();
                 }
               },
-              className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+              style: {
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#ffffff',
+                backgroundColor: '#1DB954',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 150ms ease'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
             }, syncSetupModal.settings.syncPlaylists ? 'Next' : 'Start Sync')
           ),
 
@@ -31034,144 +31152,206 @@ React.createElement('div', {
           syncSetupModal.step === 'playlists' && React.createElement(React.Fragment, null,
             React.createElement('button', {
               onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })),
-              className: 'px-4 py-2 text-zinc-400 hover:text-white transition-colors'
+              style: {
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+              onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             }, 'Back'),
             React.createElement('button', {
               onClick: startSync,
-              className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+              style: {
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#ffffff',
+                backgroundColor: '#1DB954',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 150ms ease'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
             }, 'Start Sync')
           ),
 
           // Complete step button
           syncSetupModal.step === 'complete' && React.createElement('button', {
             onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
-            className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+            style: {
+              padding: '10px 24px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#1DB954',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              transition: 'background-color 150ms ease'
+            },
+            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
+            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
           }, 'Done')
         )
       )
     ),
 
-    // Sync Status Modal (Quick View from Collection)
+    // Sync Status Modal (Quick View from Collection) - Cinematic Light design
     syncStatusModal.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center'
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
+      onClick: () => setSyncStatusModal({ open: false })
     },
-      // Backdrop
-      React.createElement('div', {
-        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
-        onClick: () => setSyncStatusModal({ open: false })
-      }),
-
       // Modal
       React.createElement('div', {
-        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-md mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        className: 'relative w-full max-w-md mx-4 overflow-hidden',
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
         onClick: (e) => e.stopPropagation()
       },
         // Header with close button
         React.createElement('div', {
-          className: 'px-6 py-4 border-b border-zinc-700/50 flex items-center justify-between'
+          className: 'flex items-center justify-between',
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
         },
           React.createElement('h2', {
-            className: 'text-lg font-semibold text-white'
+            style: { fontSize: '17px', fontWeight: '600', color: '#1f2937' }
           }, 'Library Sync'),
           React.createElement('button', {
             onClick: () => setSyncStatusModal({ open: false }),
-            className: 'p-1 text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/10'
+            className: 'transition-colors',
+            style: { padding: '6px', color: '#9ca3af', borderRadius: '8px' },
+            onMouseEnter: (e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('svg', {
-              className: 'w-5 h-5',
-              fill: 'none',
-              viewBox: '0 0 24 24',
-              stroke: 'currentColor'
-            },
-              React.createElement('path', {
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round',
-                strokeWidth: 2,
-                d: 'M6 18L18 6M6 6l12 12'
-              })
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
             )
           )
         ),
 
         // Content
         React.createElement('div', {
-          className: 'px-6 py-4 space-y-4'
+          style: { padding: '20px 24px' }
         },
           // List enabled sync providers with progress
-          Object.entries(resolverSyncSettings)
-            .filter(([_, settings]) => settings.enabled)
-            .map(([providerId, settings]) => {
-              const status = syncStatus[providerId];
-              const isInProgress = status?.inProgress;
-              const progress = status?.progress;
+          React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px' } },
+            Object.entries(resolverSyncSettings)
+              .filter(([_, settings]) => settings.enabled)
+              .map(([providerId, settings]) => {
+                const status = syncStatus[providerId];
+                const isInProgress = status?.inProgress;
+                const progress = status?.progress;
 
-              return React.createElement('div', {
-                key: providerId,
-                className: 'space-y-2'
-              },
-                React.createElement('div', {
-                  className: 'flex items-center gap-3'
+                return React.createElement('div', {
+                  key: providerId,
+                  style: {
+                    padding: '14px 16px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(0, 0, 0, 0.04)'
+                  }
                 },
-                  // Status indicator - animated when syncing
                   React.createElement('div', {
-                    className: isInProgress
-                      ? 'w-2 h-2 bg-blue-400 rounded-full animate-pulse'
-                      : 'w-2 h-2 bg-green-400 rounded-full'
-                  }),
-                  React.createElement('div', {
-                    className: 'flex-1'
+                    style: { display: 'flex', alignItems: 'center', gap: '12px' }
+                  },
+                    // Status indicator - animated when syncing
+                    React.createElement('div', {
+                      className: isInProgress ? 'animate-pulse' : '',
+                      style: {
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: isInProgress ? '#3b82f6' : '#22c55e',
+                        boxShadow: isInProgress ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
+                      }
+                    }),
+                    React.createElement('div', { style: { flex: 1 } },
+                      React.createElement('div', {
+                        style: { fontSize: '14px', fontWeight: '500', color: '#1f2937', textTransform: 'capitalize' }
+                      }, providerId),
+                      React.createElement('div', {
+                        style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' }
+                      }, isInProgress
+                        ? (progress?.phase === 'tracks' ? `Syncing tracks... ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'albums' ? `Syncing albums... ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'artists' ? `Syncing artists... ${progress.current || 0}/${progress.total || '?'}` :
+                           progress?.phase === 'playlists' ? `Syncing playlists... ${progress.current || 0}/${progress.total || '?'}` :
+                           'Syncing...')
+                        : 'Last sync: ' + (settings.lastSyncAt
+                          ? new Date(settings.lastSyncAt).toLocaleString()
+                          : 'Never'))
+                    )
+                  ),
+                  // Progress bar when syncing
+                  isInProgress && progress?.total > 0 && React.createElement('div', {
+                    style: {
+                      height: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.06)',
+                      borderRadius: '2px',
+                      overflow: 'hidden',
+                      marginTop: '10px',
+                      marginLeft: '22px'
+                    }
                   },
                     React.createElement('div', {
-                      className: 'text-white font-medium capitalize'
-                    }, providerId),
-                    React.createElement('div', {
-                      className: 'text-sm text-zinc-400'
-                    }, isInProgress
-                      ? (progress?.phase === 'tracks' ? `Syncing tracks... ${progress.current || 0}/${progress.total || '?'}` :
-                         progress?.phase === 'albums' ? `Syncing albums... ${progress.current || 0}/${progress.total || '?'}` :
-                         progress?.phase === 'artists' ? `Syncing artists... ${progress.current || 0}/${progress.total || '?'}` :
-                         progress?.phase === 'playlists' ? `Syncing playlists... ${progress.current || 0}/${progress.total || '?'}` :
-                         'Syncing...')
-                      : 'Last sync: ' + (settings.lastSyncAt
-                        ? new Date(settings.lastSyncAt).toLocaleString()
-                        : 'Never'))
+                      style: {
+                        height: '100%',
+                        backgroundColor: '#3b82f6',
+                        borderRadius: '2px',
+                        transition: 'width 300ms ease-out',
+                        width: `${Math.round((progress.current / progress.total) * 100)}%`
+                      }
+                    })
                   )
-                ),
-                // Progress bar when syncing
-                isInProgress && progress?.total > 0 && React.createElement('div', {
-                  className: 'ml-5 h-1 bg-zinc-700 rounded-full overflow-hidden'
-                },
-                  React.createElement('div', {
-                    className: 'h-full bg-blue-400 transition-all duration-300',
-                    style: { width: `${Math.round((progress.current / progress.total) * 100)}%` }
-                  })
-                )
-              );
-            }),
+                );
+              })
+          ),
 
           // No providers message
           Object.keys(resolverSyncSettings).filter(id => resolverSyncSettings[id]?.enabled).length === 0 &&
             React.createElement('div', {
-              className: 'text-center py-4 text-zinc-400'
+              style: { textAlign: 'center', padding: '24px 0', color: '#6b7280', fontSize: '14px' }
             }, 'No sync providers enabled'),
 
           // Message about closing safely - only show when sync is in progress
           Object.values(syncStatus).some(s => s?.inProgress) &&
             React.createElement('div', {
-              className: 'text-xs text-zinc-500 text-center pt-2'
+              style: { fontSize: '12px', color: '#9ca3af', textAlign: 'center', marginTop: '16px' }
             }, 'Sync continues in the background. Safe to close this window.')
         ),
 
         // Footer
         React.createElement('div', {
-          className: 'px-6 py-4 border-t border-zinc-700/50 flex justify-between'
+          className: 'flex justify-between',
+          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
         },
           React.createElement('button', {
             onClick: () => {
               setSyncStatusModal({ open: false });
               // Navigate to settings - to be wired up later
             },
-            className: 'text-zinc-400 hover:text-white text-sm transition-colors'
+            style: {
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#6b7280',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer'
+            },
+            onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+            onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
           }, 'Manage settings'),
           React.createElement('button', {
             onClick: async () => {
@@ -31194,66 +31374,99 @@ React.createElement('div', {
               setPlaylists(loadedPlaylists);
             },
             disabled: Object.values(syncStatus).some(s => s?.inProgress),
-            className: Object.values(syncStatus).some(s => s?.inProgress)
-              ? 'px-4 py-2 bg-white/5 text-zinc-500 rounded-lg text-sm font-medium cursor-not-allowed'
-              : 'px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors'
+            style: {
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: Object.values(syncStatus).some(s => s?.inProgress) ? '#9ca3af' : '#ffffff',
+              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'rgba(0, 0, 0, 0.04)' : '#1DB954',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: Object.values(syncStatus).some(s => s?.inProgress) ? 'not-allowed' : 'pointer',
+              transition: 'background-color 150ms ease'
+            },
+            onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#1ed760'; },
+            onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#1DB954'; }
           }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
         )
       )
     ),
 
-    // Stop Sync Confirmation Dialog
+    // Stop Sync Confirmation Dialog - Cinematic Light design
     stopSyncDialog.open && React.createElement('div', {
-      className: 'fixed inset-0 z-50 flex items-center justify-center'
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
+      onClick: () => setStopSyncDialog({ open: false, providerId: null })
     },
-      // Backdrop
-      React.createElement('div', {
-        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
-        onClick: () => setStopSyncDialog({ open: false, providerId: null })
-      }),
-
       // Dialog
       React.createElement('div', {
-        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-sm mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        className: 'relative w-full max-w-sm mx-4 overflow-hidden',
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
         onClick: (e) => e.stopPropagation()
       },
         // Content
         React.createElement('div', {
-          className: 'px-6 py-4'
+          style: { padding: '24px' }
         },
           React.createElement('h2', {
-            className: 'text-lg font-semibold text-white mb-2'
+            style: { fontSize: '17px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
           }, 'Stop Syncing?'),
           React.createElement('p', {
-            className: 'text-zinc-400 text-sm mb-4'
+            style: { fontSize: '14px', color: '#6b7280', marginBottom: '20px', lineHeight: '1.5' }
           }, 'What would you like to do with your synced items?'),
 
           // Options
           React.createElement('div', {
-            className: 'space-y-2'
+            style: { display: 'flex', flexDirection: 'column', gap: '10px' }
           },
             // Keep items option
             React.createElement('button', {
               onClick: () => stopSyncing(stopSyncDialog.providerId, false),
-              className: 'w-full p-3 text-left bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors'
+              style: {
+                width: '100%',
+                padding: '14px 16px',
+                textAlign: 'left',
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                border: '1px solid rgba(0, 0, 0, 0.06)',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.02)'; e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.06)'; }
             },
               React.createElement('div', {
-                className: 'text-white font-medium'
+                style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' }
               }, 'Keep imported items'),
               React.createElement('div', {
-                className: 'text-sm text-zinc-400'
+                style: { fontSize: '12px', color: '#6b7280', marginTop: '4px' }
               }, 'Items stay in your Collection as local items')
             ),
             // Remove items option
             React.createElement('button', {
               onClick: () => stopSyncing(stopSyncDialog.providerId, true),
-              className: 'w-full p-3 text-left bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors'
+              style: {
+                width: '100%',
+                padding: '14px 16px',
+                textAlign: 'left',
+                backgroundColor: 'rgba(239, 68, 68, 0.04)',
+                border: '1px solid rgba(239, 68, 68, 0.15)',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.04)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.15)'; }
             },
               React.createElement('div', {
-                className: 'text-white font-medium'
+                style: { fontSize: '14px', fontWeight: '500', color: '#dc2626' }
               }, 'Remove synced items'),
               React.createElement('div', {
-                className: 'text-sm text-zinc-400'
+                style: { fontSize: '12px', color: '#6b7280', marginTop: '4px' }
               }, 'Remove everything synced from this provider')
             )
           )
@@ -31261,11 +31474,21 @@ React.createElement('div', {
 
         // Footer
         React.createElement('div', {
-          className: 'px-6 py-3 border-t border-zinc-700/50'
+          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)', textAlign: 'center' }
         },
           React.createElement('button', {
             onClick: () => setStopSyncDialog({ open: false, providerId: null }),
-            className: 'w-full py-2 text-zinc-400 hover:text-white text-sm transition-colors'
+            style: {
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#6b7280',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '8px 16px'
+            },
+            onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+            onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
           }, 'Cancel')
         )
       )
