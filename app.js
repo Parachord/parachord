@@ -2306,7 +2306,11 @@ const ReleasePage = ({
   isPlaying,
   // Visibility tracking props for resolution scheduler
   releaseTrackRowRefs,
-  releaseObserverRef
+  releaseObserverRef,
+  // Album action props (hover buttons)
+  onAlbumPlay,
+  onAlbumAddToQueue,
+  onAlbumAddToPlaylist
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -2348,91 +2352,225 @@ const ReleasePage = ({
   const columnWidth = isCompact ? 180 : 240;
 
   return React.createElement('div', { ref: containerRef, className: 'flex gap-0 p-6' },
-    // LEFT COLUMN: Album art and metadata - responsive width with smooth animation
-    React.createElement('div', {
-      className: 'flex-shrink-0 pr-4 md:pr-8',
-      style: {
-        width: `${columnWidth}px`,
-        transition: 'width 300ms ease'
-      }
-    },
-      // Album art container - make draggable, responsive size with smooth animation
-      React.createElement('div', {
-        draggable: true,
-        onDragStart: (e) => {
-          e.dataTransfer.effectAllowed = 'copy';
-          const albumData = {
-            type: 'album',
-            album: {
-              id: `${release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-              title: release.title,
-              artist: release.artist?.name,
-              year: release.date?.split('-')[0] || null,
-              art: release.albumArt
-            }
-          };
-          e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
-        },
-        className: 'rounded-lg flex items-center justify-center relative overflow-hidden cursor-grab active:cursor-grabbing album-art-container',
+    // LEFT COLUMN: Album card - matching ReleaseCard styling
+    (() => {
+      const year = release.date ? release.date.split('-')[0] : '';
+      // Badge colors - matching ReleaseCard palette
+      const badgeStyles = {
+        album: { bg: 'rgba(17, 24, 39, 0.06)', color: '#4b5563' },
+        ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
+        single: { bg: 'rgba(139, 92, 246, 0.08)', color: '#7c3aed' },
+        live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
+        compilation: { bg: 'rgba(20, 184, 166, 0.08)', color: '#0d9488' }
+      };
+      const releaseType = release.releaseType || 'album';
+      const badge = badgeStyles[releaseType] || badgeStyles.album;
+
+      return React.createElement('div', {
+        className: 'flex-shrink-0 pr-4 md:pr-8',
         style: {
-          width: `${albumArtSize}px`,
-          height: `${albumArtSize}px`,
-          transition: 'width 300ms ease, height 300ms ease',
-          background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15), 0 8px 32px rgba(0, 0, 0, 0.1)'
+          width: `${columnWidth}px`,
+          transition: 'width 300ms ease'
         }
       },
-        // Image (absolute positioned, fades in on load, hides on error)
-        release.albumArt && React.createElement('img', {
-          src: release.albumArt,
-          alt: release.title,
-          className: 'absolute inset-0 w-full h-full object-cover',
-          style: { opacity: 0, transition: 'opacity 300ms ease' },
-          ref: (el) => { if (el && el.complete) el.style.opacity = '1'; },
-          onLoad: (e) => { e.target.style.opacity = '1'; },
-          onError: (e) => { e.target.style.display = 'none'; }
-        }),
-        // Placeholder icon (always behind) - dark theme
-        React.createElement('svg', {
-          className: 'w-16 h-16 text-gray-600',
-          fill: 'none',
-          viewBox: '0 0 24 24',
-          stroke: 'currentColor'
+        // Card wrapper - matching ReleaseCard styling
+        React.createElement('div', {
+          draggable: true,
+          onDragStart: (e) => {
+            e.dataTransfer.effectAllowed = 'copy';
+            const albumData = {
+              type: 'album',
+              album: {
+                id: `${release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                title: release.title,
+                artist: release.artist?.name,
+                year: year ? parseInt(year) : null,
+                art: release.albumArt
+              }
+            };
+            e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
+          },
+          className: 'no-drag cursor-grab active:cursor-grabbing',
+          style: {
+            width: `${albumArtSize}px`,
+            backgroundColor: '#ffffff',
+            borderRadius: '10px',
+            padding: '10px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+            transition: 'width 300ms ease'
+          }
         },
-          React.createElement('path', {
-            strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-              strokeWidth: 1.5,
-              d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-            })
+          // Album art container
+          React.createElement('div', {
+            className: 'album-art-container group/art',
+            style: {
+              width: '100%',
+              aspectRatio: '1',
+              borderRadius: '6px',
+              background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '10px',
+              overflow: 'hidden',
+              position: 'relative'
+            }
+          },
+            // Image (absolute positioned, fades in on load, hides on error)
+            release.albumArt && React.createElement('img', {
+              src: release.albumArt,
+              alt: release.title,
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                pointerEvents: 'none',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                opacity: 0,
+                transition: 'opacity 0.35s ease-out'
+              },
+              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+              onLoad: (e) => { e.target.style.opacity = '1'; },
+              onError: (e) => { e.target.style.display = 'none'; }
+            }),
+            // Placeholder icon (always behind) - dark theme
+            React.createElement('svg', {
+              style: {
+                width: '36px',
+                height: '36px',
+                color: 'rgba(255, 255, 255, 0.2)',
+                pointerEvents: 'none'
+              },
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor',
+              strokeWidth: 1.5
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+              })
+            ),
+
+            // Hover overlay with action buttons (Add to Playlist, Play, Queue)
+            (onAlbumPlay || onAlbumAddToQueue || onAlbumAddToPlaylist) && React.createElement('div', {
+              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+              style: { pointerEvents: 'auto' }
+            },
+              // Add to Playlist button
+              onAlbumAddToPlaylist && React.createElement('button', {
+                onClick: (e) => {
+                  e.stopPropagation();
+                  onAlbumAddToPlaylist(release);
+                },
+                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                title: 'Add to Playlist'
+              },
+                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                )
+              ),
+              // Play button (center, larger)
+              onAlbumPlay && React.createElement('button', {
+                onClick: (e) => {
+                  e.stopPropagation();
+                  onAlbumPlay(release);
+                },
+                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                style: { border: 'none', cursor: 'pointer' },
+                title: 'Play'
+              },
+                React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+              ),
+              // Add to Queue button
+              onAlbumAddToQueue && React.createElement('button', {
+                onClick: (e) => {
+                  e.stopPropagation();
+                  onAlbumAddToQueue(release);
+                },
+                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                title: 'Add to Queue'
+              },
+                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                )
+              )
+            )
+          ),
+
+          // Title - matching ReleaseCard typography
+          React.createElement('h3', {
+            style: {
+              fontWeight: '500',
+              fontSize: '13px',
+              lineHeight: '1.35',
+              marginBottom: '3px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              color: '#1f2937',
+              letterSpacing: '0.005em',
+              pointerEvents: 'none'
+            },
+            title: release.title
+          }, release.title),
+
+          // Year and badge row - matching ReleaseCard
+          React.createElement('div', {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              pointerEvents: 'none'
+            }
+          },
+            // Year
+            year && React.createElement('span', {
+              style: {
+                fontSize: '11px',
+                color: '#9ca3af',
+                fontWeight: '400'
+              }
+            }, year),
+            // Badge - matching ReleaseCard style
+            React.createElement('span', {
+              className: 'release-badge',
+              style: {
+                backgroundColor: badge.bg,
+                color: badge.color
+              }
+            }, releaseType.toUpperCase())
           )
         ),
 
-      // Album title and metadata - responsive sizing with smooth animation
-      React.createElement('div', { className: 'mt-4 space-y-1' },
-        React.createElement('h2', {
-          className: 'font-bold text-gray-900 leading-tight',
-          style: {
-            fontSize: isCompact ? '1rem' : '1.125rem',
-            transition: 'font-size 300ms ease'
-          }
-        }, release.title),
-        React.createElement('p', {
-          className: 'text-gray-500',
-          style: {
-            fontSize: isCompact ? '0.75rem' : '0.875rem',
-            transition: 'font-size 300ms ease'
-          }
-        }, formatDate(release.date)),
-        React.createElement('p', {
-          className: 'text-gray-500',
-          style: {
-            fontSize: isCompact ? '0.75rem' : '0.875rem',
-            transition: 'font-size 300ms ease'
-          }
-        }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
-      )
-    ),
+        // Additional metadata below card
+        React.createElement('div', { className: 'mt-3 space-y-1', style: { paddingLeft: '2px' } },
+          React.createElement('p', {
+            className: 'text-gray-500',
+            style: {
+              fontSize: isCompact ? '0.75rem' : '0.875rem',
+              transition: 'font-size 300ms ease'
+            }
+          }, formatDate(release.date)),
+          React.createElement('p', {
+            className: 'text-gray-500',
+            style: {
+              fontSize: isCompact ? '0.75rem' : '0.875rem',
+              transition: 'font-size 300ms ease'
+            }
+          }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
+        )
+      );
+    })(),
 
     // RIGHT COLUMN: Tracklist
     React.createElement('div', { className: 'flex-1 min-w-0' },
@@ -15898,6 +16036,12 @@ ${tracks}
   };
 
   const navigateBack = () => {
+    // If we're viewing a release/album, close it first and go back to artist page
+    if (activeView === 'artist' && currentRelease) {
+      setCurrentRelease(null);
+      return;
+    }
+
     // If we're on artist page and have artist history, go to previous artist
     if (activeView === 'artist' && artistHistory.length > 0) {
       const newArtistHistory = [...artistHistory];
@@ -20436,7 +20580,62 @@ React.createElement('div', {
             },
             // Visibility tracking for resolution scheduler
             releaseTrackRowRefs: releaseTrackRowRefs,
-            releaseObserverRef: releaseObserverRef
+            releaseObserverRef: releaseObserverRef,
+            // Album action props (hover buttons on album art)
+            onAlbumPlay: (rel) => {
+              if (rel.tracks?.length > 0) {
+                const context = { type: 'album', id: rel.id, name: rel.title, artist: rel.artist?.name };
+                const tracks = rel.tracks.map(t => {
+                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  return {
+                    ...t,
+                    id: trackId,
+                    artist: rel.artist?.name,
+                    album: rel.title,
+                    albumArt: rel.albumArt,
+                    sources: trackSources[trackId] || {}
+                  };
+                });
+                const [firstTrack, ...remainingTracks] = tracks;
+                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                setQueueWithContext(remainingTracks, context);
+                handlePlay(taggedFirstTrack);
+              }
+            },
+            onAlbumAddToQueue: (rel) => {
+              if (rel.tracks?.length > 0) {
+                const tracks = rel.tracks.map(t => {
+                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  return {
+                    ...t,
+                    id: trackId,
+                    artist: rel.artist?.name,
+                    album: rel.title,
+                    albumArt: rel.albumArt,
+                    sources: trackSources[trackId] || {}
+                  };
+                });
+                addToQueue(tracks, { type: 'album', name: rel.title, id: rel.id });
+                showToast(`Added ${tracks.length} tracks to queue`, 'success');
+              }
+            },
+            onAlbumAddToPlaylist: (rel) => {
+              if (rel.tracks?.length > 0) {
+                const tracks = rel.tracks.map(t => {
+                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  return {
+                    ...t,
+                    id: trackId,
+                    artist: rel.artist?.name,
+                    album: rel.title,
+                    albumArt: rel.albumArt,
+                    sources: trackSources[trackId] || {}
+                  };
+                });
+                setAddToPlaylistTracks(tracks);
+                setShowAddToPlaylistPanel(true);
+              }
+            }
           })
         ),
         
