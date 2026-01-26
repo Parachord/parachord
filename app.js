@@ -4683,6 +4683,13 @@ const Parachord = () => {
   const albumArtCache = useRef({});
   const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
 
+  // Viewport-prioritized album art loading
+  const visibleAlbumIds = useRef(new Set());      // Currently in viewport
+  const albumArtQueue = useRef([]);               // Ordered queue of release IDs to fetch
+  const isAlbumArtFetching = useRef(false);       // Prevents multiple fetcher loops
+  const albumArtObserver = useRef(null);          // IntersectionObserver instance
+  const albumArtFetchId = useRef(0);              // Incremented on each new fetch session to detect stale loops
+
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
 
@@ -9322,8 +9329,13 @@ const Parachord = () => {
       setLoadingArtist(false);
       navigateTo('artist');
 
-      // Still fetch album art in background for any missing covers
-      fetchAlbumArtLazy(cachedData.releases);
+      // Queue album art fetches for releases without cached art (viewport-prioritized)
+      const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
+      albumArtFetchId.current++; // Cancel any previous fetch session
+      isAlbumArtFetching.current = false;
+      albumArtQueue.current = releasesNeedingArt;
+      visibleAlbumIds.current.clear();
+      processAlbumArtQueue();
       return;
     }
 
@@ -9543,8 +9555,13 @@ const Parachord = () => {
       setSmartReleaseTypeFilter(releasesWithCache);
       setLoadingArtist(false);
 
-      // Fetch album art in background (lazy loading) - only for releases without cache
-      fetchAlbumArtLazy(uniqueReleases);
+      // Queue album art fetches (viewport-prioritized) - only for releases without cache
+      const releasesNeedingArt = uniqueReleases.filter(r => !albumArtCache.current[r.id]);
+      albumArtFetchId.current++; // Cancel any previous fetch session
+      isAlbumArtFetching.current = false;
+      albumArtQueue.current = releasesNeedingArt;
+      visibleAlbumIds.current.clear();
+      processAlbumArtQueue();
       
     } catch (error) {
       console.error('Error fetching artist data:', error);
@@ -11374,7 +11391,212 @@ const Parachord = () => {
     }
   }, [id3EditorOpen]);
 
-  // Lazy load album art after page is displayed
+  // Reorder album art queue to prioritize visible albums
+  const reprioritizeAlbumArtQueue = () => {
+    const queue = albumArtQueue.current;
+    if (queue.length === 0) return;
+
+    const visible = [];
+    const nonVisible = [];
+
+    for (const item of queue) {
+      if (visibleAlbumIds.current.has(item.id)) {
+        visible.push(item);
+      } else {
+        nonVisible.push(item);
+      }
+    }
+
+    albumArtQueue.current = [...visible, ...nonVisible];
+  };
+
+  // Fetch album art for a single release (extracted for reuse)
+  const fetchSingleAlbumArt = async (release) => {
+    let albumArtUrl = null;
+
+    // First try release-group endpoint
+    const artResponse = await fetch(
+      `https://coverartarchive.org/release-group/${release.id}`,
+      {
+        headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+      }
+    );
+
+    if (artResponse.ok) {
+      const artData = await artResponse.json();
+      const frontCover = artData.images.find(img => img.front);
+      if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
+        albumArtUrl = frontCover.thumbnails['250'];
+      }
+    }
+
+    // If release-group has no art, try getting a specific release and its art
+    if (!albumArtUrl) {
+      // Get the first release in this release-group
+      const releaseResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+
+      if (releaseResponse.ok) {
+        const releaseData = await releaseResponse.json();
+        if (releaseData.releases && releaseData.releases.length > 0) {
+          const specificReleaseId = releaseData.releases[0].id;
+
+          // Try fetching art from the specific release
+          const releaseArtResponse = await fetch(
+            `https://coverartarchive.org/release/${specificReleaseId}`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+          );
+
+          if (releaseArtResponse.ok) {
+            const releaseArtData = await releaseArtResponse.json();
+            const frontCover = releaseArtData.images.find(img => img.front);
+            if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
+              albumArtUrl = frontCover.thumbnails['250'];
+            }
+          }
+        }
+      }
+    }
+
+    return albumArtUrl;
+  };
+
+  // Process album art queue with viewport prioritization
+  const processAlbumArtQueue = async () => {
+    if (isAlbumArtFetching.current) return;
+    isAlbumArtFetching.current = true;
+
+    // Increment fetch ID to detect stale loops (navigation away)
+    albumArtFetchId.current++;
+    const currentFetchId = albumArtFetchId.current;
+
+    console.log('🎨 Starting viewport-prioritized album art loading...');
+    let loadedCount = 0;
+    let consecutiveFailures = 0;
+    let batchSize = 4;
+
+    while (albumArtQueue.current.length > 0 && albumArtFetchId.current === currentFetchId) {
+      // Reprioritize queue based on current viewport
+      reprioritizeAlbumArtQueue();
+
+      // Check how many visible items are at the front
+      const visibleBatch = [];
+      for (let i = 0; i < Math.min(batchSize, albumArtQueue.current.length); i++) {
+        const item = albumArtQueue.current[i];
+        if (visibleAlbumIds.current.has(item.id)) {
+          visibleBatch.push(item);
+        } else {
+          break; // Stop at first non-visible item
+        }
+      }
+
+      if (visibleBatch.length > 0) {
+        // Parallel fetch for visible items
+        albumArtQueue.current = albumArtQueue.current.slice(visibleBatch.length);
+
+        const results = await Promise.all(
+          visibleBatch.map(async (release) => {
+            try {
+              // Skip if already cached (race condition check)
+              if (albumArtCache.current[release.id]) {
+                return { release, url: albumArtCache.current[release.id].url, cached: true };
+              }
+
+              const url = await fetchSingleAlbumArt(release);
+              return { release, url, cached: false };
+            } catch (error) {
+              console.warn(`Failed to fetch art for ${release.title}:`, error);
+              return { release, url: null, error: true };
+            }
+          })
+        );
+
+        // Process results
+        for (const { release, url, cached, error } of results) {
+          if (cached) continue;
+
+          if (error) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= 3) {
+              batchSize = Math.max(2, batchSize - 1);
+              consecutiveFailures = 0;
+            }
+          } else {
+            consecutiveFailures = 0;
+            if (loadedCount > 10 && batchSize < 4) {
+              batchSize = 4; // Restore batch size after successes
+            }
+          }
+
+          if (url) {
+            albumArtCache.current[release.id] = { url, timestamp: Date.now() };
+            loadedCount++;
+          }
+
+          // Update state for this release
+          setArtistReleases(prev =>
+            prev.map(r =>
+              r.id === release.id
+                ? { ...r, albumArt: url }
+                : r
+            )
+          );
+        }
+      } else {
+        // Sequential fetch for non-visible items (background loading)
+        const release = albumArtQueue.current.shift();
+
+        // Skip if already cached
+        if (albumArtCache.current[release.id]) {
+          continue;
+        }
+
+        try {
+          const url = await fetchSingleAlbumArt(release);
+
+          if (url) {
+            albumArtCache.current[release.id] = { url, timestamp: Date.now() };
+            loadedCount++;
+          }
+
+          setArtistReleases(prev =>
+            prev.map(r =>
+              r.id === release.id
+                ? { ...r, albumArt: url }
+                : r
+            )
+          );
+
+          consecutiveFailures = 0;
+        } catch (error) {
+          setArtistReleases(prev =>
+            prev.map(r =>
+              r.id === release.id
+                ? { ...r, albumArt: null }
+                : r
+            )
+          );
+          consecutiveFailures++;
+        }
+
+        // Delay for non-visible items to avoid hammering API
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    console.log(`🎨 Album art loading complete: ${loadedCount} loaded`);
+    isAlbumArtFetching.current = false;
+
+    // Save cache after loading
+    if (loadedCount > 0) {
+      saveCacheToStore();
+    }
+  };
+
+  // DEPRECATED: Sequential album art loading - replaced by viewport-prioritized processAlbumArtQueue()
+  // Kept for reference only
   const fetchAlbumArtLazy = async (releases) => {
     console.log('Starting lazy album art loading...');
     let loadedCount = 0;
@@ -15710,7 +15932,13 @@ ${tracks}
           setArtistReleases(releasesWithCache);
           setSmartReleaseTypeFilter(releasesWithCache);
           setLoadingArtist(false);
-          fetchAlbumArtLazy(cachedData.releases);
+          // Queue album art fetches for releases without cached art (viewport-prioritized)
+          const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
+          albumArtFetchId.current++; // Cancel any previous fetch session
+          isAlbumArtFetching.current = false;
+          albumArtQueue.current = releasesNeedingArt;
+          visibleAlbumIds.current.clear();
+          processAlbumArtQueue();
         } else {
           // No valid cache - show loading state
           setLoadingArtist(true);
@@ -15756,6 +15984,9 @@ ${tracks}
         setArtistReleases([]);
         setReleaseTypeFilter('all');
         setArtistHistory([]); // Clear artist history when leaving artist view
+        // Clear album art loading queue
+        albumArtQueue.current = [];
+        visibleAlbumIds.current.clear();
       }
       if (activeView === 'release') {
         setCurrentRelease(null);
@@ -20436,11 +20667,66 @@ React.createElement('div', {
             ),
             // Discography grid (when loaded) - refined spacing
             !loadingArtist && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6',
+              ref: (el) => {
+                if (!el) {
+                  // Cleanup observer when unmounting
+                  if (albumArtObserver.current) {
+                    albumArtObserver.current.disconnect();
+                    albumArtObserver.current = null;
+                  }
+                  visibleAlbumIds.current.clear();
+                  return;
+                }
+
+                // Set up IntersectionObserver if not already done
+                if (!albumArtObserver.current) {
+                  albumArtObserver.current = new IntersectionObserver(
+                    (entries) => {
+                      let changed = false;
+                      for (const entry of entries) {
+                        const releaseId = entry.target.getAttribute('data-release-id');
+                        if (!releaseId) continue;
+
+                        if (entry.isIntersecting) {
+                          if (!visibleAlbumIds.current.has(releaseId)) {
+                            visibleAlbumIds.current.add(releaseId);
+                            changed = true;
+                          }
+                        } else {
+                          if (visibleAlbumIds.current.has(releaseId)) {
+                            visibleAlbumIds.current.delete(releaseId);
+                            changed = true;
+                          }
+                        }
+                      }
+
+                      // Reprioritize queue when visibility changes
+                      if (changed && albumArtQueue.current.length > 0) {
+                        reprioritizeAlbumArtQueue();
+                      }
+                    },
+                    { threshold: 0, rootMargin: '100px' } // Slightly expand viewport for smoother loading
+                  );
+
+                  // Observe all release cards
+                  const cards = el.querySelectorAll('[data-release-id]');
+                  cards.forEach(card => albumArtObserver.current.observe(card));
+                }
+              }
             },
               sortArtistReleases(filterArtistReleases(artistReleases)).map((release, index) =>
-                React.createElement(ReleaseCard, {
+                React.createElement('div', {
                   key: release.id,
+                  'data-release-id': release.id,
+                  ref: (el) => {
+                    // Observe new cards as they're added
+                    if (el && albumArtObserver.current) {
+                      albumArtObserver.current.observe(el);
+                    }
+                  }
+                },
+                React.createElement(ReleaseCard, {
                   release: release,
                   currentArtist: currentArtist,
                   fetchReleaseData: fetchReleaseData,
@@ -20604,7 +20890,7 @@ React.createElement('div', {
                   },
                   isVisible: (releaseTypeFilter === 'all' || release.releaseType === releaseTypeFilter) &&
                     (!artistSearch.trim() || release.title.toLowerCase().includes(artistSearch.toLowerCase()))
-                })
+                }))
               )
             ),
 
