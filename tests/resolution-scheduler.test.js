@@ -210,6 +210,36 @@ test('Batch size is tracked correctly', () => {
   assertEqual(scheduler.getInProgressCount(), 1, 'one in progress after dequeue');
 });
 
+// Test: Queue playback lookahead
+test('Queue context includes playback lookahead tracks', () => {
+  const scheduler = new ResolutionScheduler();
+
+  // Register queue context with playback lookahead
+  scheduler.registerContext('queue-1', 'queue', { playbackLookahead: 5 });
+
+  // Set current playback index
+  scheduler.setPlaybackIndex('queue-1', 3);
+
+  // Get tracks that should be resolved (indices 3-7 for lookahead of 5)
+  const lookaheadRange = scheduler.getPlaybackLookaheadRange('queue-1');
+
+  assertDeepEqual(lookaheadRange, { start: 3, end: 8 }, 'lookahead range correct');
+});
+
+// Test: Playback lookahead is always visible
+test('Playback lookahead tracks are always considered visible', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('queue-1', 'queue', { playbackLookahead: 5 });
+  scheduler.setPlaybackIndex('queue-1', 10);
+
+  // Check if indices in lookahead are considered visible
+  assertEqual(scheduler.isInPlaybackLookahead('queue-1', 10), true, 'current track');
+  assertEqual(scheduler.isInPlaybackLookahead('queue-1', 14), true, 'within lookahead');
+  assertEqual(scheduler.isInPlaybackLookahead('queue-1', 15), false, 'outside lookahead');
+  assertEqual(scheduler.isInPlaybackLookahead('queue-1', 9), false, 'before current');
+});
+
 // Summary
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

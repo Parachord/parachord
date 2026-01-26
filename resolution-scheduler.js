@@ -48,8 +48,10 @@ class ResolutionScheduler {
    * Register a visibility context
    * @param {string} id - Unique context ID
    * @param {'queue'|'pool'|'page'|'sidebar'} type - Context type
+   * @param {object} options - Context options
+   * @param {number} options.playbackLookahead - Number of tracks ahead to keep resolved
    */
-  registerContext(id, type) {
+  registerContext(id, type, options = {}) {
     if (!CONTEXT_PRIORITY[type]) {
       throw new Error(`Invalid context type: ${type}`);
     }
@@ -57,7 +59,9 @@ class ResolutionScheduler {
     this.contexts.set(id, {
       type,
       abortController: new AbortController(),
-      visibleTracks: new Set()
+      visibleTracks: new Set(),
+      playbackLookahead: options.playbackLookahead || 0,
+      playbackIndex: 0
     });
   }
 
@@ -291,6 +295,46 @@ class ResolutionScheduler {
    */
   getInProgressCount() {
     return this.inProgress.size;
+  }
+
+  /**
+   * Set the current playback index for a context
+   * @param {string} contextId - Context ID
+   * @param {number} index - Current playback index
+   */
+  setPlaybackIndex(contextId, index) {
+    const context = this.contexts.get(contextId);
+    if (context) {
+      context.playbackIndex = index;
+    }
+  }
+
+  /**
+   * Get the playback lookahead range for a context
+   * @param {string} contextId - Context ID
+   * @returns {{start: number, end: number}|null}
+   */
+  getPlaybackLookaheadRange(contextId) {
+    const context = this.contexts.get(contextId);
+    if (!context || !context.playbackLookahead) return null;
+
+    return {
+      start: context.playbackIndex,
+      end: context.playbackIndex + context.playbackLookahead
+    };
+  }
+
+  /**
+   * Check if an index is within the playback lookahead range
+   * @param {string} contextId - Context ID
+   * @param {number} index - Index to check
+   * @returns {boolean}
+   */
+  isInPlaybackLookahead(contextId, index) {
+    const range = this.getPlaybackLookaheadRange(contextId);
+    if (!range) return false;
+
+    return index >= range.start && index < range.end;
   }
 
   /**
