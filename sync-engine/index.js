@@ -108,6 +108,9 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
 const applyDiff = (collectionItems, diff) => {
   const { toAdd, toRemove, toUpdate, unchanged } = diff;
 
+  console.log(`[SyncEngine] applyDiff input: ${collectionItems.length} items`);
+  console.log(`[SyncEngine] diff: +${toAdd.length} add, -${toRemove.length} remove, ~${toUpdate.length} update, =${unchanged.length} unchanged`);
+
   // Create map of items to remove
   const removeIds = new Set(toRemove.map(item => item.id));
 
@@ -117,13 +120,29 @@ const applyDiff = (collectionItems, diff) => {
   // Create map of unchanged items
   const unchangedMap = new Map(unchanged.map(item => [item.id, item]));
 
+  // Track items not in any diff category (manual items that should pass through)
+  const diffItemIds = new Set([
+    ...toAdd.map(i => i.id),
+    ...toRemove.map(i => i.id),
+    ...toUpdate.map(i => i.id),
+    ...unchanged.map(i => i.id)
+  ]);
+  const preservedItems = collectionItems.filter(item => !diffItemIds.has(item.id));
+  console.log(`[SyncEngine] Items not in diff (should be preserved): ${preservedItems.length}`);
+  if (preservedItems.length > 0) {
+    console.log(`[SyncEngine] Preserved item IDs:`, preservedItems.slice(0, 5).map(i => i.id));
+  }
+
   // Filter out removed items and apply updates
   const result = collectionItems
     .filter(item => !removeIds.has(item.id))
     .map(item => updateMap.get(item.id) || unchangedMap.get(item.id) || item);
 
   // Add new items
-  return [...result, ...toAdd];
+  const finalResult = [...result, ...toAdd];
+  console.log(`[SyncEngine] applyDiff output: ${finalResult.length} items`);
+
+  return finalResult;
 };
 
 /**

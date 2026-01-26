@@ -2425,6 +2425,7 @@ const Parachord = () => {
     playlists: [],
     folders: [],
     selectedPlaylists: [],
+    playlistFilter: 'all', // 'all' | 'owned' | 'following'
     settings: {
       syncTracks: true,
       syncAlbums: true,
@@ -2459,9 +2460,17 @@ const Parachord = () => {
               console.log(`[Sync] Starting background sync for ${providerId}`);
               const result = await window.electron.sync.start(providerId, { settings });
               if (result.success) {
-                // Reload collection
-                const newCollection = await window.electron.collection.load();
-                setCollectionData(newCollection);
+                // Use collection from sync result for immediate UI update
+                if (result.collection) {
+                  setCollectionData({
+                    tracks: result.collection.tracks || [],
+                    albums: result.collection.albums || [],
+                    artists: result.collection.artists || []
+                  });
+                } else {
+                  const newCollection = await window.electron.collection.load();
+                  setCollectionData(newCollection);
+                }
               } else {
                 console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
               }
@@ -4487,9 +4496,21 @@ const Parachord = () => {
     });
 
     if (result.success) {
-      // Reload collection data
-      const newCollection = await window.electron.collection.load();
-      setCollectionData(newCollection);
+      // Use the collection directly from the sync result (already saved to disk)
+      // This ensures UI updates immediately with the exact data that was synced
+      if (result.collection) {
+        console.log(`[Sync] Updating UI with synced collection: ${result.collection.tracks?.length || 0} tracks, ${result.collection.albums?.length || 0} albums, ${result.collection.artists?.length || 0} artists`);
+        // Create a new object reference to ensure React detects the change
+        setCollectionData({
+          tracks: result.collection.tracks || [],
+          albums: result.collection.albums || [],
+          artists: result.collection.artists || []
+        });
+      } else {
+        // Fallback to loading from disk if collection not in result
+        const newCollection = await window.electron.collection.load();
+        setCollectionData(newCollection);
+      }
 
       // Reload playlists if they were synced
       if (settings.syncPlaylists && selectedPlaylists.length > 0) {
@@ -5012,6 +5033,7 @@ const Parachord = () => {
             console.log(`Migrated ${migratedCount} collection items to include syncSources`);
           }
 
+          console.log(`[Collection] Loaded: ${finalData.tracks?.length || 0} tracks, ${finalData.albums?.length || 0} albums, ${finalData.artists?.length || 0} artists`);
           setCollectionData(finalData);
 
           // Save if any cleaning or migration occurred
@@ -20734,14 +20756,6 @@ React.createElement('div', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
                   }, `${playlists.length} Playlist${playlists.length !== 1 ? 's' : ''}`)
             ),
-            React.createElement('button', {
-              onClick: () => setShowUrlImportDialog(true),
-              className: 'mt-6 px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
-              style: {
-                backgroundColor: '#E91E63',
-                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-              }
-            }, 'Import Playlist')
           ),
           // COLLAPSED STATE - Inline layout
           playlistsHeaderCollapsed && React.createElement('div', {
@@ -20758,12 +20772,7 @@ React.createElement('div', {
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase'
               }
-            }, 'PLAYLISTS'),
-            React.createElement('button', {
-              onClick: () => setShowUrlImportDialog(true),
-              className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90',
-              style: { backgroundColor: '#E91E63' }
-            }, 'Import Playlist')
+            }, 'PLAYLISTS')
           )
         ),
         // Filter bar (outside scrollable area)
@@ -20867,6 +20876,16 @@ React.createElement('div', {
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
                 )
               )
+          ),
+          // Import Playlist button - styled like Add Friend button
+          React.createElement('button', {
+            onClick: () => setShowUrlImportDialog(true),
+            className: 'ml-3 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })
+            ),
+            'Import'
           )
         ),
         // Content area (scrollable)
@@ -21448,10 +21467,10 @@ React.createElement('div', {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   [
-                    { key: 'artists', label: `${collectionData.artists.length} Artists` },
-                    { key: 'albums', label: `${collectionData.albums.length} Albums` },
-                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` },
-                    { key: 'friends', label: `${friends.length} Friends` }
+                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
+                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-expanded-${tab.key}`,
@@ -21465,7 +21484,10 @@ React.createElement('div', {
                           ? 'text-white'
                           : 'text-white/60 hover:text-white'
                       }`
-                    }, tab.label)
+                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                      React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
+                      tab.staticLabel
+                    ))
                   ]).flat().filter(Boolean)
                 ),
                 // Buttons row
@@ -21506,10 +21528,10 @@ React.createElement('div', {
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
                   [
-                    { key: 'artists', label: `${collectionData.artists.length} Artists` },
-                    { key: 'albums', label: `${collectionData.albums.length} Albums` },
-                    { key: 'tracks', label: `${library.length + collectionData.tracks.length} Songs` },
-                    { key: 'friends', label: `${friends.length} Friends` }
+                    { key: 'artists', label: collectionLoading ? null : `${collectionData.artists.length} Artists`, staticLabel: 'Artists' },
+                    { key: 'albums', label: collectionLoading ? null : `${collectionData.albums.length} Albums`, staticLabel: 'Albums' },
+                    { key: 'tracks', label: collectionLoading ? null : `${library.length + collectionData.tracks.length} Songs`, staticLabel: 'Songs' },
+                    { key: 'friends', label: `${friends.length} Friends`, staticLabel: 'Friends' }
                   ].map((tab, index) => [
                     index > 0 && React.createElement('span', {
                       key: `sep-collapsed-${tab.key}`,
@@ -21523,7 +21545,10 @@ React.createElement('div', {
                           ? 'text-white'
                           : 'text-white/60 hover:text-white'
                       }`
-                    }, tab.label)
+                    }, tab.label !== null ? tab.label : React.createElement('span', { className: 'flex items-center gap-1' },
+                      React.createElement('span', { className: 'inline-block w-6 h-4 bg-white/30 rounded animate-pulse' }),
+                      tab.staticLabel
+                    ))
                   ]).flat().filter(Boolean)
                 ),
                 // Right: Start Collection Station button
@@ -21595,31 +21620,6 @@ React.createElement('div', {
               ),
               // Spacer
               React.createElement('div', { className: 'flex-1' }),
-              // Sync Collection button - pill toggle style matching Pinned button
-              React.createElement('button', {
-                onClick: () => openSyncSetupModal('spotify'),
-                className: `flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors ${
-                  resolverSyncSettings.spotify?.enabled
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`,
-                title: 'Sync your Spotify library'
-              },
-                React.createElement('svg', {
-                  className: 'w-4 h-4',
-                  fill: 'none',
-                  viewBox: '0 0 24 24',
-                  stroke: 'currentColor'
-                },
-                  React.createElement('path', {
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    strokeWidth: 2,
-                    d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
-                  })
-                ),
-                resolverSyncSettings.spotify?.enabled ? 'Synced' : 'Sync'
-              ),
               // Search toggle/field
               React.createElement('div', { className: 'flex items-center' },
                 collectionSearchOpen ?
@@ -21660,6 +21660,21 @@ React.createElement('div', {
                     )
                   )
               ),
+              // Sync Collection button - styled like Add Friend button (hide on friends tab)
+              collectionTab !== 'friends' && React.createElement('button', {
+                onClick: () => openSyncSetupModal('spotify'),
+                className: `ml-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  resolverSyncSettings.spotify?.enabled
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : 'bg-gray-600 hover:bg-gray-700 text-white'
+                }`,
+                title: 'Sync your Spotify library'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                ),
+                resolverSyncSettings.spotify?.enabled ? 'Synced' : 'Sync'
+              ),
               // Add Friend button in header (only on friends tab)
               collectionTab === 'friends' && React.createElement('button', {
                 onClick: () => setAddFriendModalOpen(true),
@@ -21675,6 +21690,22 @@ React.createElement('div', {
             React.createElement('div', { className: 'p-6' },
               // Artists tab
             collectionTab === 'artists' && (() => {
+              // Show loading skeletons while collection is loading
+              if (collectionLoading) {
+                return React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+                  style: { minHeight: 'calc(100vh - 160px)' }
+                },
+                  Array.from({ length: 10 }).map((_, i) =>
+                    React.createElement('div', { key: `artist-skeleton-${i}`, className: 'animate-pulse' },
+                      React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
+                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
+                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                    )
+                  )
+                );
+              }
+
               const filtered = filterCollectionItems(collectionData.artists, 'artists');
               const sorted = sortCollectionItems(filtered, 'artists');
 
@@ -21736,6 +21767,22 @@ React.createElement('div', {
 
             // Albums tab
             collectionTab === 'albums' && (() => {
+              // Show loading skeletons while collection is loading
+              if (collectionLoading) {
+                return React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+                  style: { minHeight: 'calc(100vh - 160px)' }
+                },
+                  Array.from({ length: 10 }).map((_, i) =>
+                    React.createElement('div', { key: `album-skeleton-${i}`, className: 'animate-pulse' },
+                      React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
+                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
+                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
+                    )
+                  )
+                );
+              }
+
               const filtered = filterCollectionItems(collectionData.albums, 'albums');
               const sorted = sortCollectionItems(filtered, 'albums');
 
@@ -21773,7 +21820,7 @@ React.createElement('div', {
 
             // Tracks tab (existing implementation with filter/sort applied)
             collectionTab === 'tracks' && (() => {
-              if (libraryLoading) {
+              if (libraryLoading || collectionLoading) {
                 // Skeleton loaders while loading - matches new rounded row style
                 return React.createElement('div', { className: 'space-y-0' },
                   Array.from({ length: 8 }).map((_, index) =>
@@ -30890,10 +30937,10 @@ React.createElement('div', {
             style: { display: 'flex', flexDirection: 'column', gap: '10px' }
           },
             [
+              { key: 'syncPlaylists', label: 'Playlists', desc: 'Select which playlists to sync' },
               { key: 'syncTracks', label: 'Liked Songs', desc: 'Your saved tracks' },
               { key: 'syncAlbums', label: 'Saved Albums', desc: 'Albums in your library' },
-              { key: 'syncArtists', label: 'Followed Artists', desc: 'Artists you follow' },
-              { key: 'syncPlaylists', label: 'Playlists', desc: 'Select which playlists to sync' }
+              { key: 'syncArtists', label: 'Followed Artists', desc: 'Artists you follow' }
             ].map(option =>
               React.createElement('label', {
                 key: option.key,
@@ -30929,47 +30976,150 @@ React.createElement('div', {
 
           // Playlists step
           syncSetupModal.step === 'playlists' && React.createElement('div', {
-            style: { display: 'flex', flexDirection: 'column', gap: '8px' }
+            style: { display: 'flex', flexDirection: 'column', gap: '12px' }
           },
             syncSetupModal.playlists.length === 0
               ? React.createElement('div', {
                   style: { textAlign: 'center', padding: '32px 0', color: '#6b7280', fontSize: '14px' }
                 }, 'Loading playlists...')
-              : syncSetupModal.playlists.map(playlist =>
-                  React.createElement('label', {
-                    key: playlist.externalId,
-                    className: 'flex items-center gap-3 cursor-pointer transition-colors',
+              : React.createElement(React.Fragment, null,
+                  // Filter tabs
+                  React.createElement('div', {
                     style: {
-                      padding: '10px 12px',
+                      display: 'flex',
+                      gap: '4px',
+                      padding: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
                       borderRadius: '10px',
-                      backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? 'rgba(29, 185, 84, 0.06)' : 'transparent'
-                    },
-                    onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)'; },
-                    onMouseLeave: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'transparent'; }
+                      marginBottom: '4px'
+                    }
                   },
-                    React.createElement('input', {
-                      type: 'checkbox',
-                      checked: syncSetupModal.selectedPlaylists.includes(playlist.externalId),
-                      onChange: (e) => {
+                    [
+                      { key: 'all', label: 'All' },
+                      { key: 'owned', label: 'Created by Me' },
+                      { key: 'following', label: 'Following' }
+                    ].map(filter =>
+                      React.createElement('button', {
+                        key: filter.key,
+                        onClick: () => setSyncSetupModal(prev => ({ ...prev, playlistFilter: filter.key })),
+                        style: {
+                          flex: 1,
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: syncSetupModal.playlistFilter === filter.key ? '#1f2937' : '#6b7280',
+                          backgroundColor: syncSetupModal.playlistFilter === filter.key ? '#ffffff' : 'transparent',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 150ms ease',
+                          boxShadow: syncSetupModal.playlistFilter === filter.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                        }
+                      }, filter.label)
+                    )
+                  ),
+                  // Select all / deselect all for current filter
+                  React.createElement('div', {
+                    style: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginBottom: '4px' }
+                  },
+                    React.createElement('button', {
+                      onClick: () => {
+                        const filteredIds = syncSetupModal.playlists
+                          .filter(p => syncSetupModal.playlistFilter === 'all' ? true :
+                            syncSetupModal.playlistFilter === 'owned' ? p.isOwnedByUser : !p.isOwnedByUser)
+                          .map(p => p.externalId);
                         setSyncSetupModal(prev => ({
                           ...prev,
-                          selectedPlaylists: e.target.checked
-                            ? [...prev.selectedPlaylists, playlist.externalId]
-                            : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
+                          selectedPlaylists: [...new Set([...prev.selectedPlaylists, ...filteredIds])]
                         }));
                       },
-                      style: { width: '16px', height: '16px', accentColor: '#1DB954', cursor: 'pointer' }
-                    }),
-                    playlist.image && React.createElement('img', {
-                      src: playlist.image,
-                      style: { width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' },
-                      alt: ''
-                    }),
-                    React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-                      React.createElement('div', { style: { fontSize: '14px', color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, playlist.name),
-                      React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af' } }, `${playlist.trackCount} tracks`)
-                    )
-                  )
+                      style: {
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: '#1DB954',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }
+                    }, 'Select All'),
+                    React.createElement('button', {
+                      onClick: () => {
+                        const filteredIds = new Set(syncSetupModal.playlists
+                          .filter(p => syncSetupModal.playlistFilter === 'all' ? true :
+                            syncSetupModal.playlistFilter === 'owned' ? p.isOwnedByUser : !p.isOwnedByUser)
+                          .map(p => p.externalId));
+                        setSyncSetupModal(prev => ({
+                          ...prev,
+                          selectedPlaylists: prev.selectedPlaylists.filter(id => !filteredIds.has(id))
+                        }));
+                      },
+                      style: {
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: '#6b7280',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }
+                    }, 'Deselect All')
+                  ),
+                  // Playlist list
+                  React.createElement('div', {
+                    style: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto' }
+                  },
+                    syncSetupModal.playlists
+                      .filter(playlist => {
+                        if (syncSetupModal.playlistFilter === 'all') return true;
+                        if (syncSetupModal.playlistFilter === 'owned') return playlist.isOwnedByUser;
+                        return !playlist.isOwnedByUser;
+                      })
+                      .map(playlist =>
+                        React.createElement('label', {
+                          key: playlist.externalId,
+                          className: 'flex items-center gap-3 cursor-pointer transition-colors',
+                          style: {
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? 'rgba(29, 185, 84, 0.06)' : 'transparent'
+                          },
+                          onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)'; },
+                          onMouseLeave: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'transparent'; }
+                        },
+                          React.createElement('input', {
+                            type: 'checkbox',
+                            checked: syncSetupModal.selectedPlaylists.includes(playlist.externalId),
+                            onChange: (e) => {
+                              setSyncSetupModal(prev => ({
+                                ...prev,
+                                selectedPlaylists: e.target.checked
+                                  ? [...prev.selectedPlaylists, playlist.externalId]
+                                  : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
+                              }));
+                            },
+                            style: { width: '16px', height: '16px', accentColor: '#1DB954', cursor: 'pointer' }
+                          }),
+                          playlist.image && React.createElement('img', {
+                            src: playlist.image,
+                            style: { width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' },
+                            alt: ''
+                          }),
+                          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                            React.createElement('div', { style: { fontSize: '14px', color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, playlist.name),
+                            React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af' } },
+                              `${playlist.trackCount} tracks`,
+                              !playlist.isOwnedByUser && ' · Following'
+                            )
+                          )
+                        )
+                      )
+                  ),
+                  // Empty state for filter
+                  syncSetupModal.playlists.filter(p =>
+                    syncSetupModal.playlistFilter === 'all' ? true :
+                    syncSetupModal.playlistFilter === 'owned' ? p.isOwnedByUser : !p.isOwnedByUser
+                  ).length === 0 && React.createElement('div', {
+                    style: { textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: '13px' }
+                  }, syncSetupModal.playlistFilter === 'owned' ? 'No playlists created by you' : 'No playlists you\'re following')
                 )
           ),
 
@@ -31355,21 +31505,33 @@ React.createElement('div', {
           }, 'Manage settings'),
           React.createElement('button', {
             onClick: async () => {
+              let latestCollection = null;
               for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
                 if (settings.enabled) {
                   try {
                     const authStatus = await window.electron.sync.checkAuth(providerId);
                     if (authStatus.authenticated) {
-                      await window.electron.sync.start(providerId, { settings });
+                      const result = await window.electron.sync.start(providerId, { settings });
+                      if (result.success && result.collection) {
+                        latestCollection = result.collection;
+                      }
                     }
                   } catch (error) {
                     console.error(`[Sync] Quick sync failed for ${providerId}:`, error);
                   }
                 }
               }
-              // Reload collection and playlists
-              const newCollection = await window.electron.collection.load();
-              setCollectionData(newCollection);
+              // Update UI with synced collection
+              if (latestCollection) {
+                setCollectionData({
+                  tracks: latestCollection.tracks || [],
+                  albums: latestCollection.albums || [],
+                  artists: latestCollection.artists || []
+                });
+              } else {
+                const newCollection = await window.electron.collection.load();
+                setCollectionData(newCollection);
+              }
               const loadedPlaylists = await window.electron.playlists.load();
               setPlaylists(loadedPlaylists);
             },

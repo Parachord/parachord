@@ -1966,13 +1966,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     try {
       const content = await fsPromises.readFile(collectionPath, 'utf8');
       collection = JSON.parse(content);
+      console.log(`[Sync] Loaded collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
     } catch {
       collection = { tracks: [], albums: [], artists: [] };
+      console.log('[Sync] No existing collection, starting fresh');
     }
 
     // Sync tracks
     if (settings.syncTracks !== false && provider.capabilities.tracks) {
       sendProgress({ phase: 'fetching', type: 'tracks', message: 'Fetching liked songs...' });
+      console.log(`[Sync] Syncing tracks. Input: ${collection.tracks?.length || 0} tracks`);
       const trackResult = await SyncEngine.syncDataType(
         provider,
         token,
@@ -1980,13 +1983,17 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         collection.tracks || [],
         (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p })
       );
+      console.log(`[Sync] Track sync complete. Output: ${trackResult.data.length} tracks. Stats:`, trackResult.stats);
       collection.tracks = trackResult.data;
       results.tracks = trackResult.stats;
+    } else {
+      console.log(`[Sync] Skipping tracks sync. syncTracks=${settings.syncTracks}, capabilities.tracks=${provider.capabilities.tracks}`);
     }
 
     // Sync albums
     if (settings.syncAlbums !== false && provider.capabilities.albums) {
       sendProgress({ phase: 'fetching', type: 'albums', message: 'Fetching saved albums...' });
+      console.log(`[Sync] Syncing albums. Input: ${collection.albums?.length || 0} albums`);
       const albumResult = await SyncEngine.syncDataType(
         provider,
         token,
@@ -1994,13 +2001,17 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         collection.albums || [],
         (p) => sendProgress({ phase: 'fetching', type: 'albums', ...p })
       );
+      console.log(`[Sync] Album sync complete. Output: ${albumResult.data.length} albums. Stats:`, albumResult.stats);
       collection.albums = albumResult.data;
       results.albums = albumResult.stats;
+    } else {
+      console.log(`[Sync] Skipping albums sync. syncAlbums=${settings.syncAlbums}, capabilities.albums=${provider.capabilities.albums}`);
     }
 
     // Sync artists
     if (settings.syncArtists !== false && provider.capabilities.artists) {
       sendProgress({ phase: 'fetching', type: 'artists', message: 'Fetching followed artists...' });
+      console.log(`[Sync] Syncing artists. Input: ${collection.artists?.length || 0} artists`);
       const artistResult = await SyncEngine.syncDataType(
         provider,
         token,
@@ -2008,8 +2019,11 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         collection.artists || [],
         (p) => sendProgress({ phase: 'fetching', type: 'artists', ...p })
       );
+      console.log(`[Sync] Artist sync complete. Output: ${artistResult.data.length} artists. Stats:`, artistResult.stats);
       collection.artists = artistResult.data;
       results.artists = artistResult.stats;
+    } else {
+      console.log(`[Sync] Skipping artists sync. syncArtists=${settings.syncArtists}, capabilities.artists=${provider.capabilities.artists}`);
     }
 
     // Sync playlists
@@ -2036,6 +2050,11 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
           console.log(`[Sync] Importing playlist: ${remotePlaylist.name}`);
           const tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token);
 
+          // Use earliest track addedAt as playlist creation estimate (Spotify doesn't provide playlist follow date)
+          const earliestTrackDate = tracks.length > 0
+            ? Math.min(...tracks.map(t => t.addedAt || Date.now()).filter(Boolean))
+            : Date.now();
+
           const newPlaylist = {
             id: remotePlaylist.id,
             title: remotePlaylist.name,
@@ -2049,10 +2068,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             hasUpdates: false,
             locallyModified: false,
             syncSources: {
-              [providerId]: { addedAt: Date.now(), syncedAt: Date.now() }
+              [providerId]: { addedAt: earliestTrackDate, syncedAt: Date.now() }
             },
-            createdAt: Date.now(),
-            addedAt: Date.now()
+            createdAt: earliestTrackDate,
+            addedAt: Date.now()  // When it was added to Parachord
           };
 
           currentPlaylists.push(newPlaylist);
@@ -2083,6 +2102,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
     // Save collection
     sendProgress({ phase: 'saving', message: 'Saving collection...' });
+    console.log(`[Sync] Saving collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
     await fsPromises.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
 
     // Update sync settings with last sync time
