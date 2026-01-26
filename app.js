@@ -2052,7 +2052,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
 };
 
 // ReleaseCard component - Cinematic Light design
-const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true, animationDelay = 0, onPlay, onAddToQueue, onAddToPlaylist, prefetchedReleasesRef }) => {
+const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFetch, isVisible = true, animationDelay = 0, onPlay, onAddToQueue, onAddToPlaylist, prefetchedReleasesRef, onCardRef }) => {
   const year = release.date ? release.date.split('-')[0] : '';
   const [imageFailed, setImageFailed] = React.useState(false);
   const [imageLoaded, setImageLoaded] = React.useState(false);
@@ -2097,6 +2097,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     className: `no-drag release-card card-fade-up`,
     draggable: true,
     onDragStart: handleDragStart,
+    'data-release-id': release.id,
+    ref: onCardRef,
     style: {
       width: '100%',
       textAlign: 'left',
@@ -20716,18 +20718,15 @@ React.createElement('div', {
               }
             },
               sortArtistReleases(filterArtistReleases(artistReleases)).map((release, index) =>
-                React.createElement('div', {
+                React.createElement(ReleaseCard, {
                   key: release.id,
-                  'data-release-id': release.id,
-                  ref: (el) => {
-                    // Observe new cards as they're added
+                  release: release,
+                  onCardRef: (el) => {
+                    // Observe new cards as they're added for viewport-prioritized loading
                     if (el && albumArtObserver.current) {
                       albumArtObserver.current.observe(el);
                     }
-                  }
-                },
-                React.createElement(ReleaseCard, {
-                  release: release,
+                  },
                   currentArtist: currentArtist,
                   fetchReleaseData: fetchReleaseData,
                   animationDelay: Math.min(index * 30, 300), // Staggered animation, cap at 300ms
@@ -20890,7 +20889,7 @@ React.createElement('div', {
                   },
                   isVisible: (releaseTypeFilter === 'all' || release.releaseType === releaseTypeFilter) &&
                     (!artistSearch.trim() || release.title.toLowerCase().includes(artistSearch.toLowerCase()))
-                }))
+                })
               )
             ),
 
