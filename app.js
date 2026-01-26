@@ -3708,31 +3708,54 @@ const Parachord = () => {
   const recommendationsTrackRowRefs = useRef(new Map());
   const recommendationsObserverRef = useRef(null);
   const visibleRecommendationsTrackIds = useRef(new Set());
+  const recommendationsTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const recommendationsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
+  const [recommendationsScrollContainerReady, setRecommendationsScrollContainerReady] = useState(false);
 
   // Refs for history tracks visibility tracking
   const historyTrackRowRefs = useRef(new Map());
   const historyObserverRef = useRef(null);
   const visibleHistoryTrackIds = useRef(new Set());
+  const historyScrollContainerRef = useRef(null);
+  const historyTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const [historyScrollContainerReady, setHistoryScrollContainerReady] = useState(false);
 
   // Refs for top tracks visibility tracking
   const topTracksRowRefs = useRef(new Map());
   const topTracksObserverRef = useRef(null);
   const visibleTopTrackIds = useRef(new Set());
+  const topTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const topTracksScrollContainerRef = useRef(null);
+  const [topTracksScrollContainerReady, setTopTracksScrollContainerReady] = useState(false);
 
   // Refs for friend history tracks visibility tracking
   const friendHistoryTrackRowRefs = useRef(new Map());
   const friendHistoryObserverRef = useRef(null);
   const visibleFriendHistoryTrackIds = useRef(new Set());
+  const friendHistoryScrollContainerRef = useRef(null);
+  const friendHistoryTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const [friendHistoryScrollContainerReady, setFriendHistoryScrollContainerReady] = useState(false);
 
   // Refs for search results tracks visibility tracking
   const searchTracksRowRefs = useRef(new Map());
   const searchTracksObserverRef = useRef(null);
   const visibleSearchTrackIds = useRef(new Set());
+  const searchScrollContainerRef = useRef(null);
+  const searchTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const [searchScrollContainerReady, setSearchScrollContainerReady] = useState(false);
 
   // Refs for playlist tracks visibility tracking
   const playlistTrackRowRefs = useRef(new Map());
   const playlistObserverRef = useRef(null);
   const visiblePlaylistTrackIds = useRef(new Set());
+  const playlistScrollContainerRef = useRef(null);
+  const playlistTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const [playlistScrollContainerReady, setPlaylistScrollContainerReady] = useState(false);
+
+  // Refs for collection tracks scroll container
+  const collectionScrollContainerRef = useRef(null);
+  const collectionTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const [collectionScrollContainerReady, setCollectionScrollContainerReady] = useState(false)
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
@@ -10482,17 +10505,27 @@ const Parachord = () => {
     }
   }, [activeView, collectionTab, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with collection tracks for observer callback
+  useEffect(() => {
+    collectionTracksRef.current = [...library, ...collectionData.tracks];
+  }, [library, collectionData.tracks]);
+
   // IntersectionObserver for collection tracks visibility
   useEffect(() => {
     if (activeView !== 'library' || collectionTab !== 'tracks') {
       collectionObserverRef.current?.disconnect();
       visibleCollectionTrackIds.current.clear();
+      setCollectionScrollContainerReady(false);
       return;
     }
 
     // Get all tracks (local + collection merged)
     const allTracks = [...library, ...collectionData.tracks];
     if (allTracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = collectionScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     collectionObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10513,9 +10546,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = collectionTracksRef.current;
           const visibleTracks = [];
           visibleCollectionTrackIds.current.forEach(trackId => {
-            const track = allTracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10526,7 +10560,7 @@ const Parachord = () => {
           updateSchedulerVisibility('collection-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' } // 200px buffer above/below viewport
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     // Observe all existing track rows
@@ -10535,7 +10569,7 @@ const Parachord = () => {
     });
 
     return () => collectionObserverRef.current?.disconnect();
-  }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility]);
+  }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility, collectionScrollContainerReady]);
 
   // Register page context for release page tracks resolution
   useEffect(() => {
@@ -10687,16 +10721,29 @@ const Parachord = () => {
     }
   }, [activeView, recommendationsTab, recommendations.tracks.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with recommendations tracks for observer callback
+  useEffect(() => {
+    recommendationsTracksRef.current = recommendations.tracks;
+  }, [recommendations.tracks]);
+
   // IntersectionObserver for recommendations tracks visibility
   useEffect(() => {
     if (activeView !== 'recommendations' || recommendationsTab !== 'songs') {
       recommendationsObserverRef.current?.disconnect();
       visibleRecommendationsTrackIds.current.clear();
+      setRecommendationsScrollContainerReady(false);
       return;
     }
 
     const tracks = recommendations.tracks;
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = recommendationsScrollContainerRef.current;
+    if (!scrollContainer) {
+      // Schedule a retry once the container is mounted
+      return;
+    }
 
     recommendationsObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10717,9 +10764,11 @@ const Parachord = () => {
         });
 
         if (changed) {
+          // Use ref to get current tracks (avoids stale closure)
+          const currentTracks = recommendationsTracksRef.current;
           const visibleTracks = [];
           visibleRecommendationsTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10730,7 +10779,7 @@ const Parachord = () => {
           updateSchedulerVisibility('recommendations-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     recommendationsTrackRowRefs.current.forEach((element) => {
@@ -10738,7 +10787,7 @@ const Parachord = () => {
     });
 
     return () => recommendationsObserverRef.current?.disconnect();
-  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility]);
+  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady]);
 
   // Register page context for history tracks resolution
   useEffect(() => {
@@ -10751,16 +10800,26 @@ const Parachord = () => {
     }
   }, [activeView, historyTab, listeningHistory.tracks.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with history tracks for observer callback
+  useEffect(() => {
+    historyTracksRef.current = listeningHistory.tracks;
+  }, [listeningHistory.tracks]);
+
   // IntersectionObserver for history tracks visibility
   useEffect(() => {
     if (activeView !== 'history' || historyTab !== 'recent') {
       historyObserverRef.current?.disconnect();
       visibleHistoryTrackIds.current.clear();
+      setHistoryScrollContainerReady(false);
       return;
     }
 
     const tracks = listeningHistory.tracks;
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = historyScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     historyObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10781,9 +10840,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = historyTracksRef.current;
           const visibleTracks = [];
           visibleHistoryTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10794,7 +10854,7 @@ const Parachord = () => {
           updateSchedulerVisibility('history-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     historyTrackRowRefs.current.forEach((element) => {
@@ -10802,7 +10862,7 @@ const Parachord = () => {
     });
 
     return () => historyObserverRef.current?.disconnect();
-  }, [activeView, historyTab, listeningHistory.tracks, updateSchedulerVisibility]);
+  }, [activeView, historyTab, listeningHistory.tracks, updateSchedulerVisibility, historyScrollContainerReady]);
 
   // Register page context for top tracks resolution
   useEffect(() => {
@@ -10815,16 +10875,26 @@ const Parachord = () => {
     }
   }, [activeView, historyTab, topTracks.tracks.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with top tracks for observer callback
+  useEffect(() => {
+    topTracksRef.current = topTracks.tracks;
+  }, [topTracks.tracks]);
+
   // IntersectionObserver for top tracks visibility
   useEffect(() => {
     if (activeView !== 'history' || historyTab !== 'topTracks') {
       topTracksObserverRef.current?.disconnect();
       visibleTopTrackIds.current.clear();
+      setTopTracksScrollContainerReady(false);
       return;
     }
 
     const tracks = topTracks.tracks;
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available (uses same container as history)
+    const scrollContainer = topTracksScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     topTracksObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10845,9 +10915,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = topTracksRef.current;
           const visibleTracks = [];
           visibleTopTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10858,7 +10929,7 @@ const Parachord = () => {
           updateSchedulerVisibility('top-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     topTracksRowRefs.current.forEach((element) => {
@@ -10866,7 +10937,7 @@ const Parachord = () => {
     });
 
     return () => topTracksObserverRef.current?.disconnect();
-  }, [activeView, historyTab, topTracks.tracks, updateSchedulerVisibility]);
+  }, [activeView, historyTab, topTracks.tracks, updateSchedulerVisibility, topTracksScrollContainerReady]);
 
   // Register page context for friend history tracks resolution
   useEffect(() => {
@@ -10883,17 +10954,28 @@ const Parachord = () => {
     }
   }, [activeView, currentFriend?.id, friendHistoryTab, friendHistoryData.recent?.length, friendHistoryData.topTracks?.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with friend history tracks for observer callback
+  useEffect(() => {
+    const dataKey = friendHistoryTab === 'recent' ? 'recent' : 'topTracks';
+    friendHistoryTracksRef.current = friendHistoryData[dataKey] || [];
+  }, [friendHistoryTab, friendHistoryData]);
+
   // IntersectionObserver for friend history tracks visibility
   useEffect(() => {
     if (activeView !== 'friendHistory' || !currentFriend) {
       friendHistoryObserverRef.current?.disconnect();
       visibleFriendHistoryTrackIds.current.clear();
+      setFriendHistoryScrollContainerReady(false);
       return;
     }
 
     const dataKey = friendHistoryTab === 'recent' ? 'recent' : 'topTracks';
     const tracks = friendHistoryData[dataKey] || [];
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = friendHistoryScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     friendHistoryObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10914,9 +10996,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = friendHistoryTracksRef.current;
           const visibleTracks = [];
           visibleFriendHistoryTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10927,7 +11010,7 @@ const Parachord = () => {
           updateSchedulerVisibility('friend-history-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     friendHistoryTrackRowRefs.current.forEach((element) => {
@@ -10935,7 +11018,7 @@ const Parachord = () => {
     });
 
     return () => friendHistoryObserverRef.current?.disconnect();
-  }, [activeView, currentFriend?.id, friendHistoryTab, friendHistoryData, updateSchedulerVisibility]);
+  }, [activeView, currentFriend?.id, friendHistoryTab, friendHistoryData, updateSchedulerVisibility, friendHistoryScrollContainerReady]);
 
   // Register page context for search results tracks resolution
   useEffect(() => {
@@ -10948,16 +11031,26 @@ const Parachord = () => {
     }
   }, [activeView, searchDetailCategory, searchResults.tracks.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with search tracks for observer callback
+  useEffect(() => {
+    searchTracksRef.current = searchResults.tracks;
+  }, [searchResults.tracks]);
+
   // IntersectionObserver for search results tracks visibility
   useEffect(() => {
     if (activeView !== 'search' || searchDetailCategory !== 'tracks') {
       searchTracksObserverRef.current?.disconnect();
       visibleSearchTrackIds.current.clear();
+      setSearchScrollContainerReady(false);
       return;
     }
 
     const tracks = searchResults.tracks;
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = searchScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     searchTracksObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -10978,9 +11071,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = searchTracksRef.current;
           const visibleTracks = [];
           visibleSearchTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -10991,7 +11085,7 @@ const Parachord = () => {
           updateSchedulerVisibility('search-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     searchTracksRowRefs.current.forEach((element) => {
@@ -10999,7 +11093,7 @@ const Parachord = () => {
     });
 
     return () => searchTracksObserverRef.current?.disconnect();
-  }, [activeView, searchDetailCategory, searchResults.tracks, updateSchedulerVisibility]);
+  }, [activeView, searchDetailCategory, searchResults.tracks, updateSchedulerVisibility, searchScrollContainerReady]);
 
   // Register page context for playlist tracks resolution
   useEffect(() => {
@@ -11012,16 +11106,26 @@ const Parachord = () => {
     }
   }, [selectedPlaylist?.id, playlistTracks.length, registerPageContext, abortSchedulerContext]);
 
+  // Keep ref in sync with playlist tracks for observer callback
+  useEffect(() => {
+    playlistTracksRef.current = playlistTracks;
+  }, [playlistTracks]);
+
   // IntersectionObserver for playlist tracks visibility
   useEffect(() => {
     if (!selectedPlaylist) {
       playlistObserverRef.current?.disconnect();
       visiblePlaylistTrackIds.current.clear();
+      setPlaylistScrollContainerReady(false);
       return;
     }
 
     const tracks = playlistTracks;
     if (tracks.length === 0) return;
+
+    // Wait for scroll container to be available
+    const scrollContainer = playlistScrollContainerRef.current;
+    if (!scrollContainer) return;
 
     playlistObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -11042,9 +11146,10 @@ const Parachord = () => {
         });
 
         if (changed) {
+          const currentTracks = playlistTracksRef.current;
           const visibleTracks = [];
           visiblePlaylistTrackIds.current.forEach(trackId => {
-            const track = tracks.find(t => t.id === trackId);
+            const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
@@ -11055,7 +11160,7 @@ const Parachord = () => {
           updateSchedulerVisibility('playlist-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     playlistTrackRowRefs.current.forEach((element) => {
@@ -11063,7 +11168,7 @@ const Parachord = () => {
     });
 
     return () => playlistObserverRef.current?.disconnect();
-  }, [selectedPlaylist?.id, playlistTracks, updateSchedulerVisibility]);
+  }, [selectedPlaylist?.id, playlistTracks, updateSchedulerVisibility, playlistScrollContainerReady]);
 
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
@@ -17527,6 +17632,12 @@ useEffect(() => {
           ),
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
+            ref: (el) => {
+              searchScrollContainerRef.current = el;
+              if (el && !searchScrollContainerReady) {
+                setSearchScrollContainerReady(true);
+              }
+            },
             className: 'flex-1 overflow-y-auto bg-white scrollable-content',
             onScroll: handleSearchDetailScroll
           },
@@ -20837,6 +20948,12 @@ React.createElement('div', {
 
         // Playlist content (scrollable) - white background with new layout
         React.createElement('div', {
+          ref: (el) => {
+            playlistScrollContainerRef.current = el;
+            if (el && !playlistScrollContainerReady) {
+              setPlaylistScrollContainerReady(true);
+            }
+          },
           className: 'scrollable-content bg-white',
           style: {
             flex: 1,
@@ -22262,6 +22379,12 @@ React.createElement('div', {
           ),
           // Scrollable content area
           React.createElement('div', {
+            ref: (el) => {
+              collectionScrollContainerRef.current = el;
+              if (el && !collectionScrollContainerReady) {
+                setCollectionScrollContainerReady(true);
+              }
+            },
             className: 'flex-1 overflow-y-auto scrollable-content',
             style: { minHeight: 0 },
             onScroll: (e) => {
@@ -24178,6 +24301,12 @@ React.createElement('div', {
             const filteredArtists = recommendations.artists.filter(a => filteredArtistNames.has(a.name));
 
             return React.createElement('div', {
+              ref: (el) => {
+                recommendationsScrollContainerRef.current = el;
+                if (el && !recommendationsScrollContainerReady) {
+                  setRecommendationsScrollContainerReady(true);
+                }
+              },
               className: 'flex-1 overflow-y-auto scrollable-content',
               onScroll: (e) => {
                 const scrollTop = e.target.scrollTop;
@@ -24885,8 +25014,16 @@ React.createElement('div', {
                 )
             )
           ),
-          // Scrollable content area
+          // Scrollable content area (shared by recent and topTracks tabs)
           React.createElement('div', {
+            ref: (el) => {
+              historyScrollContainerRef.current = el;
+              topTracksScrollContainerRef.current = el; // Same container for top tracks tab
+              if (el) {
+                if (!historyScrollContainerReady) setHistoryScrollContainerReady(true);
+                if (!topTracksScrollContainerReady) setTopTracksScrollContainerReady(true);
+              }
+            },
             className: 'flex-1 overflow-y-auto scrollable-content p-6',
             onScroll: handleHistoryScroll
           },
@@ -25749,6 +25886,12 @@ React.createElement('div', {
             ),
             // Scrollable content area
             React.createElement('div', {
+              ref: (el) => {
+                friendHistoryScrollContainerRef.current = el;
+                if (el && !friendHistoryScrollContainerReady) {
+                  setFriendHistoryScrollContainerReady(true);
+                }
+              },
               className: 'flex-1 overflow-y-auto scrollable-content p-6',
               onScroll: (e) => {
                 const scrollTop = e.target.scrollTop;
