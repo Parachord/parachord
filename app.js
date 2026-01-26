@@ -30106,7 +30106,8 @@ React.createElement('div', {
 
       // Modal
       React.createElement('div', {
-        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl border border-zinc-700/50'
+        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
+        onClick: (e) => e.stopPropagation()
       },
         // Header
         React.createElement('div', {
@@ -30291,13 +30292,20 @@ React.createElement('div', {
               onClick: async () => {
                 if (syncSetupModal.settings.syncPlaylists) {
                   // Load playlists first
-                  setSyncSetupModal(prev => ({ ...prev, step: 'playlists' }));
+                  setSyncSetupModal(prev => ({ ...prev, step: 'playlists', error: null }));
                   const result = await window.electron.sync.fetchPlaylists(syncSetupModal.providerId);
                   if (result.success) {
                     setSyncSetupModal(prev => ({
                       ...prev,
                       playlists: result.playlists,
                       folders: result.folders
+                    }));
+                  } else {
+                    // Handle failed playlist fetch - show error and go back to options
+                    setSyncSetupModal(prev => ({
+                      ...prev,
+                      step: 'options',
+                      error: result.error || 'Failed to load playlists. Please try again.'
                     }));
                   }
                 } else {
