@@ -1606,14 +1606,14 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       }
     }
   },
-    // Artist image square with generative pattern placeholder
+    // Artist image square - gray bg while loading, pattern only when no image found
     React.createElement('div', {
       className: 'w-full aspect-square mb-2 relative overflow-hidden rounded-lg',
-      style: { background: pattern.gradient }
+      style: { background: !imageLoading && !imageUrl ? pattern.gradient : '#e5e7eb' }
     },
-      // Loading shimmer
+      // Loading shimmer (gray gradient while fetching)
       imageLoading && React.createElement('div', {
-        className: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer',
+        className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
       // Image (fades in when loaded)
@@ -1625,7 +1625,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; }
       }),
-      // Initials fallback when no image
+      // Initials fallback when no image found (not during loading)
       !imageLoading && !imageUrl && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 }
@@ -1687,13 +1687,13 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
       }
     }
   },
-    // Square image container with generative pattern placeholder
+    // Square image container - gray bg while loading, pattern only when no image found
     React.createElement('div', {
       className: 'aspect-square relative group/art',
-      style: { background: pattern.gradient }
+      style: { background: !imageLoading && !imageUrl ? pattern.gradient : '#e5e7eb' }
     },
-      // Initials overlay (shows artist initials on pattern)
-      React.createElement('div', {
+      // Initials overlay (only show when no image found, not while loading)
+      !imageLoading && !imageUrl && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 }
       },
@@ -1712,9 +1712,9 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
         onLoad: (e) => { e.target.style.opacity = '1'; },
         onError: (e) => { e.target.style.display = 'none'; }
       }),
-      // Shimmer loading state
+      // Shimmer loading state (only while fetching)
       imageLoading && React.createElement('div', {
-        className: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer',
+        className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
       // Hover overlay with action buttons (Play, Queue)
@@ -1863,13 +1863,13 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
     className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
     style: { animationDelay: `${animationDelay}ms` }
   },
-    // Square image container with generative pattern placeholder
+    // Square image container - gray bg while loading, pattern only when no image found
     React.createElement('div', {
       className: 'aspect-square relative group/art',
-      style: { background: pattern.gradient }
+      style: { background: imageUrl === null ? pattern.gradient : '#e5e7eb' }
     },
-      // Initials overlay (shows artist initials on pattern)
-      React.createElement('div', {
+      // Initials overlay (only show when no image found, not while loading)
+      imageUrl === null && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
         style: { color: pattern.textColor, opacity: 0.4 }
       },
@@ -1888,9 +1888,9 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
         onLoad: (e) => { e.target.style.opacity = '1'; },
         onError: (e) => { e.target.style.display = 'none'; }
       }),
-      // Shimmer loading state
+      // Shimmer loading state (only while fetching)
       imageUrl === undefined && React.createElement('div', {
-        className: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer',
+        className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
         style: { backgroundSize: '200% 100%' }
       }),
       // Hover overlay with action buttons (Play, Queue)
@@ -18619,6 +18619,7 @@ useEffect(() => {
                 },
                   ...filteredArtists.map((artist, index) => {
                     const animationDelay = Math.min(index * 30, 300);
+                    const searchArtistPattern = generateArtistPattern(artist.name);
                     return React.createElement('div', {
                       key: artist.id,
                       className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
@@ -18651,23 +18652,20 @@ useEffect(() => {
                         }
                       }
                     },
-                      // Square image container with hover overlay
+                      // Square image container - pattern shows only when no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: 'linear-gradient(to bottom right, #a855f7, #ec4899)' }
+                        style: { background: !artist.image ? searchArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Placeholder icon (always behind)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                        // Initials fallback (only show when no image)
+                        !artist.image && React.createElement('div', {
+                          className: 'absolute inset-0 flex items-center justify-center',
+                          style: { color: searchArtistPattern.textColor, opacity: 0.4 }
                         },
-                          React.createElement('svg', {
-                            className: 'w-12 h-12',
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                          )
+                          React.createElement('span', {
+                            className: 'font-bold tracking-wider',
+                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                          }, searchArtistPattern.initials)
                         ),
                         // Artist image with fade-in
                         artist.image && React.createElement('img', {
@@ -21381,8 +21379,9 @@ React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  [...filteredArtists].sort((a, b) => b.match - a.match).map((artist, index) =>
-                    React.createElement('div', {
+                  [...filteredArtists].sort((a, b) => b.match - a.match).map((artist, index) => {
+                    const relatedPattern = generateArtistPattern(artist.name);
+                    return React.createElement('div', {
                       key: artist.name,
                       className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
                       style: { animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -21414,23 +21413,20 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container with gradient placeholder
+                      // Square image container - pattern shows only when no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: 'linear-gradient(to bottom right, #a855f7, #ec4899)' }
+                        style: { background: !artist.image ? relatedPattern.gradient : '#e5e7eb' }
                       },
-                        // Placeholder icon (always behind)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                        // Initials fallback (only show when no image)
+                        !artist.image && React.createElement('div', {
+                          className: 'absolute inset-0 flex items-center justify-center',
+                          style: { color: relatedPattern.textColor, opacity: 0.4 }
                         },
-                          React.createElement('svg', {
-                            className: 'w-12 h-12',
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                          )
+                          React.createElement('span', {
+                            className: 'font-bold tracking-wider',
+                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                          }, relatedPattern.initials)
                         ),
                         // Image (fades in on load)
                         artist.image && React.createElement('img', {
@@ -21441,11 +21437,6 @@ React.createElement('div', {
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Shimmer loading state
-                        !artist.image && !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer',
-                          style: { backgroundSize: '200% 100%' }
                         }),
                         // Hover overlay with action buttons (Play, Queue) - Top 10 icons
                         React.createElement('div', {
@@ -21504,8 +21495,8 @@ React.createElement('div', {
                           className: 'font-medium text-gray-900 truncate text-sm transition-colors'
                         }, artist.name)
                       )
-                    )
-                  )
+                    );
+                  })
                 ),
                 // No related artists found (or filtered to none)
                 !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
@@ -25257,8 +25248,9 @@ React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...filteredArtists.map((artist, index) =>
-                    React.createElement('div', {
+                  ...filteredArtists.map((artist, index) => {
+                    const recsArtistPattern = generateArtistPattern(artist.name);
+                    return React.createElement('div', {
                       key: artist.id,
                       className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
                       style: { animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -25290,37 +25282,26 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container with hover overlay
+                      // Square image container - pattern shows only when no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: 'linear-gradient(to bottom right, #a855f7, #ec4899)' }
+                        style: { background: !artist.image ? recsArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Placeholder icon (always behind)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                        // Initials fallback (only show when no image)
+                        !artist.image && React.createElement('div', {
+                          className: 'absolute inset-0 flex items-center justify-center',
+                          style: { color: recsArtistPattern.textColor, opacity: 0.4 }
                         },
-                          React.createElement('svg', {
-                            className: 'w-12 h-12',
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                          )
+                          React.createElement('span', {
+                            className: 'font-bold tracking-wider',
+                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                          }, recsArtistPattern.initials)
                         ),
                         // Artist image
                         artist.image && React.createElement('img', {
                           src: artist.image,
                           alt: artist.name,
                           className: 'absolute inset-0 w-full h-full object-cover'
-                        }),
-                        // Shimmer loading state
-                        !artist.image && !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 animate-shimmer',
-                          style: {
-                            background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.3), transparent)',
-                            backgroundSize: '200% 100%'
-                          }
                         }),
                         // Hover overlay with Play and Queue buttons - Top 10 icons
                         React.createElement('div', {
@@ -25377,8 +25358,8 @@ React.createElement('div', {
                           className: 'font-medium text-gray-900 truncate text-sm transition-colors'
                         }, artist.name)
                       )
-                    )
-                  )
+                    );
+                  })
                 ),
 
                 // Artists tab empty state
@@ -26123,8 +26104,9 @@ React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...topArtists.artists.map((artist, index) =>
-                    React.createElement('div', {
+                  ...topArtists.artists.map((artist, index) => {
+                    const topArtistPattern = generateArtistPattern(artist.name);
+                    return React.createElement('div', {
                       key: artist.id,
                       className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
                       style: { animationDelay: `${Math.min(index * 30, 300)}ms` },
@@ -26156,23 +26138,20 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container with gradient placeholder
+                      // Square image container - pattern shows only when no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: 'linear-gradient(to bottom right, #a855f7, #ec4899)' }
+                        style: { background: !artist.image ? topArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Placeholder icon (always behind)
-                        React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center text-white/60'
+                        // Initials fallback (only show when no image)
+                        !artist.image && React.createElement('div', {
+                          className: 'absolute inset-0 flex items-center justify-center',
+                          style: { color: topArtistPattern.textColor, opacity: 0.4 }
                         },
-                          React.createElement('svg', {
-                            className: 'w-12 h-12',
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                          )
+                          React.createElement('span', {
+                            className: 'font-bold tracking-wider',
+                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                          }, topArtistPattern.initials)
                         ),
                         // Image (fades in on load)
                         artist.image && React.createElement('img', {
@@ -26248,8 +26227,8 @@ React.createElement('div', {
                           className: 'text-xs text-gray-400 mt-1'
                         }, `${artist.playCount} plays`)
                       )
-                    )
-                  )
+                    );
+                  })
                 )
             ),
 
@@ -26923,10 +26902,10 @@ React.createElement('div', {
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative',
-                            style: { background: albumPattern.gradient }
+                            style: { background: !album.image ? albumPattern.gradient : '#e5e7eb' }
                           },
-                            // Initials fallback
-                            React.createElement('div', {
+                            // Initials fallback (only show when no image)
+                            !album.image && React.createElement('div', {
                               className: 'absolute inset-0 flex items-center justify-center',
                               style: { color: albumPattern.textColor, opacity: 0.4 }
                             },
@@ -26971,10 +26950,10 @@ React.createElement('div', {
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative',
-                            style: { background: artistPattern.gradient }
+                            style: { background: !artist.image ? artistPattern.gradient : '#e5e7eb' }
                           },
-                            // Initials fallback
-                            React.createElement('div', {
+                            // Initials fallback (only show when no image)
+                            !artist.image && React.createElement('div', {
                               className: 'absolute inset-0 flex items-center justify-center',
                               style: { color: artistPattern.textColor, opacity: 0.4 }
                             },
