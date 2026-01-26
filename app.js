@@ -13591,16 +13591,21 @@ ${tracks}
     for (const artist of artists) {
       try {
         const result = await getArtistImage(artist.name);
-        if (result?.url) {
-          setTopArtists(prev => ({
-            ...prev,
-            artists: prev.artists.map(a =>
-              a.id === artist.id ? { ...a, image: result.url } : a
-            )
-          }));
-        }
+        setTopArtists(prev => ({
+          ...prev,
+          artists: prev.artists.map(a =>
+            a.id === artist.id ? { ...a, image: result?.url || null, imageLoaded: true } : a
+          )
+        }));
       } catch (err) {
         console.error(`Error fetching image for ${artist.name}:`, err);
+        // Mark as loaded even on error so we show the pattern fallback
+        setTopArtists(prev => ({
+          ...prev,
+          artists: prev.artists.map(a =>
+            a.id === artist.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
       }
     }
     console.log(`📊 Finished fetching top artist images`);
@@ -14451,16 +14456,21 @@ ${tracks}
     for (const artist of artists) {
       try {
         const result = await getArtistImage(artist.name);
-        if (result?.url) {
-          setFriendHistoryData(prev => ({
-            ...prev,
-            topArtists: prev.topArtists.map(a =>
-              a.id === artist.id ? { ...a, image: result.url } : a
-            )
-          }));
-        }
+        setFriendHistoryData(prev => ({
+          ...prev,
+          topArtists: prev.topArtists.map(a =>
+            a.id === artist.id ? { ...a, image: result?.url || null, imageLoaded: true } : a
+          )
+        }));
       } catch (err) {
         console.error(`Error fetching image for ${artist.name}:`, err);
+        // Mark as loaded even on error so we show the pattern fallback
+        setFriendHistoryData(prev => ({
+          ...prev,
+          topArtists: prev.topArtists.map(a =>
+            a.id === artist.id ? { ...a, imageLoaded: true } : a
+          )
+        }));
       }
     }
   };
@@ -18648,13 +18658,18 @@ useEffect(() => {
                         }
                       }
                     },
-                      // Square image container - pattern shows only when no image
+                      // Square image container - gray while loading, pattern only when imageLoaded && no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: !artist.image ? searchArtistPattern.gradient : '#e5e7eb' }
+                        style: { background: artist.imageLoaded && !artist.image ? searchArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Initials fallback (only show when no image)
-                        !artist.image && React.createElement('div', {
+                        // Shimmer while loading (imageLoaded not yet true)
+                        !artist.imageLoaded && React.createElement('div', {
+                          className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                          style: { backgroundSize: '200% 100%' }
+                        }),
+                        // Initials fallback (only show when imageLoaded && no image)
+                        artist.imageLoaded && !artist.image && React.createElement('div', {
                           className: 'absolute inset-0 flex items-center justify-center',
                           style: { color: searchArtistPattern.textColor, opacity: 0.4 }
                         },
@@ -21409,13 +21424,18 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container - pattern shows only when no image
+                      // Square image container - gray while loading, pattern only when imageLoaded && no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: !artist.image ? relatedPattern.gradient : '#e5e7eb' }
+                        style: { background: artist.imageLoaded && !artist.image ? relatedPattern.gradient : '#e5e7eb' }
                       },
-                        // Initials fallback (only show when no image)
-                        !artist.image && React.createElement('div', {
+                        // Shimmer while loading (imageLoaded not yet true)
+                        !artist.imageLoaded && React.createElement('div', {
+                          className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                          style: { backgroundSize: '200% 100%' }
+                        }),
+                        // Initials fallback (only show when imageLoaded && no image)
+                        artist.imageLoaded && !artist.image && React.createElement('div', {
                           className: 'absolute inset-0 flex items-center justify-center',
                           style: { color: relatedPattern.textColor, opacity: 0.4 }
                         },
@@ -25278,13 +25298,18 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container - pattern shows only when no image
+                      // Square image container - gray while loading, pattern only when imageLoaded && no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: !artist.image ? recsArtistPattern.gradient : '#e5e7eb' }
+                        style: { background: artist.imageLoaded && !artist.image ? recsArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Initials fallback (only show when no image)
-                        !artist.image && React.createElement('div', {
+                        // Shimmer while loading (imageLoaded not yet true)
+                        !artist.imageLoaded && React.createElement('div', {
+                          className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                          style: { backgroundSize: '200% 100%' }
+                        }),
+                        // Initials fallback (only show when imageLoaded && no image)
+                        artist.imageLoaded && !artist.image && React.createElement('div', {
                           className: 'absolute inset-0 flex items-center justify-center',
                           style: { color: recsArtistPattern.textColor, opacity: 0.4 }
                         },
@@ -26134,13 +26159,18 @@ React.createElement('div', {
                         }
                       }
                     },
-                      // Square image container - pattern shows only when no image
+                      // Square image container - gray while loading, pattern only when imageLoaded && no image
                       React.createElement('div', {
                         className: 'aspect-square relative group/art',
-                        style: { background: !artist.image ? topArtistPattern.gradient : '#e5e7eb' }
+                        style: { background: artist.imageLoaded && !artist.image ? topArtistPattern.gradient : '#e5e7eb' }
                       },
-                        // Initials fallback (only show when no image)
-                        !artist.image && React.createElement('div', {
+                        // Shimmer while loading (imageLoaded not yet true)
+                        !artist.imageLoaded && React.createElement('div', {
+                          className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                          style: { backgroundSize: '200% 100%' }
+                        }),
+                        // Initials fallback (only show when imageLoaded && no image)
+                        artist.imageLoaded && !artist.image && React.createElement('div', {
                           className: 'absolute inset-0 flex items-center justify-center',
                           style: { color: topArtistPattern.textColor, opacity: 0.4 }
                         },
@@ -26946,10 +26976,15 @@ React.createElement('div', {
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative',
-                            style: { background: !artist.image ? artistPattern.gradient : '#e5e7eb' }
+                            style: { background: artist.imageLoaded && !artist.image ? artistPattern.gradient : '#e5e7eb' }
                           },
-                            // Initials fallback (only show when no image)
-                            !artist.image && React.createElement('div', {
+                            // Shimmer while loading (imageLoaded not yet true)
+                            !artist.imageLoaded && React.createElement('div', {
+                              className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                              style: { backgroundSize: '200% 100%' }
+                            }),
+                            // Initials fallback (only show when imageLoaded && no image)
+                            artist.imageLoaded && !artist.image && React.createElement('div', {
                               className: 'absolute inset-0 flex items-center justify-center',
                               style: { color: artistPattern.textColor, opacity: 0.4 }
                             },
