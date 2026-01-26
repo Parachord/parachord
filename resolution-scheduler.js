@@ -25,6 +25,9 @@ class ResolutionScheduler {
     // Map of trackKey -> { contextId, data, abortController, priority }
     this.pending = new Map();
 
+    // Set of trackKeys currently being resolved
+    this.inProgress = new Set();
+
     // Currently hovered track
     this.hoverTrack = null;
 
@@ -186,6 +189,7 @@ class ResolutionScheduler {
     const entry = this.pending.get(trackKey);
     if (entry) {
       this.pending.delete(trackKey);
+      this.inProgress.delete(trackKey);
 
       // Remove from context's visible set
       const context = this.contexts.get(entry.contextId);
@@ -214,6 +218,7 @@ class ResolutionScheduler {
     if (entry) {
       entry.abortController.abort();
       this.pending.delete(trackKey);
+      this.inProgress.delete(trackKey);
     }
 
     // Clear hover if this was the hover track
@@ -225,17 +230,23 @@ class ResolutionScheduler {
   /**
    * Abort all pending tracks in a context
    * @param {string} contextId - Context ID
+   * @param {object} options - Options
+   * @param {boolean} options.afterCurrentBatch - If true, preserve in-progress tracks
    */
-  abortContext(contextId) {
+  abortContext(contextId, options = {}) {
+    const { afterCurrentBatch = false } = options;
     const context = this.contexts.get(contextId);
     if (!context) return;
 
     // Abort context-level controller
     context.abortController.abort();
 
-    // Abort all tracks in this context
+    // Abort all tracks in this context (except in-progress if afterCurrentBatch)
     for (const [trackKey, entry] of this.pending) {
       if (entry.contextId === contextId) {
+        if (afterCurrentBatch && this.inProgress.has(trackKey)) {
+          continue; // Preserve in-progress track
+        }
         entry.abortController.abort();
         this.pending.delete(trackKey);
       }
@@ -262,6 +273,24 @@ class ResolutionScheduler {
    */
   getPendingCount() {
     return this.pending.size;
+  }
+
+  /**
+   * Mark a track as in-progress (currently being resolved)
+   * @param {string} trackKey - Track key
+   */
+  markInProgress(trackKey) {
+    if (this.pending.has(trackKey)) {
+      this.inProgress.add(trackKey);
+    }
+  }
+
+  /**
+   * Get count of in-progress tracks
+   * @returns {number}
+   */
+  getInProgressCount() {
+    return this.inProgress.size;
   }
 
   /**

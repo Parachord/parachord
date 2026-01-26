@@ -151,7 +151,6 @@ test('Abort context removes pending tracks', () => {
 // Test: Update visibility adds/removes tracks
 test('updateVisibility adds new tracks and aborts hidden ones', () => {
   const scheduler = new ResolutionScheduler();
-  let resolveCallCount = 0;
 
   scheduler.registerContext('page-1', 'page');
 
@@ -173,6 +172,42 @@ test('updateVisibility adds new tracks and aborts hidden ones', () => {
   assertEqual(scheduler.hasPending('track-a'), false, 'track-a no longer pending');
   assertEqual(scheduler.hasPending('track-b'), true, 'track-b still pending');
   assertEqual(scheduler.hasPending('track-c'), true, 'track-c now pending');
+});
+
+// Test: Abort context waits for current batch
+test('abortContext with afterCurrentBatch=true preserves in-progress', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('page-1', 'page');
+  scheduler.enqueue('track-a', 'page-1', { title: 'Track A' });
+  scheduler.enqueue('track-b', 'page-1', { title: 'Track B' });
+
+  // Mark track-a as in-progress
+  scheduler.markInProgress('track-a');
+
+  // Abort context but preserve in-progress
+  scheduler.abortContext('page-1', { afterCurrentBatch: true });
+
+  assertEqual(scheduler.hasPending('track-a'), true, 'in-progress track preserved');
+  assertEqual(scheduler.hasPending('track-b'), false, 'queued track aborted');
+});
+
+// Test: Batch size tracking
+test('Batch size is tracked correctly', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('page-1', 'page');
+  scheduler.enqueue('track-a', 'page-1', { title: 'Track A' });
+  scheduler.enqueue('track-b', 'page-1', { title: 'Track B' });
+  scheduler.enqueue('track-c', 'page-1', { title: 'Track C' });
+
+  scheduler.markInProgress('track-a');
+  scheduler.markInProgress('track-b');
+
+  assertEqual(scheduler.getInProgressCount(), 2, 'two in progress');
+
+  scheduler.dequeue('track-a');
+  assertEqual(scheduler.getInProgressCount(), 1, 'one in progress after dequeue');
 });
 
 // Summary
