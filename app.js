@@ -30616,7 +30616,14 @@ React.createElement('div', {
             onClick: async () => {
               for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
                 if (settings.enabled) {
-                  await window.electron.sync.start(providerId, { settings });
+                  try {
+                    const authStatus = await window.electron.sync.checkAuth(providerId);
+                    if (authStatus.authenticated) {
+                      await window.electron.sync.start(providerId, { settings });
+                    }
+                  } catch (error) {
+                    console.error(`[Sync] Quick sync failed for ${providerId}:`, error);
+                  }
                 }
               }
               const newCollection = await window.electron.collection.load();
