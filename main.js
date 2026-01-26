@@ -1843,22 +1843,42 @@ ipcMain.handle('collection:save', async (event, collection) => {
 
 // Resolver sync settings
 ipcMain.handle('sync-settings:load', async () => {
-  return store.get('resolver_sync_settings') || {};
+  try {
+    return store.get('resolver_sync_settings') || {};
+  } catch (error) {
+    console.error('  ❌ Load sync settings failed:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('sync-settings:save', async (event, settings) => {
-  store.set('resolver_sync_settings', settings);
-  return { success: true };
+  try {
+    store.set('resolver_sync_settings', settings);
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Save sync settings failed:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('sync-settings:get-provider', async (event, providerId) => {
-  const settings = store.get('resolver_sync_settings') || {};
-  return settings[providerId] || null;
+  try {
+    const settings = store.get('resolver_sync_settings') || {};
+    return settings[providerId] || null;
+  } catch (error) {
+    console.error('  ❌ Get provider sync settings failed:', error.message);
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerSettings) => {
-  const settings = store.get('resolver_sync_settings') || {};
-  settings[providerId] = providerSettings;
-  store.set('resolver_sync_settings', settings);
-  return { success: true };
+  try {
+    const settings = store.get('resolver_sync_settings') || {};
+    settings[providerId] = providerSettings;
+    store.set('resolver_sync_settings', settings);
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Set provider sync settings failed:', error.message);
+    return { success: false, error: error.message };
+  }
 });
