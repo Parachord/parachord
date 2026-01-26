@@ -746,6 +746,15 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
             // Wait a bit for audio to be created, then set up event listeners and force play
             setTimeout(() => {
               const audio = document.querySelector('audio');
+              console.log('Audio element check:', audio ? 'found' : 'not found');
+              if (audio) {
+                console.log('Audio state:', {
+                  paused: audio.paused,
+                  src: audio.src ? 'has src' : 'no src',
+                  readyState: audio.readyState,
+                  networkState: audio.networkState
+                });
+              }
               if (audio && !audio._parachordListenersAttached) {
                 // Set up event listeners - use console.log with special prefix that main process will catch
                 audio.addEventListener('play', () => {
@@ -758,6 +767,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
                   console.log('__PLAYBACK_EVENT__:ended');
                 });
                 audio._parachordListenersAttached = true;
+                console.log('Attached playback event listeners to audio element');
 
                 // Force play
                 audio.play().then(() => {
@@ -765,6 +775,10 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
                 }).catch(err => {
                   console.log('Audio play failed:', err.message);
                 });
+              } else if (!audio) {
+                // Try to find audio in iframes
+                const iframes = document.querySelectorAll('iframe');
+                console.log('No audio in main document, found', iframes.length, 'iframes');
               }
             }, 500);
 

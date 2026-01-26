@@ -7555,8 +7555,10 @@ const Parachord = () => {
       await resolver.play(track, config);
       console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
 
-      // Clear safety timeout if browser opens successfully (the 'connected' event will clear the wait flag)
-      clearTimeout(safetyTimeout);
+      // NOTE: Do NOT clear safety timeout here - it should only expire if the
+      // playback window never fires a 'playing' event. The 'playing' event
+      // handler clears waitingForBrowserPlaybackRef, and then the safety
+      // timeout becomes a no-op (checks the flag before acting).
 
       // Only update state AFTER successful browser open
       setShowExternalPrompt(false);
