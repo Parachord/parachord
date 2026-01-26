@@ -27618,6 +27618,113 @@ React.createElement('div', {
             )
           ),
 
+          // Library Sync Section - shown for Spotify
+          selectedResolver.id === 'spotify' && React.createElement('div', {
+            className: 'mt-4 p-4 bg-zinc-800/50 rounded-lg',
+            style: {
+              marginTop: '16px',
+              padding: '16px',
+              backgroundColor: 'rgba(63, 63, 70, 0.5)',
+              borderRadius: '8px'
+            }
+          },
+            React.createElement('h4', {
+              className: 'text-sm font-medium text-white mb-3',
+              style: {
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }
+            }, 'Library Sync'),
+            resolverSyncSettings.spotify?.enabled
+              ? React.createElement('div', {
+                  className: 'space-y-3',
+                  style: { display: 'flex', flexDirection: 'column', gap: '12px' }
+                },
+                  // Status row
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between text-sm',
+                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
+                  },
+                    React.createElement('span', {
+                      style: { color: '#6b7280' }
+                    }, 'Status'),
+                    React.createElement('span', {
+                      className: 'text-green-400 flex items-center gap-1',
+                      style: { color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }
+                    },
+                      React.createElement('span', {
+                        style: { width: '8px', height: '8px', backgroundColor: '#22c55e', borderRadius: '50%' }
+                      }),
+                      'Active'
+                    )
+                  ),
+                  // Last synced row
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between text-sm',
+                    style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }
+                  },
+                    React.createElement('span', {
+                      style: { color: '#6b7280' }
+                    }, 'Last synced'),
+                    React.createElement('span', {
+                      style: { color: '#1f2937' }
+                    },
+                      resolverSyncSettings.spotify?.lastSyncAt
+                        ? new Date(resolverSyncSettings.spotify.lastSyncAt).toLocaleString()
+                        : 'Never'
+                    )
+                  ),
+                  // Action buttons
+                  React.createElement('div', {
+                    className: 'flex gap-2 mt-3',
+                    style: { display: 'flex', gap: '8px', marginTop: '12px' }
+                  },
+                    React.createElement('button', {
+                      onClick: () => openSyncSetupModal('spotify'),
+                      className: 'px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded transition-colors',
+                      style: {
+                        padding: '6px 12px',
+                        backgroundColor: '#3f3f46',
+                        color: '#ffffff',
+                        fontSize: '13px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }
+                    }, 'Sync Now'),
+                    React.createElement('button', {
+                      onClick: () => {/* TODO: Stop syncing flow */},
+                      className: 'px-3 py-1.5 text-zinc-400 hover:text-white text-sm transition-colors',
+                      style: {
+                        padding: '6px 12px',
+                        backgroundColor: 'transparent',
+                        color: '#6b7280',
+                        fontSize: '13px',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }
+                    }, 'Stop Syncing')
+                  )
+                )
+              : React.createElement('button', {
+                  onClick: () => openSyncSetupModal('spotify'),
+                  className: 'w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors',
+                  style: {
+                    width: '100%',
+                    padding: '8px 16px',
+                    backgroundColor: '#22c55e',
+                    color: '#ffffff',
+                    borderRadius: '8px',
+                    fontWeight: '500',
+                    fontSize: '13px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }
+                }, 'Set Up Library Sync')
+          ),
+
           // Qobuz authentication section
           selectedResolver.id === 'qobuz' && React.createElement('div', {
             style: {
