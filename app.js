@@ -4393,10 +4393,22 @@ const Parachord = () => {
   // Listen for sync progress
   useEffect(() => {
     const unsubscribe = window.electron.sync.onProgress((progress) => {
+      // Update setup modal progress
       setSyncSetupModal(prev => ({
         ...prev,
         progress
       }));
+      // Also track in global sync status for the status modal
+      if (progress.providerId) {
+        setSyncStatus(prev => ({
+          ...prev,
+          [progress.providerId]: {
+            ...prev[progress.providerId],
+            inProgress: progress.phase !== 'complete',
+            progress: progress
+          }
+        }));
+      }
     });
     return unsubscribe;
   }, []);
@@ -31039,50 +31051,100 @@ React.createElement('div', {
         className: 'relative bg-zinc-900 rounded-2xl w-full max-w-md mx-4 overflow-hidden shadow-2xl border border-zinc-700/50',
         onClick: (e) => e.stopPropagation()
       },
-        // Header
+        // Header with close button
         React.createElement('div', {
-          className: 'px-6 py-4 border-b border-zinc-700/50'
+          className: 'px-6 py-4 border-b border-zinc-700/50 flex items-center justify-between'
         },
           React.createElement('h2', {
             className: 'text-lg font-semibold text-white'
-          }, 'Library Sync')
+          }, 'Library Sync'),
+          React.createElement('button', {
+            onClick: () => setSyncStatusModal({ open: false }),
+            className: 'p-1 text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/10'
+          },
+            React.createElement('svg', {
+              className: 'w-5 h-5',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor'
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                strokeWidth: 2,
+                d: 'M6 18L18 6M6 6l12 12'
+              })
+            )
+          )
         ),
 
         // Content
         React.createElement('div', {
           className: 'px-6 py-4 space-y-4'
         },
-          // List enabled sync providers
+          // List enabled sync providers with progress
           Object.entries(resolverSyncSettings)
             .filter(([_, settings]) => settings.enabled)
-            .map(([providerId, settings]) =>
-              React.createElement('div', {
+            .map(([providerId, settings]) => {
+              const status = syncStatus[providerId];
+              const isInProgress = status?.inProgress;
+              const progress = status?.progress;
+
+              return React.createElement('div', {
                 key: providerId,
-                className: 'flex items-center gap-3'
+                className: 'space-y-2'
               },
                 React.createElement('div', {
-                  className: 'w-2 h-2 bg-green-400 rounded-full'
-                }),
-                React.createElement('div', {
-                  className: 'flex-1'
+                  className: 'flex items-center gap-3'
+                },
+                  // Status indicator - animated when syncing
+                  React.createElement('div', {
+                    className: isInProgress
+                      ? 'w-2 h-2 bg-blue-400 rounded-full animate-pulse'
+                      : 'w-2 h-2 bg-green-400 rounded-full'
+                  }),
+                  React.createElement('div', {
+                    className: 'flex-1'
+                  },
+                    React.createElement('div', {
+                      className: 'text-white font-medium capitalize'
+                    }, providerId),
+                    React.createElement('div', {
+                      className: 'text-sm text-zinc-400'
+                    }, isInProgress
+                      ? (progress?.phase === 'tracks' ? `Syncing tracks... ${progress.current || 0}/${progress.total || '?'}` :
+                         progress?.phase === 'albums' ? `Syncing albums... ${progress.current || 0}/${progress.total || '?'}` :
+                         progress?.phase === 'artists' ? `Syncing artists... ${progress.current || 0}/${progress.total || '?'}` :
+                         progress?.phase === 'playlists' ? `Syncing playlists... ${progress.current || 0}/${progress.total || '?'}` :
+                         'Syncing...')
+                      : 'Last sync: ' + (settings.lastSyncAt
+                        ? new Date(settings.lastSyncAt).toLocaleString()
+                        : 'Never'))
+                  )
+                ),
+                // Progress bar when syncing
+                isInProgress && progress?.total > 0 && React.createElement('div', {
+                  className: 'ml-5 h-1 bg-zinc-700 rounded-full overflow-hidden'
                 },
                   React.createElement('div', {
-                    className: 'text-white font-medium capitalize'
-                  }, providerId),
-                  React.createElement('div', {
-                    className: 'text-sm text-zinc-400'
-                  }, 'Last sync: ' + (settings.lastSyncAt
-                    ? new Date(settings.lastSyncAt).toLocaleString()
-                    : 'Never'))
+                    className: 'h-full bg-blue-400 transition-all duration-300',
+                    style: { width: `${Math.round((progress.current / progress.total) * 100)}%` }
+                  })
                 )
-              )
-            ),
+              );
+            }),
 
           // No providers message
           Object.keys(resolverSyncSettings).filter(id => resolverSyncSettings[id]?.enabled).length === 0 &&
             React.createElement('div', {
               className: 'text-center py-4 text-zinc-400'
-            }, 'No sync providers enabled')
+            }, 'No sync providers enabled'),
+
+          // Message about closing safely - only show when sync is in progress
+          Object.values(syncStatus).some(s => s?.inProgress) &&
+            React.createElement('div', {
+              className: 'text-xs text-zinc-500 text-center pt-2'
+            }, 'Sync continues in the background. Safe to close this window.')
         ),
 
         // Footer
@@ -31113,8 +31175,11 @@ React.createElement('div', {
               const newCollection = await window.electron.collection.load();
               setCollectionData(newCollection);
             },
-            className: 'px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors'
-          }, 'Sync Now')
+            disabled: Object.values(syncStatus).some(s => s?.inProgress),
+            className: Object.values(syncStatus).some(s => s?.inProgress)
+              ? 'px-4 py-2 bg-white/5 text-zinc-500 rounded-lg text-sm font-medium cursor-not-allowed'
+              : 'px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors'
+          }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
         )
       )
     ),
