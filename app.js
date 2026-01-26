@@ -916,10 +916,21 @@ const VirtualizedQueueList = React.memo(({
     const visibleRange = virtualizer.getVirtualItems();
     if (visibleRange.length === 0) return;
 
-    const startIndex = visibleRange[0].index;
-    const endIndex = visibleRange[visibleRange.length - 1].index;
+    // IMPORTANT: The queue is displayed in REVERSE order (next track at bottom, last track at top)
+    // virtualizer indices are visual (top-to-bottom), so we need to reverse-map to queue indices:
+    // - visibleRange[0].index (top of viewport) = queue[queue.length - 1 - index] (end of queue)
+    // - visibleRange[last].index (bottom of viewport) = queue[queue.length - 1 - index] (start of queue)
+    const visualStartIndex = visibleRange[0].index;
+    const visualEndIndex = visibleRange[visibleRange.length - 1].index;
 
-    // Include overscan (10) which virtualizer already handles
+    // Convert visual indices to queue array indices (reversed)
+    const queueEndIndex = queue.length - 1 - visualStartIndex;   // Top of viewport = higher queue indices
+    const queueStartIndex = queue.length - 1 - visualEndIndex;   // Bottom of viewport = lower queue indices
+
+    // Clamp to valid range
+    const startIndex = Math.max(0, queueStartIndex);
+    const endIndex = Math.min(queue.length - 1, queueEndIndex);
+
     // Plus playback lookahead (5 from current track)
     const lookaheadStart = currentTrackIndex ?? 0;
     const lookaheadEnd = lookaheadStart + 5;
@@ -928,8 +939,8 @@ const VirtualizedQueueList = React.memo(({
     const visibleTracks = [];
     const seen = new Set();
 
-    // Add viewport + overscan
-    for (let i = Math.max(0, startIndex - 10); i <= Math.min(queue.length - 1, endIndex + 10); i++) {
+    // Add viewport + overscan (reversed mapping applied above)
+    for (let i = startIndex; i <= endIndex; i++) {
       const track = queue[i];
       if (track && !seen.has(track.id)) {
         seen.add(track.id);
@@ -11478,15 +11489,47 @@ const Parachord = () => {
         if (changed) {
           const currentTracks = playlistTracksRef.current;
           const visibleTracks = [];
-          visiblePlaylistTrackIds.current.forEach(trackId => {
+          // Sort by track index to ensure consistent ordering
+          const sortedVisibleIds = Array.from(visiblePlaylistTrackIds.current).sort((a, b) => {
+            const indexA = currentTracks.findIndex(t => t.id === a);
+            const indexB = currentTracks.findIndex(t => t.id === b);
+            return indexA - indexB;
+          });
+
+          // Sync cached sources to state for visible tracks
+          // This ensures tracks that were resolved earlier show their sources
+          const sourcesToSync = {};
+          sortedVisibleIds.forEach(trackId => {
             const track = currentTracks.find(t => t.id === trackId);
             if (track) {
               visibleTracks.push({
                 key: trackId,
                 data: { track, artistName: track.artist || 'Unknown Artist' }
               });
+              // Check if this track has cached sources but isn't in trackSources state
+              const cacheKey = `${(track.artist || 'Unknown Artist').toLowerCase()}|${track.title.toLowerCase()}|${track.position || 0}`;
+              const cached = trackSourcesCache.current[cacheKey];
+              if (cached?.sources && Object.keys(cached.sources).length > 0) {
+                sourcesToSync[trackId] = cached.sources;
+              }
             }
           });
+
+          // Batch update trackSources state with any cached sources
+          if (Object.keys(sourcesToSync).length > 0) {
+            setTrackSources(prev => {
+              const updated = { ...prev };
+              let hasChanges = false;
+              for (const [trackId, sources] of Object.entries(sourcesToSync)) {
+                if (!prev[trackId] || Object.keys(prev[trackId]).length < Object.keys(sources).length) {
+                  updated[trackId] = sources;
+                  hasChanges = true;
+                }
+              }
+              return hasChanges ? updated : prev;
+            });
+          }
+
           updateSchedulerVisibility('playlist-tracks', visibleTracks);
         }
       },
@@ -20842,8 +20885,13 @@ React.createElement('div', {
                     sources: trackSources[trackId] || {}
                   };
                 });
-                setAddToPlaylistTracks(tracks);
-                setShowAddToPlaylistPanel(true);
+                setAddToPlaylistPanel({
+                  open: true,
+                  tracks: tracks,
+                  sourceName: rel.title,
+                  sourceType: 'album'
+                });
+                setSelectedPlaylistsForAdd([]);
               }
             }
           })
@@ -21296,15 +21344,25 @@ React.createElement('div', {
                       });
                     }
                     if (tracks.length > 0) {
-                      setAddToPlaylistTracks(tracks);
-                      setShowAddToPlaylistPanel(true);
+                      setAddToPlaylistPanel({
+                        open: true,
+                        tracks: tracks,
+                        sourceName: rel.title,
+                        sourceType: 'album'
+                      });
+                      setSelectedPlaylistsForAdd([]);
                     } else {
                       // Fetch and show panel if no tracks cached
                       await prefetchReleaseTracks(rel, currentArtist);
                       const newPrefetched = prefetchedReleasesRef.current[rel.id];
                       if (newPrefetched?.tracks?.length > 0) {
-                        setAddToPlaylistTracks(newPrefetched.tracks);
-                        setShowAddToPlaylistPanel(true);
+                        setAddToPlaylistPanel({
+                          open: true,
+                          tracks: newPrefetched.tracks,
+                          sourceName: rel.title,
+                          sourceType: 'album'
+                        });
+                        setSelectedPlaylistsForAdd([]);
                       }
                     }
                   },
@@ -22040,70 +22098,53 @@ React.createElement('div', {
               className: 'flex-shrink-0 pr-8',
               style: { width: '240px' }
             },
-              // 2x2 Album art grid with dark placeholder styling
-              React.createElement('div', {
-                className: 'w-48 h-48 rounded-lg overflow-hidden album-art-container',
-                style: {
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gridTemplateRows: '1fr 1fr',
-                  gap: '1px',
-                  backgroundColor: '#2a2a2a',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15), 0 8px 32px rgba(0, 0, 0, 0.1)'
-                }
-              },
-                playlistCoverArt.length >= 4 ?
-                  // Show 4 album covers in 2x2 grid
-                  playlistCoverArt.slice(0, 4).map((url, i) =>
+              // 2x2 Album art grid - matches playlist card style from grid view
+              (() => {
+                const covers = allPlaylistCovers[selectedPlaylist?.id] || playlistCoverArt || [];
+                const hasCachedCovers = covers.length > 0;
+
+                return React.createElement('div', {
+                  className: 'aspect-square rounded-lg overflow-hidden album-art-container',
+                  style: {
+                    width: '192px',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15), 0 8px 32px rgba(0, 0, 0, 0.1)'
+                  }
+                },
+                  hasCachedCovers ?
+                    React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                      [0, 1, 2, 3].map(idx => {
+                        return React.createElement('div', {
+                          key: idx,
+                          className: 'relative w-full h-full flex items-center justify-center',
+                          style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                        },
+                          !covers[idx] && React.createElement(Music, { size: 20, className: 'text-gray-600' }),
+                          covers[idx] && React.createElement('img', {
+                            src: covers[idx],
+                            alt: '',
+                            className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                            style: { opacity: 0 },
+                            ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                            onLoad: (e) => { e.target.style.opacity = '1'; }
+                          })
+                        );
+                      })
+                    )
+                  :
                     React.createElement('div', {
-                      key: i,
-                      style: {
-                        backgroundImage: `url(${url})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }
-                    })
-                  )
-                : playlistCoverArt.length > 0 ?
-                  // Show available covers, fill rest with dark gradient
-                  [...Array(4)].map((_, i) =>
-                    React.createElement('div', {
-                      key: i,
-                      style: {
-                        backgroundImage: playlistCoverArt[i]
-                          ? `url(${playlistCoverArt[i]})`
-                          : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)',
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                      }
-                    })
-                  )
-                :
-                  // Default dark placeholder grid
-                  [...Array(4)].map((_, i) =>
-                    React.createElement('div', {
-                      key: i,
-                      className: 'flex items-center justify-center',
-                      style: {
-                        background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                      }
+                      className: 'w-full h-full flex items-center justify-center',
+                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                     },
-                      i === 0 && React.createElement('svg', {
-                        className: 'w-8 h-8 text-gray-600',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor',
-                        strokeWidth: 1.5
-                      },
-                        React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          d: 'M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5L9 7.5v9.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 13.125V9'
-                        })
+                      // Playlist icon (three lines with play triangle)
+                      React.createElement('svg', { className: 'w-12 h-12 text-gray-500', viewBox: '0 0 24 24', fill: 'currentColor' },
+                        React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+                        React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+                        React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+                        React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
                       )
                     )
-                  )
-              ),
+                );
+              })(),
 
               // Playlist title and metadata
               React.createElement('div', { className: 'mt-4 space-y-1' },
