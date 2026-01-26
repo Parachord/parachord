@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('electron', {
     });
   },
 
-  // Resolver operations
+  // Plugin operations
   resolvers: {
     loadBuiltin: () => ipcRenderer.invoke('resolvers-load-builtin'),
     pickFile: () => ipcRenderer.invoke('resolvers-pick-file'),
@@ -67,8 +67,7 @@ contextBridge.exposeInMainWorld('electron', {
       });
     },
     // Marketplace operations
-    getMarketplaceManifest: () => ipcRenderer.invoke('marketplace-get-manifest'),
-    downloadResolver: (url) => ipcRenderer.invoke('marketplace-download-resolver', url)
+    syncMarketplace: () => ipcRenderer.invoke('plugins-sync-marketplace')
   },
 
   // Playlist operations

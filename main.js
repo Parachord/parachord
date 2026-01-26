@@ -974,51 +974,151 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   }
 });
 
-// Resolver loading handler
+// Plugin marketplace configuration
+const PLUGIN_MARKETPLACE_URL = 'https://raw.githubusercontent.com/Parachord/parachord-plugins/main';
+const PLUGIN_MANIFEST_URL = `${PLUGIN_MARKETPLACE_URL}/manifest.json`;
+
+// Get the plugins cache directory
+function getPluginsCacheDir() {
+  const os = require('os');
+  const path = require('path');
+  return path.join(os.homedir(), '.parachord', 'plugins');
+}
+
+// Fetch plugin manifest from marketplace
+async function fetchPluginManifest() {
+  try {
+    const response = await fetch(PLUGIN_MANIFEST_URL);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch plugin manifest:', error.message);
+    return null;
+  }
+}
+
+// Fetch a single plugin from marketplace
+async function fetchPlugin(pluginId) {
+  try {
+    const url = `${PLUGIN_MARKETPLACE_URL}/${pluginId}.axe`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const content = await response.text();
+    return JSON.parse(content);
+  } catch (error) {
+    console.error(`Failed to fetch plugin ${pluginId}:`, error.message);
+    return null;
+  }
+}
+
+// Plugin loading handler - loads from cache and syncs with marketplace
 ipcMain.handle('resolvers-load-builtin', async () => {
-  console.log('=== Load All Resolvers ===');
+  console.log('=== Load All Plugins ===');
   const fs = require('fs').promises;
   const path = require('path');
 
-  const resolvers = [];
-
-  // Load all resolvers from resolvers directory
-  const resolversDir = path.join(__dirname, 'resolvers');
-  console.log('Loading resolvers from:', resolversDir);
+  const plugins = [];
+  const pluginsDir = getPluginsCacheDir();
+  console.log('Plugins cache directory:', pluginsDir);
 
   try {
-    // Ensure directory exists
-    await fs.mkdir(resolversDir, { recursive: true });
+    // Ensure cache directory exists
+    await fs.mkdir(pluginsDir, { recursive: true });
 
-    const files = await fs.readdir(resolversDir);
+    // Load cached plugins first (for offline support)
+    const files = await fs.readdir(pluginsDir);
     const axeFiles = files.filter(f => f.endsWith('.axe'));
 
     for (const filename of axeFiles) {
-      const filepath = path.join(resolversDir, filename);
+      const filepath = path.join(pluginsDir, filename);
       try {
-        console.log(`  Reading ${filename}...`);
         const content = await fs.readFile(filepath, 'utf8');
         const axe = JSON.parse(content);
 
         // Check for duplicates
-        if (resolvers.find(r => r.manifest.id === axe.manifest.id)) {
+        if (plugins.find(p => p.manifest.id === axe.manifest.id)) {
           console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
           continue;
         }
 
         axe._filename = filename;
-        resolvers.push(axe);
-        console.log(`  ✅ Loaded ${axe.manifest.name}`);
+        axe._cached = true;
+        plugins.push(axe);
+        console.log(`  ✅ Loaded (cached) ${axe.manifest.name} v${axe.manifest.version}`);
       } catch (error) {
         console.error(`  ❌ Failed to load ${filename}:`, error.message);
       }
     }
   } catch (error) {
-    console.error('  ❌ Failed to read resolvers directory:', error.message);
+    console.error('  ❌ Failed to read plugins cache:', error.message);
   }
 
-  console.log(`✅ Loaded ${resolvers.length} resolver(s) total`);
-  return resolvers;
+  console.log(`✅ Loaded ${plugins.length} plugin(s) from cache`);
+  return plugins;
+});
+
+// Sync plugins with marketplace (fetch updates)
+ipcMain.handle('plugins-sync-marketplace', async () => {
+  console.log('=== Sync Plugins with Marketplace ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  const pluginsDir = getPluginsCacheDir();
+  await fs.mkdir(pluginsDir, { recursive: true });
+
+  // Fetch manifest to get list of available plugins
+  const manifest = await fetchPluginManifest();
+  if (!manifest || !manifest.plugins) {
+    console.log('  ❌ Could not fetch marketplace manifest');
+    return { success: false, error: 'Could not reach marketplace' };
+  }
+
+  console.log(`  Found ${manifest.plugins.length} plugins in marketplace`);
+
+  const updated = [];
+  const added = [];
+  const failed = [];
+
+  for (const pluginInfo of manifest.plugins) {
+    const pluginId = pluginInfo.id;
+    const marketplaceVersion = pluginInfo.version;
+    const cacheFile = path.join(pluginsDir, `${pluginId}.axe`);
+
+    // Check if we have this plugin cached and what version
+    let cachedVersion = null;
+    try {
+      const cached = await fs.readFile(cacheFile, 'utf8');
+      const cachedPlugin = JSON.parse(cached);
+      cachedVersion = cachedPlugin.manifest?.version;
+    } catch (e) {
+      // Not cached yet
+    }
+
+    // Download if not cached or outdated
+    if (!cachedVersion || cachedVersion !== marketplaceVersion) {
+      console.log(`  📥 Fetching ${pluginId} v${marketplaceVersion}...`);
+      const plugin = await fetchPlugin(pluginId);
+
+      if (plugin) {
+        await fs.writeFile(cacheFile, JSON.stringify(plugin, null, 2), 'utf8');
+        if (cachedVersion) {
+          updated.push({ id: pluginId, from: cachedVersion, to: marketplaceVersion });
+          console.log(`    ✅ Updated ${pluginId}: ${cachedVersion} → ${marketplaceVersion}`);
+        } else {
+          added.push({ id: pluginId, version: marketplaceVersion });
+          console.log(`    ✅ Added ${pluginId} v${marketplaceVersion}`);
+        }
+      } else {
+        failed.push(pluginId);
+        console.log(`    ❌ Failed to fetch ${pluginId}`);
+      }
+    } else {
+      console.log(`  ✓ ${pluginId} v${cachedVersion} (up to date)`);
+    }
+  }
+
+  console.log(`✅ Sync complete: ${added.length} added, ${updated.length} updated, ${failed.length} failed`);
+  return { success: true, added, updated, failed };
 });
 
 // File picker for resolvers
@@ -1066,27 +1166,26 @@ ipcMain.handle('resolvers-pick-file', async () => {
   }
 });
 
-// Install resolver
+// Install plugin (from file picker or marketplace)
 ipcMain.handle('resolvers-install', async (event, axeContent, filename) => {
-  console.log('=== Install Resolver ===');
+  console.log('=== Install Plugin ===');
   console.log('  Installing:', filename);
-  
+
   try {
     const fs = require('fs').promises;
     const path = require('path');
-    
+
     // Validate content
     const axe = JSON.parse(axeContent);
-    console.log(`  Resolver: ${axe.manifest.name} v${axe.manifest.version}`);
-    
-    // Create resolvers directory if it doesn't exist
-    const resolversDir = path.join(__dirname, 'resolvers');
-    await fs.mkdir(resolversDir, { recursive: true });
+    console.log(`  Plugin: ${axe.manifest.name} v${axe.manifest.version}`);
 
-    // Save to resolvers directory
-    const targetPath = path.join(resolversDir, filename);
+    // Save to plugins cache directory
+    const pluginsDir = getPluginsCacheDir();
+    await fs.mkdir(pluginsDir, { recursive: true });
+
+    const targetPath = path.join(pluginsDir, filename);
     await fs.writeFile(targetPath, axeContent, 'utf8');
-    
+
     console.log(`  ✅ Installed to: ${targetPath}`);
     return { success: true, resolver: axe };
   } catch (error) {
@@ -1095,23 +1194,23 @@ ipcMain.handle('resolvers-install', async (event, axeContent, filename) => {
   }
 });
 
-// Uninstall resolver
+// Uninstall plugin
 ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
-  console.log('=== Uninstall Resolver ===');
-  console.log('  Resolver ID:', resolverId);
-  
+  console.log('=== Uninstall Plugin ===');
+  console.log('  Plugin ID:', resolverId);
+
   try {
     const fs = require('fs').promises;
     const path = require('path');
-    
-    const resolversDir = path.join(__dirname, 'resolvers');
 
-    // Find the .axe file for this resolver
-    const files = await fs.readdir(resolversDir);
+    const pluginsDir = getPluginsCacheDir();
+
+    // Find the .axe file for this plugin
+    const files = await fs.readdir(pluginsDir);
     const axeFiles = files.filter(f => f.endsWith('.axe'));
 
     for (const filename of axeFiles) {
-      const filepath = path.join(resolversDir, filename);
+      const filepath = path.join(pluginsDir, filename);
       const content = await fs.readFile(filepath, 'utf8');
       const axe = JSON.parse(content);
 
@@ -1122,7 +1221,7 @@ ipcMain.handle('resolvers-uninstall', async (event, resolverId) => {
       }
     }
 
-    return { success: false, error: 'Resolver not found' };
+    return { success: false, error: 'Plugin not found' };
   } catch (error) {
     console.error('  ❌ Uninstall failed:', error.message);
     return { success: false, error: error.message };
