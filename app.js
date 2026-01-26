@@ -2120,6 +2120,40 @@ const Parachord = () => {
     error: null
   });
 
+  // Background sync timer (every 15 minutes)
+  useEffect(() => {
+    const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+    const runBackgroundSync = async () => {
+      // Check each enabled provider
+      for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
+        if (settings.enabled) {
+          const authStatus = await window.electron.sync.checkAuth(providerId);
+          if (authStatus.authenticated) {
+            console.log(`[Sync] Starting background sync for ${providerId}`);
+            const result = await window.electron.sync.start(providerId, { settings });
+            if (result.success) {
+              // Reload collection
+              const newCollection = await window.electron.collection.load();
+              setCollectionData(newCollection);
+            }
+          }
+        }
+      }
+    };
+
+    // Run on app start (after initial load)
+    const initialSyncTimeout = setTimeout(runBackgroundSync, 5000);
+
+    // Set up interval
+    const intervalId = setInterval(runBackgroundSync, SYNC_INTERVAL);
+
+    return () => {
+      clearTimeout(initialSyncTimeout);
+      clearInterval(intervalId);
+    };
+  }, [resolverSyncSettings]);
+
   // Friends state
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
