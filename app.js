@@ -27693,18 +27693,21 @@ React.createElement('div', {
                         border: 'none',
                         cursor: 'pointer'
                       }
-                    }, 'Sync Now'),
+                    }, 'Manage Sync'),
                     React.createElement('button', {
-                      onClick: () => {/* TODO: Stop syncing flow */},
-                      className: 'px-3 py-1.5 text-zinc-400 hover:text-white text-sm transition-colors',
+                      disabled: true,
+                      onClick: () => {/* TODO: Stop syncing flow - Task 15 */},
+                      className: 'px-3 py-1.5 text-zinc-400 text-sm',
                       style: {
                         padding: '6px 12px',
                         backgroundColor: 'transparent',
-                        color: '#6b7280',
+                        color: '#4b5563',
                         fontSize: '13px',
                         border: 'none',
-                        cursor: 'pointer'
-                      }
+                        cursor: 'not-allowed',
+                        opacity: '0.5'
+                      },
+                      title: 'Stop syncing will be available in a future update'
                     }, 'Stop Syncing')
                   )
                 )
