@@ -3625,6 +3625,9 @@ const Parachord = () => {
                 ...result,
                 confidence: 0.9
               };
+              // Also update album/albumArt if not set
+              if (!track.album && result.album) track.album = result.album;
+              if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
               console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
             }
           } catch (error) {
@@ -3641,11 +3644,16 @@ const Parachord = () => {
       }
     }
 
-    // Update queue state with resolved sources
+    // Update queue state with resolved sources and album info
     setCurrentQueue(prev => prev.map(queueTrack => {
       const resolvedTrack = tracks.find(t => t.id === queueTrack.id);
       if (resolvedTrack && Object.keys(resolvedTrack.sources).length > Object.keys(queueTrack.sources).length) {
-        return { ...queueTrack, sources: resolvedTrack.sources };
+        return {
+          ...queueTrack,
+          sources: resolvedTrack.sources,
+          album: queueTrack.album || resolvedTrack.album,
+          albumArt: queueTrack.albumArt || resolvedTrack.albumArt
+        };
       }
       return queueTrack;
     }));
@@ -9920,7 +9928,9 @@ const Parachord = () => {
               return {
                 ...queueTrack,
                 sources: { ...queueTrack.sources, ...update.sources },
-                duration: queueTrack.duration || update.duration
+                duration: queueTrack.duration || update.duration,
+                album: queueTrack.album || update.album,
+                albumArt: queueTrack.albumArt || update.albumArt
               };
             }
             return queueTrack;
@@ -9940,7 +9950,9 @@ const Parachord = () => {
               return {
                 ...prev,
                 sources: { ...prev.sources, ...trackUpdate.sources },
-                duration: prev.duration || trackUpdate.duration
+                duration: prev.duration || trackUpdate.duration,
+                album: prev.album || trackUpdate.album,
+                albumArt: prev.albumArt || trackUpdate.albumArt
               };
             }
             return prev;
@@ -9983,8 +9995,10 @@ const Parachord = () => {
         // Collect update for this track
         if (Object.keys(sources).length > 0) {
           const resolvedDuration = Object.values(sources).find(s => s.duration)?.duration || null;
+          const resolvedAlbum = Object.values(sources).find(s => s.album)?.album || null;
+          const resolvedAlbumArt = Object.values(sources).find(s => s.albumArt)?.albumArt || null;
 
-          pendingUpdates.set(track.id, { sources, duration: resolvedDuration });
+          pendingUpdates.set(track.id, { sources, duration: resolvedDuration, album: resolvedAlbum, albumArt: resolvedAlbumArt });
 
           // Check if this is the current playing track
           const currentTrackRef = currentTrack;
@@ -9997,7 +10011,9 @@ const Parachord = () => {
                 title: track.title,
                 artist: track.artist,
                 sources,
-                duration: resolvedDuration
+                duration: resolvedDuration,
+                album: resolvedAlbum,
+                albumArt: resolvedAlbumArt
               };
             }
           }
@@ -11724,7 +11740,9 @@ ${tracks}
                   ? {
                       ...t,
                       sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null
+                      duration: t.duration || resolved.duration || null,
+                      album: t.album || resolved.album || null,
+                      albumArt: t.albumArt || resolved.albumArt || null
                     }
                   : t
               )
@@ -12998,7 +13016,7 @@ ${tracks}
               ...prev,
               tracks: prev.tracks.map(t =>
                 t.id === track.id
-                  ? { ...t, sources: { ...t.sources, [resolverId]: result }, albumArt: t.albumArt || result.albumArt }
+                  ? { ...t, sources: { ...t.sources, [resolverId]: result }, album: t.album || result.album, albumArt: t.albumArt || result.albumArt }
                   : t
               )
             }));
@@ -13097,7 +13115,9 @@ ${tracks}
                   ? {
                       ...t,
                       sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null
+                      duration: t.duration || resolved.duration || null,
+                      album: t.album || resolved.album || null,
+                      albumArt: t.albumArt || resolved.albumArt || null
                     }
                   : t
               )
@@ -13144,7 +13164,9 @@ ${tracks}
                   ? {
                       ...t,
                       sources: { ...t.sources, [resolverId]: resolved },
-                      duration: t.duration || resolved.duration || null
+                      duration: t.duration || resolved.duration || null,
+                      album: t.album || resolved.album || null,
+                      albumArt: t.albumArt || resolved.albumArt || null
                     }
                   : t
               )
@@ -14613,7 +14635,7 @@ ${tracks}
 
               if (resolved) {
                 console.log(`  ✅ ${resolver.name}: Found match`);
-                // Update the track's sources and duration (if available) and trigger re-render
+                // Update the track's sources, duration, album info (if available) and trigger re-render
                 setPlaylistTracks(prevTracks =>
                   prevTracks.map(t =>
                     t.id === track.id
@@ -14621,7 +14643,9 @@ ${tracks}
                           ...t,
                           sources: { ...t.sources, [resolverId]: resolved },
                           // Update duration if resolved source has it and track doesn't
-                          duration: t.duration || resolved.duration || 0
+                          duration: t.duration || resolved.duration || 0,
+                          album: t.album || resolved.album || null,
+                          albumArt: t.albumArt || resolved.albumArt || null
                         }
                       : t
                   )
@@ -14696,7 +14720,9 @@ ${tracks}
                     ? {
                         ...t,
                         sources: { ...t.sources, [resolverId]: resolved },
-                        duration: t.duration || resolved.duration || 0
+                        duration: t.duration || resolved.duration || 0,
+                        album: t.album || resolved.album || null,
+                        albumArt: t.albumArt || resolved.albumArt || null
                       }
                     : t
                 )
@@ -15137,7 +15163,7 @@ ${tracks}
                   setPlaylistTracks(prevTracks =>
                     prevTracks.map(t =>
                       t.id === track.id
-                        ? { ...t, sources: { ...t.sources, [resolverId]: resolved } }
+                        ? { ...t, sources: { ...t.sources, [resolverId]: resolved }, album: t.album || resolved.album || null, albumArt: t.albumArt || resolved.albumArt || null }
                         : t
                     )
                   );
