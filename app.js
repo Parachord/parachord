@@ -2804,7 +2804,6 @@ const Parachord = () => {
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
-  const [resolvingLibraryTracks, setResolvingLibraryTracks] = useState(new Set()); // Track filePaths currently being resolved
   const [audioContext, setAudioContext] = useState(null);
   const [currentSource, setCurrentSource] = useState(null);
   const [startTime, setStartTime] = useState(0);
@@ -5392,16 +5391,6 @@ const Parachord = () => {
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
             setLibrary(localTracks);
-            // Mark all tracks as resolving immediately so LO + skeletons show together
-            const trackKeys = localTracks
-              .filter(t => {
-                const sources = t.sources || {};
-                return !Object.keys(sources).some(id => id !== 'localfiles');
-              })
-              .map(t => t.filePath || t.id);
-            if (trackKeys.length > 0) {
-              setResolvingLibraryTracks(new Set(trackKeys));
-            }
           } else {
             console.log('📚 No local files found - library is empty');
             setLibrary([]);
@@ -10697,12 +10686,6 @@ const Parachord = () => {
       setId3ArtFetchKey('');
     }
   }, [id3EditorOpen]);
-
-  // Effect to resolve library and collection tracks when they change
-  useEffect(() => {
-    // This is now handled by the page context when viewing collection
-    // No need for blanket resolution of all tracks
-  }, []);
 
   // Lazy load album art after page is displayed
   const fetchAlbumArtLazy = async (releases) => {
@@ -22423,8 +22406,7 @@ React.createElement('div', {
                   const hasResolved = Object.keys(effectiveSources).length > 0;
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
-                  const trackKey = track.filePath || track.id;
-                  const isResolving = resolvingLibraryTracks.has(trackKey);
+                  const isResolving = Object.keys(effectiveSources).length === 0;
 
                   return React.createElement('div', {
                     ref: (el) => {
