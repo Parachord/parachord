@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-25
+> Last updated: 2026-01-26
 
 ---
 
@@ -269,6 +269,8 @@
 - ✅ Queue management - Add/remove/reorder tracks in queue
 - ✅ Save queue as playlist - Convert current queue to permanent playlist
 - ✅ Clear queue - Button to clear all queued tracks
+- ✅ Virtualized queue with scheduler integration - Efficient rendering with viewport-based resolution
+- ✅ Fixed virtualized queue for large lists - Correct handling of 1000+ track queues
 
 ### Playlists
 - ✅ XSPF playlist support
@@ -296,6 +298,10 @@
 - ✅ Similar artists - Show related artists from Last.fm
 - ✅ Fix "Alls" typo on Discography - Should be "All"
 - ✅ Critics Picks redesigned to list layout with synopses
+- ✅ Viewport-prioritized album art loading - Visible albums load first in parallel batches
+- ✅ Album art passed to release page - Use cached art instead of re-fetching
+- ✅ Album info propagation - Album metadata flows from resolvers to track display
+- ✅ Improved error handling with retry - Exponential backoff for network failures
 
 ### Search
 - ✅ Search history - Save and display recent searches
@@ -318,11 +324,15 @@
 - ✅ Resolver marketplace
 - ✅ Wikipedia metaservice plugin
 - ✅ Discogs metaservice plugin
+- ✅ Spotify auto-launch - Automatically launch Spotify when needed for playback
+- ✅ Spotify auto-fallback - Seamless fallback when device unavailable
 
 ### Scrobbling
 - ✅ Last.fm scrobbling - Track listening history
 - ✅ ListenBrainz scrobbling
 - ✅ Libre.fm scrobbling
+- ✅ Scrobble spec compliance - Enforce 30s minimum listen time per Last.fm/ListenBrainz spec
+- ✅ Listening history cache updates - Update cache when scrobbling new tracks
 
 ### UI/UX
 - ✅ Album art throughout app - Fetch from Cover Art Archive
@@ -338,6 +348,7 @@
 - ✅ Reduced Settings button height
 - ✅ Reduced header padding on Search and Settings pages
 - ✅ Close button on Settings page header
+- ✅ Volume controls only for enabled content resolvers - Hide irrelevant volume sliders
 
 ### Friends & Social
 - ✅ Friends list with Last.fm and ListenBrainz support
@@ -349,9 +360,16 @@
 - ✅ Friend collection page with hex avatars
 - ✅ Context banners for Listen Along and Spinoff sessions
 - ✅ Now playing status - See what friends are listening to
+- ✅ Resolution scheduler integration - Friends sidebar uses scheduler for track resolution
+- ✅ Spinoff/Listen-Along scheduler contexts - Proper abort handling when switching modes
 
 ### Architecture
 - ✅ WebSocket support - Real-time updates
+- ✅ Resolution scheduler architecture - Centralized viewport-based resolution with contexts
+- ✅ useResolutionScheduler hook - React integration for scheduler
+- ✅ AbortSignal support for resolution - Cancel pending resolutions on context change
+- ✅ Batch completion support - Efficient handling of multiple track resolutions
+- ✅ Playback lookahead - Pre-resolve upcoming tracks in queue
 
 ### Power User Features
 - ✅ Advanced search - Boolean operators, filters
@@ -367,9 +385,15 @@
 - ✅ Sync status modal - Quick view of sync progress with close button
 - ✅ Stop syncing flow - Keep/remove option for synced content
 - ✅ Playlist update detection - Track changes to synced playlists
+- ✅ Collection ID alignment - Consistent ID generation between sync providers
+- ✅ Collection track list scheduler integration - Viewport-based resolution for collection view
 
 ### Performance
 - ✅ Virtualized queue drawer - Handle large tracklists efficiently
+- ✅ Resolution scheduler - Viewport-based track resolution with priority queue
+- ✅ Viewport-prioritized album art loading - Parallel batches for visible albums, sequential for background
+- ✅ Caching for listening history and top tracks - Reduce API calls
+- ✅ Recommendations caching with pre-populated artist images
 
 ### UI Design
 - ✅ Cinematic Light design - Applied to modals and dialogs
