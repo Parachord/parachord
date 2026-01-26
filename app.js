@@ -3686,6 +3686,11 @@ const Parachord = () => {
   const collectionObserverRef = useRef(null);
   const visibleCollectionTrackIds = useRef(new Set());
 
+  // Refs for release page tracks visibility tracking
+  const releaseTrackRowRefs = useRef(new Map());
+  const releaseObserverRef = useRef(null);
+  const visibleReleaseTrackIds = useRef(new Set());
+
   // Refs for friends sidebar visibility tracking
   const friendEntryRefs = useRef(new Map());
   const friendsObserverRef = useRef(null);
@@ -9566,7 +9571,11 @@ const Parachord = () => {
       setCurrentRelease(releaseInfo);
       setLoadingRelease(false);
 
-      // Track resolution is now handled by ResolutionScheduler via page context visibility
+      // Resolve release tracks directly (release pages are typically small, 10-20 tracks)
+      const artistName = release.artist?.name || 'Unknown Artist';
+      tracks.forEach(track => {
+        resolveTrack(track, artistName, {});
+      });
 
       // Fetch album art in background (don't block track display)
       (async () => {
@@ -10504,6 +10513,71 @@ const Parachord = () => {
 
     return () => collectionObserverRef.current?.disconnect();
   }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility]);
+
+  // Register page context for release page tracks resolution
+  useEffect(() => {
+    if (activeView === 'artist' && currentRelease && currentRelease.tracks) {
+      const cleanup = registerPageContext('release-tracks');
+      return () => {
+        abortSchedulerContext('release-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, currentRelease?.id, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for release page tracks visibility
+  useEffect(() => {
+    if (activeView !== 'artist' || !currentRelease || !currentRelease.tracks) {
+      releaseObserverRef.current?.disconnect();
+      visibleReleaseTrackIds.current.clear();
+      return;
+    }
+
+    const releaseTracks = currentRelease.tracks;
+    const artistName = currentRelease.artist?.name || currentArtist?.name || 'Unknown Artist';
+
+    releaseObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleReleaseTrackIds.current.has(trackId)) {
+              visibleReleaseTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleReleaseTrackIds.current.has(trackId)) {
+              visibleReleaseTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleReleaseTrackIds.current.forEach(trackId => {
+            const track = releaseTracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName }
+              });
+            }
+          });
+          updateSchedulerVisibility('release-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    // Observe all existing track rows
+    releaseTrackRowRefs.current.forEach((element) => {
+      if (element) releaseObserverRef.current.observe(element);
+    });
+
+    return () => releaseObserverRef.current?.disconnect();
+  }, [activeView, currentRelease, currentArtist?.name, updateSchedulerVisibility]);
 
   // Register sidebar context for friends sidebar visibility tracking
   useEffect(() => {
