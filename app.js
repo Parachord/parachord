@@ -22098,68 +22098,173 @@ React.createElement('div', {
               className: 'flex-shrink-0 pr-8',
               style: { width: '240px' }
             },
-              // 2x2 Album art grid - matches playlist card style from grid view
+              // Playlist card - matches playlist card style from grid view
               (() => {
                 const covers = allPlaylistCovers[selectedPlaylist?.id] || playlistCoverArt || [];
                 const hasCachedCovers = covers.length > 0;
 
                 return React.createElement('div', {
-                  className: 'aspect-square rounded-lg overflow-hidden album-art-container',
                   style: {
-                    width: '192px',
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15), 0 8px 32px rgba(0, 0, 0, 0.1)'
+                    padding: '10px',
+                    borderRadius: '10px',
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                    width: 'fit-content'
                   }
                 },
-                  hasCachedCovers ?
-                    React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
-                      [0, 1, 2, 3].map(idx => {
-                        return React.createElement('div', {
-                          key: idx,
-                          className: 'relative w-full h-full flex items-center justify-center',
-                          style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
-                        },
-                          !covers[idx] && React.createElement(Music, { size: 20, className: 'text-gray-600' }),
-                          covers[idx] && React.createElement('img', {
-                            src: covers[idx],
-                            alt: '',
-                            className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
-                            style: { opacity: 0 },
-                            ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                            onLoad: (e) => { e.target.style.opacity = '1'; }
-                          })
-                        );
-                      })
-                    )
-                  :
+                  // Album art mosaic with hover overlay
+                  React.createElement('div', {
+                    className: 'rounded-lg overflow-hidden album-art-container group/art relative',
+                    style: {
+                      width: '192px',
+                      height: '192px'
+                    }
+                  },
+                    hasCachedCovers ?
+                      React.createElement('div', { className: 'grid grid-cols-2 grid-rows-2 w-full h-full' },
+                        [0, 1, 2, 3].map(idx => {
+                          return React.createElement('div', {
+                            key: idx,
+                            className: 'relative w-full h-full flex items-center justify-center',
+                            style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                          },
+                            !covers[idx] && React.createElement(Music, { size: 20, className: 'text-gray-600' }),
+                            covers[idx] && React.createElement('img', {
+                              src: covers[idx],
+                              alt: '',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              style: { opacity: 0 },
+                              ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                              onLoad: (e) => { e.target.style.opacity = '1'; }
+                            })
+                          );
+                        })
+                      )
+                    :
+                      React.createElement('div', {
+                        className: 'w-full h-full flex items-center justify-center',
+                        style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                      },
+                        // Playlist icon (three lines with play triangle)
+                        React.createElement('svg', { className: 'w-12 h-12 text-gray-500', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+                          React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+                          React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+                          React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
+                        )
+                      ),
+                    // Hover overlay with action buttons
                     React.createElement('div', {
-                      className: 'w-full h-full flex items-center justify-center',
-                      style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
+                      className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                      style: { pointerEvents: 'auto' }
                     },
-                      // Playlist icon (three lines with play triangle)
-                      React.createElement('svg', { className: 'w-12 h-12 text-gray-500', viewBox: '0 0 24 24', fill: 'currentColor' },
-                        React.createElement('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
-                        React.createElement('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
-                        React.createElement('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
-                        React.createElement('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' })
+                      // Add to Playlist button
+                      React.createElement('button', {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          const tracksWithIds = (playlistTracks || []).map(track => ({
+                            ...track,
+                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            sources: trackSources[track.id] || {}
+                          }));
+                          if (tracksWithIds.length > 0) {
+                            setAddToPlaylistPanel({
+                              open: true,
+                              tracks: tracksWithIds,
+                              sourceName: selectedPlaylist.title,
+                              sourceType: 'playlist'
+                            });
+                            setSelectedPlaylistsForAdd([]);
+                          }
+                        },
+                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                        title: 'Add to Playlist'
+                      },
+                        React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                        )
+                      ),
+                      // Play button (center, larger)
+                      React.createElement('button', {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          setTrackLoading(true);
+                          const tracksWithIds = (playlistTracks || []).map(track => ({
+                            ...track,
+                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            sources: trackSources[track.id] || {}
+                          }));
+                          if (tracksWithIds.length > 0) {
+                            const context = { type: 'playlist', id: selectedPlaylist.id, name: selectedPlaylist.title };
+                            const [firstTrack, ...remainingTracks] = tracksWithIds;
+                            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                            setQueueWithContext(remainingTracks, context);
+                            handlePlay(taggedFirstTrack);
+                          } else {
+                            setTrackLoading(false);
+                          }
+                        },
+                        className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                        style: { border: 'none', cursor: 'pointer' },
+                        title: 'Play'
+                      },
+                        React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                      ),
+                      // Add to Queue button
+                      React.createElement('button', {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          const tracksWithIds = (playlistTracks || []).map(track => ({
+                            ...track,
+                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            sources: trackSources[track.id] || {}
+                          }));
+                          if (tracksWithIds.length > 0) {
+                            const context = { type: 'playlist', id: selectedPlaylist.id, name: selectedPlaylist.title };
+                            addToQueue(tracksWithIds, context);
+                          }
+                        },
+                        className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                        style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                        title: 'Add to Queue'
+                      },
+                        React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                        )
                       )
                     )
+                  ),
+                  // Playlist title inside card - matching grid typography (13px/500)
+                  React.createElement('div', {
+                    className: 'truncate',
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#1f2937',
+                      marginTop: '10px',
+                      letterSpacing: '0.005em'
+                    },
+                    title: selectedPlaylist.title
+                  }, selectedPlaylist.title),
+                  // Track count - matching grid typography (11px)
+                  React.createElement('div', {
+                    className: 'truncate',
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      marginTop: '2px'
+                    }
+                  }, `${playlistTracks.length} Songs`)
                 );
               })(),
 
-              // Playlist title and metadata
-              React.createElement('div', { className: 'mt-4 space-y-1' },
-                // Title - editable in edit mode
-                playlistEditMode && editedPlaylistData
-                  ? React.createElement('input', {
-                      type: 'text',
-                      value: editedPlaylistData.title,
-                      onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, title: e.target.value })),
-                      className: 'font-bold text-gray-900 text-lg leading-tight bg-white border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent',
-                      placeholder: 'Playlist name'
-                    })
-                  : React.createElement('h2', {
-                      className: 'font-bold text-gray-900 text-lg leading-tight'
-                    }, selectedPlaylist.title),
+              // Additional metadata below the card (author, edit mode inputs, dates, delete)
+              React.createElement('div', { className: 'mt-3 space-y-1', style: { maxWidth: '212px' } },
                 // Creator - editable for imported and hosted playlists in edit mode
                 playlistEditMode && editedPlaylistData && (selectedPlaylist.id?.startsWith('imported-') || selectedPlaylist.sourceUrl)
                   ? React.createElement('input', {
@@ -22172,13 +22277,14 @@ React.createElement('div', {
                   : React.createElement('p', {
                       className: 'text-sm text-gray-500'
                     }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
-                React.createElement('p', {
-                  className: 'text-sm text-gray-500'
-                }, playlistTracks.length > 0
-                  ? `${playlistTracks.length.toString().padStart(2, '0')} Songs`
-                  : selectedPlaylist.tracks?.length > 0
-                    ? `${selectedPlaylist.tracks.length.toString().padStart(2, '0')} Songs`
-                    : 'Loading...'),
+                // Edit mode: Title input
+                playlistEditMode && editedPlaylistData && React.createElement('input', {
+                  type: 'text',
+                  value: editedPlaylistData.title,
+                  onChange: (e) => setEditedPlaylistData(prev => ({ ...prev, title: e.target.value })),
+                  className: 'font-bold text-gray-900 text-sm leading-tight bg-white border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent',
+                  placeholder: 'Playlist name'
+                }),
                 // Created date
                 selectedPlaylist.createdAt && React.createElement('p', {
                   className: 'text-xs text-gray-400'
@@ -22210,7 +22316,7 @@ React.createElement('div', {
                       navigateTo('playlists');
                     }
                   },
-                  className: 'mt-4 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
+                  className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
                 }, 'Delete Playlist')
               )
             ),
