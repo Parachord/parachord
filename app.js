@@ -3674,6 +3674,12 @@ const Parachord = () => {
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
   const queueResolutionActiveRef = useRef(false); // When true, queue resolution takes priority over page resolution
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
+
+  // Refs for collection tracks visibility tracking
+  const collectionTrackRowRefs = useRef(new Map());
+  const collectionObserverRef = useRef(null);
+  const visibleCollectionTrackIds = useRef(new Set());
+
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Close add-to-playlist sort dropdown when clicking outside
@@ -10419,6 +10425,73 @@ const Parachord = () => {
     const cleanup = registerQueueContext('queue', 5);
     return cleanup;
   }, [registerQueueContext]);
+
+  // Register page context for collection tracks resolution
+  useEffect(() => {
+    if (activeView === 'library' && collectionTab === 'tracks') {
+      const cleanup = registerPageContext('collection-tracks');
+      return () => {
+        // Abort context with afterCurrentBatch when leaving
+        abortSchedulerContext('collection-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, collectionTab, registerPageContext, abortSchedulerContext]);
+
+  // IntersectionObserver for collection tracks visibility
+  useEffect(() => {
+    if (activeView !== 'library' || collectionTab !== 'tracks') {
+      collectionObserverRef.current?.disconnect();
+      visibleCollectionTrackIds.current.clear();
+      return;
+    }
+
+    // Get all tracks (local + collection merged)
+    const allTracks = [...library, ...collectionData.tracks];
+    if (allTracks.length === 0) return;
+
+    collectionObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleCollectionTrackIds.current.has(trackId)) {
+              visibleCollectionTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleCollectionTrackIds.current.has(trackId)) {
+              visibleCollectionTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const visibleTracks = [];
+          visibleCollectionTrackIds.current.forEach(trackId => {
+            const track = allTracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('collection-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' } // 200px buffer above/below viewport
+    );
+
+    // Observe all existing track rows
+    collectionTrackRowRefs.current.forEach((element) => {
+      if (element) collectionObserverRef.current.observe(element);
+    });
+
+    return () => collectionObserverRef.current?.disconnect();
+  }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility]);
 
   // Calculate confidence score for a match (0-1)
   const calculateConfidence = (originalTrack, foundTrack) => {
@@ -22659,6 +22732,18 @@ React.createElement('div', {
                   const isResolving = resolvingLibraryTracks.has(trackKey);
 
                   return React.createElement('div', {
+                    ref: (el) => {
+                      if (el) {
+                        collectionTrackRowRefs.current.set(track.id, el);
+                        // Also observe if observer exists
+                        if (collectionObserverRef.current) {
+                          collectionObserverRef.current.observe(el);
+                        }
+                      } else {
+                        collectionTrackRowRefs.current.delete(track.id);
+                      }
+                    },
+                    'data-track-id': track.id,
                     key: track.id || track.filePath || index,
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
