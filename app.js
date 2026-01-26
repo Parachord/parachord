@@ -30094,6 +30094,241 @@ React.createElement('div', {
       )
     ),
 
+    // Sync Setup Modal
+    syncSetupModal.open && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center'
+    },
+      // Backdrop
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/70 backdrop-blur-sm',
+        onClick: () => !syncSetupModal.progress && setSyncSetupModal(prev => ({ ...prev, open: false }))
+      }),
+
+      // Modal
+      React.createElement('div', {
+        className: 'relative bg-zinc-900 rounded-2xl w-full max-w-lg mx-4 overflow-hidden shadow-2xl border border-zinc-700/50'
+      },
+        // Header
+        React.createElement('div', {
+          className: 'px-6 py-4 border-b border-zinc-700/50 flex items-center gap-3'
+        },
+          React.createElement('div', {
+            className: 'w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center'
+          },
+            // Spotify icon
+            React.createElement('svg', {
+              className: 'w-6 h-6 text-white',
+              viewBox: '0 0 24 24',
+              fill: 'currentColor'
+            },
+              React.createElement('path', {
+                d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z'
+              })
+            )
+          ),
+          React.createElement('div', null,
+            React.createElement('h2', {
+              className: 'text-lg font-semibold text-white'
+            }, syncSetupModal.step === 'complete' ? 'Sync Complete' : 'Sync Your Spotify Library'),
+            React.createElement('p', {
+              className: 'text-sm text-zinc-400'
+            },
+              syncSetupModal.step === 'options' && 'Choose what to sync',
+              syncSetupModal.step === 'playlists' && 'Select playlists to sync',
+              syncSetupModal.step === 'syncing' && 'Syncing your library...',
+              syncSetupModal.step === 'complete' && 'Your library has been synced'
+            )
+          )
+        ),
+
+        // Content
+        React.createElement('div', {
+          className: 'px-6 py-4 max-h-96 overflow-y-auto'
+        },
+          // Error message
+          syncSetupModal.error && React.createElement('div', {
+            className: 'mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm'
+          }, syncSetupModal.error),
+
+          // Options step
+          syncSetupModal.step === 'options' && React.createElement('div', {
+            className: 'space-y-3'
+          },
+            [
+              { key: 'syncTracks', label: 'Liked Songs', desc: 'Your saved tracks' },
+              { key: 'syncAlbums', label: 'Saved Albums', desc: 'Albums in your library' },
+              { key: 'syncArtists', label: 'Followed Artists', desc: 'Artists you follow' },
+              { key: 'syncPlaylists', label: 'Playlists', desc: 'Select which playlists to sync' }
+            ].map(option =>
+              React.createElement('label', {
+                key: option.key,
+                className: 'flex items-center gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 cursor-pointer transition-colors'
+              },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: syncSetupModal.settings[option.key],
+                  onChange: (e) => setSyncSetupModal(prev => ({
+                    ...prev,
+                    settings: { ...prev.settings, [option.key]: e.target.checked }
+                  })),
+                  className: 'w-5 h-5 rounded bg-zinc-700 border-zinc-600 text-green-500 focus:ring-green-500 focus:ring-offset-zinc-900'
+                }),
+                React.createElement('div', null,
+                  React.createElement('div', { className: 'text-white font-medium' }, option.label),
+                  React.createElement('div', { className: 'text-sm text-zinc-400' }, option.desc)
+                )
+              )
+            )
+          ),
+
+          // Playlists step
+          syncSetupModal.step === 'playlists' && React.createElement('div', {
+            className: 'space-y-2'
+          },
+            syncSetupModal.playlists.length === 0
+              ? React.createElement('div', {
+                  className: 'text-center py-8 text-zinc-400'
+                }, 'Loading playlists...')
+              : syncSetupModal.playlists.map(playlist =>
+                  React.createElement('label', {
+                    key: playlist.externalId,
+                    className: 'flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer'
+                  },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: syncSetupModal.selectedPlaylists.includes(playlist.externalId),
+                      onChange: (e) => {
+                        setSyncSetupModal(prev => ({
+                          ...prev,
+                          selectedPlaylists: e.target.checked
+                            ? [...prev.selectedPlaylists, playlist.externalId]
+                            : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
+                        }));
+                      },
+                      className: 'w-4 h-4 rounded bg-zinc-700 border-zinc-600 text-green-500'
+                    }),
+                    playlist.image && React.createElement('img', {
+                      src: playlist.image,
+                      className: 'w-10 h-10 rounded',
+                      alt: ''
+                    }),
+                    React.createElement('div', {
+                      className: 'flex-1 min-w-0'
+                    },
+                      React.createElement('div', { className: 'text-white truncate' }, playlist.name),
+                      React.createElement('div', { className: 'text-sm text-zinc-400' }, `${playlist.trackCount} tracks`)
+                    )
+                  )
+                )
+          ),
+
+          // Syncing step
+          syncSetupModal.step === 'syncing' && syncSetupModal.progress && React.createElement('div', {
+            className: 'py-8'
+          },
+            React.createElement('div', {
+              className: 'text-center mb-4'
+            },
+              React.createElement('div', {
+                className: 'text-white font-medium'
+              }, syncSetupModal.progress.message),
+              syncSetupModal.progress.total > 0 && React.createElement('div', {
+                className: 'text-sm text-zinc-400 mt-1'
+              }, `${syncSetupModal.progress.current} of ${syncSetupModal.progress.total}`)
+            ),
+            syncSetupModal.progress.total > 0 && React.createElement('div', {
+              className: 'h-2 bg-zinc-700 rounded-full overflow-hidden'
+            },
+              React.createElement('div', {
+                className: 'h-full bg-green-500 transition-all duration-300',
+                style: { width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%` }
+              })
+            )
+          ),
+
+          // Complete step
+          syncSetupModal.step === 'complete' && syncSetupModal.results && React.createElement('div', {
+            className: 'py-4 space-y-3'
+          },
+            syncSetupModal.results.tracks && React.createElement('div', {
+              className: 'flex justify-between text-sm'
+            },
+              React.createElement('span', { className: 'text-zinc-400' }, 'Tracks'),
+              React.createElement('span', { className: 'text-white' },
+                `+${syncSetupModal.results.tracks.added} added, -${syncSetupModal.results.tracks.removed} removed`
+              )
+            ),
+            syncSetupModal.results.albums && React.createElement('div', {
+              className: 'flex justify-between text-sm'
+            },
+              React.createElement('span', { className: 'text-zinc-400' }, 'Albums'),
+              React.createElement('span', { className: 'text-white' },
+                `+${syncSetupModal.results.albums.added} added, -${syncSetupModal.results.albums.removed} removed`
+              )
+            ),
+            syncSetupModal.results.artists && React.createElement('div', {
+              className: 'flex justify-between text-sm'
+            },
+              React.createElement('span', { className: 'text-zinc-400' }, 'Artists'),
+              React.createElement('span', { className: 'text-white' },
+                `+${syncSetupModal.results.artists.added} added, -${syncSetupModal.results.artists.removed} removed`
+              )
+            )
+          )
+        ),
+
+        // Footer
+        React.createElement('div', {
+          className: 'px-6 py-4 border-t border-zinc-700/50 flex justify-end gap-3'
+        },
+          // Options step buttons
+          syncSetupModal.step === 'options' && React.createElement(React.Fragment, null,
+            React.createElement('button', {
+              onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
+              className: 'px-4 py-2 text-zinc-400 hover:text-white transition-colors'
+            }, 'Cancel'),
+            React.createElement('button', {
+              onClick: async () => {
+                if (syncSetupModal.settings.syncPlaylists) {
+                  // Load playlists first
+                  setSyncSetupModal(prev => ({ ...prev, step: 'playlists' }));
+                  const result = await window.electron.sync.fetchPlaylists(syncSetupModal.providerId);
+                  if (result.success) {
+                    setSyncSetupModal(prev => ({
+                      ...prev,
+                      playlists: result.playlists,
+                      folders: result.folders
+                    }));
+                  }
+                } else {
+                  startSync();
+                }
+              },
+              className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+            }, syncSetupModal.settings.syncPlaylists ? 'Next' : 'Start Sync')
+          ),
+
+          // Playlists step buttons
+          syncSetupModal.step === 'playlists' && React.createElement(React.Fragment, null,
+            React.createElement('button', {
+              onClick: () => setSyncSetupModal(prev => ({ ...prev, step: 'options' })),
+              className: 'px-4 py-2 text-zinc-400 hover:text-white transition-colors'
+            }, 'Back'),
+            React.createElement('button', {
+              onClick: startSync,
+              className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+            }, 'Start Sync')
+          ),
+
+          // Complete step button
+          syncSetupModal.step === 'complete' && React.createElement('button', {
+            onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
+            className: 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors'
+          }, 'Done')
+        )
+      )
+    ),
+
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
