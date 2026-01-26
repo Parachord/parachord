@@ -363,6 +363,25 @@
 - ✅ Preserve Spotify dates - Use original added_at dates for synced content
 - ✅ Collection loading skeletons - Loading states for Collection tabs and counts
 - ✅ Artist bio loading fix - Proper skeleton loading before bio fetch completes
+- ✅ Background sync timer - Auto-sync every 15 minutes
+- ✅ Sync status modal - Quick view of sync progress with close button
+- ✅ Stop syncing flow - Keep/remove option for synced content
+- ✅ Playlist update detection - Track changes to synced playlists
+
+### Performance
+- ✅ Virtualized queue drawer - Handle large tracklists efficiently
+
+### UI Design
+- ✅ Cinematic Light design - Applied to modals and dialogs
+- ✅ Tooltip component - With Cinematic Light styling
+- ✅ Album grid hover buttons - Play/queue action buttons on hover
+- ✅ Enlarged artist grids - With hover overlay play buttons
+- ✅ Refined Critics Picks layout - List layout with synopses
+- ✅ Add-to-playlist flyout - Multi-select and filtering
+- ✅ Quick search improvements - Hover controls and more results page
+- ✅ Playbar resolver selector - Dropdown with album art
+- ✅ Muted resolver icon colors - Subtler appearance in queue
+- ✅ Browser extension popup styling - Aligned with main app aesthetic
 
 ---
 
