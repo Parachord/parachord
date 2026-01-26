@@ -9677,6 +9677,7 @@ const Parachord = () => {
       const originalReleaseGroupId = release.id;
 
       // Create release info and show tracks immediately (don't wait for album art)
+      // Use existing album art from release object if available (from artist page cache)
       const releaseInfo = {
         id: releaseData.id,
         title: releaseData.title,
@@ -9684,7 +9685,7 @@ const Parachord = () => {
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
-        albumArt: null, // Will be updated async
+        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
         barcode: releaseData.barcode,
         country: releaseData.country,
         label: releaseData['label-info']?.[0]?.label?.name
