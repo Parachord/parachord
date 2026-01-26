@@ -1,0 +1,3 @@
+[submodule "resolvers"]
+	path = resolvers
+	url = https://github.com/Parachord/parachord-plugins.git
