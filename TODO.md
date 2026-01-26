@@ -356,6 +356,14 @@
 ### Power User Features
 - ✅ Advanced search - Boolean operators, filters
 
+### Library Sync
+- ✅ Spotify library sync - Sync tracks, albums, artists, playlists from Spotify
+- ✅ Sync setup modal - Configure what to sync with visual feedback
+- ✅ Playlist ownership filter - Filter between owned/following playlists during sync
+- ✅ Preserve Spotify dates - Use original added_at dates for synced content
+- ✅ Collection loading skeletons - Loading states for Collection tabs and counts
+- ✅ Artist bio loading fix - Proper skeleton loading before bio fetch completes
+
 ---
 
 ## 📝 Notes
