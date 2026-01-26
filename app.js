@@ -9848,7 +9848,9 @@ const Parachord = () => {
       // Use the artist parameter passed to fetchReleaseData, not release.artist
       const artistName = artist?.name || artist || 'Unknown Artist';
       tracks.forEach(track => {
-        resolveTrack(track, artistName, {});
+        // Generate track ID matching what ReleasePage uses for source lookup
+        const trackId = `${artistName || 'unknown'}-${track.title || 'untitled'}-${releaseData.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        resolveTrack({ ...track, id: trackId }, artistName, {});
       });
 
       // Fetch album art in background (don't block track display)
@@ -28128,7 +28130,9 @@ React.createElement('div', {
                   });
                 }
               },
-              onClick: async () => {
+              onClick: async (e) => {
+                // Prevent click if we just finished a drag operation
+                if (e.defaultPrevented) return;
                 // Search for the album and open its page
                 if (currentTrack.album && currentTrack.artist) {
                   try {
@@ -28150,8 +28154,8 @@ React.createElement('div', {
                   }
                 }
               },
-              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-grab active:cursor-grabbing no-drag',
-              title: currentTrack.album ? `Drag to add to playlist • Click to open "${currentTrack.album}"` : 'Drag to add to playlist'
+              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
+              title: currentTrack.album ? `Click to open "${currentTrack.album}" • Drag to add to playlist` : 'Drag to add to playlist'
             },
               React.createElement('div', {
                 className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
