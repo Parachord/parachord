@@ -2301,7 +2301,10 @@ const ReleasePage = ({
   // Now playing props
   currentTrack,
   playbackContext,
-  isPlaying
+  isPlaying,
+  // Visibility tracking props for resolution scheduler
+  releaseTrackRowRefs,
+  releaseObserverRef
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -2434,12 +2437,12 @@ const ReleasePage = ({
       release.tracks.length > 0 ?
         React.createElement('div', { className: 'space-y-0' },
           release.tracks.map((track, index) => {
-            const trackKey = `${track.position}-${track.title}`;
-            const sources = trackSources[trackKey] || {};
-            const availableResolvers = Object.keys(sources);
-            
-            // Build track object for drag/drop and playback
+            // Build track ID first, then use it to look up resolved sources
             const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const sources = trackSources[trackId] || {};
+            const availableResolvers = Object.keys(sources);
+
+            // Build track object for drag/drop and playback
             const trackForDrag = {
               ...track,
               id: trackId,
@@ -2468,6 +2471,19 @@ const ReleasePage = ({
 
             return React.createElement('div', {
               key: index,
+              'data-track-id': trackId,
+              ref: (el) => {
+                if (releaseTrackRowRefs) {
+                  if (el) {
+                    releaseTrackRowRefs.current.set(trackId, el);
+                    if (releaseObserverRef?.current) {
+                      releaseObserverRef.current.observe(el);
+                    }
+                  } else {
+                    releaseTrackRowRefs.current.delete(trackId);
+                  }
+                }
+              },
               draggable: true,
               onDragStart: (e) => {
                 e.dataTransfer.effectAllowed = 'copy';
@@ -2493,9 +2509,8 @@ const ReleasePage = ({
                 if (availableResolvers.length > 0) {
                   // Build queue from remaining tracks (after this one)
                   const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                    const tKey = `${t.position}-${t.title}`;
-                    const tSources = trackSources[tKey] || {};
                     const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                    const tSources = trackSources[tId] || {};
                     return {
                       ...t,
                       id: tId,
@@ -2562,9 +2577,8 @@ const ReleasePage = ({
                 style: { pointerEvents: 'none', minHeight: '24px', width: '100px', justifyContent: 'flex-end' }
               },
                 (() => {
-                  const trackKey = `${track.position}-${track.title}`;
-                  const sources = trackSources[trackKey] || {};
-                  const availableResolverIds = Object.keys(sources);
+                  // Use availableResolvers from outer scope (already looked up via trackId)
+                  const availableResolverIds = availableResolvers;
 
                   if (availableResolverIds.length === 0) {
                     // Show shimmer skeletons while resolving (match resolver icon size)
@@ -10145,7 +10159,8 @@ const Parachord = () => {
       return;
     }
 
-    const trackKey = `${track.position || 0}-${track.title}`;
+    // Use track.id as the key for trackSources state - this matches what views use to look up resolved sources
+    const trackKey = track.id;
     const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position || 0}`;
     const currentResolverHash = getResolverSettingsHash();
 
@@ -10565,11 +10580,19 @@ const Parachord = () => {
         if (changed) {
           const visibleTracks = [];
           visibleReleaseTrackIds.current.forEach(trackId => {
-            const track = releaseTracks.find(t => t.id === trackId);
+            // Release tracks from API don't have id - we need to find by matching the computed ID
+            // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
+            const track = releaseTracks.find(t => {
+              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${currentRelease.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              return computedId === trackId;
+            });
             if (track) {
               visibleTracks.push({
                 key: trackId,
-                data: { track, artistName }
+                data: {
+                  track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
+                  artistName
+                }
               });
             }
           });
@@ -15321,14 +15344,12 @@ ${tracks}
     if (currentQueue.length === 0 || Object.keys(trackSources).length === 0) return;
 
     // Check if any queue tracks need source updates from trackSources
-    // trackSources uses keys like "1-Track Title" (position-title)
+    // trackSources uses track.id as the key
     let hasUpdates = false;
     const updatedQueue = currentQueue.map(queueTrack => {
-      // Try to find matching sources in trackSources
-      // Queue tracks from releases have position property
-      if (queueTrack.position && queueTrack.title) {
-        const trackKey = `${queueTrack.position}-${queueTrack.title}`;
-        const resolvedSources = trackSources[trackKey];
+      // Try to find matching sources in trackSources using track.id
+      if (queueTrack.id) {
+        const resolvedSources = trackSources[queueTrack.id];
 
         if (resolvedSources && Object.keys(resolvedSources).length > Object.keys(queueTrack.sources || {}).length) {
           hasUpdates = true;
@@ -18164,9 +18185,8 @@ useEffect(() => {
 
                 return filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
                   ...filteredTracks.map((track, index) => {
-                    // Build track key for looking up resolved sources from trackSources state
-                    const trackKey = `${track.position || index}-${track.title}`;
-                    const resolvedSources = trackSources[trackKey] || track.sources || {};
+                    // Use track.id to look up resolved sources from trackSources state
+                    const resolvedSources = trackSources[track.id] || track.sources || {};
                     const hasResolved = Object.keys(resolvedSources).length > 0;
                     const isResolving = !hasResolved && track.resolving;
                     const isCurrentTrack = currentTrack?.id === track.id;
@@ -19889,7 +19909,10 @@ React.createElement('div', {
               if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
                 setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
               }
-            }
+            },
+            // Visibility tracking for resolution scheduler
+            releaseTrackRowRefs: releaseTrackRowRefs,
+            releaseObserverRef: releaseObserverRef
           })
         ),
         
@@ -21113,9 +21136,8 @@ React.createElement('div', {
                 return displayTracks.length > 0 ?
                 React.createElement('div', { className: 'space-y-0' },
                   displayTracks.map((track, index) => {
-                    // Build track key for looking up resolved sources from trackSources state
-                    const trackKey = `${track.position || index}-${track.title}`;
-                    const resolvedSources = trackSources[trackKey] || track.sources || {};
+                    // Use track.id to look up resolved sources from trackSources state
+                    const resolvedSources = trackSources[track.id] || track.sources || {};
                     const hasResolved = Object.keys(resolvedSources).length > 0;
                     const isResolving = Object.keys(resolvedSources).length === 0;
                     const isDraggedOver = playlistEditMode && playlistDropTarget === index;
@@ -24441,9 +24463,8 @@ React.createElement('div', {
                 // Songs tab content - track list table
                 recommendationsTab === 'songs' && filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
                   ...filteredTracks.map((track, index) => {
-                      // Build track key for looking up resolved sources from trackSources state
-                      const trackKey = `${track.position || index}-${track.title}`;
-                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      // Use track.id to look up resolved sources from trackSources state
+                      const resolvedSources = trackSources[track.id] || track.sources || {};
                       const hasResolved = Object.keys(resolvedSources).length > 0;
                       const isResolving = Object.keys(resolvedSources).length === 0;
 
@@ -24930,9 +24951,8 @@ React.createElement('div', {
 
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      // Build track key for looking up resolved sources from trackSources state
-                      const trackKey = `${track.position || index}-${track.title}`;
-                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      // Use track.id to look up resolved sources from trackSources state
+                      const resolvedSources = trackSources[track.id] || track.sources || {};
                       const hasResolved = Object.keys(resolvedSources).length > 0;
                       const isResolving = Object.keys(resolvedSources).length === 0;
 
@@ -25073,9 +25093,8 @@ React.createElement('div', {
 
                   return React.createElement('div', { className: 'space-y-0' },
                     ...filtered.map((track, index) => {
-                      // Build track key for looking up resolved sources from trackSources state
-                      const trackKey = `${track.position || index}-${track.title}`;
-                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      // Use track.id to look up resolved sources from trackSources state
+                      const resolvedSources = trackSources[track.id] || track.sources || {};
                       const hasResolved = Object.keys(resolvedSources).length > 0;
                       return React.createElement('div', {
                         key: track.id,
@@ -25752,9 +25771,8 @@ React.createElement('div', {
                   }
                   return React.createElement('div', { className: 'space-y-0' },
                     ...sorted.map((track, index) => {
-                      // Build track key for looking up resolved sources from trackSources state
-                      const trackKey = `${track.position || index}-${track.title}`;
-                      const resolvedSources = trackSources[trackKey] || track.sources || {};
+                      // Use track.id to look up resolved sources from trackSources state
+                      const resolvedSources = trackSources[track.id] || track.sources || {};
                       const hasResolved = Object.keys(resolvedSources).length > 0;
                       const isResolving = Object.keys(resolvedSources).length === 0;
                       const tracksAfterRecent = sorted.slice(index + 1);
@@ -25857,9 +25875,8 @@ React.createElement('div', {
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
-                        // Build track key for looking up resolved sources from trackSources state
-                        const trackKey = `${track.position || index}-${track.title}`;
-                        const resolvedSources = trackSources[trackKey] || track.sources || {};
+                        // Use track.id to look up resolved sources from trackSources state
+                        const resolvedSources = trackSources[track.id] || track.sources || {};
                         const hasResolved = Object.keys(resolvedSources).length > 0;
                         const isResolving = Object.keys(resolvedSources).length === 0;
 
