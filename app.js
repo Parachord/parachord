@@ -493,6 +493,9 @@ class ResolutionScheduler {
     this.isProcessing = true;
     const { trackKey, data, abortController } = next;
 
+    // Mark this track as in-progress before resolving
+    this.markInProgress(trackKey);
+
     try {
       // Check if still visible before resolving
       if (!this.pending.has(trackKey)) {
