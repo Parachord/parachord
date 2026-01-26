@@ -161,6 +161,9 @@ class ResolutionScheduler {
     // Set of trackKeys currently being resolved
     this.inProgress = new Set();
 
+    // Set of trackKeys that have been successfully resolved (to avoid re-resolution)
+    this.resolved = new Set();
+
     // Currently hovered track
     this.hoverTrack = null;
 
@@ -258,6 +261,7 @@ class ResolutionScheduler {
    */
   enqueue(trackKey, contextId, data) {
     if (this.pending.has(trackKey)) return; // Already pending
+    if (this.resolved.has(trackKey)) return; // Already resolved
 
     const context = this.contexts.get(contextId);
     if (!context) return;
@@ -506,12 +510,16 @@ class ResolutionScheduler {
 
       await this.resolveCallback(data, abortController.signal);
 
+      // Mark as resolved so we don't re-resolve on future visibility updates
+      this.resolved.add(trackKey);
+
       // Remove from pending after successful resolution
       this.dequeue(trackKey);
     } catch (error) {
       if (error.name !== 'AbortError') {
         console.error(`Resolution error for ${trackKey}:`, error);
       }
+      // Don't add to resolved on error - allow retry
       this.dequeue(trackKey);
     }
 
@@ -7631,8 +7639,9 @@ const Parachord = () => {
         console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
 
         // Update pool visibility for resolution - next 5 tracks
-        const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t, i) => ({
-          key: `spinoff-${i}`,
+        // Use track ID as key to avoid re-resolution when tracks shift
+        const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
+          key: t.id || `${t.artist}-${t.title}`,
           data: { track: t, artistName: t.artist || 'Unknown Artist' }
         }));
         updateSchedulerVisibility('spinoff', poolTracks);
@@ -12961,8 +12970,9 @@ ${tracks}
                   listenAlongPendingTrackRef.current = track;
 
                   // Update pool visibility for resolution - the pending track
+                  // Use track ID as key to avoid re-resolution
                   const poolTracks = [{
-                    key: 'listen-along-0',
+                    key: track.id || `${track.artist}-${track.title}`,
                     data: { track, artistName: track.artist || 'Unknown Artist' }
                   }];
                   updateSchedulerVisibility('listen-along', poolTracks);
@@ -14694,8 +14704,9 @@ ${tracks}
       registerPoolContext('spinoff', 5);
 
       // Update pool visibility for resolution - next 5 tracks
-      const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t, i) => ({
-        key: `spinoff-${i}`,
+      // Use track ID as key to avoid re-resolution when tracks shift
+      const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
+        key: t.id || `${t.artist}-${t.title}`,
         data: { track: t, artistName: t.artist || 'Unknown Artist' }
       }));
       updateSchedulerVisibility('spinoff', poolTracks);
