@@ -1882,3 +1882,185 @@ ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerS
     return { success: false, error: error.message };
   }
 });
+
+// =============================================================================
+// RESOLVER LIBRARY SYNC
+// =============================================================================
+
+const SyncEngine = require('./sync-engine');
+
+// Track active sync operations
+const activeSyncs = new Map();
+
+ipcMain.handle('sync:get-providers', async () => {
+  const providers = SyncEngine.getAllProviders();
+  return providers.map(p => ({
+    id: p.id,
+    displayName: p.displayName,
+    capabilities: p.capabilities
+  }));
+});
+
+ipcMain.handle('sync:check-auth', async (event, providerId) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider) {
+    return { authenticated: false, error: 'Provider not found' };
+  }
+
+  // Get token from store
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { authenticated: false, error: 'No token found' };
+  }
+
+  const isValid = await provider.checkAuth(token);
+  return { authenticated: isValid };
+});
+
+ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider) {
+    return { success: false, error: 'Provider not found' };
+  }
+
+  // Check if sync already in progress
+  if (activeSyncs.has(providerId)) {
+    return { success: false, error: 'Sync already in progress' };
+  }
+
+  // Get token
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  // Mark sync as active
+  activeSyncs.set(providerId, { startedAt: Date.now(), cancelled: false });
+
+  const sendProgress = (progress) => {
+    if (!activeSyncs.get(providerId)?.cancelled) {
+      event.sender.send('sync:progress', { providerId, ...progress });
+    }
+  };
+
+  const fsPromises = require('fs').promises;
+
+  try {
+    const results = { tracks: null, albums: null, artists: null, playlists: null };
+    const settings = options.settings || {};
+
+    // Load current collection
+    const collectionPath = path.join(app.getPath('userData'), 'collection.json');
+    let collection;
+    try {
+      const content = await fsPromises.readFile(collectionPath, 'utf8');
+      collection = JSON.parse(content);
+    } catch {
+      collection = { tracks: [], albums: [], artists: [] };
+    }
+
+    // Sync tracks
+    if (settings.syncTracks !== false && provider.capabilities.tracks) {
+      sendProgress({ phase: 'fetching', type: 'tracks', message: 'Fetching liked songs...' });
+      const trackResult = await SyncEngine.syncDataType(
+        provider,
+        token,
+        'tracks',
+        collection.tracks || [],
+        (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p })
+      );
+      collection.tracks = trackResult.data;
+      results.tracks = trackResult.stats;
+    }
+
+    // Sync albums
+    if (settings.syncAlbums !== false && provider.capabilities.albums) {
+      sendProgress({ phase: 'fetching', type: 'albums', message: 'Fetching saved albums...' });
+      const albumResult = await SyncEngine.syncDataType(
+        provider,
+        token,
+        'albums',
+        collection.albums || [],
+        (p) => sendProgress({ phase: 'fetching', type: 'albums', ...p })
+      );
+      collection.albums = albumResult.data;
+      results.albums = albumResult.stats;
+    }
+
+    // Sync artists
+    if (settings.syncArtists !== false && provider.capabilities.artists) {
+      sendProgress({ phase: 'fetching', type: 'artists', message: 'Fetching followed artists...' });
+      const artistResult = await SyncEngine.syncDataType(
+        provider,
+        token,
+        'artists',
+        collection.artists || [],
+        (p) => sendProgress({ phase: 'fetching', type: 'artists', ...p })
+      );
+      collection.artists = artistResult.data;
+      results.artists = artistResult.stats;
+    }
+
+    // Save collection
+    sendProgress({ phase: 'saving', message: 'Saving collection...' });
+    await fsPromises.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
+
+    // Update sync settings with last sync time
+    const syncSettings = store.get('resolver_sync_settings') || {};
+    syncSettings[providerId] = {
+      ...syncSettings[providerId],
+      lastSyncAt: Date.now()
+    };
+    store.set('resolver_sync_settings', syncSettings);
+
+    sendProgress({ phase: 'complete', message: 'Sync complete!' });
+
+    return { success: true, results, collection };
+  } catch (error) {
+    console.error(`❌ Sync error for ${providerId}:`, error);
+    sendProgress({ phase: 'error', message: error.message });
+    return { success: false, error: error.message };
+  } finally {
+    activeSyncs.delete(providerId);
+  }
+});
+
+ipcMain.handle('sync:cancel', async (event, providerId) => {
+  const sync = activeSyncs.get(providerId);
+  if (sync) {
+    sync.cancelled = true;
+    return { success: true };
+  }
+  return { success: false, error: 'No active sync' };
+});
+
+ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.playlists) {
+    return { success: false, error: 'Provider does not support playlists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const { playlists, folders } = await provider.fetchPlaylists(token);
+    return { success: true, playlists, folders };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});

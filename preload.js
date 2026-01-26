@@ -149,6 +149,20 @@ contextBridge.exposeInMainWorld('electron', {
     setProvider: (providerId, settings) => ipcRenderer.invoke('sync-settings:set-provider', providerId, settings)
   },
 
+  // Sync operations (library sync from resolvers)
+  sync: {
+    getProviders: () => ipcRenderer.invoke('sync:get-providers'),
+    checkAuth: (providerId) => ipcRenderer.invoke('sync:check-auth', providerId),
+    start: (providerId, options) => ipcRenderer.invoke('sync:start', providerId, options),
+    cancel: (providerId) => ipcRenderer.invoke('sync:cancel', providerId),
+    fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
+    onProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('sync:progress', handler);
+      return () => ipcRenderer.removeListener('sync:progress', handler);
+    }
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
