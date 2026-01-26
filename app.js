@@ -9344,24 +9344,35 @@ const Parachord = () => {
 
     try {
       // Step 1: Search for artist by name to get MBID
-      // Helper function to fetch with retry on rate limit
+      // Helper function to fetch with retry on rate limit and network errors
       const fetchWithRetry = async (url, maxRetries = 3) => {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
-          const response = await fetch(url, {
-            headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-          });
+          try {
+            const response = await fetch(url, {
+              headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+            });
 
-          if (response.ok) {
-            return response;
-          }
+            if (response.ok) {
+              return response;
+            }
 
-          if (response.status === 503 || response.status === 429) {
-            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
-            console.log(`Rate limited (${response.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          } else {
-            // Non-retryable error
-            return response;
+            if (response.status === 503 || response.status === 429) {
+              const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
+              console.log(`Rate limited (${response.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              // Non-retryable HTTP error
+              return response;
+            }
+          } catch (networkError) {
+            // Network error (no connection, DNS failure, etc.)
+            if (attempt < maxRetries - 1) {
+              const delay = Math.pow(2, attempt) * 1000;
+              console.log(`Network error, retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries}):`, networkError.message);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw networkError; // Re-throw on final attempt
+            }
           }
         }
         // Return last response after all retries exhausted
@@ -9537,10 +9548,17 @@ const Parachord = () => {
       
     } catch (error) {
       console.error('Error fetching artist data:', error);
+      // Provide specific error message based on error type
+      let message = 'Failed to load artist data. Please try again.';
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        message = 'Network error - please check your internet connection.';
+      } else if (error.message) {
+        message = `Error: ${error.message}`;
+      }
       showConfirmDialog({
         type: 'error',
         title: 'Load Failed',
-        message: 'Failed to load artist data. Please try again.'
+        message
       });
       setLoadingArtist(false);
     }
