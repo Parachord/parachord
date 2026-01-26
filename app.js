@@ -4491,6 +4491,12 @@ const Parachord = () => {
       const newCollection = await window.electron.collection.load();
       setCollectionData(newCollection);
 
+      // Reload playlists if they were synced
+      if (settings.syncPlaylists && selectedPlaylists.length > 0) {
+        const loadedPlaylists = await window.electron.playlists.load();
+        setPlaylists(loadedPlaylists);
+      }
+
       setSyncSetupModal(prev => ({
         ...prev,
         step: 'complete',
@@ -30973,6 +30979,15 @@ React.createElement('div', {
               React.createElement('span', { className: 'text-white' },
                 `+${syncSetupModal.results.artists.added} added, -${syncSetupModal.results.artists.removed} removed`
               )
+            ),
+            syncSetupModal.results.playlists && React.createElement('div', {
+              className: 'flex justify-between text-sm'
+            },
+              React.createElement('span', { className: 'text-zinc-400' }, 'Playlists'),
+              React.createElement('span', { className: 'text-white' },
+                `+${syncSetupModal.results.playlists.added} added` +
+                (syncSetupModal.results.playlists.updated > 0 ? `, ${syncSetupModal.results.playlists.updated} with updates` : '')
+              )
             )
           )
         ),
@@ -31172,8 +31187,11 @@ React.createElement('div', {
                   }
                 }
               }
+              // Reload collection and playlists
               const newCollection = await window.electron.collection.load();
               setCollectionData(newCollection);
+              const loadedPlaylists = await window.electron.playlists.load();
+              setPlaylists(loadedPlaylists);
             },
             disabled: Object.values(syncStatus).some(s => s?.inProgress),
             className: Object.values(syncStatus).some(s => s?.inProgress)

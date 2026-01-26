@@ -2014,21 +2014,26 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
     // Sync playlists
     if (settings.syncPlaylists && settings.selectedPlaylistIds?.length > 0 && provider.capabilities.playlists) {
-      sendProgress({ phase: 'fetching', type: 'playlists', message: 'Syncing playlists...' });
-
       // Load current playlists
       const currentPlaylists = store.get('local_playlists') || [];
 
       // Fetch playlist metadata to check for updates
+      sendProgress({ phase: 'playlists', current: 0, total: settings.selectedPlaylistIds.length, providerId });
       const { playlists: remotePlaylists } = await provider.fetchPlaylists(token);
       const selectedRemote = remotePlaylists.filter(p => settings.selectedPlaylistIds.includes(p.externalId));
 
-      for (const remotePlaylist of selectedRemote) {
+      let playlistsAdded = 0;
+      let playlistsUpdated = 0;
+
+      for (let i = 0; i < selectedRemote.length; i++) {
+        const remotePlaylist = selectedRemote[i];
+        sendProgress({ phase: 'playlists', current: i + 1, total: selectedRemote.length, providerId });
+
         const localPlaylist = currentPlaylists.find(p => p.syncedFrom?.externalId === remotePlaylist.externalId);
 
         if (!localPlaylist) {
           // New playlist - fetch tracks and add
-          sendProgress({ phase: 'fetching', type: 'playlists', message: `Importing "${remotePlaylist.name}"...` });
+          console.log(`[Sync] Importing playlist: ${remotePlaylist.name}`);
           const tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token);
 
           const newPlaylist = {
@@ -2051,8 +2056,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
           };
 
           currentPlaylists.push(newPlaylist);
+          playlistsAdded++;
         } else if (localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId) {
-          // Playlist has updates
+          // Playlist has updates - mark for user to review
+          console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
           const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
           if (idx >= 0) {
             currentPlaylists[idx] = {
@@ -2063,13 +2070,15 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 [providerId]: { ...currentPlaylists[idx].syncSources?.[providerId], syncedAt: Date.now() }
               }
             };
+            playlistsUpdated++;
           }
         }
       }
 
       // Save playlists
       store.set('local_playlists', currentPlaylists);
-      results.playlists = { synced: selectedRemote.length };
+      results.playlists = { added: playlistsAdded, updated: playlistsUpdated };
+      console.log(`[Sync] Playlists synced: ${playlistsAdded} added, ${playlistsUpdated} with updates`);
     }
 
     // Save collection
