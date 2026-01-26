@@ -10363,9 +10363,9 @@ const Parachord = () => {
   // Resolution scheduler hook - manages viewport-based resolution
   const resolutionSchedulerRef = useRef(null);
 
-  // Initialize scheduler
+  // Initialize scheduler (use window.ResolutionScheduler since it's loaded via IIFE)
   if (!resolutionSchedulerRef.current) {
-    resolutionSchedulerRef.current = new ResolutionScheduler();
+    resolutionSchedulerRef.current = new window.ResolutionScheduler();
   }
 
   const resolutionScheduler = resolutionSchedulerRef.current;
