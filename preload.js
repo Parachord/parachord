@@ -17,14 +17,15 @@ contextBridge.exposeInMainWorld('electron', {
   spotify: {
     authenticate: () => ipcRenderer.invoke('spotify-auth'),
     checkToken: () => ipcRenderer.invoke('spotify-check-token'),
-    
+    launchInBackground: () => ipcRenderer.invoke('spotify-launch-background'),
+
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
       ipcRenderer.on('spotify-auth-success', (event, data) => {
         callback(data);
       });
     },
-    
+
     // Listen for auth error events from main process
     onAuthError: (callback) => {
       ipcRenderer.on('spotify-auth-error', (event, error) => {
@@ -36,11 +37,6 @@ contextBridge.exposeInMainWorld('electron', {
   // Shell operations - use IPC for better security
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)
-  },
-
-  // Spotify app control
-  spotify: {
-    launchInBackground: () => ipcRenderer.invoke('spotify-launch-background')
   },
 
   // Proxy fetch - bypasses CORS for resolvers
