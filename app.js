@@ -4372,10 +4372,14 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        // Default behavior: add all tracks to queue
-        showToast(`Added ${tracks.length} tracks from "${collection.name}" to queue`);
+        // Default behavior: insert tracks at position 1 (play next)
+        showToast(`Playing "${collection.name}" next (${tracks.length} tracks)`);
 
-        setCurrentQueue(prev => [...prev, ...resolvedTracks]);
+        setCurrentQueue(prev => {
+          // Insert at position 1 if queue has items, otherwise at position 0
+          const insertPosition = prev.length > 0 ? 1 : 0;
+          return [...prev.slice(0, insertPosition), ...resolvedTracks, ...prev.slice(insertPosition)];
+        });
         triggerQueueAnimation();
 
         // If nothing is playing, start the first track
