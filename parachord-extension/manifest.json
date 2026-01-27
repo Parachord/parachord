@@ -21,7 +21,9 @@
     "https://music.apple.com/*",
     "https://www.last.fm/*",
     "https://last.fm/*",
-    "https://listenbrainz.org/*"
+    "https://listenbrainz.org/*",
+    "https://pitchfork.com/*",
+    "https://soundcloud.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -61,6 +63,21 @@
       "js": ["content-applemusic.js"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://pitchfork.com/reviews/albums/*",
+        "https://pitchfork.com/reviews/tracks/*"
+      ],
+      "js": ["content-pitchfork.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://soundcloud.com/*"
+      ],
+      "js": ["content-soundcloud.js"],
+      "run_at": "document_idle"
     }
   ],
   "icons": {

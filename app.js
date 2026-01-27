@@ -5402,6 +5402,135 @@ const Parachord = () => {
     showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
   };
 
+  // Handle scraped album from browser extension (e.g., Pitchfork reviews)
+  // Looks up the album on MusicBrainz and fetches the full tracklist
+  const handleScrapedAlbum = async (albumData) => {
+    if (!albumData || !albumData.artist || !albumData.album) {
+      console.error('❌ Invalid album data from scrape:', albumData);
+      showToast('Could not identify album from page', 'error');
+      return;
+    }
+
+    const { artist, album, score, url } = albumData;
+    console.log(`🎵 Looking up album: "${artist}" - "${album}"${score ? ` (score: ${score})` : ''}`);
+    showToast(`Looking up "${album}" by ${artist}...`, 'info');
+
+    try {
+      // Search MusicBrainz for the release-group
+      const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
+      const searchResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&fmt=json&limit=5`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!searchResponse.ok) {
+        throw new Error('MusicBrainz search failed');
+      }
+
+      const searchData = await searchResponse.json();
+      const releaseGroups = searchData['release-groups'] || [];
+
+      if (releaseGroups.length === 0) {
+        console.log('❌ No albums found on MusicBrainz for:', artist, album);
+        showToast(`Could not find "${album}" on MusicBrainz`, 'error');
+        return;
+      }
+
+      // Use the first match
+      const releaseGroup = releaseGroups[0];
+      const releaseGroupId = releaseGroup.id;
+      const artistName = releaseGroup['artist-credit']?.[0]?.name || artist;
+      const albumTitle = releaseGroup.title || album;
+
+      console.log(`📀 Found release-group: ${releaseGroupId} - "${artistName}" - "${albumTitle}"`);
+
+      // Fetch the first release from this release-group
+      const releaseResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&fmt=json&limit=1`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!releaseResponse.ok) {
+        throw new Error('Failed to fetch release');
+      }
+
+      const releaseData = await releaseResponse.json();
+      if (!releaseData.releases || releaseData.releases.length === 0) {
+        showToast(`Could not find tracklist for "${albumTitle}"`, 'error');
+        return;
+      }
+
+      const releaseId = releaseData.releases[0].id;
+
+      // Fetch release details with tracks
+      const detailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!detailsResponse.ok) {
+        throw new Error('Failed to fetch release details');
+      }
+
+      const detailsData = await detailsResponse.json();
+
+      // Extract tracks
+      const tracks = [];
+      if (detailsData.media && detailsData.media.length > 0) {
+        detailsData.media.forEach((medium) => {
+          if (medium.tracks) {
+            medium.tracks.forEach((track, index) => {
+              const trackId = `scraped-album-${Date.now()}-${tracks.length}`;
+              tracks.push({
+                id: trackId,
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                artist: artistName,
+                album: albumTitle,
+                duration: track.length ? Math.round(track.length / 1000) : 0,
+                recordingId: track.recording?.id,
+                source: null,
+                resolvedBy: null,
+                albumArt: null,
+                context: {
+                  type: 'album',
+                  name: `${artistName} - ${albumTitle}`,
+                  url: url,
+                  score: score
+                }
+              });
+            });
+          }
+        });
+      }
+
+      if (tracks.length === 0) {
+        showToast(`No tracks found for "${albumTitle}"`, 'error');
+        return;
+      }
+
+      console.log(`📋 Found ${tracks.length} tracks for "${albumTitle}"`);
+
+      // Insert tracks at position 1 (play next)
+      setCurrentQueue(prev => {
+        const insertPosition = prev.length > 0 ? 1 : 0;
+        return [...prev.slice(0, insertPosition), ...tracks, ...prev.slice(insertPosition)];
+      });
+
+      // If nothing is currently loaded, load the first track
+      if (!currentTrackRef.current && tracks.length > 0) {
+        const firstTrack = tracks[0];
+        setCurrentTrack(firstTrack);
+        setPlaybackSource(null);
+      }
+
+      showToast(`Added ${tracks.length} tracks from "${albumTitle}"`, 'success');
+    } catch (error) {
+      console.error('Error looking up album:', error);
+      showToast(`Failed to look up album: ${error.message}`, 'error');
+    }
+  };
+
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
     // Check auth first
@@ -5718,6 +5847,11 @@ const Parachord = () => {
         // Handle add friend from browser extension (Last.fm/ListenBrainz user profiles)
         console.log('👥 Received add friend request from browser extension:', message.url);
         addFriend(message.url);
+      } else if (message.type === 'scrapedAlbum') {
+        // Handle scraped album from browser extension (e.g., Pitchfork reviews)
+        // This triggers a MusicBrainz lookup to get the full tracklist
+        console.log('🎵 Received scraped album from browser extension:', message.album?.artist, '-', message.album?.album);
+        handleScrapedAlbum(message.album);
       }
     });
 

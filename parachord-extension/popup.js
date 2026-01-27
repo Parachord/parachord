@@ -73,6 +73,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'listenbrainz', type: 'unknown' };
       }
 
+      // Pitchfork reviews
+      if (hostname === 'pitchfork.com') {
+        if (pathname.startsWith('/reviews/albums/')) return { service: 'pitchfork', type: 'album' };
+        if (pathname.startsWith('/reviews/tracks/')) return { service: 'pitchfork', type: 'track' };
+        return { service: 'pitchfork', type: 'unknown' };
+      }
+
+      // SoundCloud
+      if (hostname === 'soundcloud.com') {
+        const segments = pathname.split('/').filter(Boolean);
+        // Sets (playlists/albums): /artist/sets/name
+        if (pathname.includes('/sets/')) return { service: 'soundcloud', type: 'playlist' };
+        // Likes: /artist/likes
+        if (pathname.endsWith('/likes')) return { service: 'soundcloud', type: 'likes' };
+        // Track: /artist/track-name (2 segments, not a special page)
+        if (segments.length >= 2 && !['tracks', 'albums', 'sets', 'reposts', 'likes', 'followers', 'following'].includes(segments[1])) {
+          return { service: 'soundcloud', type: 'track' };
+        }
+        // Artist page
+        if (segments.length === 1 || segments[1] === 'tracks') {
+          return { service: 'soundcloud', type: 'artist' };
+        }
+        return { service: 'soundcloud', type: 'unknown' };
+      }
+
       return { service: null, type: null };
     } catch (e) {
       return { service: null, type: null };
@@ -206,10 +231,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // For Spotify/Apple Music playlists and Bandcamp, scrape the page
+      // For Spotify/Apple Music playlists, Bandcamp, Pitchfork, and SoundCloud, scrape the page
       const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
                            (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
-                           (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type));
+                           (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type)) ||
+                           (pageInfo.service === 'pitchfork' && ['track', 'album'].includes(pageInfo.type)) ||
+                           (pageInfo.service === 'soundcloud' && ['track', 'playlist', 'artist', 'likes'].includes(pageInfo.type));
 
       if (shouldScrape) {
         console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);
@@ -221,6 +248,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
             console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
+
+            // Check if this is an album that needs lookup (e.g., Pitchfork album review without tracklist)
+            // In this case, the scraper returns a single track with isAlbum: true
+            const needsAlbumLookup = scrapeResult.type === 'album' &&
+                                     scrapeResult.tracks.length === 1 &&
+                                     scrapeResult.tracks[0].isAlbum === true;
+
+            if (needsAlbumLookup) {
+              console.log('[Popup] Album needs tracklist lookup:', scrapeResult.artist, '-', scrapeResult.album);
+              sendUrlBtnText.textContent = 'Looking up album...';
+
+              // Send album info for MusicBrainz lookup
+              const response = await chrome.runtime.sendMessage({
+                type: 'sendScrapedAlbum',
+                album: {
+                  artist: scrapeResult.artist,
+                  album: scrapeResult.album,
+                  score: scrapeResult.score,
+                  url: scrapeResult.url
+                },
+                source: 'popup-album-scrape'
+              });
+
+              if (response && response.sent) {
+                sendUrlBtnText.textContent = 'Album sent!';
+                sendUrlBtn.style.background = '#22c55e';
+              } else {
+                sendUrlBtnText.textContent = 'Queued (WS disconnected)';
+                sendUrlBtn.style.background = '#f59e0b';
+              }
+              return;
+            }
 
             // Send scraped playlist to Parachord
             const response = await chrome.runtime.sendMessage({
