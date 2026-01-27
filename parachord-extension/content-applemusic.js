@@ -242,8 +242,90 @@
     url: window.location.href
   }).catch(() => {});
 
+  // Parse ISO 8601 duration (e.g., "PT3M45S") to seconds
+  function parseIsoDuration(isoDuration) {
+    if (!isoDuration) return 0;
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return 0;
+    const hours = parseInt(match[1] || 0);
+    const minutes = parseInt(match[2] || 0);
+    const seconds = parseInt(match[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  // Try to extract tracks from JSON-LD schema (most reliable method)
+  function extractFromJsonLd() {
+    const tracks = [];
+    let collectionName = '';
+
+    try {
+      const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+
+      for (const script of jsonLdScripts) {
+        try {
+          const data = JSON.parse(script.textContent);
+
+          // Handle MusicPlaylist schema
+          if (data['@type'] === 'MusicPlaylist' || data['@type'] === 'MusicAlbum') {
+            collectionName = data.name || '';
+
+            if (data.track && Array.isArray(data.track)) {
+              for (const item of data.track) {
+                const track = item.item || item;
+                if (track.name) {
+                  tracks.push({
+                    title: track.name,
+                    artist: track.byArtist?.name || '',
+                    album: track.inAlbum?.name || collectionName,
+                    duration: parseIsoDuration(track.duration),
+                    position: tracks.length + 1
+                  });
+                }
+              }
+            }
+          }
+
+          // Handle array of schemas
+          if (Array.isArray(data)) {
+            for (const item of data) {
+              if (item['@type'] === 'MusicRecording' && item.name) {
+                tracks.push({
+                  title: item.name,
+                  artist: item.byArtist?.name || '',
+                  album: item.inAlbum?.name || '',
+                  duration: parseIsoDuration(item.duration),
+                  position: tracks.length + 1
+                });
+              }
+            }
+          }
+        } catch (e) {
+          // Continue to next script
+        }
+      }
+    } catch (e) {
+      console.error('[Parachord] JSON-LD extraction error:', e);
+    }
+
+    return { tracks, collectionName };
+  }
+
   // Scrape playlist/album tracks from the page DOM
   function scrapePlaylistTracks() {
+    // First try JSON-LD extraction (most reliable)
+    const jsonLdResult = extractFromJsonLd();
+    if (jsonLdResult.tracks.length > 0) {
+      console.log(`[Parachord] Extracted ${jsonLdResult.tracks.length} tracks from JSON-LD`);
+      return {
+        name: jsonLdResult.collectionName,
+        tracks: jsonLdResult.tracks,
+        url: window.location.href,
+        scrapedAt: new Date().toISOString()
+      };
+    }
+
+    console.log('[Parachord] JSON-LD extraction failed, falling back to DOM scraping');
+
     const tracks = [];
 
     // Try to get playlist/album name
@@ -251,24 +333,32 @@
     const titleEl = document.querySelector('[data-testid="non-editorial-shelf-item-title"]') ||
                     document.querySelector('h1.headings__title') ||
                     document.querySelector('.headings h1') ||
-                    document.querySelector('h1[class*="product-name"]');
+                    document.querySelector('h1[class*="product-name"]') ||
+                    document.querySelector('h1') ||
+                    document.querySelector('[class*="headings"] [class*="title"]');
     if (titleEl) {
       collectionName = titleEl.textContent.trim();
     }
 
     // Find all track rows - Apple Music uses various patterns
-    // Try songs-list-row first (most common)
+    // Try multiple selectors in order of likelihood
     let trackRows = document.querySelectorAll('.songs-list-row');
 
-    // Fallback to other patterns
     if (trackRows.length === 0) {
       trackRows = document.querySelectorAll('[data-testid="track-list-item"]');
+    }
+    if (trackRows.length === 0) {
+      trackRows = document.querySelectorAll('[class*="songs-list"] [class*="row"]');
     }
     if (trackRows.length === 0) {
       trackRows = document.querySelectorAll('.song-list-item');
     }
     if (trackRows.length === 0) {
       trackRows = document.querySelectorAll('[class*="track-list"] [class*="row"]');
+    }
+    if (trackRows.length === 0) {
+      // Try finding any list items that look like tracks
+      trackRows = document.querySelectorAll('[role="row"], [role="listitem"]');
     }
 
     trackRows.forEach((row, index) => {
@@ -277,22 +367,30 @@
         const trackNameEl = row.querySelector('.songs-list-row__song-name') ||
                            row.querySelector('[data-testid="track-title"]') ||
                            row.querySelector('.song-name') ||
-                           row.querySelector('[class*="song-name"]');
+                           row.querySelector('[class*="song-name"]') ||
+                           row.querySelector('[class*="track-name"]') ||
+                           row.querySelector('a[href*="/song/"]') ||
+                           row.querySelector('[class*="title"]:not([class*="subtitle"])');
 
         // Artist name(s)
         const artistEl = row.querySelector('.songs-list-row__by-line') ||
                         row.querySelector('[data-testid="track-artist"]') ||
                         row.querySelector('.song-artist') ||
-                        row.querySelector('[class*="artist-name"]');
+                        row.querySelector('[class*="artist-name"]') ||
+                        row.querySelector('[class*="by-line"]') ||
+                        row.querySelector('[class*="subtitle"]') ||
+                        row.querySelector('a[href*="/artist/"]');
 
         // Album name (if available - usually only on playlist pages)
         const albumEl = row.querySelector('.songs-list-row__album-name') ||
-                       row.querySelector('[data-testid="track-album"]');
+                       row.querySelector('[data-testid="track-album"]') ||
+                       row.querySelector('a[href*="/album/"]');
 
         // Duration
         const durationEl = row.querySelector('.songs-list-row__length') ||
                           row.querySelector('[data-testid="track-duration"]') ||
                           row.querySelector('.song-duration') ||
+                          row.querySelector('[class*="duration"]') ||
                           row.querySelector('time');
 
         if (trackNameEl) {
@@ -325,7 +423,7 @@
       }
     });
 
-    console.log(`[Parachord] Scraped ${tracks.length} tracks from Apple Music`);
+    console.log(`[Parachord] Scraped ${tracks.length} tracks from Apple Music DOM`);
 
     return {
       name: collectionName,
