@@ -27138,6 +27138,12 @@ React.createElement('div', {
                           }
                         }, track.artist),
 
+                        // Album name - fixed width column
+                        React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
+
                         // Duration - fixed width column
                         React.createElement('span', {
                           className: 'text-right tabular-nums',
@@ -27614,6 +27620,10 @@ React.createElement('div', {
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
                         React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
+                        React.createElement('span', {
                           className: 'text-right tabular-nums',
                           style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
                         }, track.duration ? formatTime(track.duration) : '--:--'),
@@ -27724,6 +27734,10 @@ React.createElement('div', {
                           style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
+                        React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
                         React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '100px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
@@ -28537,6 +28551,10 @@ React.createElement('div', {
                             style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
+                          React.createElement('span', {
+                            className: 'truncate',
+                            style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                          }, track.album || ''),
                           React.createElement('span', {
                             className: 'text-right tabular-nums',
                             style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
