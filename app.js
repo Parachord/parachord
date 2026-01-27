@@ -1288,6 +1288,7 @@ const ResolverCard = React.memo(({
   isInstalled,
   hasUpdate,
   isInstalling,
+  needsConfiguration,
   priorityNumber,
   onClick,
   onDragStart,
@@ -1414,7 +1415,24 @@ const ResolverCard = React.memo(({
         }
       },
         React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
-      )
+      ),
+      // Needs configuration warning badge (bottom-right)
+      needsConfiguration && !isInstalling && React.createElement('div', {
+        className: 'absolute flex items-center justify-center',
+        style: {
+          bottom: '8px',
+          right: '8px',
+          width: '22px',
+          height: '22px',
+          backgroundColor: '#fbbf24',
+          borderRadius: '6px',
+          fontSize: '12px',
+          fontWeight: '600',
+          color: '#78350f',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
+        },
+        title: 'Needs configuration'
+      }, '!')
     ),
     // Name below card - refined typography
     React.createElement('span', {
@@ -1429,7 +1447,16 @@ const ResolverCard = React.memo(({
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
       }
-    }, resolver.name)
+    }, resolver.name),
+    // Needs setup label below name
+    needsConfiguration && React.createElement('span', {
+      style: {
+        fontSize: '10px',
+        fontWeight: '500',
+        color: '#d97706',
+        marginTop: '2px'
+      }
+    }, 'Setup required')
   );
 });
 
@@ -27663,11 +27690,23 @@ React.createElement('div', {
                       marketplaceResolver.version !== resolver.version &&
                       marketplaceResolver.version > resolver.version;
 
+                    // Determine if resolver needs configuration
+                    let needsConfiguration = false;
+                    if (resolver.id === 'spotify' && !spotifyConnected) {
+                      needsConfiguration = true;
+                    } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
+                      needsConfiguration = true;
+                    } else if (resolver.id === 'qobuz' && !qobuzConnected) {
+                      // Qobuz works with previews but full playback needs login
+                      needsConfiguration = false; // Optional, so don't mark as needed
+                    }
+
                     return React.createElement(ResolverCard, {
                       key: resolver.id,
                       resolver: resolver,
                       isActive: isActive,
                       hasUpdate: hasUpdate,
+                      needsConfiguration: needsConfiguration,
                       priorityNumber: index + 1,
                       draggable: true,
                       isDragging: draggedResolver === resolver.id,
@@ -34070,10 +34109,10 @@ React.createElement('div', {
                 style: { display: 'flex', flexDirection: 'column', gap: '8px' }
               },
                 [
-                  { id: 'spotify', name: 'Spotify', icon: '♫', color: '#1DB954', desc: 'Premium required for playback', requiresAuth: true },
-                  { id: 'youtube', name: 'YouTube', icon: '🎥', color: '#FF0000', desc: 'Free with ads, plays in browser', requiresAuth: false },
-                  { id: 'bandcamp', name: 'Bandcamp', icon: '🎸', color: '#629AA9', desc: 'Independent artists, opens in browser', requiresAuth: false },
-                  { id: 'qobuz', name: 'Qobuz', icon: '🎵', color: '#0E7EBF', desc: 'Hi-res audio, 30s previews free', requiresAuth: false }
+                  { id: 'spotify', name: 'Spotify', icon: '♫', color: '#1DB954', desc: 'Premium required - needs login', requiresSetup: true, setupNote: 'Login' },
+                  { id: 'youtube', name: 'YouTube', icon: '🎥', color: '#FF0000', desc: 'Free, plays in browser', requiresSetup: false },
+                  { id: 'bandcamp', name: 'Bandcamp', icon: '🎸', color: '#629AA9', desc: 'Independent artists, opens in browser', requiresSetup: false },
+                  { id: 'qobuz', name: 'Qobuz', icon: '🎵', color: '#0E7EBF', desc: 'Hi-res audio, optional login for full tracks', requiresSetup: false, setupNote: 'Optional login' }
                 ].map(source =>
                   React.createElement('label', {
                     key: source.id,
@@ -34122,7 +34161,7 @@ React.createElement('div', {
                         style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' }
                       }, source.desc)
                     ),
-                    source.requiresAuth && React.createElement('span', {
+                    source.requiresSetup && React.createElement('span', {
                       style: {
                         fontSize: '10px',
                         fontWeight: '500',
@@ -34131,7 +34170,7 @@ React.createElement('div', {
                         padding: '2px 8px',
                         borderRadius: '4px'
                       }
-                    }, 'Auth required')
+                    }, source.setupNote || 'Setup required')
                   )
                 )
               )
@@ -34180,8 +34219,42 @@ React.createElement('div', {
                   }, 'Local Files'),
                   React.createElement('div', {
                     style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' }
-                  }, 'Play music from your computer')
-                )
+                  }, 'Play music from your computer - configure watch folders')
+                ),
+                React.createElement('span', {
+                  style: {
+                    fontSize: '10px',
+                    fontWeight: '500',
+                    color: '#6366f1',
+                    backgroundColor: '#eef2ff',
+                    padding: '2px 8px',
+                    borderRadius: '4px'
+                  }
+                }, 'Add folders')
+              )
+            ),
+            // Info box about setup
+            React.createElement('div', {
+              style: {
+                marginTop: '16px',
+                padding: '12px 14px',
+                backgroundColor: 'rgba(251, 191, 36, 0.08)',
+                borderRadius: '10px',
+                border: '1px solid rgba(251, 191, 36, 0.2)'
+              }
+            },
+              React.createElement('div', {
+                style: { display: 'flex', alignItems: 'flex-start', gap: '10px' }
+              },
+                React.createElement('svg', {
+                  width: 16, height: 16, viewBox: '0 0 24 24', fill: '#f59e0b',
+                  style: { flexShrink: 0, marginTop: '1px' }
+                },
+                  React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z' })
+                ),
+                React.createElement('div', {
+                  style: { fontSize: '12px', color: '#92400e', lineHeight: '1.4' }
+                }, 'Some sources require additional setup. After this tutorial, you\'ll be taken to the Installed Plugins page to complete configuration.')
               )
             )
           ),
@@ -34458,6 +34531,15 @@ React.createElement('div', {
             },
               [
                 {
+                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#10b981', strokeWidth: 2 },
+                    React.createElement('path', { d: 'M9 18V5l12-2v13' }),
+                    React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+                    React.createElement('circle', { cx: 18, cy: 16, r: 3 })
+                  ),
+                  title: 'Seamless Playback',
+                  desc: 'Play songs from multiple sources back-to-back without interruption'
+                },
+                {
                   icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#667eea', strokeWidth: 2 },
                     React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
                     React.createElement('path', { d: 'm21 21-4.3-4.3' })
@@ -34466,44 +34548,34 @@ React.createElement('div', {
                   desc: 'Search across all your music sources at once'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#10b981', strokeWidth: 2 },
-                    React.createElement('path', { d: 'M9 18V5l12-2v13' }),
-                    React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
-                    React.createElement('circle', { cx: 18, cy: 16, r: 3 })
+                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#8b5cf6', strokeWidth: 2 },
+                    React.createElement('path', { d: 'M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 12H3M16 6H3M12 18H3' })
                   ),
-                  title: 'Smart Queue',
-                  desc: 'Build a queue from any source, reorder with drag & drop'
+                  title: 'Unified Playlists',
+                  desc: 'Create playlists mixing tracks from any service'
                 },
                 {
                   icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#f59e0b', strokeWidth: 2 },
+                    React.createElement('path', { d: 'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2M7.5 13A2.5 2.5 0 0 0 5 15.5 2.5 2.5 0 0 0 7.5 18a2.5 2.5 0 0 0 2.5-2.5A2.5 2.5 0 0 0 7.5 13m9 0a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 0 2.5-2.5 2.5 2.5 0 0 0-2.5-2.5Z' })
+                  ),
+                  title: 'AI Playlists',
+                  desc: 'Generate playlists with ChatGPT or Gemini (API key required)'
+                },
+                {
+                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#ec4899', strokeWidth: 2 },
                     React.createElement('path', { d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2' }),
                     React.createElement('circle', { cx: 9, cy: 7, r: 4 }),
                     React.createElement('path', { d: 'M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' })
                   ),
-                  title: 'Friends',
-                  desc: 'See what friends are playing, listen along together'
-                },
-                {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#ec4899', strokeWidth: 2 },
-                    React.createElement('path', { d: 'M12 20v-6M6 20V10M18 20V4' })
-                  ),
-                  title: 'Source Priority',
-                  desc: 'Drag to reorder which services play first'
-                },
-                {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#8b5cf6', strokeWidth: 2 },
-                    React.createElement('path', { d: 'M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 12H3M16 6H3M12 18H3' })
-                  ),
-                  title: 'Playlists',
-                  desc: 'Create playlists that span all your sources'
+                  title: 'Friends & Listen Along',
+                  desc: 'See what friends play and sync your playback together'
                 },
                 {
                   icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#06b6d4', strokeWidth: 2 },
-                    React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-                    React.createElement('path', { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z' })
+                    React.createElement('path', { d: 'M12 20v-6M6 20V10M18 20V4' })
                   ),
-                  title: 'Plugin Marketplace',
-                  desc: 'Add more sources and features anytime'
+                  title: 'Source Priority',
+                  desc: 'Drag to choose which services are tried first'
                 }
               ].map((feature, i) =>
                 React.createElement('div', {
@@ -34658,6 +34730,33 @@ React.createElement('div', {
                 })
               )
             ),
+            // Check if any sources need configuration
+            (firstRunTutorial.selectedSources.includes('spotify') || firstRunTutorial.selectedSources.includes('localfiles') || firstRunTutorial.selectedScrobblers.length > 0) && React.createElement('div', {
+              style: {
+                padding: '14px 16px',
+                marginBottom: '16px',
+                backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                borderRadius: '12px',
+                border: '1px solid rgba(251, 191, 36, 0.25)'
+              }
+            },
+              React.createElement('div', {
+                style: { display: 'flex', alignItems: 'flex-start', gap: '10px' }
+              },
+                React.createElement('svg', {
+                  width: 18, height: 18, viewBox: '0 0 24 24', fill: '#f59e0b',
+                  style: { flexShrink: 0, marginTop: '1px' }
+                },
+                  React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z' })
+                ),
+                React.createElement('div', {
+                  style: { fontSize: '13px', color: '#92400e', lineHeight: '1.5' }
+                },
+                  React.createElement('strong', null, 'Next step: '),
+                  'Some of your selected sources need additional configuration. You\'ll be taken to the Installed Plugins page to complete setup.'
+                )
+              )
+            ),
             // Tips
             React.createElement('div', {
               style: {
@@ -34696,9 +34795,12 @@ React.createElement('div', {
                 await window.electron.store.set('active_resolvers', [...new Set([...activeResolvers, ...firstRunTutorial.selectedSources])]);
                 // Close tutorial
                 setFirstRunTutorial(prev => ({ ...prev, open: false }));
-                // Navigate to settings if they selected Spotify (to complete auth) or scrobblers (to configure)
-                if (firstRunTutorial.selectedSources.includes('spotify') || firstRunTutorial.selectedScrobblers.length > 0) {
-                  setSettingsTab('general');
+                // Navigate to Installed Plugins if sources need configuration, otherwise just close
+                const needsSetup = firstRunTutorial.selectedSources.includes('spotify') ||
+                                   firstRunTutorial.selectedSources.includes('localfiles') ||
+                                   firstRunTutorial.selectedScrobblers.length > 0;
+                if (needsSetup) {
+                  setSettingsTab('installed');
                   navigateTo('settings');
                 }
               },
@@ -34716,7 +34818,7 @@ React.createElement('div', {
               },
               onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.5)'; },
               onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.4)'; }
-            }, 'Start Listening')
+            }, (firstRunTutorial.selectedSources.includes('spotify') || firstRunTutorial.selectedSources.includes('localfiles') || firstRunTutorial.selectedScrobblers.length > 0) ? 'Continue to Setup' : 'Start Listening')
           )
         )
       )
