@@ -883,13 +883,45 @@ const SERVICE_LOGOS = {
   chatgpt: React.createElement('svg', { viewBox: '-0.17090198558635983 0.482230148717937 41.14235318283891 40.0339509076386', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M37.532 16.87a9.963 9.963 0 0 0-.856-8.184 10.078 10.078 0 0 0-10.855-4.835A9.964 9.964 0 0 0 18.306.5a10.079 10.079 0 0 0-9.614 6.977 9.967 9.967 0 0 0-6.664 4.834 10.08 10.08 0 0 0 1.24 11.817 9.965 9.965 0 0 0 .856 8.185 10.079 10.079 0 0 0 10.855 4.835 9.965 9.965 0 0 0 7.516 3.35 10.078 10.078 0 0 0 9.617-6.981 9.967 9.967 0 0 0 6.663-4.834 10.079 10.079 0 0 0-1.243-11.813zM22.498 37.886a7.474 7.474 0 0 1-4.799-1.735c.061-.033.168-.091.237-.134l7.964-4.6a1.294 1.294 0 0 0 .655-1.134V19.054l3.366 1.944a.12.12 0 0 1 .066.092v9.299a7.505 7.505 0 0 1-7.49 7.496zM6.392 31.006a7.471 7.471 0 0 1-.894-5.023c.06.036.162.099.237.141l7.964 4.6a1.297 1.297 0 0 0 1.308 0l9.724-5.614v3.888a.12.12 0 0 1-.048.103l-8.051 4.649a7.504 7.504 0 0 1-10.24-2.744zM4.297 13.62A7.469 7.469 0 0 1 8.2 10.333c0 .068-.004.19-.004.274v9.201a1.294 1.294 0 0 0 .654 1.132l9.723 5.614-3.366 1.944a.12.12 0 0 1-.114.01L7.04 23.856a7.504 7.504 0 0 1-2.743-10.237zm27.658 6.437l-9.724-5.615 3.367-1.943a.121.121 0 0 1 .113-.01l8.052 4.648a7.498 7.498 0 0 1-1.158 13.528v-9.476a1.293 1.293 0 0 0-.65-1.132zm3.35-5.043c-.059-.037-.162-.099-.236-.141l-7.965-4.6a1.298 1.298 0 0 0-1.308 0l-9.723 5.614v-3.888a.12.12 0 0 1 .048-.103l8.05-4.645a7.497 7.497 0 0 1 11.135 7.763zm-21.063 6.929l-3.367-1.944a.12.12 0 0 1-.065-.092v-9.299a7.497 7.497 0 0 1 12.293-5.756 6.94 6.94 0 0 0-.236.134l-7.965 4.6a1.294 1.294 0 0 0-.654 1.132l-.006 11.225zm1.829-3.943l4.33-2.501 4.332 2.5v5l-4.331 2.5-4.331-2.5V18z' })
   ),
-  wikipedia: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('path', { d: 'M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l2.681-5.476-2.607-5.24c-.237-.477-.42-.752-.545-.825-.126-.073-.437-.123-.934-.147l-.356-.022c-.152 0-.228-.053-.228-.166v-.457c0-.119.085-.17.253-.15l4.834.045.042.045v.447c0 .119-.07.176-.212.176l-.453.022c-.454.022-.681.155-.681.4 0 .106.043.274.133.502l2.008 4.097 1.905-3.971c.09-.183.137-.38.137-.597 0-.243-.233-.383-.7-.424l-.453-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.134.176-.15l4.063-.045.042.045v.457c0 .106-.07.164-.212.164l-.534.031c-.391.022-.681.142-.863.36-.182.218-.404.573-.668 1.068l-2.388 4.786 2.715 5.455s3.767-7.894 4.916-10.442c.15-.326.223-.586.223-.78 0-.263-.233-.405-.7-.427l-.534-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.129.176-.129h4.863l.033.045v.457c0 .106-.07.164-.212.164-.609.014-1.055.089-1.34.22-.285.133-.542.398-.767.792-.346.6-4.608 9.075-5.906 11.667-.377.755-.882.939-1.268.047-.54-1.254-2.7-5.471-2.7-5.471l-2.625 5.42c-.27.549-.748.704-1.14.013-.54-1.125-2.841-5.773-2.841-5.773z' })
+  wikipedia: React.createElement('svg', { viewBox: '0 0 98.05 98.05', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M98.023,17.465l-19.584-0.056c-0.004,0.711-0.006,1.563-0.017,2.121c1.664,0.039,5.922,0.822,7.257,4.327L66.92,67.155c-0.919-2.149-9.643-21.528-10.639-24.02l9.072-18.818c1.873-2.863,5.455-4.709,8.918-4.843l-0.01-1.968L55.42,17.489c-0.045,0.499,0.001,1.548-0.068,2.069c5.315,0.144,7.215,1.334,5.941,4.508c-2.102,4.776-6.51,13.824-7.372,15.475c-2.696-5.635-4.41-9.972-7.345-16.064c-1.266-2.823,1.529-3.922,4.485-4.004v-1.981l-21.82-0.067c0.016,0.93-0.021,1.451-0.021,2.131c3.041,0.046,6.988,0.371,8.562,3.019c2.087,4.063,9.044,20.194,11.149,24.514c-2.685,5.153-9.207,17.341-11.544,21.913c-3.348-7.43-15.732-36.689-19.232-44.241c-1.304-3.218,3.732-5.077,6.646-5.213l0.019-2.148L0,17.398c0.005,0.646,0.027,1.71,0.029,2.187c4.025-0.037,9.908,6.573,11.588,10.683c7.244,16.811,14.719,33.524,21.928,50.349c0.002,0.029,2.256,0.059,2.281,0.008c4.717-9.653,10.229-19.797,15.206-29.56L63.588,80.64c0.005,0.004,2.082,0.016,2.093,0.007c7.962-18.196,19.892-46.118,23.794-54.933c1.588-3.767,4.245-6.064,8.543-6.194l0.032-1.956L98.023,17.465z' })
   ),
   discogs: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z' })
   )
 };
+
+// Parachord wordmark logo component
+const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createElement('svg', {
+  viewBox: '0 0 1046 273',
+  style: { height: height + 'px', width: 'auto' },
+  fill: 'none',
+  xmlns: 'http://www.w3.org/2000/svg'
+},
+  React.createElement('path', { d: 'M764.5 102.5C788.725 102.5 809.5 123.347 809.5 150.5C809.5 177.654 788.725 198.5 764.5 198.5C740.275 198.5 719.5 177.654 719.5 150.5C719.5 123.347 740.275 102.5 764.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M237.5 102.5C261.725 102.5 282.5 123.347 282.5 150.5C282.5 177.654 261.725 198.5 237.5 198.5C213.275 198.5 192.5 177.654 192.5 150.5C192.5 123.347 213.275 102.5 237.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('rect', { x: 271, y: 89.0005, width: 25, height: 123, fill: fill }),
+  React.createElement('path', { d: 'M424.5 102.5C448.725 102.5 469.5 123.347 469.5 150.5C469.5 177.654 448.725 198.5 424.5 198.5C400.275 198.5 379.5 177.654 379.5 150.5C379.5 123.347 400.275 102.5 424.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('rect', { x: 458, y: 89.0005, width: 25, height: 123, fill: fill }),
+  React.createElement('rect', { x: 307, y: 152, width: 27, height: 60, fill: fill }),
+  React.createElement('path', { d: 'M307 152C307 117.207 333.191 89.0005 365.5 89.0005C365.667 89.0005 365.833 89.0029 366 89.0044L366 116.008C365.833 116.005 365.667 116 365.5 116C350.195 116 334.499 129.759 334.012 150.984L334 152L307 152Z', fill: fill }),
+  React.createElement('rect', { x: 828, y: 152, width: 27, height: 60, fill: fill }),
+  React.createElement('path', { d: 'M828 152C828 117.207 854.191 89.0005 886.5 89.0005C886.667 89.0005 886.833 89.0029 887 89.0044L887 116.008C886.833 116.005 886.667 116 886.5 116C871.195 116 855.499 129.759 855.012 150.984L855 152L828 152Z', fill: fill }),
+  React.createElement('rect', { x: 676, y: 152, width: 25, height: 60, fill: fill }),
+  React.createElement('rect', { x: 597, y: 45.8784, width: 25, height: 165, fill: fill }),
+  React.createElement('path', { d: 'M622 38.0005V50.5005L597 45.8784L622 38.0005Z', fill: fill }),
+  React.createElement('path', { d: 'M648.702 96.0005C675.533 96.0005 698.054 122.271 700.898 156H675.816C673.171 131.764 657.459 121 648.702 121C640.176 121 624.661 131.504 622.075 156H597C599.787 122.271 621.871 96.0005 648.702 96.0005Z', fill: fill }),
+  React.createElement('path', { d: 'M547.5 92.0005C565.823 92.0005 582.177 100.857 592.903 114.719L569.128 128.445C563.289 122.472 555.491 119 547.5 119C531.36 119 516 133.158 516 153.5C516 173.843 531.36 188 547.5 188C554.915 188 562.163 185.011 567.835 179.808L591.812 193.651C581.084 206.724 565.212 215 547.5 215C515.191 215 489 187.466 489 153.5C489 119.535 515.191 92.0005 547.5 92.0005Z', fill: fill }),
+  React.createElement('rect', { x: 1004.01, y: 151.398, width: 25, height: 100.266, transform: 'rotate(-180 1004.01 151.398)', fill: fill }),
+  React.createElement('path', { d: 'M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86674 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z', fill: '#E12949', stroke: 'white', strokeWidth: 0.2 }),
+  React.createElement('path', { d: 'M945.5 102.5C969.725 102.5 990.5 123.347 990.5 150.5C990.5 177.654 969.725 198.5 945.5 198.5C921.275 198.5 900.5 177.654 900.5 150.5C900.5 123.347 921.275 102.5 945.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M945.5 102.5C969.725 102.5 990.5 123.347 990.5 150.5C990.5 177.654 969.725 198.5 945.5 198.5C921.275 198.5 900.5 177.654 900.5 150.5C900.5 123.347 921.275 102.5 945.5 102.5Z', stroke: fill, strokeOpacity: 0.2, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M59 260.805L59 242.676M59 203.856L59 224.803', stroke: 'white', strokeWidth: 0.2, strokeLinecap: 'round' }),
+  React.createElement('path', { d: 'M7.29194 100.001C7.32449 100.03 7.16169 101.377 6.90132 102.986C6.08765 108.341 5.46898 114.633 5.14351 121.363C4.16715 140.559 7.45444 156.098 14.3544 165.316C18.3253 170.612 26.072 175.44 40.8486 181.878C49.0502 185.448 52.3379 187.262 56.2109 190.334L58.8476 192.412V186.211H63.4042C63.4041 257.673 63.3388 265.772 62.8837 266.359C62.5258 266.827 62.0696 267.002 61.1259 267.002C59.0103 267.002 58.8476 266.534 58.8476 260.477V255.238L57.1875 252.722C54.0629 247.923 51.0032 244.411 46.5117 240.373C41.6947 236.042 38.3425 233.818 32.6142 231.126C26.3002 228.112 22.6871 225.742 18.5537 221.821C8.39888 212.194 2.14945 198.528 0.261671 181.761C-0.226521 177.518 0.0335781 163.501 0.684523 158.994C1.0425 156.39 1.07508 155.512 0.684523 153.288C0.0336106 149.542 -0.226209 135.731 0.229445 130.902C1.01061 122.738 3.06059 113.081 5.8271 104.215C6.57471 101.848 7.22547 99.9476 7.29194 100.001ZM5.66499 172.338C6.28338 178.015 7.8456 184.628 9.53804 188.871C12.4673 196.187 16.0803 200.635 22.3945 204.673C27.8298 208.184 31.7356 210.145 44.2011 215.588C46.6096 216.641 49.7671 218.222 51.1992 219.07C52.6312 219.89 54.9417 221.587 56.3085 222.757L58.8476 224.952V223.986C58.8475 223.372 58.2943 222.143 57.3505 220.651C51.492 211.433 42.7362 203.649 33.1347 199.113C30.9543 198.089 28.1881 196.656 26.9511 195.924C18.4889 190.891 11.8166 183.341 6.5439 172.777L5.43648 170.582L5.66499 172.338Z', fill: '#767575' }),
+  React.createElement('path', { d: 'M115.5 102.5C139.725 102.5 160.5 123.346 160.5 150.5C160.5 177.654 139.725 198.5 115.5 198.5C91.2754 198.5 70.5 177.654 70.5 150.5C70.5 123.346 91.2754 102.5 115.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M82 256.261L57 272.5L57 255.66L57 238.819L82 256.261Z', fill: fill }),
+  React.createElement('rect', { x: 57, y: 148, width: 25, height: 108.261, fill: fill })
+);
 
 // VirtualizedQueueList component - Renders queue tracks efficiently using windowing
 // Only renders visible tracks + overscan buffer, dramatically reducing DOM nodes for large queues
@@ -1288,6 +1320,7 @@ const ResolverCard = React.memo(({
   isInstalled,
   hasUpdate,
   isInstalling,
+  needsConfiguration,
   priorityNumber,
   onClick,
   onDragStart,
@@ -1414,7 +1447,24 @@ const ResolverCard = React.memo(({
         }
       },
         React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
-      )
+      ),
+      // Needs configuration warning badge (bottom-right)
+      needsConfiguration && !isInstalling && React.createElement('div', {
+        className: 'absolute flex items-center justify-center',
+        style: {
+          bottom: '8px',
+          right: '8px',
+          width: '22px',
+          height: '22px',
+          backgroundColor: '#fbbf24',
+          borderRadius: '6px',
+          fontSize: '12px',
+          fontWeight: '600',
+          color: '#78350f',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
+        },
+        title: 'Needs configuration'
+      }, '!')
     ),
     // Name below card - refined typography
     React.createElement('span', {
@@ -1429,7 +1479,16 @@ const ResolverCard = React.memo(({
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
       }
-    }, resolver.name)
+    }, resolver.name),
+    // Needs setup label below name
+    needsConfiguration && React.createElement('span', {
+      style: {
+        fontSize: '10px',
+        fontWeight: '500',
+        color: '#d97706',
+        marginTop: '2px'
+      }
+    }, 'Setup required')
   );
 });
 
@@ -3210,6 +3269,16 @@ const Parachord = () => {
   const [stopSyncDialog, setStopSyncDialog] = useState({
     open: false,
     providerId: null
+  });
+
+  // First-run tutorial state
+  const [firstRunTutorial, setFirstRunTutorial] = useState({
+    open: false,
+    step: 'welcome', // 'welcome' | 'sources' | 'social' | 'features' | 'complete'
+    selectedSources: ['youtube'], // Default to YouTube as it's free
+    selectedScrobblers: [],
+    spotifyConnecting: false,
+    spotifyConnected: false
   });
 
   // Background sync timer (every 15 minutes)
@@ -5310,6 +5379,13 @@ const Parachord = () => {
       setActiveResolvers(prev => [...prev, ...newResolverIds]);
     }
   }, [loadedResolvers, cacheLoaded, resolverOrder]);
+
+  // Load watch folders on initial app load (for needsConfiguration check)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.localFiles?.getWatchFolders) {
+      window.electron.localFiles.getWatchFolders().then(setWatchFolders);
+    }
+  }, [cacheLoaded]);
 
   // Listen for sync progress
   useEffect(() => {
@@ -9555,6 +9631,13 @@ const Parachord = () => {
         // No saved view data - default to library
         setActiveView('library');
         setViewHistory(['library']);
+      }
+
+      // Check if this is the first run (tutorial not completed)
+      const tutorialCompleted = await window.electron.store.get('tutorial_completed');
+      if (!tutorialCompleted) {
+        console.log('🎓 First run detected - showing tutorial');
+        setFirstRunTutorial(prev => ({ ...prev, open: true }));
       }
 
       // Mark settings as loaded so save useEffect knows it's safe to save
@@ -27780,11 +27863,23 @@ React.createElement('div', {
                       marketplaceResolver.version !== resolver.version &&
                       marketplaceResolver.version > resolver.version;
 
+                    // Determine if resolver needs configuration
+                    let needsConfiguration = false;
+                    if (resolver.id === 'spotify' && !spotifyConnected) {
+                      needsConfiguration = true;
+                    } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
+                      needsConfiguration = true;
+                    } else if (resolver.id === 'qobuz' && !qobuzConnected) {
+                      // Qobuz works with previews but full playback needs login
+                      needsConfiguration = false; // Optional, so don't mark as needed
+                    }
+
                     return React.createElement(ResolverCard, {
                       key: resolver.id,
                       resolver: resolver,
                       isActive: isActive,
                       hasUpdate: hasUpdate,
+                      needsConfiguration: needsConfiguration,
                       priorityNumber: index + 1,
                       draggable: true,
                       isDragging: draggedResolver === resolver.id,
@@ -28498,6 +28593,59 @@ React.createElement('div', {
                   }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
                 ),
 
+                // Developer Settings Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Developer Settings'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Options for testing and development')
+                  ),
+                  // Reset Tutorial button
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between py-3 border-b border-gray-100'
+                  },
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'text-sm font-medium text-gray-900'
+                      }, 'Reset Tutorial'),
+                      React.createElement('div', {
+                        className: 'text-xs text-gray-500 mt-0.5'
+                      }, 'Show the first-run tutorial again on next app launch')
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        await window.electron.store.delete('tutorial_completed');
+                        alert('Tutorial reset! The welcome tutorial will appear the next time you open Parachord.');
+                      },
+                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                    }, 'Reset')
+                  ),
+                  // Show Tutorial Now button
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between py-3'
+                  },
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'text-sm font-medium text-gray-900'
+                      }, 'Show Tutorial Now'),
+                      React.createElement('div', {
+                        className: 'text-xs text-gray-500 mt-0.5'
+                      }, 'Open the first-run tutorial immediately')
+                    ),
+                    React.createElement('button', {
+                      onClick: () => {
+                        setFirstRunTutorial(prev => ({ ...prev, open: true, step: 'welcome' }));
+                      },
+                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                    }, 'Show')
+                  )
+                ),
+
                 // Reset Application Section
                 React.createElement('div', {
                   className: 'bg-white border border-red-200 rounded-xl p-6 hover:shadow-sm hover:border-red-300 transition-all'
@@ -28578,11 +28726,9 @@ React.createElement('div', {
                 }
               },
                 // Parachord Logo
-                React.createElement('img', {
-                  src: './assets/logo-wordmark.png',
-                  alt: 'Parachord',
-                  style: { height: '56px', marginBottom: '20px', display: 'inline-block' }
-                }),
+                React.createElement('div', { style: { marginBottom: '20px', display: 'flex', justifyContent: 'center' } },
+                  React.createElement(ParachordWordmark, { fill: '#333', height: 56 })
+                ),
 
                 // Version
                 React.createElement('p', {
@@ -33948,6 +34094,402 @@ React.createElement('div', {
             onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
             onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
           }, 'Cancel')
+        )
+      )
+    ),
+
+    // First-Run Tutorial Modal - Cinematic Light design
+    firstRunTutorial.open && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' }
+    },
+      // Modal
+      React.createElement('div', {
+        className: 'relative w-full max-w-xl mx-4 overflow-hidden',
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Welcome Step
+        firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
+          // Accent bar
+          React.createElement('div', {
+            style: {
+              height: '4px',
+              backgroundColor: '#7c3aed'
+            }
+          }),
+          // Header
+          React.createElement('div', {
+            style: {
+              padding: '32px 32px 24px',
+              textAlign: 'center',
+              borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            // Parachord wordmark logo - centered
+            React.createElement('div', {
+              style: { marginBottom: '12px', display: 'flex', justifyContent: 'center' }
+            },
+              React.createElement(ParachordWordmark, { fill: '#1f2937', height: 44 })
+            ),
+            React.createElement('p', {
+              style: { fontSize: '15px', color: '#6b7280', lineHeight: '1.5' }
+            }, 'Your music is everywhere, but you shouldn\'t have to be.')
+          ),
+          // Content
+          React.createElement('div', {
+            style: { padding: '24px 32px' }
+          },
+            React.createElement('p', {
+              style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.7', marginBottom: '20px' }
+            }, 'Parachord brings all your music together in one place. Search across multiple services, build unified playlists, and enjoy your music from wherever it lives.'),
+            // Feature highlights with SVG icons
+            React.createElement('div', {
+              style: { display: 'flex', flexDirection: 'column', gap: '12px' }
+            },
+              [
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M9 18V5l12-2v13' }),
+                  React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+                  React.createElement('circle', { cx: 18, cy: 16, r: 3 })
+                ), text: 'Play from Spotify, YouTube, Bandcamp, and more' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
+                  React.createElement('path', { d: 'M21 21l-4.35-4.35' })
+                ), text: 'Search all your sources at once' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+                  React.createElement('path', { d: 'M14 2v6h6' }),
+                  React.createElement('line', { x1: 16, y1: 13, x2: 8, y2: 13 }),
+                  React.createElement('line', { x1: 16, y1: 17, x2: 8, y2: 17 })
+                ), text: 'Create playlists that span services' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' }),
+                  React.createElement('circle', { cx: 9, cy: 7, r: 4 }),
+                  React.createElement('path', { d: 'M23 21v-2a4 4 0 0 0-3-3.87' }),
+                  React.createElement('path', { d: 'M16 3.13a4 4 0 0 1 0 7.75' })
+                ), text: 'Connect with friends on Last.fm & ListenBrainz' }
+              ].map((item, i) =>
+                React.createElement('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'center', gap: '12px' }
+                },
+                  React.createElement('div', {
+                    style: { width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'rgba(124, 58, 237, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+                  }, item.icon),
+                  React.createElement('span', {
+                    style: { fontSize: '13px', color: '#374151' }
+                  }, item.text)
+                )
+              )
+            )
+          ),
+          // Footer
+          React.createElement('div', {
+            style: {
+              padding: '16px 32px 24px',
+              borderTop: '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }
+          },
+            React.createElement('button', {
+              onClick: async () => {
+                await window.electron.store.set('tutorial_completed', true);
+                setFirstRunTutorial(prev => ({ ...prev, open: false }));
+              },
+              style: {
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '10px 16px',
+                borderRadius: '10px'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+              onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+            }, 'Skip tutorial'),
+            React.createElement('button', {
+              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
+              style: {
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#ffffff',
+                backgroundColor: '#7c3aed',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 150ms ease'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
+            }, 'Get Started')
+          )
+        ),
+
+        // Sources Step - Uses actual loadedResolvers and activeResolvers
+        firstRunTutorial.step === 'sources' && React.createElement(React.Fragment, null,
+          // Accent bar
+          React.createElement('div', {
+            style: { height: '4px', backgroundColor: '#7c3aed' }
+          }),
+          // Header
+          React.createElement('div', {
+            style: {
+              padding: '24px 32px 20px',
+              borderBottom: '1px solid rgba(0,0,0,0.06)'
+            }
+          },
+            React.createElement('h2', {
+              style: { fontSize: '18px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+            }, 'Enable Your Music Sources'),
+            React.createElement('p', {
+              style: { fontSize: '14px', color: '#6b7280' }
+            }, 'Click to enable or disable sources. You can configure them in Settings.')
+          ),
+          // Content - Resolver cards grid (same design as Settings > Installed)
+          React.createElement('div', {
+            style: { padding: '24px 32px' }
+          },
+            React.createElement('div', {
+              style: { display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }
+            },
+              loadedResolvers.filter(r => r.capabilities?.resolve).map(resolver => {
+                const isActive = activeResolvers.includes(resolver.id);
+                const logo = SERVICE_LOGOS[resolver.id];
+                return React.createElement('div', {
+                  key: resolver.id,
+                  className: `flex flex-col items-center cursor-pointer transition-all ${!isActive ? 'opacity-50 grayscale' : ''}`,
+                  style: { width: '90px' },
+                  onClick: () => {
+                    if (isActive) {
+                      setActiveResolvers(prev => prev.filter(id => id !== resolver.id));
+                    } else {
+                      setActiveResolvers(prev => [...prev, resolver.id]);
+                    }
+                  }
+                },
+                  // Card with colored background
+                  React.createElement('div', {
+                    style: {
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '16px',
+                      backgroundColor: resolver.color || '#6B7280',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: isActive ? '0 4px 12px rgba(0, 0, 0, 0.15)' : '0 2px 8px rgba(0, 0, 0, 0.1)',
+                      marginBottom: '8px'
+                    }
+                  },
+                    logo ? logo : React.createElement('span', { className: 'text-3xl text-white' }, resolver.icon)
+                  ),
+                  // Name
+                  React.createElement('span', {
+                    style: { fontSize: '12px', fontWeight: '500', color: '#374151', textAlign: 'center' }
+                  }, resolver.name)
+                );
+              })
+            ),
+            // Info text
+            React.createElement('p', {
+              style: { fontSize: '12px', color: '#9ca3af', textAlign: 'center', marginTop: '20px' }
+            }, 'Some sources may require login or configuration after setup.')
+          ),
+          // Footer
+          React.createElement('div', {
+            style: {
+              padding: '16px 32px 20px',
+              borderTop: '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }
+          },
+            React.createElement('button', {
+              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })),
+              style: {
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '10px 16px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+              onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+            },
+              React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { d: 'M19 12H5M12 19l-7-7 7-7' })
+              ),
+              'Back'
+            ),
+            React.createElement('button', {
+              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })),
+              style: {
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#ffffff',
+                backgroundColor: '#7c3aed',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 150ms ease'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
+            }, 'Continue')
+          )
+        ),
+
+        // Complete Step
+        firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
+          // Accent bar
+          React.createElement('div', {
+            style: { height: '4px', backgroundColor: '#10b981' }
+          }),
+          // Header
+          React.createElement('div', {
+            style: {
+              padding: '32px 32px 24px',
+              textAlign: 'center',
+              borderBottom: '1px solid rgba(0,0,0,0.06)'
+            }
+          },
+            React.createElement('div', {
+              style: {
+                width: '56px',
+                height: '56px',
+                margin: '0 auto 16px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
+            },
+              React.createElement('svg', {
+                width: 28,
+                height: 28,
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: '#10b981',
+                strokeWidth: 2.5,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
+              },
+                React.createElement('path', { d: 'M20 6L9 17l-5-5' })
+              )
+            ),
+            React.createElement('h1', {
+              style: { fontSize: '20px', fontWeight: '600', color: '#1f2937', marginBottom: '6px' }
+            }, 'You\'re All Set!'),
+            React.createElement('p', {
+              style: { fontSize: '14px', color: '#6b7280' }
+            }, 'Click below to configure your plugins and start listening.')
+          ),
+          // Content - Show active sources
+          React.createElement('div', {
+            style: { padding: '24px 32px' }
+          },
+            // Active sources summary
+            loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length > 0 && React.createElement('div', {
+              style: { marginBottom: '16px' }
+            },
+              React.createElement('div', {
+                style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+              }, 'Active Sources'),
+              React.createElement('div', {
+                style: { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }
+              },
+                loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).map(resolver =>
+                  React.createElement('span', {
+                    key: resolver.id,
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: resolver.color || '#6b7280',
+                      backgroundColor: `${resolver.color || '#6b7280'}15`,
+                      borderRadius: '8px'
+                    }
+                  }, resolver.name)
+                )
+              )
+            ),
+            // Info text
+            React.createElement('p', {
+              style: { fontSize: '13px', color: '#6b7280', textAlign: 'center', lineHeight: '1.6' }
+            }, 'You can configure login credentials, add local music folders, and customize your experience in the Installed Plugins settings.')
+          ),
+          // Footer
+          React.createElement('div', {
+            style: {
+              padding: '16px 32px 24px',
+              borderTop: '1px solid rgba(0,0,0,0.06)',
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '12px'
+            }
+          },
+            React.createElement('button', {
+              onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
+              style: {
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(0,0,0,0.1)',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.2)'; e.currentTarget.style.color = '#1f2937'; },
+              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.1)'; e.currentTarget.style.color = '#6b7280'; }
+            }, 'Back'),
+            React.createElement('button', {
+              onClick: async () => {
+                // Save tutorial completion
+                await window.electron.store.set('tutorial_completed', true);
+                // Save active resolvers
+                await window.electron.store.set('active_resolvers', activeResolvers);
+                // Close tutorial
+                setFirstRunTutorial(prev => ({ ...prev, open: false }));
+                // Always navigate to Settings > Installed Plugins
+                setSettingsTab('installed');
+                navigateTo('settings');
+              },
+              style: {
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#ffffff',
+                backgroundColor: '#7c3aed',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 150ms ease'
+              },
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
+            }, 'Go to Settings')
+          )
         )
       )
     ),
