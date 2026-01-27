@@ -459,18 +459,48 @@
                           item.querySelector('.collection-item-artist') ||
                           item.querySelector('[class*="artist"]');
 
-          // Try to find Bandcamp track URL
-          const linkEl = item.querySelector('a[href*="bandcamp.com/track/"]') ||
-                        item.querySelector('a[href*="/track/"]') ||
-                        item.closest('a[href*="bandcamp.com"]') ||
-                        item.querySelector('a');
+          // Try to find Bandcamp track URL - be careful not to use closest() as it might
+          // find a parent that wraps multiple tracks
           let trackUrl = '';
-          if (linkEl && linkEl.href) {
-            const href = linkEl.href;
-            if (href.includes('bandcamp.com') && href.includes('/track/')) {
-              trackUrl = href;
+
+          // First, check if the item itself is a link
+          if (item.tagName === 'A' && item.href && item.href.includes('/track/')) {
+            trackUrl = item.href;
+          }
+
+          // Then check for direct link children
+          if (!trackUrl) {
+            const linkEl = item.querySelector('a[href*="bandcamp.com/track/"]') ||
+                          item.querySelector('a[href*="/track/"]');
+            if (linkEl && linkEl.href && linkEl.href.includes('/track/')) {
+              trackUrl = linkEl.href;
             }
           }
+
+          // Check for data-tralbum-url or similar data attributes
+          if (!trackUrl) {
+            const urlAttr = item.dataset?.url || item.dataset?.href || item.dataset?.trackUrl;
+            if (urlAttr && urlAttr.includes('/track/')) {
+              trackUrl = urlAttr.startsWith('http') ? urlAttr : 'https://' + urlAttr;
+            }
+          }
+
+          // Check parent's direct link (but only if parent is a direct wrapper, not a container of many tracks)
+          if (!trackUrl && item.parentElement?.tagName === 'A' && item.parentElement.href?.includes('/track/')) {
+            trackUrl = item.parentElement.href;
+          }
+
+          // Clean up URL - remove query params like ?from=playlist
+          if (trackUrl) {
+            try {
+              const urlObj = new URL(trackUrl);
+              trackUrl = urlObj.origin + urlObj.pathname;
+            } catch (e) {
+              // Keep as-is if URL parsing fails
+            }
+          }
+
+          console.log(`[Parachord] Track ${index}: "${titleEl?.textContent?.trim()}" -> URL: ${trackUrl || '(none)'}`);
 
           if (titleEl) {
             const trackName = titleEl.textContent.trim();
