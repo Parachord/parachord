@@ -315,6 +315,7 @@ class ResolverLoader {
    * @returns {Promise<{playlist: object, resolverId: string}|null>}
    */
   async lookupPlaylist(url, configOverride = null) {
+    console.log('🚨🚨🚨 NEW RESOLVER-LOADER CODE IS RUNNING 🚨🚨🚨');
     const resolverId = this.findResolverForUrl(url);
     if (!resolverId) {
       return null;
