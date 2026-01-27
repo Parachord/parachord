@@ -3128,7 +3128,8 @@ const Parachord = () => {
   const [artistSearch, setArtistSearch] = useState('');
   const [artistSortDropdownOpen, setArtistSortDropdownOpen] = useState(false);
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
-  const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm
+  const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm (for artist page)
+  const [playbarArtistBio, setPlaybarArtistBio] = useState(null); // Artist bio for playbar tooltip (current track's artist)
   const [artistExtendedInfo, setArtistExtendedInfo] = useState(null); // Extended info from MusicBrainz (founded, location, URLs, members)
   const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
@@ -15690,6 +15691,44 @@ ${tracks}
       });
     }
   }, [currentTrack?.artist, currentTrack?.album, currentTrack?.albumArt]);
+
+  // Fetch artist bio for playbar tooltip when track changes
+  useEffect(() => {
+    if (!currentTrack?.artist) {
+      setPlaybarArtistBio(null);
+      return;
+    }
+
+    // Check if we already have the bio for this artist
+    if (playbarArtistBio?.artistName === currentTrack.artist) {
+      return;
+    }
+
+    // Clear old bio and fetch new one
+    setPlaybarArtistBio(null);
+
+    (async () => {
+      // First, search for the artist to get their MBID
+      try {
+        const searchResponse = await fetch(
+          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(currentTrack.artist)}&fmt=json&limit=1`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' }}
+        );
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          const mbid = searchData.artists?.[0]?.id;
+
+          // Fetch bio using the existing function
+          const bioData = await getArtistBio(currentTrack.artist, mbid);
+          if (bioData) {
+            setPlaybarArtistBio({ ...bioData, artistName: currentTrack.artist });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching playbar artist bio:', error);
+      }
+    })();
+  }, [currentTrack?.artist]);
 
   // Detect face position in an image using browser's FaceDetector API
   const detectFacePosition = async (imageUrl) => {
@@ -29853,12 +29892,27 @@ React.createElement('div', {
             },
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
-              // Line 2: Artist name
+              // Line 2: Artist name with bio tooltip
               React.createElement('div', { className: 'text-xs text-gray-400 truncate' },
-                React.createElement('button', {
-                  onClick: () => fetchArtistData(currentTrack.artist),
-                  className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
-                }, currentTrack.artist)
+                (() => {
+                  const bioPreview = playbarArtistBio && playbarArtistBio.bio
+                    ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
+                    : null;
+
+                  const artistButton = React.createElement('button', {
+                    onClick: () => fetchArtistData(currentTrack.artist),
+                    className: 'hover:text-white hover:underline transition-colors cursor-pointer no-drag'
+                  }, currentTrack.artist);
+
+                  return bioPreview
+                    ? React.createElement(Tooltip, {
+                        content: bioPreview,
+                        position: 'top',
+                        variant: 'dark',
+                        className: 'tooltip-bio'
+                      }, artistButton)
+                    : artistButton;
+                })()
               ),
               // Line 3: Resolver dropdown + browser indicator
               (() => {
