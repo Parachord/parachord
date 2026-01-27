@@ -9,7 +9,8 @@
     "alarms",
     "tabs",
     "contextMenus",
-    "storage"
+    "storage",
+    "webNavigation"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",

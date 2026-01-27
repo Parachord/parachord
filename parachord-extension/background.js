@@ -252,6 +252,100 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Intercept settings (loaded from storage)
+let spotifyInterceptEnabled = true;
+let appleMusicInterceptEnabled = true;
+
+// Load intercept settings
+chrome.storage.local.get(['spotifyInterceptEnabled', 'appleMusicInterceptEnabled'], (result) => {
+  if (result.spotifyInterceptEnabled !== undefined) {
+    spotifyInterceptEnabled = result.spotifyInterceptEnabled;
+  }
+  if (result.appleMusicInterceptEnabled !== undefined) {
+    appleMusicInterceptEnabled = result.appleMusicInterceptEnabled;
+  }
+  console.log('[Parachord] Intercept settings loaded:', { spotifyInterceptEnabled, appleMusicInterceptEnabled });
+});
+
+// Listen for settings changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    if (changes.spotifyInterceptEnabled !== undefined) {
+      spotifyInterceptEnabled = changes.spotifyInterceptEnabled.newValue;
+      console.log('[Parachord] Spotify intercept:', spotifyInterceptEnabled);
+    }
+    if (changes.appleMusicInterceptEnabled !== undefined) {
+      appleMusicInterceptEnabled = changes.appleMusicInterceptEnabled.newValue;
+      console.log('[Parachord] Apple Music intercept:', appleMusicInterceptEnabled);
+    }
+  }
+});
+
+// Check if URL is a Spotify content URL (track, album, playlist)
+function isSpotifyContentUrl(url) {
+  if (!url) return false;
+  const patterns = [
+    /open\.spotify\.com\/track\//,
+    /open\.spotify\.com\/album\//,
+    /open\.spotify\.com\/playlist\//,
+    /open\.spotify\.com\/intl-[^/]+\/track\//,
+    /open\.spotify\.com\/intl-[^/]+\/album\//,
+    /open\.spotify\.com\/intl-[^/]+\/playlist\//
+  ];
+  return patterns.some(pattern => pattern.test(url));
+}
+
+// Check if URL is an Apple Music content URL (album, playlist, song)
+function isAppleMusicContentUrl(url) {
+  if (!url) return false;
+  const patterns = [
+    /music\.apple\.com\/[^/]+\/album\//,
+    /music\.apple\.com\/[^/]+\/playlist\//,
+    /music\.apple\.com\/[^/]+\/song\//
+  ];
+  return patterns.some(pattern => pattern.test(url));
+}
+
+// Intercept navigation to Spotify/Apple Music URLs
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  // Only intercept main frame navigations (not iframes)
+  if (details.frameId !== 0) return;
+
+  const url = details.url;
+
+  // Check Spotify
+  if (spotifyInterceptEnabled && isSpotifyContentUrl(url)) {
+    console.log('[Parachord] Intercepting Spotify navigation:', url);
+
+    // Send to Parachord
+    sendToDesktop({
+      type: 'sendToParachord',
+      url: url,
+      source: 'navigation-intercept'
+    });
+
+    // Close the tab that was trying to navigate
+    chrome.tabs.remove(details.tabId).catch(() => {});
+    return;
+  }
+
+  // Check Apple Music
+  if (appleMusicInterceptEnabled && isAppleMusicContentUrl(url)) {
+    console.log('[Parachord] Intercepting Apple Music navigation:', url);
+
+    // Send to Parachord
+    sendToDesktop({
+      type: 'sendToParachord',
+      url: url,
+      source: 'navigation-intercept'
+    });
+
+    // Close the tab that was trying to navigate
+    chrome.tabs.remove(details.tabId).catch(() => {});
+    return;
+  }
+});
+
 // Start connection when extension loads
 connect();
 
