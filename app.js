@@ -3012,6 +3012,9 @@ const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
   const [spinoffMode, setSpinoffMode] = useState(false);
   const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
+  // Shuffle mode - randomize queue order
+  const [shuffleMode, setShuffleMode] = useState(false);
+  const originalQueueRef = useRef(null); // Store original queue order before shuffle for restore
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
   const [spinoffLoading, setSpinoffLoading] = useState(false);
@@ -8482,6 +8485,10 @@ const Parachord = () => {
   // Queue management functions
   const removeFromQueue = (trackId) => {
     setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
+    // Also remove from original queue if shuffle is active
+    if (shuffleMode && originalQueueRef.current) {
+      originalQueueRef.current = originalQueueRef.current.filter(t => t.id !== trackId);
+    }
     console.log(`🗑️ Removed track ${trackId} from queue`);
   };
 
@@ -8558,12 +8565,104 @@ const Parachord = () => {
 
   const clearQueue = () => {
     setCurrentQueue([]);
+    // Reset shuffle state when queue is cleared
+    setShuffleMode(false);
+    originalQueueRef.current = null;
     // Preserve playback context if in spinoff or listen-along mode
     // Only clear context for regular queue scenarios
     if (playbackContext?.type !== 'spinoff' && playbackContext?.type !== 'listenAlong') {
       setPlaybackContext(null);
     }
     console.log('🗑️ Cleared queue');
+  };
+
+  // Toggle shuffle mode - shuffles queue in place, stores original for restore
+  const toggleShuffle = () => {
+    if (shuffleMode) {
+      // Turn off shuffle - restore original order if available
+      if (originalQueueRef.current) {
+        // Filter to only include tracks that still exist in current queue
+        const currentIds = new Set(currentQueue.map(t => t.id));
+        const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
+        setCurrentQueue(restoredQueue);
+        console.log('🔀 Shuffle OFF - restored original order');
+      }
+      originalQueueRef.current = null;
+      setShuffleMode(false);
+    } else {
+      // Turn on shuffle - store original and shuffle
+      if (currentQueue.length > 1) {
+        originalQueueRef.current = [...currentQueue];
+        // Fisher-Yates shuffle
+        const shuffled = [...currentQueue];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        setCurrentQueue(shuffled);
+        console.log('🔀 Shuffle ON - queue randomized');
+      }
+      setShuffleMode(true);
+    }
+  };
+
+  // Restore original queue order (used from queue header button)
+  const restoreOriginalOrder = () => {
+    if (originalQueueRef.current && shuffleMode) {
+      const currentIds = new Set(currentQueue.map(t => t.id));
+      const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
+      setCurrentQueue(restoredQueue);
+      setShuffleMode(false);
+      originalQueueRef.current = null;
+      console.log('🔀 Restored original queue order');
+    }
+  };
+
+  // Start Collection Station - shuffle and play all collection tracks
+  const handleStartCollectionStation = () => {
+    // Merge local files with collection tracks
+    const allTracks = [...library, ...collectionData.tracks];
+
+    if (allTracks.length === 0) {
+      showToast('No tracks in your collection yet');
+      return;
+    }
+
+    // Deduplicate by id
+    const trackMap = new Map();
+    allTracks.forEach(track => {
+      const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (!trackMap.has(trackId)) {
+        trackMap.set(trackId, { ...track, id: trackId });
+      }
+    });
+    const uniqueTracks = Array.from(trackMap.values());
+
+    // Fisher-Yates shuffle
+    const shuffled = [...uniqueTracks];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Set up playback context
+    const context = { type: 'library', name: 'Collection Station' };
+
+    // Play first track, queue the rest
+    const firstTrack = shuffled[0];
+    const remainingTracks = shuffled.slice(1);
+
+    // Store original order for unshuffle and enable shuffle mode
+    originalQueueRef.current = remainingTracks;
+    setShuffleMode(true);
+
+    // Set queue and play
+    setQueueWithContext(remainingTracks, context);
+    setPlaybackContext(context);
+    handlePlay(firstTrack);
+
+    showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+    console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks`);
   };
 
   // Helper to set queue with playback context tagged on each track
@@ -8820,12 +8919,48 @@ const Parachord = () => {
     // Check if nothing is currently playing BEFORE updating queue
     const nothingPlaying = !currentTrackRef.current;
 
-    // Append to end of queue
-    setCurrentQueue(prev => [...prev, ...taggedTracks]);
+    // If shuffle mode is active, update the original queue ref (or initialize it)
+    if (shuffleMode) {
+      if (originalQueueRef.current) {
+        originalQueueRef.current = [...originalQueueRef.current, ...taggedTracks];
+      } else {
+        // Initialize original queue if shuffle was enabled before any tracks were added
+        originalQueueRef.current = [...currentQueue, ...taggedTracks];
+      }
+    }
+
+    // Append to queue (shuffle mode inserts at random positions)
+    if (shuffleMode) {
+      if (currentQueue.length > 0) {
+        // Insert new tracks at random positions in existing queue
+        setCurrentQueue(prev => {
+          const newQueue = [...prev];
+          taggedTracks.forEach(track => {
+            const randomIndex = Math.floor(Math.random() * (newQueue.length + 1));
+            newQueue.splice(randomIndex, 0, track);
+          });
+          return newQueue;
+        });
+      } else if (taggedTracks.length > 1) {
+        // Shuffle the new tracks before adding to empty queue
+        const shuffled = [...taggedTracks];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        setCurrentQueue(prev => [...prev, ...shuffled]);
+      } else {
+        // Single track, just append
+        setCurrentQueue(prev => [...prev, ...taggedTracks]);
+      }
+    } else {
+      // Normal append to end
+      setCurrentQueue(prev => [...prev, ...taggedTracks]);
+    }
     // Trigger queue animation
     setQueueAnimating(true);
     setTimeout(() => setQueueAnimating(false), 600);
-    console.log(`➕ Added ${tracksArray.length} track(s) to queue`);
+    console.log(`➕ Added ${tracksArray.length} track(s) to queue${shuffleMode ? ' (shuffled)' : ''}`);
 
     // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
@@ -23744,7 +23879,7 @@ React.createElement('div', {
                 },
                   // Start Collection Station button (pink, matching Artist page)
                   React.createElement('button', {
-                    onClick: () => console.log('Start Collection Station - placeholder'),
+                    onClick: handleStartCollectionStation,
                     className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
                     style: {
                       backgroundColor: '#E91E63',
@@ -23801,7 +23936,7 @@ React.createElement('div', {
                 ),
                 // Right: Start Collection Station button
                 React.createElement('button', {
-                  onClick: () => console.log('Start Collection Station - placeholder'),
+                  onClick: handleStartCollectionStation,
                   className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
                   style: {
                     backgroundColor: '#E91E63'
@@ -29401,16 +29536,31 @@ React.createElement('div', {
               currentTrack ? formatTime(currentTrack.duration) : '0:00'
             )
           ),
-          // Shuffle button (placeholder)
-          React.createElement('button', {
-            disabled: true,
-            className: 'p-2 rounded text-gray-600 cursor-not-allowed',
-            title: 'Shuffle (coming soon)'
-          },
-            React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 18 18', fill: 'currentColor' },
-              React.createElement('path', { d: 'M17.5,1.5l-8.6,7l-8.4-7v14.9l8.3-6.9l8.8,7.1V1.5z M1.5,14.2V3.6l6.4,5.3L1.5,14.2z M16.5,14.4L9.8,9l6.7-5.4V14.4z' })
-            )
-          ),
+          // Shuffle button (disabled in spinoff/listen-along modes)
+          (() => {
+            const shuffleDisabled = spinoffMode || listenAlongFriend;
+            const tooltipContent = shuffleDisabled
+              ? (spinoffMode ? 'Shuffle unavailable in Spinoff mode' : 'Shuffle unavailable while listening along')
+              : (shuffleMode ? 'Shuffle on (click to restore order)' : 'Shuffle queue');
+            return React.createElement(Tooltip, {
+              content: tooltipContent,
+              position: 'top',
+              variant: 'dark'
+            },
+              React.createElement('button', {
+                onClick: shuffleDisabled ? undefined : toggleShuffle,
+                disabled: shuffleDisabled,
+                className: `p-2 rounded transition-colors ${
+                  shuffleDisabled ? 'text-gray-600 cursor-not-allowed' :
+                  shuffleMode ? 'text-purple-400 hover:text-purple-300' : 'text-gray-400 hover:text-white'
+                }`
+              },
+                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
+                  React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
+                )
+              )
+            );
+          })(),
           // Repeat button (placeholder) - disabled for now
           // React.createElement('button', {
           //   disabled: true,
@@ -34552,7 +34702,23 @@ React.createElement('div', {
               color: '#9ca3af',
               marginLeft: '8px'
             }
-          }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`)
+          }, `${currentQueue.length} track${currentQueue.length !== 1 ? 's' : ''}`),
+          // Shuffle indicator
+          shuffleMode && React.createElement('span', {
+            style: {
+              fontSize: '10px',
+              color: '#a78bfa',
+              marginLeft: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }
+          },
+            React.createElement('svg', { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'currentColor' },
+              React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
+            ),
+            'shuffled'
+          )
         ),
         React.createElement('div', {
           className: 'flex items-center gap-2'
@@ -34562,6 +34728,12 @@ React.createElement('div', {
             onClick: (e) => { e.stopPropagation(); handleSaveQueueAsPlaylist(); },
             className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
           }, 'SAVE'),
+          // Unshuffle button - shows when shuffle is active
+          shuffleMode && originalQueueRef.current && React.createElement('button', {
+            onClick: (e) => { e.stopPropagation(); restoreOriginalOrder(); },
+            className: 'px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-500/50 rounded hover:bg-purple-500/10 transition-colors',
+            title: 'Restore original queue order'
+          }, 'UNSHUFFLE'),
           // Clear button
           currentQueue.length > 0 && React.createElement('button', {
             onClick: (e) => { e.stopPropagation(); clearQueue(); },
