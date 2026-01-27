@@ -328,6 +328,28 @@ class ResolverLoader {
 
     try {
       const config = configOverride || resolver.config || {};
+
+      // Debug: Try direct API call if Spotify to see the actual error
+      if (resolverId === 'spotify' && config.token) {
+        const playlistIdMatch = url.match(/playlist\/([a-zA-Z0-9]+)/);
+        if (playlistIdMatch) {
+          const playlistId = playlistIdMatch[1];
+          console.log(`🔍 Debug: Direct Spotify API call for playlist ${playlistId}`);
+          try {
+            const debugResponse = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?market=US`, {
+              headers: { 'Authorization': `Bearer ${config.token}` }
+            });
+            console.log(`🔍 Debug: Spotify API response status: ${debugResponse.status} ${debugResponse.statusText}`);
+            if (!debugResponse.ok) {
+              const errorBody = await debugResponse.text();
+              console.log(`🔍 Debug: Spotify API error body:`, errorBody);
+            }
+          } catch (debugErr) {
+            console.log(`🔍 Debug: Fetch error:`, debugErr);
+          }
+        }
+      }
+
       const playlist = await resolver.lookupPlaylist(url, config);
       if (playlist) {
         return { playlist, resolverId };
