@@ -6516,7 +6516,8 @@ const Parachord = () => {
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
-    const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
+    // Always use generated ID to match how isInCollection checks are done
+    const trackId = generateTrackId(track.artist, track.title, track.album);
 
     setCollectionData(prev => {
       const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
