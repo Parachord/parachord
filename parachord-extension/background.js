@@ -221,6 +221,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
     sendResponse({ received: true, sent: sent });
     return true;
+  } else if (message.type === 'sendScrapedAlbum') {
+    // Forward scraped album data to desktop (for album lookup, e.g., Pitchfork reviews)
+    console.log('[Parachord] Sending scraped album to desktop:', message.album?.artist, '-', message.album?.album);
+    const sent = sendToDesktop({
+      type: 'scrapedAlbum',
+      album: message.album,
+      source: message.source || 'scrape'
+    });
+    sendResponse({ received: true, sent: sent });
+    return true;
   }
 
   return true;

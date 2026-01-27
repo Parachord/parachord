@@ -249,6 +249,38 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
             console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
 
+            // Check if this is an album that needs lookup (e.g., Pitchfork album review without tracklist)
+            // In this case, the scraper returns a single track with isAlbum: true
+            const needsAlbumLookup = scrapeResult.type === 'album' &&
+                                     scrapeResult.tracks.length === 1 &&
+                                     scrapeResult.tracks[0].isAlbum === true;
+
+            if (needsAlbumLookup) {
+              console.log('[Popup] Album needs tracklist lookup:', scrapeResult.artist, '-', scrapeResult.album);
+              sendUrlBtnText.textContent = 'Looking up album...';
+
+              // Send album info for MusicBrainz lookup
+              const response = await chrome.runtime.sendMessage({
+                type: 'sendScrapedAlbum',
+                album: {
+                  artist: scrapeResult.artist,
+                  album: scrapeResult.album,
+                  score: scrapeResult.score,
+                  url: scrapeResult.url
+                },
+                source: 'popup-album-scrape'
+              });
+
+              if (response && response.sent) {
+                sendUrlBtnText.textContent = 'Album sent!';
+                sendUrlBtn.style.background = '#22c55e';
+              } else {
+                sendUrlBtnText.textContent = 'Queued (WS disconnected)';
+                sendUrlBtn.style.background = '#f59e0b';
+              }
+              return;
+            }
+
             // Send scraped playlist to Parachord
             const response = await chrome.runtime.sendMessage({
               type: 'sendScrapedPlaylist',
