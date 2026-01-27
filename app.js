@@ -23815,8 +23815,10 @@ React.createElement('div', {
             style: {
               height: collectionHeaderCollapsed ? '80px' : '320px',
               flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
+              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              overflow: 'hidden',
+              willChange: 'height',
+              contain: 'layout style'
             }
           },
               // Gradient background
@@ -23957,7 +23959,7 @@ React.createElement('div', {
               }
             },
             className: 'flex-1 overflow-y-auto scrollable-content',
-            style: { minHeight: 0 },
+            style: { minHeight: 0, contain: 'strict' },
             onScroll: (e) => {
               const scrollTop = e.target.scrollTop;
               if (scrollTop > 50 && !collectionHeaderCollapsed) {
