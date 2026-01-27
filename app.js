@@ -3175,6 +3175,7 @@ const Parachord = () => {
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
+  const pollingGenerationRef = useRef(0); // Generation counter to invalidate stale polling callbacks
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
@@ -7445,10 +7446,13 @@ const Parachord = () => {
       clearInterval(pollingRecoveryRef.current);
       pollingRecoveryRef.current = null;
     }
+    // Increment generation to invalidate any stale polling callbacks
+    pollingGenerationRef.current++;
+    const thisGeneration = pollingGenerationRef.current;
 
     if (resolverId === 'spotify' && config.token) {
       const trackUri = track.spotifyUri || track.uri;
-      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval)...`);
+      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval, gen ${thisGeneration})...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
       console.log(`   Expected URI: ${trackUri}`);
       console.log(`   spotifyUri: ${track.spotifyUri}, uri: ${track.uri}`);
@@ -7467,6 +7471,11 @@ const Parachord = () => {
       let lastKnownDurationMs = 0; // Track the duration when we last had valid progress
 
       const pollInterval = setInterval(async () => {
+        // Check if this polling generation is still current (prevents stale callbacks)
+        if (thisGeneration !== pollingGenerationRef.current) {
+          console.log(`🚫 Stale poll callback (gen ${thisGeneration} vs current ${pollingGenerationRef.current}), ignoring`);
+          return;
+        }
         pollCount++; // Increment poll counter
         try {
           const response = await fetch('https://api.spotify.com/v1/me/player', {
@@ -18365,6 +18374,8 @@ useEffect(() => {
                         albumArt: friend.cachedRecentTrack.albumArt,
                         sources: cachedSources
                       };
+                      // Clear queue and play (like clicking any other track)
+                      setQueueWithContext([], { type: 'friend-track', name: `${friend.displayName}'s track` });
                       handlePlay(track);
                     },
                     onContextMenu: (e) => {
@@ -23813,8 +23824,10 @@ React.createElement('div', {
             style: {
               height: collectionHeaderCollapsed ? '80px' : '320px',
               flexShrink: 0,
-              transition: 'height 300ms ease-out',
-              overflow: 'hidden'
+              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              overflow: 'hidden',
+              willChange: 'height',
+              contain: 'layout style'
             }
           },
               // Gradient background
@@ -23955,7 +23968,7 @@ React.createElement('div', {
               }
             },
             className: 'flex-1 overflow-y-auto scrollable-content',
-            style: { minHeight: 0 },
+            style: { minHeight: 0, contain: 'strict' },
             onScroll: (e) => {
               const scrollTop = e.target.scrollTop;
               if (scrollTop > 50 && !collectionHeaderCollapsed) {
@@ -24328,7 +24341,32 @@ React.createElement('div', {
                     },
                     'data-track-id': track.id,
                     key: track.id || track.filePath || index,
-                    className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all no-drag group ${
+                    draggable: true,
+                    onDragStart: (e) => {
+                      setDraggingTrackForPlaylist(track);
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData('text/plain', JSON.stringify({
+                        type: 'track',
+                        track: {
+                          id: track.id,
+                          title: track.title,
+                          artist: track.artist,
+                          album: track.album,
+                          duration: track.duration,
+                          albumArt: track.albumArt,
+                          sources: track.sources || {}
+                        }
+                      }));
+                    },
+                    onDragEnd: () => {
+                      setDraggingTrackForPlaylist(null);
+                      setDropTargetPlaylistId(null);
+                      setDropTargetNewPlaylist(false);
+                      if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                        setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                      }
+                    },
+                    className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
                     }`,
                     style: {

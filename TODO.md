@@ -8,7 +8,7 @@
 ## 🎵 Playback & Queue Management
 
 ### High Priority
-- [ ] **Shuffle mode** - Randomize queue order
+- [x] **Shuffle mode** - Randomize queue order
 - [ ] **Repeat modes** - Repeat one, repeat all, no repeat
 - [ ] **Gapless playback** - No pause between tracks
 - [ ] **Crossfade** - Fade between tracks (configurable duration)
@@ -421,6 +421,23 @@
 - ✅ Release page card treatment - Matches artist page styling
 - ✅ Three-state pattern for artist image loading - Proper loading states
 - ✅ Browser extension Add to Friends - Add Last.fm/ListenBrainz friends from user profile pages
+
+### 2026-01-27 Completed
+- ✅ Shuffle mode - Randomize queue order with restore functionality
+- ✅ Collection Station shuffle - Shuffle entire collection from one button
+- ✅ Shuffle disabled in special modes - Auto-disable in spinoff and listen-along
+- ✅ YouTube playback fix - Prevent tracks from immediately auto-advancing
+- ✅ Queue drawer scrollbar styling - Consistent scrollbar appearance
+- ✅ Apple Music playlist scraper - Improved with JSON-LD extraction
+- ✅ First-run tutorial - Interactive setup experience for new users
+- ✅ Tutorial theme matching - Aligned with app's light cinematic theme
+- ✅ Browser extension SoundCloud support - Scrape tracks, playlists, artist pages
+- ✅ Browser extension Pitchfork scrapers - Album and track review extraction
+- ✅ Browser extension MusicBrainz lookup - Find MBIDs from Pitchfork reviews
+- ✅ Browser extension Bandcamp improvements - DOM scraping for tracks, albums, playlists
+- ✅ Parachord wordmark SVG - Updated to scalable vector component
+- ✅ Wikipedia logo SVG fix - Corrected logo rendering
+- ✅ Marketplace IPC handlers - Exposed in preload.js for plugin system
 
 ---
 
