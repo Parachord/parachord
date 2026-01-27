@@ -23038,7 +23038,7 @@ React.createElement('div', {
         },
           // PLAYLIST DETAILS sticky bar with breadcrumb (same as loaded state)
           React.createElement('div', {
-            className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200'
           },
             // Breadcrumb navigation: Playlists > Playlist Name
             React.createElement('div', {
@@ -23210,9 +23210,9 @@ React.createElement('div', {
             pointerEvents: 'auto'
           }
         },
-          // PLAYLIST DETAILS section header with breadcrumb and Edit buttons
+          // PLAYLIST DETAILS section header with breadcrumb and Edit buttons (sticky)
           React.createElement('div', {
-            className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
+            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200'
           },
             // Breadcrumb navigation: Playlists > Playlist Name
             React.createElement('div', {
