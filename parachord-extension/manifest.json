@@ -15,6 +15,7 @@
     "https://www.youtube.com/*",
     "https://youtube.com/*",
     "https://*.bandcamp.com/*",
+    "https://bandcamp.com/*",
     "https://open.spotify.com/*",
     "https://music.apple.com/*"
   ],
@@ -35,7 +36,8 @@
         "https://www.youtube.com/watch*",
         "https://youtube.com/watch*",
         "https://*.bandcamp.com/track/*",
-        "https://*.bandcamp.com/album/*"
+        "https://*.bandcamp.com/album/*",
+        "https://bandcamp.com/*/playlist/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

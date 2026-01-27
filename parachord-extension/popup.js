@@ -44,10 +44,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'youtube', type: 'unknown' };
       }
 
-      // Bandcamp
+      // Bandcamp (artist subdomains)
       if (hostname.endsWith('.bandcamp.com')) {
         if (pathname.startsWith('/track/')) return { service: 'bandcamp', type: 'track' };
         if (pathname.startsWith('/album/')) return { service: 'bandcamp', type: 'album' };
+        return { service: 'bandcamp', type: 'unknown' };
+      }
+
+      // Bandcamp user playlists (bandcamp.com/username/playlist/id)
+      if (hostname === 'bandcamp.com') {
+        if (pathname.includes('/playlist/')) return { service: 'bandcamp', type: 'playlist' };
         return { service: 'bandcamp', type: 'unknown' };
       }
 
@@ -153,9 +159,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const pageInfo = detectPageType(tab.url);
 
-      // For Spotify/Apple Music playlists, scrape the page to avoid API restrictions
+      // For Spotify/Apple Music playlists and Bandcamp, scrape the page
       const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
-                           (pageInfo.service === 'apple' && pageInfo.type === 'playlist');
+                           (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
+                           (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type));
 
       if (shouldScrape) {
         console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);

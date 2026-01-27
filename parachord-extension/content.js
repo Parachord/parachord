@@ -324,4 +324,155 @@
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Scrape Bandcamp tracks from the page DOM
+  function scrapeBandcampTracks() {
+    const tracks = [];
+    const pathname = window.location.pathname;
+
+    // Determine page type
+    const isTrackPage = pathname.includes('/track/');
+    const isAlbumPage = pathname.includes('/album/');
+    const isPlaylistPage = pathname.includes('/playlist/');
+
+    // Get collection name
+    let collectionName = '';
+    if (isAlbumPage || isPlaylistPage) {
+      const titleEl = document.querySelector('#name-section h2.trackTitle') ||
+                      document.querySelector('.playlist-title') ||
+                      document.querySelector('h1') ||
+                      document.querySelector('#name-section .title');
+      if (titleEl) {
+        collectionName = titleEl.textContent.trim();
+      }
+    }
+
+    // Get artist name (used as fallback)
+    let pageArtist = '';
+    const artistEl = document.querySelector('#name-section h3 span a') ||
+                     document.querySelector('#band-name-location .title') ||
+                     document.querySelector('span[itemprop="byArtist"] a');
+    if (artistEl) {
+      pageArtist = artistEl.textContent.trim();
+    }
+
+    if (isTrackPage) {
+      // Single track page
+      const trackTitle = document.querySelector('#name-section h2.trackTitle')?.textContent?.trim() ||
+                        document.querySelector('h2.trackTitle')?.textContent?.trim();
+      const trackArtist = document.querySelector('#name-section h3 span a')?.textContent?.trim() ||
+                         document.querySelector('span[itemprop="byArtist"] a')?.textContent?.trim();
+      const albumName = document.querySelector('#name-section h3.albumTitle span a')?.textContent?.trim() || '';
+      const durationEl = document.querySelector('.time_total');
+      let duration = 0;
+      if (durationEl) {
+        const match = durationEl.textContent.trim().match(/(\d+):(\d+)/);
+        if (match) {
+          duration = parseInt(match[1]) * 60 + parseInt(match[2]);
+        }
+      }
+
+      if (trackTitle && trackArtist) {
+        tracks.push({
+          title: trackTitle,
+          artist: trackArtist,
+          album: albumName,
+          duration: duration,
+          position: 1
+        });
+      }
+    } else if (isAlbumPage) {
+      // Album page - get all tracks from the track table
+      const trackRows = document.querySelectorAll('#track_table .track_row_view') ||
+                       document.querySelectorAll('.track_list .track_row_view') ||
+                       document.querySelectorAll('table.track_list tr.track_row_view');
+
+      trackRows.forEach((row, index) => {
+        try {
+          const titleEl = row.querySelector('.track-title') ||
+                         row.querySelector('.title-col .title') ||
+                         row.querySelector('span[itemprop="name"]');
+          const durationEl = row.querySelector('.time') ||
+                            row.querySelector('.track_time');
+
+          if (titleEl) {
+            const trackName = titleEl.textContent.trim();
+            let duration = 0;
+            if (durationEl) {
+              const match = durationEl.textContent.trim().match(/(\d+):(\d+)/);
+              if (match) {
+                duration = parseInt(match[1]) * 60 + parseInt(match[2]);
+              }
+            }
+
+            if (trackName) {
+              tracks.push({
+                title: trackName,
+                artist: pageArtist,
+                album: collectionName,
+                duration: duration,
+                position: index + 1
+              });
+            }
+          }
+        } catch (e) {
+          console.error('[Parachord] Error scraping Bandcamp track row:', e);
+        }
+      });
+    } else if (isPlaylistPage) {
+      // User playlist page (bandcamp.com/username/playlist/id)
+      const playlistItems = document.querySelectorAll('.playlist-track') ||
+                           document.querySelectorAll('.collection-item-container') ||
+                           document.querySelectorAll('[class*="playlist"] [class*="track"]');
+
+      playlistItems.forEach((item, index) => {
+        try {
+          const titleEl = item.querySelector('.playlist-track-title') ||
+                         item.querySelector('.collection-item-title') ||
+                         item.querySelector('[class*="title"]');
+          const artistEl = item.querySelector('.playlist-track-artist') ||
+                          item.querySelector('.collection-item-artist') ||
+                          item.querySelector('[class*="artist"]');
+
+          if (titleEl) {
+            const trackName = titleEl.textContent.trim();
+            const trackArtist = artistEl ? artistEl.textContent.trim() : '';
+
+            if (trackName && trackArtist) {
+              tracks.push({
+                title: trackName,
+                artist: trackArtist,
+                album: '',
+                duration: 0,
+                position: index + 1
+              });
+            }
+          }
+        } catch (e) {
+          console.error('[Parachord] Error scraping Bandcamp playlist item:', e);
+        }
+      });
+    }
+
+    console.log(`[Parachord] Scraped ${tracks.length} tracks from Bandcamp`);
+
+    return {
+      name: collectionName || (isTrackPage ? tracks[0]?.title : ''),
+      tracks: tracks,
+      url: window.location.href,
+      scrapedAt: new Date().toISOString()
+    };
+  }
+
+  // Listen for scrape requests from popup/background (Bandcamp only)
+  if (site === 'bandcamp') {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === 'scrapePlaylist') {
+        console.log('[Parachord] Received scrape request for Bandcamp');
+        const result = scrapeBandcampTracks();
+        sendResponse(result);
+        return true;
+      }
+    });
+  }
 })();
