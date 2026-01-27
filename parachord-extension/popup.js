@@ -73,6 +73,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'listenbrainz', type: 'unknown' };
       }
 
+      // Pitchfork reviews
+      if (hostname === 'pitchfork.com') {
+        if (pathname.startsWith('/reviews/albums/')) return { service: 'pitchfork', type: 'album' };
+        if (pathname.startsWith('/reviews/tracks/')) return { service: 'pitchfork', type: 'track' };
+        return { service: 'pitchfork', type: 'unknown' };
+      }
+
       return { service: null, type: null };
     } catch (e) {
       return { service: null, type: null };
@@ -206,10 +213,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // For Spotify/Apple Music playlists and Bandcamp, scrape the page
+      // For Spotify/Apple Music playlists, Bandcamp, and Pitchfork reviews, scrape the page
       const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
                            (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
-                           (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type));
+                           (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type)) ||
+                           (pageInfo.service === 'pitchfork' && ['track', 'album'].includes(pageInfo.type));
 
       if (shouldScrape) {
         console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);
