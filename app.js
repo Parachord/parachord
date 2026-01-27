@@ -21128,8 +21128,10 @@ useEffect(() => {
                 style: {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                }
+                  textTransform: 'uppercase',
+                  cursor: bioPreview ? 'help' : 'default'
+                },
+                title: bioPreview || undefined
               }, currentArtist.name);
 
               return bioPreview
