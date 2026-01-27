@@ -10131,16 +10131,6 @@ const Parachord = () => {
       setLoadingArtist(false);
       navigateTo('artist');
 
-      // Pre-fetch artist bio for tooltip (even when using cached artist data)
-      if (artistBio === null && cachedData.artist.mbid) {
-        (async () => {
-          console.log('🎤 Pre-fetching bio for tooltip (cached artist):', cachedData.artist.name);
-          const bioData = await getArtistBio(cachedData.artist.name, cachedData.artist.mbid);
-          console.log('🎤 Bio pre-fetch result:', bioData ? 'Got bio' : 'No bio');
-          setArtistBio(bioData === null ? false : bioData);
-        })();
-      }
-
       // Queue album art fetches for releases without cached art (viewport-prioritized)
       const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
       albumArtFetchId.current++; // Cancel any previous fetch session
@@ -10271,14 +10261,6 @@ const Parachord = () => {
           setArtistImage(discogsImage);
           setArtistImagePosition('center 25%');
         }
-      })();
-
-      // Pre-fetch artist bio early (non-blocking) for tooltip on artist name
-      (async () => {
-        console.log('🎤 Pre-fetching bio for tooltip:', artist.name);
-        const bioData = await getArtistBio(artist.name, artist.id);
-        console.log('🎤 Bio pre-fetch result:', bioData ? 'Got bio' : 'No bio', bioData?.bio?.substring(0, 50));
-        setArtistBio(bioData === null ? false : bioData);
       })();
 
       // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
@@ -21128,31 +21110,14 @@ useEffect(() => {
               transition: 'opacity 300ms ease-out'
             }
           },
-            // Artist name with bio tooltip
-            (() => {
-              // Extract first 2 lines of bio for tooltip (approximately 200 chars)
-              const bioPreview = artistBio && artistBio.bio
-                ? artistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (artistBio.bio.length > 200 ? '...' : '')
-                : null;
-
-              const nameElement = React.createElement('h1', {
-                className: 'text-5xl font-light text-white',
-                style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.3em',
-                  textTransform: 'uppercase'
-                },
-                title: bioPreview || undefined
-              }, currentArtist.name);
-
-              // Always show tooltip - use bio if available, otherwise show test message
-              return React.createElement(Tooltip, {
-                content: bioPreview || 'Bio loading...',
-                position: 'top',
-                variant: 'dark',
-                className: 'tooltip-bio'
-              }, nameElement);
-            })(),
+            React.createElement('h1', {
+              className: 'text-5xl font-light text-white',
+              style: {
+                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase'
+              }
+            }, currentArtist.name),
             // Navigation tabs (centered)
             React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',

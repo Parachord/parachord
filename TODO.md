@@ -61,6 +61,7 @@
 ## 🎤 Artist & Album Pages
 
 ### Artist Pages
+- [ ] **Bio tooltip on artist name** - Show bio preview when hovering artist name in header (tooltip not rendering due to overflow:hidden on header container)
 - [ ] **Preview on hover** - 30-second previews
 - [ ] **Better single matching** - Smarter search for singles
 - [ ] **More metadata** - Record labels, genres, bio
