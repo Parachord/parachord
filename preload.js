@@ -67,7 +67,9 @@ contextBridge.exposeInMainWorld('electron', {
       });
     },
     // Marketplace operations
-    syncMarketplace: () => ipcRenderer.invoke('plugins-sync-marketplace')
+    syncMarketplace: () => ipcRenderer.invoke('plugins-sync-marketplace'),
+    getMarketplaceManifest: () => ipcRenderer.invoke('marketplace-get-manifest'),
+    downloadFromMarketplace: (url) => ipcRenderer.invoke('marketplace-download-resolver', url)
   },
 
   // Playlist operations
