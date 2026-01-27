@@ -479,11 +479,23 @@
       });
     }
 
-    console.log(`[Parachord] Scraped ${tracks.length} tracks from Bandcamp`);
+    // Deduplicate tracks by title+artist
+    const seen = new Set();
+    const uniqueTracks = tracks.filter(track => {
+      const key = `${track.title.toLowerCase()}|${track.artist.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Re-number positions after deduplication
+    uniqueTracks.forEach((track, i) => track.position = i + 1);
+
+    console.log(`[Parachord] Scraped ${uniqueTracks.length} unique tracks from Bandcamp (${tracks.length} before dedup)`);
 
     return {
-      name: collectionName || (isTrackPage ? tracks[0]?.title : ''),
-      tracks: tracks,
+      name: collectionName || (isTrackPage ? uniqueTracks[0]?.title : ''),
+      tracks: uniqueTracks,
       url: window.location.href,
       scrapedAt: new Date().toISOString()
     };
