@@ -891,6 +891,38 @@ const SERVICE_LOGOS = {
   )
 };
 
+// Parachord wordmark logo component
+const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createElement('svg', {
+  viewBox: '0 0 1046 273',
+  style: { height: height + 'px', width: 'auto' },
+  fill: 'none',
+  xmlns: 'http://www.w3.org/2000/svg'
+},
+  React.createElement('path', { d: 'M764.5 102.5C788.725 102.5 809.5 123.347 809.5 150.5C809.5 177.654 788.725 198.5 764.5 198.5C740.275 198.5 719.5 177.654 719.5 150.5C719.5 123.347 740.275 102.5 764.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M237.5 102.5C261.725 102.5 282.5 123.347 282.5 150.5C282.5 177.654 261.725 198.5 237.5 198.5C213.275 198.5 192.5 177.654 192.5 150.5C192.5 123.347 213.275 102.5 237.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('rect', { x: 271, y: 89.0005, width: 25, height: 123, fill: fill }),
+  React.createElement('path', { d: 'M424.5 102.5C448.725 102.5 469.5 123.347 469.5 150.5C469.5 177.654 448.725 198.5 424.5 198.5C400.275 198.5 379.5 177.654 379.5 150.5C379.5 123.347 400.275 102.5 424.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('rect', { x: 458, y: 89.0005, width: 25, height: 123, fill: fill }),
+  React.createElement('rect', { x: 307, y: 152, width: 27, height: 60, fill: fill }),
+  React.createElement('path', { d: 'M307 152C307 117.207 333.191 89.0005 365.5 89.0005C365.667 89.0005 365.833 89.0029 366 89.0044L366 116.008C365.833 116.005 365.667 116 365.5 116C350.195 116 334.499 129.759 334.012 150.984L334 152L307 152Z', fill: fill }),
+  React.createElement('rect', { x: 828, y: 152, width: 27, height: 60, fill: fill }),
+  React.createElement('path', { d: 'M828 152C828 117.207 854.191 89.0005 886.5 89.0005C886.667 89.0005 886.833 89.0029 887 89.0044L887 116.008C886.833 116.005 886.667 116 886.5 116C871.195 116 855.499 129.759 855.012 150.984L855 152L828 152Z', fill: fill }),
+  React.createElement('rect', { x: 676, y: 152, width: 25, height: 60, fill: fill }),
+  React.createElement('rect', { x: 597, y: 45.8784, width: 25, height: 165, fill: fill }),
+  React.createElement('path', { d: 'M622 38.0005V50.5005L597 45.8784L622 38.0005Z', fill: fill }),
+  React.createElement('path', { d: 'M648.702 96.0005C675.533 96.0005 698.054 122.271 700.898 156H675.816C673.171 131.764 657.459 121 648.702 121C640.176 121 624.661 131.504 622.075 156H597C599.787 122.271 621.871 96.0005 648.702 96.0005Z', fill: fill }),
+  React.createElement('path', { d: 'M547.5 92.0005C565.823 92.0005 582.177 100.857 592.903 114.719L569.128 128.445C563.289 122.472 555.491 119 547.5 119C531.36 119 516 133.158 516 153.5C516 173.843 531.36 188 547.5 188C554.915 188 562.163 185.011 567.835 179.808L591.812 193.651C581.084 206.724 565.212 215 547.5 215C515.191 215 489 187.466 489 153.5C489 119.535 515.191 92.0005 547.5 92.0005Z', fill: fill }),
+  React.createElement('rect', { x: 1004.01, y: 151.398, width: 25, height: 100.266, transform: 'rotate(-180 1004.01 151.398)', fill: fill }),
+  React.createElement('path', { d: 'M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86674 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z', fill: '#E12949', stroke: 'white', strokeWidth: 0.2 }),
+  React.createElement('path', { d: 'M945.5 102.5C969.725 102.5 990.5 123.347 990.5 150.5C990.5 177.654 969.725 198.5 945.5 198.5C921.275 198.5 900.5 177.654 900.5 150.5C900.5 123.347 921.275 102.5 945.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M945.5 102.5C969.725 102.5 990.5 123.347 990.5 150.5C990.5 177.654 969.725 198.5 945.5 198.5C921.275 198.5 900.5 177.654 900.5 150.5C900.5 123.347 921.275 102.5 945.5 102.5Z', stroke: fill, strokeOpacity: 0.2, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M59 260.805L59 242.676M59 203.856L59 224.803', stroke: 'white', strokeWidth: 0.2, strokeLinecap: 'round' }),
+  React.createElement('path', { d: 'M7.29194 100.001C7.32449 100.03 7.16169 101.377 6.90132 102.986C6.08765 108.341 5.46898 114.633 5.14351 121.363C4.16715 140.559 7.45444 156.098 14.3544 165.316C18.3253 170.612 26.072 175.44 40.8486 181.878C49.0502 185.448 52.3379 187.262 56.2109 190.334L58.8476 192.412V186.211H63.4042C63.4041 257.673 63.3388 265.772 62.8837 266.359C62.5258 266.827 62.0696 267.002 61.1259 267.002C59.0103 267.002 58.8476 266.534 58.8476 260.477V255.238L57.1875 252.722C54.0629 247.923 51.0032 244.411 46.5117 240.373C41.6947 236.042 38.3425 233.818 32.6142 231.126C26.3002 228.112 22.6871 225.742 18.5537 221.821C8.39888 212.194 2.14945 198.528 0.261671 181.761C-0.226521 177.518 0.0335781 163.501 0.684523 158.994C1.0425 156.39 1.07508 155.512 0.684523 153.288C0.0336106 149.542 -0.226209 135.731 0.229445 130.902C1.01061 122.738 3.06059 113.081 5.8271 104.215C6.57471 101.848 7.22547 99.9476 7.29194 100.001ZM5.66499 172.338C6.28338 178.015 7.8456 184.628 9.53804 188.871C12.4673 196.187 16.0803 200.635 22.3945 204.673C27.8298 208.184 31.7356 210.145 44.2011 215.588C46.6096 216.641 49.7671 218.222 51.1992 219.07C52.6312 219.89 54.9417 221.587 56.3085 222.757L58.8476 224.952V223.986C58.8475 223.372 58.2943 222.143 57.3505 220.651C51.492 211.433 42.7362 203.649 33.1347 199.113C30.9543 198.089 28.1881 196.656 26.9511 195.924C18.4889 190.891 11.8166 183.341 6.5439 172.777L5.43648 170.582L5.66499 172.338Z', fill: '#767575' }),
+  React.createElement('path', { d: 'M115.5 102.5C139.725 102.5 160.5 123.346 160.5 150.5C160.5 177.654 139.725 198.5 115.5 198.5C91.2754 198.5 70.5 177.654 70.5 150.5C70.5 123.346 91.2754 102.5 115.5 102.5Z', stroke: fill, strokeWidth: 27 }),
+  React.createElement('path', { d: 'M82 256.261L57 272.5L57 255.66L57 238.819L82 256.261Z', fill: fill }),
+  React.createElement('rect', { x: 57, y: 148, width: 25, height: 108.261, fill: fill })
+);
+
 // VirtualizedQueueList component - Renders queue tracks efficiently using windowing
 // Only renders visible tracks + overscan buffer, dramatically reducing DOM nodes for large queues
 const VirtualizedQueueList = React.memo(({
@@ -28553,11 +28585,9 @@ React.createElement('div', {
                 }
               },
                 // Parachord Logo
-                React.createElement('img', {
-                  src: './assets/logo-wordmark.png',
-                  alt: 'Parachord',
-                  style: { height: '56px', marginBottom: '20px', display: 'inline-block' }
-                }),
+                React.createElement('div', { style: { marginBottom: '20px' } },
+                  React.createElement(ParachordWordmark, { fill: '#333', height: 56 })
+                ),
 
                 // Version
                 React.createElement('p', {
@@ -33952,33 +33982,12 @@ React.createElement('div', {
               textAlign: 'center'
             }
           },
+            // Parachord wordmark logo
             React.createElement('div', {
-              style: {
-                width: '72px',
-                height: '72px',
-                margin: '0 auto 20px',
-                borderRadius: '18px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
-              }
+              style: { marginBottom: '16px' }
             },
-              React.createElement('svg', {
-                width: 40,
-                height: 40,
-                viewBox: '0 0 24 24',
-                fill: 'white'
-              },
-                React.createElement('path', {
-                  d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'
-                })
-              )
+              React.createElement(ParachordWordmark, { fill: 'white', height: 48 })
             ),
-            React.createElement('h1', {
-              style: { fontSize: '28px', fontWeight: '700', color: '#ffffff', marginBottom: '8px' }
-            }, 'Welcome to Parachord'),
             React.createElement('p', {
               style: { fontSize: '16px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5' }
             }, 'Your music is everywhere, but you shouldn\'t have to be.')
