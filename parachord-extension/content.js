@@ -459,35 +459,59 @@
                           item.querySelector('.collection-item-artist') ||
                           item.querySelector('[class*="artist"]');
 
-          // Try to find Bandcamp track URL - be careful not to use closest() as it might
-          // find a parent that wraps multiple tracks
+          // Try to find Bandcamp track URL - be careful to only use URLs that match the track
           let trackUrl = '';
+          const trackTitle = titleEl?.textContent?.trim()?.toLowerCase() || '';
+
+          // Helper to check if a URL likely matches this track
+          const urlMatchesTrack = (url) => {
+            if (!url || !trackTitle) return false;
+            try {
+              const urlPath = new URL(url).pathname.toLowerCase();
+              // Extract slug from URL path (e.g., /track/browsing-similar-products -> browsing-similar-products)
+              const slug = urlPath.split('/track/')[1]?.replace(/-/g, ' ') || '';
+              // Check if title words appear in slug or vice versa
+              const titleWords = trackTitle.split(/\s+/).filter(w => w.length > 2);
+              const slugWords = slug.split(/\s+/).filter(w => w.length > 2);
+              const matchCount = titleWords.filter(w => slug.includes(w)).length;
+              // Require at least 2 matching words or 50% of title words
+              return matchCount >= 2 || matchCount >= titleWords.length * 0.5;
+            } catch (e) {
+              return false;
+            }
+          };
 
           // First, check if the item itself is a link
           if (item.tagName === 'A' && item.href && item.href.includes('/track/')) {
-            trackUrl = item.href;
+            if (urlMatchesTrack(item.href)) {
+              trackUrl = item.href;
+            }
           }
 
-          // Then check for direct link children
+          // Then check for direct link children - find all links and check which one matches
           if (!trackUrl) {
-            const linkEl = item.querySelector('a[href*="bandcamp.com/track/"]') ||
-                          item.querySelector('a[href*="/track/"]');
-            if (linkEl && linkEl.href && linkEl.href.includes('/track/')) {
-              trackUrl = linkEl.href;
+            const allLinks = item.querySelectorAll('a[href*="/track/"]');
+            for (const linkEl of allLinks) {
+              if (linkEl.href && urlMatchesTrack(linkEl.href)) {
+                trackUrl = linkEl.href;
+                break;
+              }
             }
           }
 
           // Check for data-tralbum-url or similar data attributes
           if (!trackUrl) {
             const urlAttr = item.dataset?.url || item.dataset?.href || item.dataset?.trackUrl;
-            if (urlAttr && urlAttr.includes('/track/')) {
+            if (urlAttr && urlAttr.includes('/track/') && urlMatchesTrack(urlAttr.startsWith('http') ? urlAttr : 'https://' + urlAttr)) {
               trackUrl = urlAttr.startsWith('http') ? urlAttr : 'https://' + urlAttr;
             }
           }
 
           // Check parent's direct link (but only if parent is a direct wrapper, not a container of many tracks)
           if (!trackUrl && item.parentElement?.tagName === 'A' && item.parentElement.href?.includes('/track/')) {
-            trackUrl = item.parentElement.href;
+            if (urlMatchesTrack(item.parentElement.href)) {
+              trackUrl = item.parentElement.href;
+            }
           }
 
           // Clean up URL - remove query params like ?from=playlist
@@ -500,7 +524,7 @@
             }
           }
 
-          console.log(`[Parachord] Track ${index}: "${titleEl?.textContent?.trim()}" -> URL: ${trackUrl || '(none)'}`);
+          console.log(`[Parachord] Track ${index}: "${titleEl?.textContent?.trim()}" -> URL: ${trackUrl || '(none)'} (title match: ${trackUrl ? 'yes' : 'n/a'})`);
 
           if (titleEl) {
             const trackName = titleEl.textContent.trim();
