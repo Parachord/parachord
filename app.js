@@ -24330,7 +24330,32 @@ React.createElement('div', {
                     },
                     'data-track-id': track.id,
                     key: track.id || track.filePath || index,
-                    className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all no-drag group ${
+                    draggable: true,
+                    onDragStart: (e) => {
+                      setDraggingTrackForPlaylist(track);
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData('text/plain', JSON.stringify({
+                        type: 'track',
+                        track: {
+                          id: track.id,
+                          title: track.title,
+                          artist: track.artist,
+                          album: track.album,
+                          duration: track.duration,
+                          albumArt: track.albumArt,
+                          sources: track.sources || {}
+                        }
+                      }));
+                    },
+                    onDragEnd: () => {
+                      setDraggingTrackForPlaylist(null);
+                      setDropTargetPlaylistId(null);
+                      setDropTargetNewPlaylist(false);
+                      if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                        setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                      }
+                    },
+                    className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
                     }`,
                     style: {
