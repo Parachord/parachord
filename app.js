@@ -5380,6 +5380,13 @@ const Parachord = () => {
     }
   }, [loadedResolvers, cacheLoaded, resolverOrder]);
 
+  // Load watch folders on initial app load (for needsConfiguration check)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.localFiles?.getWatchFolders) {
+      window.electron.localFiles.getWatchFolders().then(setWatchFolders);
+    }
+  }, [cacheLoaded]);
+
   // Listen for sync progress
   useEffect(() => {
     const unsubscribe = window.electron.sync.onProgress((progress) => {
