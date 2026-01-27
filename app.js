@@ -33960,64 +33960,88 @@ React.createElement('div', {
     // First-Run Tutorial Modal - Cinematic Light design
     firstRunTutorial.open && React.createElement('div', {
       className: 'fixed inset-0 z-50 flex items-center justify-center',
-      style: { backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(12px)' }
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' }
     },
       // Modal
       React.createElement('div', {
         className: 'relative w-full max-w-xl mx-4 overflow-hidden',
         style: {
           backgroundColor: '#ffffff',
-          borderRadius: '20px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)'
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
         },
         onClick: (e) => e.stopPropagation()
       },
         // Welcome Step
         firstRunTutorial.step === 'welcome' && React.createElement(React.Fragment, null,
-          // Header with gradient
+          // Accent bar
           React.createElement('div', {
             style: {
-              padding: '40px 32px 32px',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              textAlign: 'center'
+              height: '4px',
+              background: 'linear-gradient(90deg, #7c3aed 0%, #a855f7 100%)'
+            }
+          }),
+          // Header
+          React.createElement('div', {
+            style: {
+              padding: '32px 32px 24px',
+              textAlign: 'center',
+              borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
             // Parachord wordmark logo
             React.createElement('div', {
-              style: { marginBottom: '16px' }
+              style: { marginBottom: '12px' }
             },
-              React.createElement(ParachordWordmark, { fill: 'white', height: 48 })
+              React.createElement(ParachordWordmark, { fill: '#1f2937', height: 44 })
             ),
             React.createElement('p', {
-              style: { fontSize: '16px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5' }
+              style: { fontSize: '15px', color: '#6b7280', lineHeight: '1.5' }
             }, 'Your music is everywhere, but you shouldn\'t have to be.')
           ),
           // Content
           React.createElement('div', {
-            style: { padding: '28px 32px' }
+            style: { padding: '24px 32px' }
           },
             React.createElement('p', {
-              style: { fontSize: '15px', color: '#4b5563', lineHeight: '1.7', marginBottom: '20px' }
+              style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.7', marginBottom: '20px' }
             }, 'Parachord brings all your music together in one place. Search across multiple services, build unified playlists, and enjoy your music from wherever it lives.'),
-            // Feature highlights
+            // Feature highlights with SVG icons
             React.createElement('div', {
-              style: { display: 'flex', flexDirection: 'column', gap: '14px' }
+              style: { display: 'flex', flexDirection: 'column', gap: '12px' }
             },
               [
-                { icon: '🎵', text: 'Play from Spotify, YouTube, Bandcamp, and more' },
-                { icon: '🔍', text: 'Search all your sources at once' },
-                { icon: '📋', text: 'Create playlists that span services' },
-                { icon: '👥', text: 'Connect with friends on Last.fm & ListenBrainz' }
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M9 18V5l12-2v13' }),
+                  React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+                  React.createElement('circle', { cx: 18, cy: 16, r: 3 })
+                ), text: 'Play from Spotify, YouTube, Bandcamp, and more' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
+                  React.createElement('path', { d: 'M21 21l-4.35-4.35' })
+                ), text: 'Search all your sources at once' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+                  React.createElement('path', { d: 'M14 2v6h6' }),
+                  React.createElement('line', { x1: 16, y1: 13, x2: 8, y2: 13 }),
+                  React.createElement('line', { x1: 16, y1: 17, x2: 8, y2: 17 })
+                ), text: 'Create playlists that span services' },
+                { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                  React.createElement('path', { d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' }),
+                  React.createElement('circle', { cx: 9, cy: 7, r: 4 }),
+                  React.createElement('path', { d: 'M23 21v-2a4 4 0 0 0-3-3.87' }),
+                  React.createElement('path', { d: 'M16 3.13a4 4 0 0 1 0 7.75' })
+                ), text: 'Connect with friends on Last.fm & ListenBrainz' }
               ].map((item, i) =>
                 React.createElement('div', {
                   key: i,
                   style: { display: 'flex', alignItems: 'center', gap: '12px' }
                 },
-                  React.createElement('span', {
-                    style: { fontSize: '20px' }
+                  React.createElement('div', {
+                    style: { width: '32px', height: '32px', borderRadius: '8px', backgroundColor: 'rgba(124, 58, 237, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
                   }, item.icon),
                   React.createElement('span', {
-                    style: { fontSize: '14px', color: '#374151' }
+                    style: { fontSize: '13px', color: '#374151' }
                   }, item.text)
                 )
               )
@@ -34026,7 +34050,7 @@ React.createElement('div', {
           // Footer
           React.createElement('div', {
             style: {
-              padding: '20px 32px 28px',
+              padding: '16px 32px 24px',
               borderTop: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -34040,31 +34064,32 @@ React.createElement('div', {
               },
               style: {
                 fontSize: '14px',
-                color: '#9ca3af',
+                fontWeight: '500',
+                color: '#6b7280',
                 backgroundColor: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '8px 12px'
+                padding: '10px 16px',
+                borderRadius: '10px'
               },
-              onMouseEnter: (e) => e.currentTarget.style.color = '#6b7280',
-              onMouseLeave: (e) => e.currentTarget.style.color = '#9ca3af'
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
+              onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             }, 'Skip tutorial'),
             React.createElement('button', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
               style: {
-                padding: '12px 28px',
-                fontSize: '15px',
-                fontWeight: '600',
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
                 color: '#ffffff',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundColor: '#7c3aed',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
-                transition: 'transform 150ms ease, box-shadow 150ms ease'
+                transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(102, 126, 234, 0.4)'; }
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
             }, 'Get Started')
           )
         ),
@@ -34089,14 +34114,14 @@ React.createElement('div', {
                     width: i === 0 ? '24px' : '8px',
                     height: '4px',
                     borderRadius: '2px',
-                    backgroundColor: i === 0 ? '#667eea' : 'rgba(0,0,0,0.1)',
+                    backgroundColor: i === 0 ? '#7c3aed' : 'rgba(0,0,0,0.1)',
                     transition: 'all 200ms ease'
                   }
                 })
               )
             ),
             React.createElement('h2', {
-              style: { fontSize: '22px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+              style: { fontSize: '18px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
             }, 'Choose Your Music Sources'),
             React.createElement('p', {
               style: { fontSize: '14px', color: '#6b7280' }
@@ -34118,18 +34143,18 @@ React.createElement('div', {
                 style: { display: 'flex', flexDirection: 'column', gap: '8px' }
               },
                 [
-                  { id: 'spotify', name: 'Spotify', icon: '♫', color: '#1DB954', desc: 'Premium required - needs login', requiresSetup: true, setupNote: 'Login' },
-                  { id: 'youtube', name: 'YouTube', icon: '🎥', color: '#FF0000', desc: 'Free, plays in browser', requiresSetup: false },
-                  { id: 'bandcamp', name: 'Bandcamp', icon: '🎸', color: '#629AA9', desc: 'Independent artists, opens in browser', requiresSetup: false },
-                  { id: 'qobuz', name: 'Qobuz', icon: '🎵', color: '#0E7EBF', desc: 'Hi-res audio, optional login for full tracks', requiresSetup: false, setupNote: 'Optional login' }
+                  { id: 'spotify', name: 'Spotify', color: '#1DB954', desc: 'Premium required - needs login', requiresSetup: true, setupNote: 'Login' },
+                  { id: 'youtube', name: 'YouTube', color: '#FF0000', desc: 'Free, plays in browser', requiresSetup: false },
+                  { id: 'bandcamp', name: 'Bandcamp', color: '#629AA9', desc: 'Independent artists, opens in browser', requiresSetup: false },
+                  { id: 'qobuz', name: 'Qobuz', color: '#0E7EBF', desc: 'Hi-res audio, optional login for full tracks', requiresSetup: false, setupNote: 'Optional login' }
                 ].map(source =>
                   React.createElement('label', {
                     key: source.id,
                     className: 'flex items-center gap-3 cursor-pointer transition-all',
                     style: {
-                      padding: '14px 16px',
+                      padding: '12px 14px',
                       backgroundColor: firstRunTutorial.selectedSources.includes(source.id) ? `${source.color}10` : 'rgba(0,0,0,0.02)',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       border: firstRunTutorial.selectedSources.includes(source.id) ? `2px solid ${source.color}40` : '2px solid transparent'
                     }
                   },
@@ -34142,25 +34167,33 @@ React.createElement('div', {
                           : firstRunTutorial.selectedSources.filter(s => s !== source.id);
                         setFirstRunTutorial(prev => ({ ...prev, selectedSources: newSources }));
                       },
-                      style: { width: '18px', height: '18px', accentColor: source.color, cursor: 'pointer' }
+                      style: { width: '16px', height: '16px', accentColor: source.color, cursor: 'pointer' }
                     }),
                     React.createElement('div', {
                       style: {
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '10px',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
                         backgroundColor: source.color,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '18px',
                         flexShrink: 0
                       }
-                    }, source.id === 'spotify'
-                      ? React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'white' },
-                          React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
-                        )
-                      : source.icon
+                    },
+                      // Service-specific SVG icons
+                      source.id === 'spotify' && React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'white' },
+                        React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                      ),
+                      source.id === 'youtube' && React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'white' },
+                        React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
+                      ),
+                      source.id === 'bandcamp' && React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'white' },
+                        React.createElement('path', { d: 'M0 18.75l7.437-13.5H24l-7.438 13.5H0z' })
+                      ),
+                      source.id === 'qobuz' && React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'white' },
+                        React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-3.5l6-4.5-6-4.5v9z' })
+                      )
                     ),
                     React.createElement('div', { style: { flex: 1 } },
                       React.createElement('div', {
@@ -34192,9 +34225,9 @@ React.createElement('div', {
               React.createElement('label', {
                 className: 'flex items-center gap-3 cursor-pointer transition-all',
                 style: {
-                  padding: '14px 16px',
+                  padding: '12px 14px',
                   backgroundColor: firstRunTutorial.selectedSources.includes('localfiles') ? 'rgba(99,102,241,0.1)' : 'rgba(0,0,0,0.02)',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   border: firstRunTutorial.selectedSources.includes('localfiles') ? '2px solid rgba(99,102,241,0.4)' : '2px solid transparent'
                 }
               },
@@ -34207,21 +34240,24 @@ React.createElement('div', {
                       : firstRunTutorial.selectedSources.filter(s => s !== 'localfiles');
                     setFirstRunTutorial(prev => ({ ...prev, selectedSources: newSources }));
                   },
-                  style: { width: '18px', height: '18px', accentColor: '#6366f1', cursor: 'pointer' }
+                  style: { width: '16px', height: '16px', accentColor: '#6366f1', cursor: 'pointer' }
                 }),
                 React.createElement('div', {
                   style: {
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '10px',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
                     backgroundColor: '#6366f1',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '18px',
                     flexShrink: 0
                   }
-                }, '📁'),
+                },
+                  React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'white', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                    React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' })
+                  )
+                ),
                 React.createElement('div', { style: { flex: 1 } },
                   React.createElement('div', {
                     style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' }
@@ -34270,7 +34306,7 @@ React.createElement('div', {
           // Footer
           React.createElement('div', {
             style: {
-              padding: '20px 32px 24px',
+              padding: '16px 32px 20px',
               borderTop: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -34281,16 +34317,18 @@ React.createElement('div', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'welcome' })),
               style: {
                 fontSize: '14px',
+                fontWeight: '500',
                 color: '#6b7280',
                 backgroundColor: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: '10px 16px',
+                borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
               },
-              onMouseEnter: (e) => e.currentTarget.style.color = '#374151',
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
               onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             },
               React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
@@ -34311,19 +34349,18 @@ React.createElement('div', {
                 }
               },
               style: {
-                padding: '12px 28px',
-                fontSize: '15px',
-                fontWeight: '600',
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
                 color: '#ffffff',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundColor: '#7c3aed',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
-                transition: 'transform 150ms ease, box-shadow 150ms ease'
+                transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(102, 126, 234, 0.4)'; }
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
             }, 'Continue')
           )
         ),
@@ -34348,14 +34385,14 @@ React.createElement('div', {
                     width: i <= 1 ? '24px' : '8px',
                     height: '4px',
                     borderRadius: '2px',
-                    backgroundColor: i <= 1 ? '#667eea' : 'rgba(0,0,0,0.1)',
+                    backgroundColor: i <= 1 ? '#7c3aed' : 'rgba(0,0,0,0.1)',
                     transition: 'all 200ms ease'
                   }
                 })
               )
             ),
             React.createElement('h2', {
-              style: { fontSize: '22px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+              style: { fontSize: '18px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
             }, 'Connect Your Music Profile'),
             React.createElement('p', {
               style: { fontSize: '14px', color: '#6b7280' }
@@ -34367,20 +34404,20 @@ React.createElement('div', {
             style: { padding: '20px 32px', maxHeight: '340px', overflowY: 'auto' }
           },
             React.createElement('div', {
-              style: { display: 'flex', flexDirection: 'column', gap: '10px' }
+              style: { display: 'flex', flexDirection: 'column', gap: '8px' }
             },
               [
-                { id: 'lastfm', name: 'Last.fm', icon: '🎧', color: '#D51007', desc: 'Scrobble tracks and get recommendations' },
-                { id: 'listenbrainz', name: 'ListenBrainz', icon: '🎵', color: '#353070', desc: 'Open-source listening history' },
-                { id: 'librefm', name: 'Libre.fm', icon: '🎵', color: '#4CAF50', desc: 'Free and open-source scrobbling' }
+                { id: 'lastfm', name: 'Last.fm', color: '#D51007', desc: 'Scrobble tracks and get recommendations' },
+                { id: 'listenbrainz', name: 'ListenBrainz', color: '#353070', desc: 'Open-source listening history' },
+                { id: 'librefm', name: 'Libre.fm', color: '#4CAF50', desc: 'Free and open-source scrobbling' }
               ].map(service =>
                 React.createElement('label', {
                   key: service.id,
                   className: 'flex items-center gap-3 cursor-pointer transition-all',
                   style: {
-                    padding: '14px 16px',
+                    padding: '12px 14px',
                     backgroundColor: firstRunTutorial.selectedScrobblers.includes(service.id) ? `${service.color}10` : 'rgba(0,0,0,0.02)',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     border: firstRunTutorial.selectedScrobblers.includes(service.id) ? `2px solid ${service.color}40` : '2px solid transparent'
                   }
                 },
@@ -34393,22 +34430,31 @@ React.createElement('div', {
                         : firstRunTutorial.selectedScrobblers.filter(s => s !== service.id);
                       setFirstRunTutorial(prev => ({ ...prev, selectedScrobblers: newScrobblers }));
                     },
-                    style: { width: '18px', height: '18px', accentColor: service.color, cursor: 'pointer' }
+                    style: { width: '16px', height: '16px', accentColor: service.color, cursor: 'pointer' }
                   }),
                   React.createElement('div', {
                     style: {
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '10px',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
                       backgroundColor: service.color,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '18px',
-                      flexShrink: 0,
-                      color: 'white'
+                      flexShrink: 0
                     }
-                  }, service.icon),
+                  },
+                    // Service-specific SVG icons
+                    service.id === 'lastfm' && React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'white' },
+                      React.createElement('path', { d: 'M10.584 17.21l-.88-2.392s-1.43 1.594-3.573 1.594c-1.897 0-3.244-1.649-3.244-4.288 0-3.382 1.704-4.591 3.381-4.591 2.42 0 3.189 1.567 3.849 3.574l.88 2.749c.88 2.666 2.529 4.81 7.285 4.81 3.409 0 5.718-1.044 5.718-3.793 0-2.227-1.265-3.381-3.63-3.931l-1.758-.385c-1.21-.275-1.567-.77-1.567-1.595 0-.934.742-1.484 1.952-1.484 1.32 0 2.034.495 2.144 1.677l2.749-.33c-.22-2.474-1.924-3.492-4.729-3.492-2.474 0-4.893.935-4.893 3.932 0 1.87.907 3.051 3.189 3.601l1.87.44c1.402.33 1.869.907 1.869 1.704 0 1.017-.99 1.43-2.86 1.43-2.776 0-3.932-1.457-4.59-3.464l-.907-2.75c-1.155-3.573-2.997-4.893-6.653-4.893C2.144 5.333 0 7.89 0 12.233c0 4.18 2.144 6.434 5.993 6.434 3.106 0 4.591-1.457 4.591-1.457z' })
+                    ),
+                    service.id === 'listenbrainz' && React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'white' },
+                      React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
+                    ),
+                    service.id === 'librefm' && React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'white' },
+                      React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-3.5l6-4.5-6-4.5v9z' })
+                    )
+                  ),
                   React.createElement('div', { style: { flex: 1 } },
                     React.createElement('div', {
                       style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' }
@@ -34423,10 +34469,10 @@ React.createElement('div', {
             // Info box
             React.createElement('div', {
               style: {
-                marginTop: '20px',
-                padding: '14px 16px',
+                marginTop: '16px',
+                padding: '12px 14px',
                 backgroundColor: 'rgba(99, 102, 241, 0.06)',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 border: '1px solid rgba(99, 102, 241, 0.15)'
               }
             },
@@ -34434,14 +34480,14 @@ React.createElement('div', {
                 style: { display: 'flex', alignItems: 'flex-start', gap: '10px' }
               },
                 React.createElement('svg', {
-                  width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: '#6366f1', strokeWidth: 2,
+                  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: '#6366f1', strokeWidth: 2,
                   style: { flexShrink: 0, marginTop: '1px' }
                 },
                   React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
                   React.createElement('path', { d: 'M12 16v-4M12 8h.01' })
                 ),
                 React.createElement('div', {
-                  style: { fontSize: '13px', color: '#4b5563', lineHeight: '1.5' }
+                  style: { fontSize: '12px', color: '#4b5563', lineHeight: '1.5' }
                 }, 'You can configure your username and API keys in Settings > General after completing this tutorial.')
               )
             )
@@ -34449,7 +34495,7 @@ React.createElement('div', {
           // Footer
           React.createElement('div', {
             style: {
-              padding: '20px 32px 24px',
+              padding: '16px 32px 20px',
               borderTop: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -34460,16 +34506,18 @@ React.createElement('div', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'sources' })),
               style: {
                 fontSize: '14px',
+                fontWeight: '500',
                 color: '#6b7280',
                 backgroundColor: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: '10px 16px',
+                borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
               },
-              onMouseEnter: (e) => e.currentTarget.style.color = '#374151',
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
               onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             },
               React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
@@ -34480,19 +34528,18 @@ React.createElement('div', {
             React.createElement('button', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'features' })),
               style: {
-                padding: '12px 28px',
-                fontSize: '15px',
-                fontWeight: '600',
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
                 color: '#ffffff',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundColor: '#7c3aed',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
-                transition: 'transform 150ms ease, box-shadow 150ms ease'
+                transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(102, 126, 234, 0.4)'; }
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
             }, firstRunTutorial.selectedScrobblers.length > 0 ? 'Continue' : 'Skip for Now')
           )
         ),
@@ -34517,14 +34564,14 @@ React.createElement('div', {
                     width: i <= 2 ? '24px' : '8px',
                     height: '4px',
                     borderRadius: '2px',
-                    backgroundColor: i <= 2 ? '#667eea' : 'rgba(0,0,0,0.1)',
+                    backgroundColor: i <= 2 ? '#7c3aed' : 'rgba(0,0,0,0.1)',
                     transition: 'all 200ms ease'
                   }
                 })
               )
             ),
             React.createElement('h2', {
-              style: { fontSize: '22px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+              style: { fontSize: '18px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
             }, 'Key Features'),
             React.createElement('p', {
               style: { fontSize: '14px', color: '#6b7280' }
@@ -34536,11 +34583,11 @@ React.createElement('div', {
             style: { padding: '20px 32px', maxHeight: '360px', overflowY: 'auto' }
           },
             React.createElement('div', {
-              style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }
+              style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }
             },
               [
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#10b981', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#10b981', strokeWidth: 2 },
                     React.createElement('path', { d: 'M9 18V5l12-2v13' }),
                     React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
                     React.createElement('circle', { cx: 18, cy: 16, r: 3 })
@@ -34549,7 +34596,7 @@ React.createElement('div', {
                   desc: 'Play songs from multiple sources back-to-back without interruption'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#667eea', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#7c3aed', strokeWidth: 2 },
                     React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
                     React.createElement('path', { d: 'm21 21-4.3-4.3' })
                   ),
@@ -34557,21 +34604,21 @@ React.createElement('div', {
                   desc: 'Search across all your music sources at once'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#8b5cf6', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#8b5cf6', strokeWidth: 2 },
                     React.createElement('path', { d: 'M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM12 12H3M16 6H3M12 18H3' })
                   ),
                   title: 'Unified Playlists',
                   desc: 'Create playlists mixing tracks from any service'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#f59e0b', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#f59e0b', strokeWidth: 2 },
                     React.createElement('path', { d: 'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2M7.5 13A2.5 2.5 0 0 0 5 15.5 2.5 2.5 0 0 0 7.5 18a2.5 2.5 0 0 0 2.5-2.5A2.5 2.5 0 0 0 7.5 13m9 0a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 0 2.5-2.5 2.5 2.5 0 0 0-2.5-2.5Z' })
                   ),
                   title: 'AI Playlists',
                   desc: 'Generate playlists with ChatGPT or Gemini (API key required)'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#ec4899', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#ec4899', strokeWidth: 2 },
                     React.createElement('path', { d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2' }),
                     React.createElement('circle', { cx: 9, cy: 7, r: 4 }),
                     React.createElement('path', { d: 'M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' })
@@ -34580,7 +34627,7 @@ React.createElement('div', {
                   desc: 'See what friends play and sync your playback together'
                 },
                 {
-                  icon: React.createElement('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: '#06b6d4', strokeWidth: 2 },
+                  icon: React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: '#06b6d4', strokeWidth: 2 },
                     React.createElement('path', { d: 'M12 20v-6M6 20V10M18 20V4' })
                   ),
                   title: 'Source Priority',
@@ -34590,20 +34637,20 @@ React.createElement('div', {
                 React.createElement('div', {
                   key: i,
                   style: {
-                    padding: '16px',
+                    padding: '14px',
                     backgroundColor: 'rgba(0,0,0,0.02)',
-                    borderRadius: '12px',
+                    borderRadius: '10px',
                     border: '1px solid rgba(0,0,0,0.04)'
                   }
                 },
                   React.createElement('div', {
-                    style: { marginBottom: '10px' }
+                    style: { marginBottom: '8px' }
                   }, feature.icon),
                   React.createElement('div', {
-                    style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+                    style: { fontSize: '13px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
                   }, feature.title),
                   React.createElement('div', {
-                    style: { fontSize: '12px', color: '#6b7280', lineHeight: '1.4' }
+                    style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.4' }
                   }, feature.desc)
                 )
               )
@@ -34612,7 +34659,7 @@ React.createElement('div', {
           // Footer
           React.createElement('div', {
             style: {
-              padding: '20px 32px 24px',
+              padding: '16px 32px 20px',
               borderTop: '1px solid rgba(0,0,0,0.06)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -34623,16 +34670,18 @@ React.createElement('div', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'social' })),
               style: {
                 fontSize: '14px',
+                fontWeight: '500',
                 color: '#6b7280',
                 backgroundColor: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: '10px 16px',
+                borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
               },
-              onMouseEnter: (e) => e.currentTarget.style.color = '#374151',
+              onMouseEnter: (e) => e.currentTarget.style.color = '#1f2937',
               onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
             },
               React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
@@ -34643,53 +34692,58 @@ React.createElement('div', {
             React.createElement('button', {
               onClick: () => setFirstRunTutorial(prev => ({ ...prev, step: 'complete' })),
               style: {
-                padding: '12px 28px',
-                fontSize: '15px',
-                fontWeight: '600',
+                padding: '10px 24px',
+                fontSize: '14px',
+                fontWeight: '500',
                 color: '#ffffff',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundColor: '#7c3aed',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
-                transition: 'transform 150ms ease, box-shadow 150ms ease'
+                transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(102, 126, 234, 0.4)'; }
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#6d28d9',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#7c3aed'
             }, 'Finish Setup')
           )
         ),
 
         // Complete Step
         firstRunTutorial.step === 'complete' && React.createElement(React.Fragment, null,
-          // Header with success gradient
+          // Accent bar
           React.createElement('div', {
             style: {
-              padding: '40px 32px 32px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              textAlign: 'center'
+              height: '4px',
+              background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)'
+            }
+          }),
+          // Header
+          React.createElement('div', {
+            style: {
+              padding: '32px 32px 24px',
+              textAlign: 'center',
+              borderBottom: '1px solid rgba(0,0,0,0.06)'
             }
           },
             React.createElement('div', {
               style: {
-                width: '72px',
-                height: '72px',
-                margin: '0 auto 20px',
+                width: '56px',
+                height: '56px',
+                margin: '0 auto 16px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(255,255,255,0.2)',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
+                justifyContent: 'center'
               }
             },
               React.createElement('svg', {
-                width: 36,
-                height: 36,
+                width: 28,
+                height: 28,
                 viewBox: '0 0 24 24',
                 fill: 'none',
-                stroke: 'white',
-                strokeWidth: 3,
+                stroke: '#10b981',
+                strokeWidth: 2.5,
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round'
               },
@@ -34697,15 +34751,15 @@ React.createElement('div', {
               )
             ),
             React.createElement('h1', {
-              style: { fontSize: '28px', fontWeight: '700', color: '#ffffff', marginBottom: '8px' }
+              style: { fontSize: '20px', fontWeight: '600', color: '#1f2937', marginBottom: '6px' }
             }, 'You\'re All Set!'),
             React.createElement('p', {
-              style: { fontSize: '16px', color: 'rgba(255,255,255,0.85)' }
+              style: { fontSize: '14px', color: '#6b7280' }
             }, 'Parachord is ready to play your music')
           ),
           // Content - Summary
           React.createElement('div', {
-            style: { padding: '28px 32px' }
+            style: { padding: '24px 32px' }
           },
             // Enabled sources summary
             firstRunTutorial.selectedSources.length > 0 && React.createElement('div', {
@@ -34742,24 +34796,24 @@ React.createElement('div', {
             // Check if any sources need configuration
             (firstRunTutorial.selectedSources.includes('spotify') || firstRunTutorial.selectedSources.includes('localfiles') || firstRunTutorial.selectedScrobblers.length > 0) && React.createElement('div', {
               style: {
-                padding: '14px 16px',
+                padding: '12px 14px',
                 marginBottom: '16px',
-                backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                borderRadius: '12px',
-                border: '1px solid rgba(251, 191, 36, 0.25)'
+                backgroundColor: 'rgba(251, 191, 36, 0.08)',
+                borderRadius: '10px',
+                border: '1px solid rgba(251, 191, 36, 0.2)'
               }
             },
               React.createElement('div', {
                 style: { display: 'flex', alignItems: 'flex-start', gap: '10px' }
               },
                 React.createElement('svg', {
-                  width: 18, height: 18, viewBox: '0 0 24 24', fill: '#f59e0b',
+                  width: 16, height: 16, viewBox: '0 0 24 24', fill: '#f59e0b',
                   style: { flexShrink: 0, marginTop: '1px' }
                 },
                   React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z' })
                 ),
                 React.createElement('div', {
-                  style: { fontSize: '13px', color: '#92400e', lineHeight: '1.5' }
+                  style: { fontSize: '12px', color: '#92400e', lineHeight: '1.5' }
                 },
                   React.createElement('strong', null, 'Next step: '),
                   'Some of your selected sources need additional configuration. You\'ll be taken to the Installed Plugins page to complete setup.'
@@ -34769,17 +34823,17 @@ React.createElement('div', {
             // Tips
             React.createElement('div', {
               style: {
-                padding: '16px',
-                backgroundColor: 'rgba(99, 102, 241, 0.06)',
-                borderRadius: '12px',
-                border: '1px solid rgba(99, 102, 241, 0.15)'
+                padding: '14px',
+                backgroundColor: 'rgba(124, 58, 237, 0.04)',
+                borderRadius: '10px',
+                border: '1px solid rgba(124, 58, 237, 0.1)'
               }
             },
               React.createElement('div', {
-                style: { fontSize: '13px', fontWeight: '600', color: '#4f46e5', marginBottom: '8px' }
+                style: { fontSize: '12px', fontWeight: '600', color: '#7c3aed', marginBottom: '8px' }
               }, 'Quick Tips'),
               React.createElement('ul', {
-                style: { margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#4b5563', lineHeight: '1.7' }
+                style: { margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#4b5563', lineHeight: '1.7' }
               },
                 React.createElement('li', null, 'Use the search bar to find any song across all sources'),
                 React.createElement('li', null, 'Drag sources in Settings to change playback priority'),
@@ -34791,7 +34845,7 @@ React.createElement('div', {
           // Footer
           React.createElement('div', {
             style: {
-              padding: '20px 32px 28px',
+              padding: '16px 32px 24px',
               borderTop: '1px solid rgba(0,0,0,0.06)',
               textAlign: 'center'
             }
@@ -34814,19 +34868,18 @@ React.createElement('div', {
                 }
               },
               style: {
-                padding: '14px 48px',
-                fontSize: '16px',
-                fontWeight: '600',
+                padding: '10px 32px',
+                fontSize: '14px',
+                fontWeight: '500',
                 color: '#ffffff',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                backgroundColor: '#10b981',
                 border: 'none',
-                borderRadius: '12px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-                transition: 'transform 150ms ease, box-shadow 150ms ease'
+                transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.5)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.4)'; }
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#059669',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#10b981'
             }, (firstRunTutorial.selectedSources.includes('spotify') || firstRunTutorial.selectedSources.includes('localfiles') || firstRunTutorial.selectedScrobblers.length > 0) ? 'Continue to Setup' : 'Start Listening')
           )
         )
