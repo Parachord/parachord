@@ -21148,7 +21148,7 @@ useEffect(() => {
               // Always show tooltip - use bio if available, otherwise show test message
               return React.createElement(Tooltip, {
                 content: bioPreview || 'Bio loading...',
-                position: 'bottom',
+                position: 'top',
                 variant: 'dark',
                 className: 'tooltip-bio'
               }, nameElement);
