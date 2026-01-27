@@ -10263,6 +10263,12 @@ const Parachord = () => {
         }
       })();
 
+      // Pre-fetch artist bio early (non-blocking) for tooltip on artist name
+      (async () => {
+        const bioData = await getArtistBio(artist.name, artist.id);
+        setArtistBio(bioData === null ? false : bioData);
+      })();
+
       // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
       // Using release-groups instead of releases to avoid duplicates (each album appears once)
       // MusicBrainz rate limits to ~1 req/sec, so we stagger by 500ms to stay under limit
