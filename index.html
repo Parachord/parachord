@@ -62,6 +62,25 @@
       background: rgba(0, 0, 0, 0.25);
     }
 
+    /* Scrollbar styling - dark theme (for queue drawer) */
+    .scrollable-content-dark::-webkit-scrollbar {
+      width: 12px;
+    }
+
+    .scrollable-content-dark::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+    }
+
+    .scrollable-content-dark::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+    }
+
+    .scrollable-content-dark::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
+
     /* Loading animation */
     @keyframes spin {
       to { transform: rotate(360deg); }

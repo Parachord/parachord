@@ -34753,7 +34753,7 @@ React.createElement('div', {
       // Queue content - dark theme
       React.createElement('div', {
         ref: queueContentRef,
-        className: 'overflow-y-auto relative',
+        className: 'overflow-y-auto relative scrollable-content-dark',
         style: { height: (queueDrawerHeight - 44 - (playbackContext ? 32 : 0)) + 'px' },
         onDragEnter: (e) => handleDragEnter(e, 'queue'),
         onDragOver: (e) => handleDragOver(e, 'queue'),
