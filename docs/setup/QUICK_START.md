@@ -3,7 +3,7 @@
 ## 1. Setup Directory Structure
 
 ```bash
-cd ~/path/to/harmonix-desktop
+cd ~/path/to/parachord
 
 # Create directories
 mkdir -p resolvers/builtin
@@ -62,7 +62,7 @@ npm start
 
 Check file locations:
 ```bash
-pwd  # Should be in harmonix-desktop
+pwd  # Should be in parachord
 ls resolvers/builtin/  # Should show .axe files
 ```
 
