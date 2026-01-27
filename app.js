@@ -29893,26 +29893,28 @@ React.createElement('div', {
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
               // Line 2: Artist name with bio tooltip
-              (() => {
-                const bioPreview = playbarArtistBio && playbarArtistBio.bio
-                  ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
-                  : null;
+              React.createElement('div', { className: 'text-xs text-gray-400' },
+                (() => {
+                  const bioPreview = playbarArtistBio && playbarArtistBio.bio
+                    ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
+                    : null;
 
-                const artistButton = React.createElement('button', {
-                  onClick: () => fetchArtistData(currentTrack.artist),
-                  className: 'text-xs text-gray-400 truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag',
-                  style: { maxWidth: '100%', display: 'block' }
-                }, currentTrack.artist);
+                  const artistButton = React.createElement('button', {
+                    onClick: () => fetchArtistData(currentTrack.artist),
+                    className: 'truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag',
+                    style: { maxWidth: '100%', display: 'block' }
+                  }, currentTrack.artist);
 
-                return bioPreview
-                  ? React.createElement(Tooltip, {
-                      content: bioPreview,
-                      position: 'top',
-                      variant: 'dark',
-                      className: 'tooltip-bio'
-                    }, artistButton)
-                  : artistButton;
-              })(),
+                  return bioPreview
+                    ? React.createElement(Tooltip, {
+                        content: bioPreview,
+                        position: 'top',
+                        variant: 'dark',
+                        className: 'tooltip-bio'
+                      }, artistButton)
+                    : artistButton;
+                })()
+              ),
               // Line 3: Resolver dropdown + browser indicator
               (() => {
                 const currentResolverId = determineResolverIdFromTrack(currentTrack);
