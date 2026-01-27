@@ -3175,6 +3175,7 @@ const Parachord = () => {
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
+  const pollingGenerationRef = useRef(0); // Generation counter to invalidate stale polling callbacks
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
@@ -7445,10 +7446,13 @@ const Parachord = () => {
       clearInterval(pollingRecoveryRef.current);
       pollingRecoveryRef.current = null;
     }
+    // Increment generation to invalidate any stale polling callbacks
+    pollingGenerationRef.current++;
+    const thisGeneration = pollingGenerationRef.current;
 
     if (resolverId === 'spotify' && config.token) {
       const trackUri = track.spotifyUri || track.uri;
-      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval)...`);
+      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval, gen ${thisGeneration})...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
       console.log(`   Expected URI: ${trackUri}`);
       console.log(`   spotifyUri: ${track.spotifyUri}, uri: ${track.uri}`);
@@ -7467,6 +7471,11 @@ const Parachord = () => {
       let lastKnownDurationMs = 0; // Track the duration when we last had valid progress
 
       const pollInterval = setInterval(async () => {
+        // Check if this polling generation is still current (prevents stale callbacks)
+        if (thisGeneration !== pollingGenerationRef.current) {
+          console.log(`🚫 Stale poll callback (gen ${thisGeneration} vs current ${pollingGenerationRef.current}), ignoring`);
+          return;
+        }
         pollCount++; // Increment poll counter
         try {
           const response = await fetch('https://api.spotify.com/v1/me/player', {
