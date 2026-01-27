@@ -420,6 +420,7 @@
 - ✅ Sync update banner redesign - Matches app aesthetic
 - ✅ Release page card treatment - Matches artist page styling
 - ✅ Three-state pattern for artist image loading - Proper loading states
+- ✅ Browser extension Add to Friends - Add Last.fm/ListenBrainz friends from user profile pages
 
 ---
 
