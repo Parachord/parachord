@@ -8872,22 +8872,40 @@ const Parachord = () => {
     // Check if nothing is currently playing BEFORE updating queue
     const nothingPlaying = !currentTrackRef.current;
 
-    // If shuffle mode is active, also update the original queue ref
-    if (shuffleMode && originalQueueRef.current) {
-      originalQueueRef.current = [...originalQueueRef.current, ...taggedTracks];
+    // If shuffle mode is active, update the original queue ref (or initialize it)
+    if (shuffleMode) {
+      if (originalQueueRef.current) {
+        originalQueueRef.current = [...originalQueueRef.current, ...taggedTracks];
+      } else {
+        // Initialize original queue if shuffle was enabled before any tracks were added
+        originalQueueRef.current = [...currentQueue, ...taggedTracks];
+      }
     }
 
     // Append to queue (shuffle mode inserts at random positions)
-    if (shuffleMode && currentQueue.length > 0) {
-      // Insert new tracks at random positions for better shuffle experience
-      setCurrentQueue(prev => {
-        const newQueue = [...prev];
-        taggedTracks.forEach(track => {
-          const randomIndex = Math.floor(Math.random() * (newQueue.length + 1));
-          newQueue.splice(randomIndex, 0, track);
+    if (shuffleMode) {
+      if (currentQueue.length > 0) {
+        // Insert new tracks at random positions in existing queue
+        setCurrentQueue(prev => {
+          const newQueue = [...prev];
+          taggedTracks.forEach(track => {
+            const randomIndex = Math.floor(Math.random() * (newQueue.length + 1));
+            newQueue.splice(randomIndex, 0, track);
+          });
+          return newQueue;
         });
-        return newQueue;
-      });
+      } else if (taggedTracks.length > 1) {
+        // Shuffle the new tracks before adding to empty queue
+        const shuffled = [...taggedTracks];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        setCurrentQueue(prev => [...prev, ...shuffled]);
+      } else {
+        // Single track, just append
+        setCurrentQueue(prev => [...prev, ...taggedTracks]);
+      }
     } else {
       // Normal append to end
       setCurrentQueue(prev => [...prev, ...taggedTracks]);
@@ -34653,12 +34671,12 @@ React.createElement('div', {
             onClick: (e) => { e.stopPropagation(); handleSaveQueueAsPlaylist(); },
             className: 'px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-600 rounded hover:bg-white/10 transition-colors'
           }, 'SAVE'),
-          // Restore original order button - shows when shuffle is active
+          // Unshuffle button - shows when shuffle is active
           shuffleMode && originalQueueRef.current && React.createElement('button', {
             onClick: (e) => { e.stopPropagation(); restoreOriginalOrder(); },
             className: 'px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-500/50 rounded hover:bg-purple-500/10 transition-colors',
             title: 'Restore original queue order'
-          }, 'RESTORE'),
+          }, 'UNSHUFFLE'),
           // Clear button
           currentQueue.length > 0 && React.createElement('button', {
             onClick: (e) => { e.stopPropagation(); clearQueue(); },
