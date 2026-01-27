@@ -695,9 +695,10 @@ const FALLBACK_RESOLVERS = [
 // Tooltip component - reusable tooltip with Cinematic Light styling
 // position: 'top' | 'bottom' | 'left' | 'right'
 // variant: 'light' | 'dark' (dark variant for dark backgrounds)
-const Tooltip = ({ children, content, position = 'top', variant = 'light' }) => {
+// className: additional CSS classes (e.g., 'tooltip-bio' for bio tooltips)
+const Tooltip = ({ children, content, position = 'top', variant = 'light', className = '' }) => {
   return React.createElement('div', {
-    className: `tooltip-container ${variant === 'dark' ? 'tooltip-dark' : ''}`
+    className: `tooltip-container ${variant === 'dark' ? 'tooltip-dark' : ''} ${className}`.trim()
   },
     children,
     React.createElement('span', {
@@ -21109,14 +21110,31 @@ useEffect(() => {
               transition: 'opacity 300ms ease-out'
             }
           },
-            React.createElement('h1', {
-              className: 'text-5xl font-light text-white',
-              style: {
-                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                letterSpacing: '0.3em',
-                textTransform: 'uppercase'
-              }
-            }, currentArtist.name),
+            // Artist name with bio tooltip
+            (() => {
+              // Extract first 2 lines of bio for tooltip (approximately 200 chars)
+              const bioPreview = artistBio && artistBio.bio
+                ? artistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (artistBio.bio.length > 200 ? '...' : '')
+                : null;
+
+              const nameElement = React.createElement('h1', {
+                className: 'text-5xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase'
+                }
+              }, currentArtist.name);
+
+              return bioPreview
+                ? React.createElement(Tooltip, {
+                    content: bioPreview,
+                    position: 'bottom',
+                    variant: 'dark',
+                    className: 'tooltip-bio'
+                  }, nameElement)
+                : nameElement;
+            })(),
             // Navigation tabs (centered)
             React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',
