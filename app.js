@@ -11859,6 +11859,37 @@ const Parachord = () => {
       if (element) recommendationsObserverRef.current.observe(element);
     });
 
+    // Manually check initial visibility after a short delay to ensure DOM is ready
+    // This handles the case where IntersectionObserver doesn't fire initial callbacks
+    setTimeout(() => {
+      if (!recommendationsObserverRef.current) return;
+      const currentTracks = recommendationsTracksRef.current;
+      const visibleTracks = [];
+
+      recommendationsTrackRowRefs.current.forEach((element, trackId) => {
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        // Check if element is within viewport (with 200px margin like the observer)
+        const isVisible = rect.bottom >= containerRect.top - 200 &&
+                         rect.top <= containerRect.bottom + 200;
+        if (isVisible) {
+          visibleRecommendationsTrackIds.current.add(trackId);
+          const track = currentTracks.find(t => t.id === trackId);
+          if (track) {
+            visibleTracks.push({
+              key: trackId,
+              data: { track, artistName: track.artist || 'Unknown Artist' }
+            });
+          }
+        }
+      });
+
+      if (visibleTracks.length > 0) {
+        updateSchedulerVisibility('recommendations-tracks', visibleTracks);
+      }
+    }, 50);
+
     return () => recommendationsObserverRef.current?.disconnect();
   }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady, recommendationsSourceFilter]);
 
