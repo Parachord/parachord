@@ -6768,12 +6768,17 @@ const Parachord = () => {
         await window.electron.store.set('saved_queue', fullQueue);
         // Also save playback context
         await window.electron.store.set('saved_playback_context', playbackContext);
-        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}`);
+        // Save shuffle state and original queue for restore
+        await window.electron.store.set('saved_shuffle_state', {
+          shuffleMode: shuffleMode,
+          originalQueue: originalQueueRef.current
+        });
+        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}${shuffleMode ? ' (shuffled)' : ''}`);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [currentTrack, currentQueue, rememberQueue, playbackContext]);
+  }, [currentTrack, currentQueue, rememberQueue, playbackContext, shuffleMode]);
 
   // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -9694,6 +9699,13 @@ const Parachord = () => {
         if (savedPlaybackContext) {
           setPlaybackContext(savedPlaybackContext);
           console.log(`📦 Restored playback context: ${savedPlaybackContext.type}`);
+        }
+        // Restore shuffle state
+        const savedShuffleState = await window.electron.store.get('saved_shuffle_state');
+        if (savedShuffleState) {
+          setShuffleMode(savedShuffleState.shuffleMode || false);
+          originalQueueRef.current = savedShuffleState.originalQueue || null;
+          console.log(`📦 Restored shuffle state: ${savedShuffleState.shuffleMode ? 'ON' : 'OFF'}${savedShuffleState.originalQueue ? ' (with original order saved)' : ''}`);
         }
       }
 
