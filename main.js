@@ -1395,16 +1395,29 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
 
     if (data.type === 'track') {
-      menuItems.push({
-        label: 'Add to Collection',
-        click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
-            action: 'add-to-collection',
-            type: 'track',
-            track: data.track
-          });
-        }
-      });
+      if (data.isInCollection) {
+        menuItems.push({
+          label: 'Remove from Collection',
+          click: () => {
+            mainWindow.webContents.send('track-context-menu-action', {
+              action: 'remove-from-collection',
+              type: 'track',
+              track: data.track
+            });
+          }
+        });
+      } else {
+        menuItems.push({
+          label: 'Add to Collection',
+          click: () => {
+            mainWindow.webContents.send('track-context-menu-action', {
+              action: 'add-to-collection',
+              type: 'track',
+              track: data.track
+            });
+          }
+        });
+      }
     } else if (data.type === 'release') {
       menuItems.push({
         label: 'Add Album to Collection',
