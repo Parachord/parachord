@@ -8618,6 +8618,53 @@ const Parachord = () => {
     }
   };
 
+  // Start Collection Station - shuffle and play all collection tracks
+  const handleStartCollectionStation = () => {
+    // Merge local files with collection tracks
+    const allTracks = [...library, ...collectionData.tracks];
+
+    if (allTracks.length === 0) {
+      showToast('No tracks in your collection yet');
+      return;
+    }
+
+    // Deduplicate by id
+    const trackMap = new Map();
+    allTracks.forEach(track => {
+      const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (!trackMap.has(trackId)) {
+        trackMap.set(trackId, { ...track, id: trackId });
+      }
+    });
+    const uniqueTracks = Array.from(trackMap.values());
+
+    // Fisher-Yates shuffle
+    const shuffled = [...uniqueTracks];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Set up playback context
+    const context = { type: 'library', name: 'Collection Station' };
+
+    // Play first track, queue the rest
+    const firstTrack = shuffled[0];
+    const remainingTracks = shuffled.slice(1);
+
+    // Store original order for unshuffle and enable shuffle mode
+    originalQueueRef.current = remainingTracks;
+    setShuffleMode(true);
+
+    // Set queue and play
+    setQueueWithContext(remainingTracks, context);
+    setPlaybackContext(context);
+    handlePlay(firstTrack);
+
+    showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+    console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks`);
+  };
+
   // Helper to set queue with playback context tagged on each track
   // This allows the context to update when tracks from different sources come up
   const setQueueWithContext = (tracks, context) => {
@@ -23832,7 +23879,7 @@ React.createElement('div', {
                 },
                   // Start Collection Station button (pink, matching Artist page)
                   React.createElement('button', {
-                    onClick: () => console.log('Start Collection Station - placeholder'),
+                    onClick: handleStartCollectionStation,
                     className: 'px-6 py-2 rounded-full font-medium text-white no-drag transition-all hover:scale-105',
                     style: {
                       backgroundColor: '#E91E63',
@@ -23889,7 +23936,7 @@ React.createElement('div', {
                 ),
                 // Right: Start Collection Station button
                 React.createElement('button', {
-                  onClick: () => console.log('Start Collection Station - placeholder'),
+                  onClick: handleStartCollectionStation,
                   className: 'ml-auto px-4 py-1.5 rounded-full text-sm font-medium text-white transition-colors hover:opacity-90 no-drag',
                   style: {
                     backgroundColor: '#E91E63'
