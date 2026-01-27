@@ -61,28 +61,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   function getButtonConfig(pageInfo) {
     const { service, type } = pageInfo;
 
-    // Track pages for Spotify and Apple Music show "Play Next"
-    if ((service === 'spotify' || service === 'apple') && type === 'track') {
+    // Track pages
+    if (type === 'track') {
       return { text: 'Play Next', icon: 'playNext' };
     }
 
     // Album pages
     if (type === 'album') {
-      return { text: 'Add Album to Queue', icon: 'add' };
+      return { text: 'Play Album Next', icon: 'playNext' };
     }
 
     // Playlist pages
     if (type === 'playlist') {
-      return { text: 'Add Playlist to Queue', icon: 'add' };
+      return { text: 'Play Playlist Next', icon: 'playNext' };
     }
 
     // Video pages (YouTube)
     if (type === 'video') {
-      return { text: 'Add Video to Queue', icon: 'add' };
+      return { text: 'Play Next', icon: 'playNext' };
     }
 
     // Default
-    return { text: 'Add to Queue', icon: 'add' };
+    return { text: 'Play Next', icon: 'playNext' };
   }
 
   // Update button based on current tab
