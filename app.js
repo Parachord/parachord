@@ -6361,6 +6361,26 @@ const Parachord = () => {
     });
   }, [saveCollection, showToast, showSidebarBadge]);
 
+  // Remove track from collection
+  const removeTrackFromCollection = useCallback((track) => {
+    const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
+
+    setCollectionData(prev => {
+      const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
+      if (existingIndex === -1) {
+        showToast(`${track.title} is not in your collection`);
+        return prev;
+      }
+
+      const newTracks = prev.tracks.filter(t => t.id !== trackId);
+      const newData = { ...prev, tracks: newTracks };
+      // Save async (don't block state update)
+      saveCollection(newData);
+      showToast(`Removed ${track.title} from Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
   // Add album to collection
   const addAlbumToCollection = useCallback((album) => {
     const albumId = generateAlbumId(album.artist, album.title);
@@ -6560,6 +6580,11 @@ const Parachord = () => {
           } else if (data.type === 'artist' && data.artist) {
             addArtistToCollection(data.artist);
           }
+        } else if (data.action === 'remove-from-collection') {
+          // Remove from collection based on type
+          if (data.type === 'track' && data.track) {
+            removeTrackFromCollection(data.track);
+          }
         } else if (data.action === 'view-friend-history' && data.friend) {
           if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
         } else if (data.action === 'pin-friend' && data.friendId) {
@@ -6579,7 +6604,7 @@ const Parachord = () => {
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -6743,12 +6768,17 @@ const Parachord = () => {
         await window.electron.store.set('saved_queue', fullQueue);
         // Also save playback context
         await window.electron.store.set('saved_playback_context', playbackContext);
-        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}`);
+        // Save shuffle state and original queue for restore
+        await window.electron.store.set('saved_shuffle_state', {
+          shuffleMode: shuffleMode,
+          originalQueue: originalQueueRef.current
+        });
+        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}${shuffleMode ? ' (shuffled)' : ''}`);
       }
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [currentTrack, currentQueue, rememberQueue, playbackContext]);
+  }, [currentTrack, currentQueue, rememberQueue, playbackContext, shuffleMode]);
 
   // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -9669,6 +9699,13 @@ const Parachord = () => {
         if (savedPlaybackContext) {
           setPlaybackContext(savedPlaybackContext);
           console.log(`📦 Restored playback context: ${savedPlaybackContext.type}`);
+        }
+        // Restore shuffle state
+        const savedShuffleState = await window.electron.store.get('saved_shuffle_state');
+        if (savedShuffleState) {
+          setShuffleMode(savedShuffleState.shuffleMode || false);
+          originalQueueRef.current = savedShuffleState.originalQueue || null;
+          console.log(`📦 Restored shuffle state: ${savedShuffleState.shuffleMode ? 'ON' : 'OFF'}${savedShuffleState.originalQueue ? ' (with original order saved)' : ''}`);
         }
       }
 
@@ -24384,7 +24421,8 @@ React.createElement('div', {
                       if (window.electron?.contextMenu?.showTrackMenu) {
                         window.electron.contextMenu.showTrackMenu({
                           type: 'track',
-                          track: track
+                          track: track,
+                          isInCollection: true  // Collection tracks are always in collection
                         });
                       }
                     }
@@ -29222,10 +29260,13 @@ React.createElement('div', {
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
+                  const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
+                  const isInCollection = collectionData.tracks.some(t => t.id === trackId);
                   window.electron.contextMenu.showTrackMenu({
                     type: 'track',
                     track: currentTrack,
-                    isNowPlaying: true
+                    isNowPlaying: true,
+                    isInCollection: isInCollection
                   });
                 }
               }
@@ -29494,7 +29535,7 @@ React.createElement('div', {
             const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
             const isInCollection = collectionData.tracks.some(t => t.id === trackId);
             return React.createElement(Tooltip, {
-              content: isInCollection ? 'In your collection' : 'Save to collection',
+              content: isInCollection ? 'Remove from collection' : 'Save to collection',
               position: 'top',
               variant: 'dark'
             },
@@ -29515,7 +29556,8 @@ React.createElement('div', {
                     };
                     addTrackToCollection({ ...currentTrack, sources: effectiveSources });
                   } else {
-                    showToast(`${currentTrack.title} is already in your collection`);
+                    // Remove from collection (unheart)
+                    removeTrackFromCollection(currentTrack);
                   }
                 },
                 className: `p-1.5 rounded-full transition-colors ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`
