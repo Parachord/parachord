@@ -6242,12 +6242,14 @@ const Parachord = () => {
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
+    // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
     const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
     const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
+    const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -6263,7 +6265,7 @@ const Parachord = () => {
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [isPlaying, audioContext, currentTrack, startTime]);
+  }, [isPlaying, audioContext, currentTrack, startTime, browserPlaybackActive, isExternalPlayback]);
 
   // Smooth progress interpolation for Spotify tracks
   // API polling happens every 5 seconds, but we want smooth 1-second visual updates
