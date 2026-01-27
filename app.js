@@ -11666,6 +11666,10 @@ const Parachord = () => {
     const tracks = recommendations.tracks;
     if (tracks.length === 0) return;
 
+    // Clear stale visible track IDs when filter changes (or on initial setup)
+    // This ensures the IntersectionObserver can properly detect "new" visible tracks
+    visibleRecommendationsTrackIds.current.clear();
+
     // Wait for scroll container to be available
     const scrollContainer = recommendationsScrollContainerRef.current;
     if (!scrollContainer) {
@@ -11715,7 +11719,7 @@ const Parachord = () => {
     });
 
     return () => recommendationsObserverRef.current?.disconnect();
-  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady]);
+  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady, recommendationsSourceFilter]);
 
   // Register page context for history tracks resolution
   useEffect(() => {
