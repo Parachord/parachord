@@ -13354,8 +13354,10 @@ ${tracks}
       const xspfContent = generateXSPF(playlist);
 
       // Create playlist data object for storage
+      // Use existing filename, or generate one from ID to ensure consistent updates
       const playlistData = {
         id: playlist.id,
+        filename: playlist.filename || `${playlist.id}.xspf`,
         title: playlist.title,
         creator: playlist.creator,
         tracks: playlist.tracks,
