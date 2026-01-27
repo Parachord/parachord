@@ -27119,7 +27119,7 @@ React.createElement('div', {
                                   className: 'no-drag',
                                   onClick: (e) => {
                                     e.stopPropagation();
-                                    const tracksAfter = recommendations.tracks.slice(index + 1);
+                                    const tracksAfter = filteredTracks.slice(index + 1);
                                     const context = { type: 'recommendations', name: 'Recommendations' };
                                     setQueueWithContext(tracksAfter, context);
                                     handlePlay({ ...track, preferredResolver: resolverId });
