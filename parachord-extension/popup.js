@@ -18,12 +18,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const hostname = urlObj.hostname;
       const pathname = urlObj.pathname;
 
-      // Spotify
+      // Spotify (use includes to handle /intl-*/ prefix)
       if (hostname === 'open.spotify.com') {
-        if (pathname.startsWith('/track/')) return { service: 'spotify', type: 'track' };
-        if (pathname.startsWith('/album/')) return { service: 'spotify', type: 'album' };
-        if (pathname.startsWith('/playlist/')) return { service: 'spotify', type: 'playlist' };
-        if (pathname.startsWith('/artist/')) return { service: 'spotify', type: 'artist' };
+        if (pathname.includes('/track/')) return { service: 'spotify', type: 'track' };
+        if (pathname.includes('/album/')) return { service: 'spotify', type: 'album' };
+        if (pathname.includes('/playlist/')) return { service: 'spotify', type: 'playlist' };
+        if (pathname.includes('/artist/')) return { service: 'spotify', type: 'artist' };
         return { service: 'spotify', type: 'unknown' };
       }
 
@@ -158,29 +158,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('[Popup] Spotify playlist detected, scraping tracks...');
         sendUrlBtnText.textContent = 'Scraping...';
 
-        // Request scrape from content script
-        const scrapeResult = await chrome.tabs.sendMessage(tab.id, { type: 'scrapePlaylist' });
+        try {
+          // Request scrape from content script
+          const scrapeResult = await chrome.tabs.sendMessage(tab.id, { type: 'scrapePlaylist' });
 
-        if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
-          console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
+          if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
+            console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
 
-          // Send scraped playlist to Parachord
-          const response = await chrome.runtime.sendMessage({
-            type: 'sendScrapedPlaylist',
-            playlist: scrapeResult,
-            source: 'popup-scrape'
-          });
+            // Send scraped playlist to Parachord
+            const response = await chrome.runtime.sendMessage({
+              type: 'sendScrapedPlaylist',
+              playlist: scrapeResult,
+              source: 'popup-scrape'
+            });
 
-          if (response && response.sent) {
-            sendUrlBtnText.textContent = `Sent ${scrapeResult.tracks.length} tracks!`;
-            sendUrlBtn.style.background = '#22c55e';
+            if (response && response.sent) {
+              sendUrlBtnText.textContent = `Sent ${scrapeResult.tracks.length} tracks!`;
+              sendUrlBtn.style.background = '#22c55e';
+            } else {
+              sendUrlBtnText.textContent = 'Queued (WS disconnected)';
+              sendUrlBtn.style.background = '#f59e0b';
+            }
+            return;
           } else {
-            sendUrlBtnText.textContent = 'Queued (WS disconnected)';
-            sendUrlBtn.style.background = '#f59e0b';
+            console.log('[Popup] Scrape returned no tracks, falling back to URL');
           }
-          return;
-        } else {
-          console.log('[Popup] Scrape failed or no tracks found, falling back to URL');
+        } catch (scrapeError) {
+          // Content script may not be loaded - fall back to URL approach
+          console.log('[Popup] Scrape failed (content script may not be loaded), falling back to URL:', scrapeError.message);
         }
       }
 
