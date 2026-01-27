@@ -21134,27 +21134,24 @@ useEffect(() => {
               const bioPreview = artistBio && artistBio.bio
                 ? artistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (artistBio.bio.length > 200 ? '...' : '')
                 : null;
-              console.log('🎤 Tooltip render - artistBio:', !!artistBio, 'bioPreview:', bioPreview?.substring(0, 30));
 
               const nameElement = React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
                 style: {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
-                  textTransform: 'uppercase',
-                  cursor: bioPreview ? 'help' : 'default'
+                  textTransform: 'uppercase'
                 },
                 title: bioPreview || undefined
               }, currentArtist.name);
 
-              return bioPreview
-                ? React.createElement(Tooltip, {
-                    content: bioPreview,
-                    position: 'bottom',
-                    variant: 'dark',
-                    className: 'tooltip-bio'
-                  }, nameElement)
-                : nameElement;
+              // Always show tooltip - use bio if available, otherwise show test message
+              return React.createElement(Tooltip, {
+                content: bioPreview || 'Bio loading...',
+                position: 'bottom',
+                variant: 'dark',
+                className: 'tooltip-bio'
+              }, nameElement);
             })(),
             // Navigation tabs (centered)
             React.createElement('div', {
