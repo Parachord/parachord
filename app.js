@@ -10131,6 +10131,16 @@ const Parachord = () => {
       setLoadingArtist(false);
       navigateTo('artist');
 
+      // Pre-fetch artist bio for tooltip (even when using cached artist data)
+      if (artistBio === null && cachedData.artist.mbid) {
+        (async () => {
+          console.log('🎤 Pre-fetching bio for tooltip (cached artist):', cachedData.artist.name);
+          const bioData = await getArtistBio(cachedData.artist.name, cachedData.artist.mbid);
+          console.log('🎤 Bio pre-fetch result:', bioData ? 'Got bio' : 'No bio');
+          setArtistBio(bioData === null ? false : bioData);
+        })();
+      }
+
       // Queue album art fetches for releases without cached art (viewport-prioritized)
       const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
       albumArtFetchId.current++; // Cancel any previous fetch session
@@ -10265,7 +10275,9 @@ const Parachord = () => {
 
       // Pre-fetch artist bio early (non-blocking) for tooltip on artist name
       (async () => {
+        console.log('🎤 Pre-fetching bio for tooltip:', artist.name);
         const bioData = await getArtistBio(artist.name, artist.id);
+        console.log('🎤 Bio pre-fetch result:', bioData ? 'Got bio' : 'No bio', bioData?.bio?.substring(0, 50));
         setArtistBio(bioData === null ? false : bioData);
       })();
 
@@ -21122,6 +21134,7 @@ useEffect(() => {
               const bioPreview = artistBio && artistBio.bio
                 ? artistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (artistBio.bio.length > 200 ? '...' : '')
                 : null;
+              console.log('🎤 Tooltip render - artistBio:', !!artistBio, 'bioPreview:', bioPreview?.substring(0, 30));
 
               const nameElement = React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
