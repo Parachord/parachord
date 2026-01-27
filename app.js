@@ -3780,10 +3780,10 @@ const Parachord = () => {
     const sorted = [...items];
     switch (playlistsSort) {
       case 'added':
-        // Sort by addedAt descending (newest first), fallback to lastModified, then createdAt
+        // Sort by addedAt descending (newest first), fallback to createdAt (not lastModified, to avoid edit-caused reordering)
         return sorted.sort((a, b) => {
-          const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
-          const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
+          const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
+          const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
           return bTime - aTime; // Descending (newest first)
         });
       case 'created': return sorted.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
@@ -13283,9 +13283,20 @@ ${tracks}
   const savePlaylistToStore = async (playlist) => {
     if (!playlist || !playlist.id) return;
 
-    // Don't save hosted playlists (they come from URLs)
+    // For hosted playlists, save metadata overrides to hosted_playlists store
     if (playlist.sourceUrl) {
-      console.log(`⏭️ Skipping save for hosted playlist: ${playlist.title}`);
+      try {
+        const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
+        const updatedHosted = hostedPlaylists.map(item =>
+          item.url === playlist.sourceUrl
+            ? { ...item, title: playlist.title, creator: playlist.creator }
+            : item
+        );
+        await window.electron?.store?.set('hosted_playlists', updatedHosted);
+        console.log(`💾 Saved metadata for hosted playlist: ${playlist.title}`);
+      } catch (error) {
+        console.error(`❌ Error saving hosted playlist metadata:`, error);
+      }
       return;
     }
 
@@ -17439,7 +17450,8 @@ ${tracks}
 
   // Import playlist from URL (hosted XSPF)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null) => {
+  // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -17474,25 +17486,29 @@ ${tracks}
       };
       const id = 'hosted-' + hashCode(url);
 
+      // Apply metadata overrides if provided (from stored local edits)
+      const playlistTitle = metadataOverrides?.title || parsed.title;
+      const playlistCreator = metadataOverrides?.creator ?? parsed.creator;
+
       // Check if playlist already exists
       const existingIndex = playlists.findIndex(p => p.sourceUrl === url);
       if (existingIndex >= 0) {
-        // Update existing playlist
+        // Update existing playlist (preserve local title/creator if they were edited)
         setPlaylists(prev => prev.map((p, i) =>
           i === existingIndex
-            ? { ...p, xspf: content, title: parsed.title, creator: parsed.creator, tracks: parsed.tracks || [], lastUpdated: Date.now() }
+            ? { ...p, xspf: content, title: playlistTitle, creator: playlistCreator, tracks: parsed.tracks || [], lastUpdated: Date.now() }
             : p
         ));
-        console.log(`🔄 Updated hosted playlist: ${parsed.title} (${parsed.tracks?.length || 0} tracks)`);
-        return { updated: true, playlist: parsed };
+        console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${parsed.tracks?.length || 0} tracks)`);
+        return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator } };
       }
 
       // Add new hosted playlist
       const newPlaylist = {
         id: id,
         filename: null,  // No local file for hosted playlists
-        title: parsed.title,
-        creator: parsed.creator,
+        title: playlistTitle,
+        creator: playlistCreator,
         tracks: parsed.tracks || [],
         xspf: content,
         sourceUrl: url,  // Track the source URL for updates
@@ -17622,10 +17638,10 @@ ${tracks}
 
       console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
 
-      for (const { url, addedAt } of hostedPlaylistUrls) {
+      for (const { url, addedAt, title, creator } of hostedPlaylistUrls) {
         try {
-          // Pass true to skip storage update (already in storage), and stored addedAt to preserve order
-          await handleImportPlaylistFromUrl(url, true, addedAt);
+          // Pass true to skip storage update (already in storage), and stored metadata to preserve overrides
+          await handleImportPlaylistFromUrl(url, true, addedAt, { title, creator });
         } catch (error) {
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
@@ -33583,8 +33599,8 @@ React.createElement('div', {
             switch (addToPlaylistSort) {
               case 'added':
                 sortedPlaylists.sort((a, b) => {
-                  const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
-                  const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
+                  const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
+                  const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
                   return bTime - aTime;
                 });
                 break;
