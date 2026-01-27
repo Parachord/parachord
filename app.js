@@ -4307,18 +4307,27 @@ const Parachord = () => {
   // Handle album or playlist URL drop
   const handleCollectionUrlDrop = async (url, resolverId, urlType, zone) => {
     console.log(`📀 Loading ${urlType} from URL (zone: ${zone}):`, url);
+    console.log(`📀 Resolver ID: ${resolverId}`);
 
     try {
       const config = await getResolverConfig(resolverId);
+      console.log(`📀 Config has token: ${!!config.token}`);
       let result;
 
       if (urlType === 'album') {
+        console.log(`📀 Calling lookupAlbum...`);
         result = await resolverLoaderRef.current.lookupAlbum(url, config);
+        console.log(`📀 lookupAlbum result:`, result);
         if (!result || !result.album) {
           throw new Error('Could not load album');
         }
       } else {
+        // Check if resolver has lookupPlaylist
+        const resolver = resolverLoaderRef.current.getResolver(resolverId);
+        console.log(`📀 Resolver has lookupPlaylist: ${!!resolver?.lookupPlaylist}`);
+        console.log(`📀 Calling lookupPlaylist...`);
         result = await resolverLoaderRef.current.lookupPlaylist(url, config);
+        console.log(`📀 lookupPlaylist result:`, result);
         if (!result || !result.playlist) {
           throw new Error('Could not load playlist');
         }
