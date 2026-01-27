@@ -17,7 +17,10 @@
     "https://*.bandcamp.com/*",
     "https://bandcamp.com/*",
     "https://open.spotify.com/*",
-    "https://music.apple.com/*"
+    "https://music.apple.com/*",
+    "https://www.last.fm/*",
+    "https://last.fm/*",
+    "https://listenbrainz.org/*"
   ],
   "action": {
     "default_popup": "popup.html",

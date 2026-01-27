@@ -5714,6 +5714,10 @@ const Parachord = () => {
         // Handle scraped playlist from browser extension (fallback when API fails)
         console.log('🌐 Received scraped playlist from browser extension:', message.playlist?.name, `(${message.playlist?.tracks?.length} tracks)`);
         handleScrapedPlaylist(message.playlist);
+      } else if (message.type === 'addFriend') {
+        // Handle add friend from browser extension (Last.fm/ListenBrainz user profiles)
+        console.log('👥 Received add friend request from browser extension:', message.url);
+        addFriend(message.url);
       }
     });
 

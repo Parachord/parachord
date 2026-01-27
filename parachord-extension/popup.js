@@ -57,6 +57,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'bandcamp', type: 'unknown' };
       }
 
+      // Last.fm user profiles (last.fm/user/username)
+      if (hostname === 'www.last.fm' || hostname === 'last.fm') {
+        if (pathname.startsWith('/user/') && pathname.split('/').filter(Boolean).length >= 2) {
+          return { service: 'lastfm', type: 'user' };
+        }
+        return { service: 'lastfm', type: 'unknown' };
+      }
+
+      // ListenBrainz user profiles (listenbrainz.org/user/username)
+      if (hostname === 'listenbrainz.org') {
+        if (pathname.startsWith('/user/') && pathname.split('/').filter(Boolean).length >= 2) {
+          return { service: 'listenbrainz', type: 'user' };
+        }
+        return { service: 'listenbrainz', type: 'unknown' };
+      }
+
       return { service: null, type: null };
     } catch (e) {
       return { service: null, type: null };
@@ -66,6 +82,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Get button text based on page type
   function getButtonConfig(pageInfo) {
     const { service, type } = pageInfo;
+
+    // User profile pages (Last.fm, ListenBrainz)
+    if (type === 'user') {
+      return { text: 'Add to Friends', icon: 'addFriend' };
+    }
 
     // Track pages
     if (type === 'track') {
@@ -105,6 +126,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Update icon
       if (buttonConfig.icon === 'playNext') {
         sendUrlBtnIcon.innerHTML = '<path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>';
+      } else if (buttonConfig.icon === 'addFriend') {
+        // Person with plus icon
+        sendUrlBtnIcon.innerHTML = '<path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>';
       } else {
         sendUrlBtnIcon.innerHTML = '<path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>';
       }
@@ -158,6 +182,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       const pageInfo = detectPageType(tab.url);
+
+      // Handle "Add to Friends" for Last.fm and ListenBrainz user profiles
+      if (pageInfo.type === 'user' && (pageInfo.service === 'lastfm' || pageInfo.service === 'listenbrainz')) {
+        console.log(`[Popup] ${pageInfo.service} user profile detected, sending add friend request...`);
+        sendUrlBtnText.textContent = 'Adding...';
+
+        const response = await chrome.runtime.sendMessage({
+          type: 'addFriend',
+          url: tab.url,
+          service: pageInfo.service,
+          source: 'popup'
+        });
+        console.log('[Popup] Background script response:', response);
+
+        if (response && response.sent) {
+          sendUrlBtnText.textContent = 'Added!';
+          sendUrlBtn.style.background = '#22c55e';
+        } else {
+          sendUrlBtnText.textContent = 'Queued (WS disconnected)';
+          sendUrlBtn.style.background = '#f59e0b';
+        }
+        return;
+      }
 
       // For Spotify/Apple Music playlists and Bandcamp, scrape the page
       const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||

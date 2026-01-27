@@ -209,6 +209,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     return true; // Keep channel open for async response
+  } else if (message.type === 'addFriend') {
+    // Forward add friend request to desktop (Last.fm/ListenBrainz user profiles)
+    console.log('[Parachord] Sending add friend request to desktop:', message.url);
+    const sent = sendToDesktop({
+      type: 'addFriend',
+      url: message.url,
+      service: message.service,
+      source: message.source || 'popup'
+    });
+    console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
+    sendResponse({ received: true, sent: sent });
+    return true;
   }
 
   return true;
