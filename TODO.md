@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-26
+> Last updated: 2026-01-27
 
 ---
 
@@ -326,6 +326,10 @@
 - ✅ Discogs metaservice plugin
 - ✅ Spotify auto-launch - Automatically launch Spotify when needed for playback
 - ✅ Spotify auto-fallback - Seamless fallback when device unavailable
+- ✅ Plugin marketplace remote fetch - Fetch plugins from remote marketplace
+- ✅ Plugin auto-sync with marketplace - Automatically sync plugins on startup
+- ✅ Plugins architecture refactor - Moved plugins to separate repo as submodule
+- ✅ Bandcamp playback improvements - Event listener timing and next button fixes
 
 ### Scrobbling
 - ✅ Last.fm scrobbling - Track listening history
@@ -362,6 +366,7 @@
 - ✅ Now playing status - See what friends are listening to
 - ✅ Resolution scheduler integration - Friends sidebar uses scheduler for track resolution
 - ✅ Spinoff/Listen-Along scheduler contexts - Proper abort handling when switching modes
+- ✅ Async image resolution for friend top albums - Background loading for album art
 
 ### Architecture
 - ✅ WebSocket support - Real-time updates
@@ -406,6 +411,12 @@
 - ✅ Playbar resolver selector - Dropdown with album art
 - ✅ Muted resolver icon colors - Subtler appearance in queue
 - ✅ Browser extension popup styling - Aligned with main app aesthetic
+- ✅ Generative artist placeholders - Unique patterns instead of generic purple
+- ✅ Smooth transitions for sidebar friend list - Animated friend list updates
+- ✅ Playlist detail card styling - Refined to match grid view
+- ✅ Sync update banner redesign - Matches app aesthetic
+- ✅ Release page card treatment - Matches artist page styling
+- ✅ Three-state pattern for artist image loading - Proper loading states
 
 ---
 
