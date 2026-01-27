@@ -2262,7 +2262,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         title: release.title,
         artist: currentArtist?.name || release.artist?.name,
         year: year ? parseInt(year) : null,
-        art: release.albumArt
+        art: release.albumArt,
+        trackCount: release.tracks?.length || null
       }
     };
     e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
@@ -2575,7 +2576,8 @@ const ReleasePage = ({
                 title: release.title,
                 artist: release.artist?.name,
                 year: year ? parseInt(year) : null,
-                art: release.albumArt
+                art: release.albumArt,
+                trackCount: release.tracks?.length || null
               }
             };
             e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
@@ -6288,6 +6290,110 @@ const Parachord = () => {
     loadSyncSettings();
   }, []);
 
+  // Background sync: update track counts for albums missing them
+  const trackCountSyncedRef = useRef(new Set());
+  const trackCountSyncRunningRef = useRef(false);
+
+  useEffect(() => {
+    if (collectionLoading || !collectionData.albums?.length) return;
+    if (trackCountSyncRunningRef.current) return; // Already running
+
+    const albumsNeedingTrackCount = collectionData.albums.filter(
+      a => a.trackCount == null && !trackCountSyncedRef.current.has(a.id)
+    );
+    if (albumsNeedingTrackCount.length === 0) return;
+
+    console.log(`📀 Syncing track counts for ${albumsNeedingTrackCount.length} albums...`);
+    trackCountSyncRunningRef.current = true;
+
+    let cancelled = false;
+
+    const syncTrackCounts = async () => {
+      for (const album of albumsNeedingTrackCount) {
+        if (cancelled) break;
+
+        // Mark as synced (attempted) to avoid re-processing
+        trackCountSyncedRef.current.add(album.id);
+
+        try {
+          // Search MusicBrainz for the release-group
+          const searchQuery = encodeURIComponent(`${album.artist} ${album.title}`);
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&limit=1&fmt=json`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+          );
+
+          if (!searchResponse.ok) {
+            // Rate limited - wait longer and continue
+            if (searchResponse.status === 503 || searchResponse.status === 429) {
+              await new Promise(r => setTimeout(r, 5000));
+            }
+            continue;
+          }
+
+          const searchData = await searchResponse.json();
+          const releaseGroup = searchData['release-groups']?.[0];
+          if (!releaseGroup) continue;
+
+          // Wait to avoid rate limiting
+          await new Promise(r => setTimeout(r, 1100));
+          if (cancelled) break;
+
+          // Get a release from this release-group to get track count
+          const releaseResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release?release-group=${releaseGroup.id}&status=official&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+          );
+
+          if (!releaseResponse.ok) continue;
+
+          const releaseData = await releaseResponse.json();
+          const release = releaseData.releases?.[0];
+          if (!release) continue;
+
+          // Wait to avoid rate limiting
+          await new Promise(r => setTimeout(r, 1100));
+          if (cancelled) break;
+
+          // Get release details with track count
+          const detailsResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+          );
+
+          if (!detailsResponse.ok) continue;
+
+          const details = await detailsResponse.json();
+          let trackCount = 0;
+          if (details.media) {
+            details.media.forEach(medium => {
+              trackCount += medium['track-count'] || medium.tracks?.length || 0;
+            });
+          }
+
+          if (trackCount > 0 && !cancelled) {
+            updateCollectionAlbumTrackCount(album.artist, album.title, trackCount);
+          }
+
+          // Wait between albums to respect rate limits
+          await new Promise(r => setTimeout(r, 1100));
+
+        } catch (error) {
+          console.error(`Failed to sync track count for "${album.title}":`, error);
+        }
+      }
+
+      trackCountSyncRunningRef.current = false;
+      if (!cancelled) {
+        console.log('📀 Track count sync complete');
+      }
+    };
+
+    syncTrackCounts();
+
+    return () => { cancelled = true; };
+  }, [collectionLoading, collectionData.albums, updateCollectionAlbumTrackCount]);
+
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
@@ -6411,7 +6517,8 @@ const Parachord = () => {
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
-    const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
+    // Always use generated ID to match how isInCollection checks are done
+    const trackId = generateTrackId(track.artist, track.title, track.album);
 
     setCollectionData(prev => {
       const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
@@ -6446,6 +6553,7 @@ const Parachord = () => {
         artist: album.artist,
         year: album.year || null,
         art: album.art || album.albumArt || null,
+        trackCount: album.trackCount || null,
         addedAt: Date.now()
       };
 
@@ -6457,6 +6565,30 @@ const Parachord = () => {
       return newData;
     });
   }, [saveCollection, showToast, showSidebarBadge]);
+
+  // Update album track count in collection (used when release data is loaded)
+  const updateCollectionAlbumTrackCount = useCallback((artistName, albumTitle, trackCount) => {
+    setCollectionData(prev => {
+      const albumIndex = prev.albums.findIndex(a =>
+        a.artist?.toLowerCase() === artistName?.toLowerCase() &&
+        a.title?.toLowerCase() === albumTitle?.toLowerCase()
+      );
+
+      // Album not in collection or trackCount unchanged
+      if (albumIndex === -1 || prev.albums[albumIndex].trackCount === trackCount) {
+        return prev;
+      }
+
+      // Update the album's trackCount
+      const updatedAlbums = [...prev.albums];
+      updatedAlbums[albumIndex] = { ...updatedAlbums[albumIndex], trackCount };
+
+      const newData = { ...prev, albums: updatedAlbums };
+      saveCollection(newData);
+      console.log(`📀 Updated track count for "${albumTitle}" to ${trackCount}`);
+      return newData;
+    });
+  }, [saveCollection]);
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
@@ -10495,6 +10627,10 @@ const Parachord = () => {
       console.log('Release data loaded:', tracks.length, 'tracks');
       setCurrentRelease(releaseInfo);
       setLoadingRelease(false);
+
+      // Update collection album's track count if album is in collection
+      const artistNameForUpdate = artist?.name || artist || 'Unknown Artist';
+      updateCollectionAlbumTrackCount(artistNameForUpdate, releaseData.title, tracks.length);
 
       // Resolve release tracks directly (release pages are typically small, 10-20 tracks)
       // Use the artist parameter passed to fetchReleaseData, not release.artist
@@ -19722,6 +19858,7 @@ useEffect(() => {
                       draggable: true,
                       onDragStart: (e) => {
                         e.dataTransfer.effectAllowed = 'copy';
+                        const prefetched = prefetchedReleasesRef.current[album.id];
                         e.dataTransfer.setData('text/plain', JSON.stringify({
                           type: 'album',
                           album: {
@@ -19729,7 +19866,8 @@ useEffect(() => {
                             title: album.title,
                             artist: album['artist-credit']?.[0]?.name || 'Unknown',
                             year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                            art: album.albumArt || null
+                            art: album.albumArt || null,
+                            trackCount: prefetched?.tracks?.length || null
                           }
                         }));
                       },
@@ -20825,6 +20963,7 @@ useEffect(() => {
                   draggable: true,
                   onDragStart: (e) => {
                     e.dataTransfer.effectAllowed = 'copy';
+                    const prefetched = prefetchedReleasesRef.current[album.id];
                     e.dataTransfer.setData('text/plain', JSON.stringify({
                       type: 'album',
                       album: {
@@ -20832,7 +20971,8 @@ useEffect(() => {
                         title: album.title,
                         artist: album['artist-credit']?.[0]?.name || 'Unknown',
                         year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
-                        art: null
+                        art: null,
+                        trackCount: prefetched?.tracks?.length || null
                       }
                     }));
                   },
@@ -24869,7 +25009,7 @@ React.createElement('div', {
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
                     key: `${album.title}-${album.artist}-${index}`,
-                    album: { ...album, trackCount: collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
+                    album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),
                     animationDelay: Math.min(index * 30, 300)
@@ -26221,6 +26361,7 @@ React.createElement('div', {
                 draggable: true,
                 onDragStart: (e) => {
                   e.dataTransfer.effectAllowed = 'copy';
+                  const prefetched = prefetchedReleases[album.id];
                   const albumData = {
                     type: 'album',
                     album: {
@@ -26228,7 +26369,8 @@ React.createElement('div', {
                       title: album.title,
                       artist: album.artist,
                       year: album.pubDate ? album.pubDate.getFullYear() : null,
-                      art: album.albumArt || null
+                      art: album.albumArt || null,
+                      trackCount: prefetched?.tracks?.length || null
                     }
                   };
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
