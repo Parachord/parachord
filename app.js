@@ -11808,6 +11808,8 @@ const Parachord = () => {
     // Clear stale visible track IDs when filter changes (or on initial setup)
     // This ensures the IntersectionObserver can properly detect "new" visible tracks
     visibleRecommendationsTrackIds.current.clear();
+    // Also reset the scheduler's context visibility so tracks can be re-enqueued
+    updateSchedulerVisibility('recommendations-tracks', []);
 
     // Wait for scroll container to be available
     const scrollContainer = recommendationsScrollContainerRef.current;
