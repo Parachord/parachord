@@ -18365,6 +18365,8 @@ useEffect(() => {
                         albumArt: friend.cachedRecentTrack.albumArt,
                         sources: cachedSources
                       };
+                      // Clear queue and play (like clicking any other track)
+                      setQueueWithContext([], { type: 'friend-track', name: `${friend.displayName}'s track` });
                       handlePlay(track);
                     },
                     onContextMenu: (e) => {

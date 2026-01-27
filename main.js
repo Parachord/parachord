@@ -1311,7 +1311,8 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
   const menuItems = [];
 
   // Only add queue/playlist options for types that have playable tracks
-  if (data.type !== 'artist' && data.type !== 'friend') {
+  // Exclude friend-track since it has its own specific menu items
+  if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track') {
     menuItems.push({
       label: menuLabel,
       enabled: enabled,
