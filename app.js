@@ -22769,7 +22769,7 @@ React.createElement('div', {
                     : a.source === relatedArtistsSourceFilter || a.source === 'both'
                 );
 
-            return React.createElement('div', null,
+            return React.createElement(React.Fragment, null,
               // Sticky filter bar - show when both services are configured
               hasBothServicesConfigured && React.createElement('div', {
                 className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
