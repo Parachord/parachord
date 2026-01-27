@@ -29472,13 +29472,18 @@ React.createElement('div', {
             )
           ),
           // Shuffle button
-          React.createElement('button', {
-            onClick: toggleShuffle,
-            className: `p-2 rounded transition-colors ${shuffleMode ? 'text-purple-400 hover:text-purple-300' : 'text-gray-400 hover:text-white'}`,
-            title: shuffleMode ? 'Shuffle on (click to restore order)' : 'Shuffle queue'
+          React.createElement(Tooltip, {
+            content: shuffleMode ? 'Shuffle on (click to restore order)' : 'Shuffle queue',
+            position: 'top',
+            variant: 'dark'
           },
-            React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
-              React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
+            React.createElement('button', {
+              onClick: toggleShuffle,
+              className: `p-2 rounded transition-colors ${shuffleMode ? 'text-purple-400 hover:text-purple-300' : 'text-gray-400 hover:text-white'}`
+            },
+              React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
+                React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
+              )
             )
           ),
           // Repeat button (placeholder) - disabled for now
