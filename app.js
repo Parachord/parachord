@@ -5377,6 +5377,8 @@ const Parachord = () => {
       source: null,
       resolvedBy: null,
       albumArt: null,
+      // If track has a URL (e.g., Bandcamp track URL), use it as a hint for resolution
+      sourceUrl: track.url || null,
       context: {
         type: 'playlist',
         name: playlistName,
@@ -10696,7 +10698,24 @@ const Parachord = () => {
           if (signal?.aborted) return;
 
           console.log(`  🔎 Trying ${resolver.id}...`);
-          const result = await resolver.resolve(artistName, track.title, null, config);
+
+          let result;
+
+          // If track has a sourceUrl hint matching this resolver, use it directly
+          if (track.sourceUrl && resolver.id === 'bandcamp' && track.sourceUrl.includes('bandcamp.com/track/')) {
+            console.log(`  📎 Using sourceUrl hint for Bandcamp: ${track.sourceUrl}`);
+            result = {
+              id: `bandcamp-${Date.now()}`,
+              title: track.title,
+              artist: artistName,
+              album: track.album || '',
+              duration: track.duration || 210,
+              sources: ['bandcamp'],
+              bandcampUrl: track.sourceUrl
+            };
+          } else {
+            result = await resolver.resolve(artistName, track.title, null, config);
+          }
 
           // Check abort before processing result
           if (signal?.aborted) return;
@@ -10779,7 +10798,26 @@ const Parachord = () => {
         if (signal?.aborted) return;
 
         console.log(`  🔎 Trying ${resolver.id}...`);
-        const result = await resolver.resolve(artistName, track.title, null, config);
+
+        let result;
+
+        // If track has a sourceUrl hint matching this resolver, use it directly
+        // (e.g., Bandcamp tracks scraped from playlists have their original URL)
+        if (track.sourceUrl && resolver.id === 'bandcamp' && track.sourceUrl.includes('bandcamp.com/track/')) {
+          console.log(`  📎 Using sourceUrl hint for Bandcamp: ${track.sourceUrl}`);
+          // Create a source directly from the URL
+          result = {
+            id: `bandcamp-${Date.now()}`,
+            title: track.title,
+            artist: artistName,
+            album: track.album || '',
+            duration: track.duration || 210,
+            sources: ['bandcamp'],
+            bandcampUrl: track.sourceUrl
+          };
+        } else {
+          result = await resolver.resolve(artistName, track.title, null, config);
+        }
 
         // Check abort before processing result
         if (signal?.aborted) return;

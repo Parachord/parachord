@@ -459,6 +459,19 @@
                           item.querySelector('.collection-item-artist') ||
                           item.querySelector('[class*="artist"]');
 
+          // Try to find Bandcamp track URL
+          const linkEl = item.querySelector('a[href*="bandcamp.com/track/"]') ||
+                        item.querySelector('a[href*="/track/"]') ||
+                        item.closest('a[href*="bandcamp.com"]') ||
+                        item.querySelector('a');
+          let trackUrl = '';
+          if (linkEl && linkEl.href) {
+            const href = linkEl.href;
+            if (href.includes('bandcamp.com') && href.includes('/track/')) {
+              trackUrl = href;
+            }
+          }
+
           if (titleEl) {
             const trackName = titleEl.textContent.trim();
             const trackArtist = artistEl ? artistEl.textContent.trim() : '';
@@ -469,7 +482,8 @@
                 artist: trackArtist,
                 album: '',
                 duration: 0,
-                position: index + 1
+                position: index + 1,
+                url: trackUrl // Include Bandcamp URL if found
               });
             }
           }
