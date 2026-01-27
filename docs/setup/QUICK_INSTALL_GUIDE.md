@@ -119,7 +119,7 @@ To share a resolver with someone:
 ## Where Are Resolvers Stored?
 
 ```
-harmonix-desktop/
+parachord/
 └── resolvers/
     ├── builtin/    ← Built-in (don't modify)
     └── user/       ← Your installed resolvers

@@ -1,6 +1,6 @@
 # API Credentials Setup Guide
 
-This guide explains how to set up API credentials for all music resolvers in Harmonix Desktop.
+This guide explains how to set up API credentials for all music resolvers in Parachord.
 
 ---
 
@@ -38,7 +38,7 @@ npm start
 2. Log in with your Spotify account
 3. Click **"Create App"**
 4. Fill in:
-   - **App Name:** "Harmonix Desktop" (or your choice)
+   - **App Name:** "Parachord" (or your choice)
    - **App Description:** "Personal music player"
    - **Redirect URI:** `http://127.0.0.1:8888/callback` (important!)
    - **API:** Check "Web API"

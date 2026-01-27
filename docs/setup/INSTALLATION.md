@@ -18,7 +18,7 @@ Copy these files to your Harmonix project root:
 
 Check that your project structure looks like:
 ```
-harmonix-desktop/
+parachord/
 ├── .env              ← Your credentials (in .gitignore!)
 ├── .env.example      ← Template (safe to commit)
 ├── .gitignore        ← Protects .env file
