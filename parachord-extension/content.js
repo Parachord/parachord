@@ -424,6 +424,34 @@
       });
     } else if (isPlaylistPage) {
       // User playlist page (bandcamp.com/username/playlist/id)
+
+      // First, try to get track URLs from page data (JavaScript variable or inline JSON)
+      let trackUrlMap = {}; // Map of track title (lowercase) -> URL
+
+      try {
+        // Try to find playlist data in page scripts
+        const scripts = document.querySelectorAll('script:not([src])');
+        for (const script of scripts) {
+          const content = script.textContent;
+          // Look for JSON data containing track URLs
+          if (content.includes('bandcamp.com/track/')) {
+            // Try to extract URLs and titles from the script
+            const urlMatches = content.matchAll(/https?:\/\/[^"'\s]+\.bandcamp\.com\/track\/[^"'\s]+/g);
+            for (const match of urlMatches) {
+              const url = match[0].replace(/[\\'"]/g, '');
+              // Extract slug from URL
+              const slug = url.split('/track/')[1]?.split(/[?#]/)[0]?.replace(/-/g, ' ') || '';
+              if (slug) {
+                trackUrlMap[slug.toLowerCase()] = url;
+              }
+            }
+          }
+        }
+        console.log('[Parachord] Found', Object.keys(trackUrlMap).length, 'track URLs from page scripts');
+      } catch (e) {
+        console.error('[Parachord] Error extracting URLs from scripts:', e);
+      }
+
       // Try multiple selectors and log what we find
       let playlistItems = document.querySelectorAll('.playlist-track');
       console.log('[Parachord] .playlist-track found:', playlistItems.length);
@@ -511,6 +539,25 @@
           if (!trackUrl && item.parentElement?.tagName === 'A' && item.parentElement.href?.includes('/track/')) {
             if (urlMatchesTrack(item.parentElement.href)) {
               trackUrl = item.parentElement.href;
+            }
+          }
+
+          // Try to find URL from trackUrlMap (extracted from page scripts)
+          if (!trackUrl && trackTitle && Object.keys(trackUrlMap).length > 0) {
+            // Convert title to slug-like format and try matching
+            const titleSlug = trackTitle.replace(/[^a-z0-9\s]/gi, '').toLowerCase();
+            const titleWords = titleSlug.split(/\s+/).filter(w => w.length > 2);
+
+            // Try to find a URL whose slug contains enough matching words
+            for (const [slug, url] of Object.entries(trackUrlMap)) {
+              const slugWords = slug.split(/\s+/).filter(w => w.length > 2);
+              const matchCount = titleWords.filter(w => slug.includes(w)).length;
+              // Match if 2+ words match or 50%+ of title words
+              if (matchCount >= 2 || (titleWords.length > 0 && matchCount >= titleWords.length * 0.5)) {
+                trackUrl = url;
+                console.log(`[Parachord] Matched track "${trackTitle}" to URL via script data: ${url}`);
+                break;
+              }
             }
           }
 
