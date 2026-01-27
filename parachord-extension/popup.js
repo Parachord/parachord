@@ -153,9 +153,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const pageInfo = detectPageType(tab.url);
 
-      // For Spotify playlists, scrape the page to avoid API restrictions on editorial playlists
-      if (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') {
-        console.log('[Popup] Spotify playlist detected, scraping tracks...');
+      // For Spotify/Apple Music playlists, scrape the page to avoid API restrictions
+      const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
+                           (pageInfo.service === 'apple' && pageInfo.type === 'playlist');
+
+      if (shouldScrape) {
+        console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);
         sendUrlBtnText.textContent = 'Scraping...';
 
         try {

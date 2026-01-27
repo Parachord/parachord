@@ -242,4 +242,107 @@
     url: window.location.href
   }).catch(() => {});
 
+  // Scrape playlist/album tracks from the page DOM
+  function scrapePlaylistTracks() {
+    const tracks = [];
+
+    // Try to get playlist/album name
+    let collectionName = '';
+    const titleEl = document.querySelector('[data-testid="non-editorial-shelf-item-title"]') ||
+                    document.querySelector('h1.headings__title') ||
+                    document.querySelector('.headings h1') ||
+                    document.querySelector('h1[class*="product-name"]');
+    if (titleEl) {
+      collectionName = titleEl.textContent.trim();
+    }
+
+    // Find all track rows - Apple Music uses various patterns
+    // Try songs-list-row first (most common)
+    let trackRows = document.querySelectorAll('.songs-list-row');
+
+    // Fallback to other patterns
+    if (trackRows.length === 0) {
+      trackRows = document.querySelectorAll('[data-testid="track-list-item"]');
+    }
+    if (trackRows.length === 0) {
+      trackRows = document.querySelectorAll('.song-list-item');
+    }
+    if (trackRows.length === 0) {
+      trackRows = document.querySelectorAll('[class*="track-list"] [class*="row"]');
+    }
+
+    trackRows.forEach((row, index) => {
+      try {
+        // Track name - various selectors for different page layouts
+        const trackNameEl = row.querySelector('.songs-list-row__song-name') ||
+                           row.querySelector('[data-testid="track-title"]') ||
+                           row.querySelector('.song-name') ||
+                           row.querySelector('[class*="song-name"]');
+
+        // Artist name(s)
+        const artistEl = row.querySelector('.songs-list-row__by-line') ||
+                        row.querySelector('[data-testid="track-artist"]') ||
+                        row.querySelector('.song-artist') ||
+                        row.querySelector('[class*="artist-name"]');
+
+        // Album name (if available - usually only on playlist pages)
+        const albumEl = row.querySelector('.songs-list-row__album-name') ||
+                       row.querySelector('[data-testid="track-album"]');
+
+        // Duration
+        const durationEl = row.querySelector('.songs-list-row__length') ||
+                          row.querySelector('[data-testid="track-duration"]') ||
+                          row.querySelector('.song-duration') ||
+                          row.querySelector('time');
+
+        if (trackNameEl) {
+          const trackName = trackNameEl.textContent.trim();
+          const artist = artistEl ? artistEl.textContent.trim() : '';
+          const album = albumEl ? albumEl.textContent.trim() : '';
+
+          // Parse duration if available (format: "3:45")
+          let duration = 0;
+          if (durationEl) {
+            const durationText = durationEl.textContent.trim();
+            const match = durationText.match(/(\d+):(\d+)/);
+            if (match) {
+              duration = parseInt(match[1]) * 60 + parseInt(match[2]);
+            }
+          }
+
+          if (trackName && artist) {
+            tracks.push({
+              title: trackName,
+              artist: artist,
+              album: album,
+              duration: duration,
+              position: index + 1
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[Parachord] Error scraping track row:', e);
+      }
+    });
+
+    console.log(`[Parachord] Scraped ${tracks.length} tracks from Apple Music`);
+
+    return {
+      name: collectionName,
+      tracks: tracks,
+      url: window.location.href,
+      scrapedAt: new Date().toISOString()
+    };
+  }
+
+  // Listen for scrape requests from popup/background
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'scrapePlaylist') {
+      console.log('[Parachord] Received scrape request');
+      const result = scrapePlaylistTracks();
+      sendResponse(result);
+      return true;
+    }
+  });
+
 })();
