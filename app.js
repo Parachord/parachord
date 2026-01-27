@@ -3128,6 +3128,8 @@ const Parachord = () => {
   const [artistSortDropdownOpen, setArtistSortDropdownOpen] = useState(false);
   const [artistSort, setArtistSort] = useState('date-desc'); // date-desc, date-asc, alpha-asc, alpha-desc
   const [artistBio, setArtistBio] = useState(null); // Artist biography from Last.fm
+  const [artistExtendedInfo, setArtistExtendedInfo] = useState(null); // Extended info from MusicBrainz (founded, location, URLs, members)
+  const [loadingExtendedInfo, setLoadingExtendedInfo] = useState(false);
   const [relatedArtists, setRelatedArtists] = useState([]); // Related artists from Last.fm and ListenBrainz
   const [relatedArtistsSourceFilter, setRelatedArtistsSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'listenbrainz' | 'both'
   const [loadingBio, setLoadingBio] = useState(false);
@@ -4255,6 +4257,7 @@ const Parachord = () => {
     } else {
       setArtistPageTab('music');
       setArtistBio(null);
+      setArtistExtendedInfo(null);
       setRelatedArtists([]);
     }
   }, [currentArtist]);
@@ -4263,12 +4266,23 @@ const Parachord = () => {
   useEffect(() => {
     if (!currentArtist) return;
 
-    if (artistPageTab === 'biography' && artistBio === null && !loadingBio) {
-      setLoadingBio(true); // Set loading immediately before async call
-      (async () => {
-        const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
-        setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
-      })();
+    if (artistPageTab === 'biography') {
+      // Fetch bio if not already loaded
+      if (artistBio === null && !loadingBio) {
+        setLoadingBio(true); // Set loading immediately before async call
+        (async () => {
+          const bioData = await getArtistBio(currentArtist.name, currentArtist.mbid);
+          setArtistBio(bioData === null ? false : bioData); // Use false to indicate "fetched but no bio"
+        })();
+      }
+
+      // Fetch extended info if not already loaded
+      if (artistExtendedInfo === null && !loadingExtendedInfo && currentArtist.mbid) {
+        (async () => {
+          const extInfo = await fetchArtistExtendedInfo(currentArtist.mbid);
+          setArtistExtendedInfo(extInfo === null ? false : extInfo);
+        })();
+      }
     }
 
     if (artistPageTab === 'related' && relatedArtists.length === 0 && !loadingRelated) {
@@ -5088,6 +5102,9 @@ const Parachord = () => {
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
 
+  // Cache for artist extended info from MusicBrainz (mbid -> { info, timestamp })
+  const artistExtendedInfoCache = useRef({});
+
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
 
@@ -5100,6 +5117,7 @@ const Parachord = () => {
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
+    artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
     recommendations: 60 * 60 * 1000         // 1 hour (recommendations change based on listening)
   };
@@ -16210,6 +16228,154 @@ ${tracks}
     }
   };
 
+  // Fetch extended artist info from MusicBrainz (founded date, location, URLs, members)
+  const fetchArtistExtendedInfo = async (artistMbid) => {
+    if (!artistMbid) {
+      console.log('🎵 Extended info skipped: no MBID');
+      return null;
+    }
+
+    // Check cache first
+    const cached = artistExtendedInfoCache.current[artistMbid];
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.artistExtendedInfo) {
+      console.log('📦 Using cached extended info for:', artistMbid);
+      return cached.info;
+    }
+
+    setLoadingExtendedInfo(true);
+    try {
+      // Query MusicBrainz for artist with URL relations and artist relations (members)
+      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels+artist-rels&fmt=json`;
+      const response = await fetch(mbUrl, {
+        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
+      });
+
+      if (!response.ok) {
+        console.log('🎵 MusicBrainz extended info fetch failed:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      console.log('🎵 MusicBrainz extended info:', data);
+
+      // Extract founded date and location
+      const foundedDate = data['life-span']?.begin || null;
+      const endedDate = data['life-span']?.end || null;
+      const isActive = !data['life-span']?.ended;
+      const foundedIn = data.area?.name || data['begin-area']?.name || null;
+
+      // Extract URLs from relations
+      const urls = {
+        officialHomepage: null,
+        wikipedia: null,
+        twitter: null,
+        instagram: null,
+        facebook: null,
+        youtube: null,
+        bandcamp: null,
+        soundcloud: null,
+        spotify: null,
+        appleMusic: null,
+        discogs: null,
+        allmusic: null
+      };
+
+      if (data.relations) {
+        for (const rel of data.relations) {
+          if (rel.type === 'official homepage' && rel.url?.resource) {
+            urls.officialHomepage = rel.url.resource;
+          } else if (rel.type === 'wikipedia' && rel.url?.resource) {
+            urls.wikipedia = rel.url.resource;
+          } else if (rel.type === 'social network' && rel.url?.resource) {
+            const url = rel.url.resource.toLowerCase();
+            if (url.includes('twitter.com') || url.includes('x.com')) {
+              urls.twitter = rel.url.resource;
+            } else if (url.includes('instagram.com')) {
+              urls.instagram = rel.url.resource;
+            } else if (url.includes('facebook.com')) {
+              urls.facebook = rel.url.resource;
+            }
+          } else if (rel.type === 'youtube' && rel.url?.resource) {
+            urls.youtube = rel.url.resource;
+          } else if (rel.type === 'bandcamp' && rel.url?.resource) {
+            urls.bandcamp = rel.url.resource;
+          } else if (rel.type === 'soundcloud' && rel.url?.resource) {
+            urls.soundcloud = rel.url.resource;
+          } else if (rel.type === 'streaming' && rel.url?.resource) {
+            const url = rel.url.resource.toLowerCase();
+            if (url.includes('spotify.com')) {
+              urls.spotify = rel.url.resource;
+            } else if (url.includes('music.apple.com') || url.includes('itunes.apple.com')) {
+              urls.appleMusic = rel.url.resource;
+            }
+          } else if (rel.type === 'discogs' && rel.url?.resource) {
+            urls.discogs = rel.url.resource;
+          } else if (rel.type === 'allmusic' && rel.url?.resource) {
+            urls.allmusic = rel.url.resource;
+          }
+        }
+      }
+
+      // Extract members from artist relations
+      const members = {
+        current: [],
+        former: []
+      };
+
+      if (data.relations) {
+        for (const rel of data.relations) {
+          // "member of band" relation means rel.artist is the band, current artist is the member
+          // "has member" relation (type-id) means current artist is band, rel.artist is member
+          if (rel.type === 'member of band' && rel.direction === 'backward' && rel.artist) {
+            const member = {
+              name: rel.artist.name,
+              mbid: rel.artist.id,
+              attributes: rel.attributes || [], // e.g., ["guitar", "vocals"]
+              beginDate: rel.begin || null,
+              endDate: rel.end || null
+            };
+
+            // If the relation has ended, it's a former member
+            if (rel.ended) {
+              members.former.push(member);
+            } else {
+              members.current.push(member);
+            }
+          }
+        }
+      }
+
+      // Sort members by start date (oldest first)
+      members.current.sort((a, b) => (a.beginDate || '').localeCompare(b.beginDate || ''));
+      members.former.sort((a, b) => (a.beginDate || '').localeCompare(b.beginDate || ''));
+
+      const info = {
+        foundedDate,
+        endedDate,
+        isActive,
+        foundedIn,
+        type: data.type, // Person, Group, Orchestra, etc.
+        gender: data.gender, // For solo artists
+        urls,
+        members
+      };
+
+      // Cache the result
+      artistExtendedInfoCache.current[artistMbid] = {
+        info,
+        timestamp: Date.now()
+      };
+
+      console.log('🎵 Extended info parsed:', info);
+      return info;
+    } catch (error) {
+      console.error('🎵 Failed to fetch extended info:', error);
+      return null;
+    } finally {
+      setLoadingExtendedInfo(false);
+    }
+  };
+
   // Fetch similar artists from ListenBrainz Labs API
   const getListenBrainzSimilarArtists = async (artistMbid) => {
     if (!artistMbid) {
@@ -21994,53 +22160,301 @@ React.createElement('div', {
             })()
           ),
 
-          // BIOGRAPHY TAB
+          // BIOGRAPHY TAB - Two-column layout
           artistPageTab === 'biography' && React.createElement('div', {
-            className: 'max-w-3xl mx-auto p-6'
+            className: 'flex gap-0 p-6'
           },
-            // Loading state - skeleton paragraphs
-            loadingBio && React.createElement('div', { className: 'space-y-4' },
-              // First paragraph skeleton (longer)
-              React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '50ms' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-11/12', style: { backgroundSize: '200% 100%', animationDelay: '100ms' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-4/5', style: { backgroundSize: '200% 100%', animationDelay: '150ms' } })
-              ),
-              // Second paragraph skeleton
-              React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '200ms' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '250ms' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-3/4', style: { backgroundSize: '200% 100%', animationDelay: '300ms' } })
-              ),
-              // Third paragraph skeleton (shorter)
-              React.createElement('div', { className: 'space-y-2' },
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '350ms' } }),
-                React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3', style: { backgroundSize: '200% 100%', animationDelay: '400ms' } })
-              )
-            ),
-            // Bio content (artistBio is an object when bio exists)
-            !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
+            // LEFT COLUMN: Artist Info Card (same width as album art column)
+            React.createElement('div', {
+              className: 'flex-shrink-0 pr-8',
+              style: { width: '240px' }
+            },
+              // Artist Info Card
               React.createElement('div', {
-                className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
-              }, artistBio.bio),
-              // Source attribution and link
-              React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
-                React.createElement('span', {
-                  className: 'text-xs text-gray-400'
-                }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
-                artistBio.url && React.createElement('a', {
-                  href: artistBio.url,
-                  target: '_blank',
-                  rel: 'noopener noreferrer',
-                  className: 'text-purple-600 hover:text-purple-700 text-sm'
-                }, 'Read more →')
+                style: {
+                  width: '192px',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)'
+                }
+              },
+                // Loading skeleton for extended info
+                loadingExtendedInfo && React.createElement('div', { className: 'space-y-4' },
+                  // Section skeleton
+                  React.createElement('div', { className: 'space-y-2' },
+                    React.createElement('div', { className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-16', style: { backgroundSize: '200% 100%' } }),
+                    React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-24', style: { backgroundSize: '200% 100%', animationDelay: '50ms' } })
+                  ),
+                  React.createElement('div', { className: 'space-y-2' },
+                    React.createElement('div', { className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-20', style: { backgroundSize: '200% 100%', animationDelay: '100ms' } }),
+                    React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-28', style: { backgroundSize: '200% 100%', animationDelay: '150ms' } })
+                  ),
+                  React.createElement('div', { className: 'space-y-2' },
+                    React.createElement('div', { className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-14', style: { backgroundSize: '200% 100%', animationDelay: '200ms' } }),
+                    React.createElement('div', { className: 'flex gap-2' },
+                      React.createElement('div', { className: 'h-6 w-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer', style: { backgroundSize: '200% 100%', animationDelay: '250ms' } }),
+                      React.createElement('div', { className: 'h-6 w-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer', style: { backgroundSize: '200% 100%', animationDelay: '300ms' } }),
+                      React.createElement('div', { className: 'h-6 w-6 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer', style: { backgroundSize: '200% 100%', animationDelay: '350ms' } })
+                    )
+                  )
+                ),
+
+                // Artist Info content
+                !loadingExtendedInfo && artistExtendedInfo && artistExtendedInfo !== false && React.createElement('div', { className: 'space-y-4' },
+                  // Founded date
+                  artistExtendedInfo.foundedDate && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-1' },
+                      artistExtendedInfo.type === 'Person' ? 'Born' : 'Founded'
+                    ),
+                    React.createElement('div', { className: 'text-sm text-gray-700' },
+                      (() => {
+                        const date = artistExtendedInfo.foundedDate;
+                        if (date.length === 4) return date; // Just year
+                        if (date.length === 7) {
+                          const [year, month] = date.split('-');
+                          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                          return `${monthNames[parseInt(month) - 1]} ${year}`;
+                        }
+                        // Full date
+                        const d = new Date(date);
+                        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                      })()
+                    )
+                  ),
+
+                  // Founded In / Origin
+                  artistExtendedInfo.foundedIn && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-1' },
+                      artistExtendedInfo.type === 'Person' ? 'From' : 'Origin'
+                    ),
+                    React.createElement('div', { className: 'text-sm text-gray-700' }, artistExtendedInfo.foundedIn)
+                  ),
+
+                  // Status (active/disbanded)
+                  artistExtendedInfo.type === 'Group' && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-1' }, 'Status'),
+                    React.createElement('div', {
+                      className: `text-sm ${artistExtendedInfo.isActive ? 'text-green-600' : 'text-gray-500'}`
+                    }, artistExtendedInfo.isActive ? 'Active' : `Disbanded${artistExtendedInfo.endedDate ? ` (${artistExtendedInfo.endedDate.split('-')[0]})` : ''}`)
+                  ),
+
+                  // Official Homepage
+                  artistExtendedInfo.urls.officialHomepage && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-1' }, 'Website'),
+                    React.createElement('a', {
+                      href: artistExtendedInfo.urls.officialHomepage,
+                      target: '_blank',
+                      rel: 'noopener noreferrer',
+                      className: 'text-sm text-purple-600 hover:text-purple-700 truncate block',
+                      title: artistExtendedInfo.urls.officialHomepage
+                    }, new URL(artistExtendedInfo.urls.officialHomepage).hostname.replace(/^www\./, ''))
+                  ),
+
+                  // Social Media Links
+                  (artistExtendedInfo.urls.twitter || artistExtendedInfo.urls.instagram || artistExtendedInfo.urls.facebook || artistExtendedInfo.urls.youtube) && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-2' }, 'Social'),
+                    React.createElement('div', { className: 'flex flex-wrap gap-2' },
+                      // Twitter/X
+                      artistExtendedInfo.urls.twitter && React.createElement('a', {
+                        href: artistExtendedInfo.urls.twitter,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Twitter/X'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' })
+                        )
+                      ),
+                      // Instagram
+                      artistExtendedInfo.urls.instagram && React.createElement('a', {
+                        href: artistExtendedInfo.urls.instagram,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Instagram'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z' })
+                        )
+                      ),
+                      // Facebook
+                      artistExtendedInfo.urls.facebook && React.createElement('a', {
+                        href: artistExtendedInfo.urls.facebook,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Facebook'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z' })
+                        )
+                      ),
+                      // YouTube
+                      artistExtendedInfo.urls.youtube && React.createElement('a', {
+                        href: artistExtendedInfo.urls.youtube,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'YouTube'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
+                        )
+                      )
+                    )
+                  ),
+
+                  // Streaming/Music Platforms
+                  (artistExtendedInfo.urls.spotify || artistExtendedInfo.urls.appleMusic || artistExtendedInfo.urls.bandcamp || artistExtendedInfo.urls.soundcloud) && React.createElement('div', null,
+                    React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-2' }, 'Listen'),
+                    React.createElement('div', { className: 'flex flex-wrap gap-2' },
+                      // Spotify
+                      artistExtendedInfo.urls.spotify && React.createElement('a', {
+                        href: artistExtendedInfo.urls.spotify,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Spotify'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                        )
+                      ),
+                      // Apple Music
+                      artistExtendedInfo.urls.appleMusic && React.createElement('a', {
+                        href: artistExtendedInfo.urls.appleMusic,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Apple Music'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043a5.022 5.022 0 00-1.877-.726 10.496 10.496 0 00-1.564-.15c-.04-.003-.083-.01-.124-.013H5.986c-.152.01-.303.017-.455.026-.747.043-1.49.123-2.193.4-1.336.53-2.3 1.452-2.865 2.78-.192.448-.292.925-.363 1.408-.056.392-.088.785-.1 1.18 0 .032-.007.062-.01.093v12.223c.01.14.017.283.027.424.05.815.154 1.624.497 2.373.65 1.42 1.738 2.353 3.234 2.801.42.127.856.187 1.293.228.555.053 1.11.06 1.667.06h11.03a12.5 12.5 0 001.57-.1c.822-.106 1.596-.35 2.295-.81a5.046 5.046 0 001.88-2.207c.186-.42.293-.87.37-1.324.113-.675.138-1.358.137-2.04-.002-3.8 0-7.595-.003-11.393zm-6.423 3.99v5.712c0 .417-.058.827-.244 1.206-.29.59-.76.962-1.388 1.14-.35.1-.706.157-1.07.173-.95.042-1.8-.6-1.965-1.483-.18-.965.46-1.807 1.42-2.034.333-.08.675-.12 1.015-.17.34-.05.674-.11.984-.238.39-.16.54-.433.545-.84.01-.637 0-1.274 0-1.912v-.123c0-.003-.01-.007-.02-.02l-4.77 1.033v5.38c0 .09 0 .18-.01.27-.04.49-.126.96-.384 1.38-.282.46-.675.784-1.168.97-.312.12-.64.18-.97.21-.56.04-1.1-.03-1.6-.32-.505-.29-.82-.71-.95-1.27-.08-.34-.08-.69-.007-1.03.11-.52.425-.88.868-1.14.365-.21.768-.32 1.178-.4.406-.08.817-.14 1.22-.23.31-.07.582-.21.772-.47.12-.16.17-.34.17-.54V8.374c0-.108.016-.217.044-.322.063-.24.227-.392.46-.453.164-.043.332-.074.5-.104l5.04-1.017c.09-.02.18-.033.27-.05h.15c.3.017.47.18.51.49.01.065.01.13.01.196l.003 3z' })
+                        )
+                      ),
+                      // Bandcamp
+                      artistExtendedInfo.urls.bandcamp && React.createElement('a', {
+                        href: artistExtendedInfo.urls.bandcamp,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'Bandcamp'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M0 18.75l7.437-13.5H24l-7.438 13.5H0z' })
+                        )
+                      ),
+                      // SoundCloud
+                      artistExtendedInfo.urls.soundcloud && React.createElement('a', {
+                        href: artistExtendedInfo.urls.soundcloud,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        className: 'w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors',
+                        title: 'SoundCloud'
+                      },
+                        React.createElement('svg', { className: 'w-4 h-4 text-gray-600', viewBox: '0 0 24 24', fill: 'currentColor' },
+                          React.createElement('path', { d: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.1-.1m-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094s.089-.037.099-.094l.226-1.308-.226-1.332c-.01-.057-.045-.094-.09-.094m1.83-1.229c-.061 0-.12.045-.12.104l-.21 2.563.225 2.458c0 .06.045.104.106.104.061 0 .12-.044.12-.104l.24-2.458-.24-2.563c0-.06-.06-.104-.12-.104m.945-.089c-.075 0-.135.06-.15.135l-.193 2.64.21 2.544c.016.077.075.138.149.138.075 0 .135-.061.15-.138l.225-2.544-.225-2.64c-.015-.075-.075-.135-.15-.135m.93-.132c-.09 0-.149.075-.165.165l-.195 2.76.195 2.52c.016.09.075.165.165.165s.149-.075.165-.165l.21-2.52-.21-2.76c-.016-.09-.075-.165-.165-.165m.96-.061c-.105 0-.18.075-.18.18l-.18 2.805.18 2.504c0 .105.075.18.18.18s.165-.075.18-.18l.195-2.504-.195-2.804c-.015-.105-.075-.18-.18-.18m.989-.061c-.105 0-.195.09-.21.195l-.165 2.865.165 2.475c.015.105.09.195.21.195.105 0 .195-.09.21-.195l.18-2.475-.18-2.865c-.015-.105-.105-.195-.21-.195m1.02.045c-.12 0-.225.105-.225.225l-.15 2.775.15 2.46c0 .12.105.226.225.226.12 0 .21-.105.225-.226l.165-2.46-.165-2.775c-.015-.12-.105-.225-.225-.225m1.05.09c-.135 0-.255.12-.255.255l-.135 2.685.135 2.43c0 .135.105.255.255.255.12 0 .24-.12.255-.255l.15-2.43-.15-2.685c-.015-.135-.12-.255-.255-.255m1.05.195c-.15 0-.27.12-.285.27l-.12 2.49.12 2.4c.015.15.135.27.285.27s.255-.12.27-.27l.135-2.4-.135-2.49c-.015-.15-.12-.27-.27-.27m1.065.285c-.015-.165-.135-.285-.285-.285s-.285.12-.3.285l-.105 2.205.105 2.37c.015.165.135.285.3.285.15 0 .27-.12.285-.285l.12-2.37-.12-2.205m.75-.285c-.165 0-.3.135-.315.315l-.105 2.175.105 2.355c.015.165.15.315.315.315.165 0 .285-.135.315-.315l.12-2.355-.12-2.175c-.03-.18-.15-.315-.315-.315m1.095.39c-.03-.195-.165-.345-.36-.345-.18 0-.33.15-.345.345l-.09 2.1.09 2.325c.015.195.165.345.345.345.195 0 .33-.15.36-.345l.105-2.325-.105-2.1m.75-.375c-.195 0-.36.165-.375.375l-.075 2.085.075 2.31c.015.21.18.375.375.375.18 0 .345-.165.375-.375l.09-2.31-.09-2.085c-.03-.21-.195-.375-.375-.375m.75-.12c-.21 0-.375.165-.39.39l-.06 2.175.06 2.28c.015.21.18.39.39.39.195 0 .375-.18.39-.39l.075-2.28-.075-2.175c-.015-.225-.195-.39-.39-.39m.75.015c-.21 0-.39.18-.405.405l-.045 2.145.045 2.25c.015.225.195.405.405.405.21 0 .375-.18.405-.405l.06-2.25-.06-2.145c-.03-.225-.195-.405-.405-.405m2.085.72c-.21 0-.375.18-.405.405l-.03 1.44.03 2.235c.03.225.195.405.405.405.21 0 .39-.18.42-.405l.045-2.235-.045-1.44c-.03-.225-.21-.405-.42-.405m-1.35-.72c-.21 0-.405.18-.42.42l-.03 2.115.03 2.22c.015.24.21.42.42.42.225 0 .405-.18.42-.42l.045-2.22-.045-2.115c-.015-.24-.195-.42-.42-.42m5.07 1.155c-.24 0-.465.045-.69.135-.135-.18-.21-.36-.255-.525-.075-.27-.09-.54-.09-.815 0-.735.3-1.44.75-1.965.48-.54 1.125-.87 1.86-.87.735 0 1.395.315 1.86.855.195.225.345.48.465.75-.135-.03-.27-.045-.42-.045-1.32 0-2.355 1.05-2.355 2.37 0 .06 0 .105.015.165-.375-.015-.75-.03-1.14-.045v-.01z' })
+                        )
+                      )
+                    )
+                  ),
+
+                  // Members section (for Groups/Bands)
+                  (artistExtendedInfo.members.current.length > 0 || artistExtendedInfo.members.former.length > 0) && React.createElement('div', { className: 'pt-2 border-t border-gray-100' },
+                    // Current Members
+                    artistExtendedInfo.members.current.length > 0 && React.createElement('div', { className: 'mb-3' },
+                      React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-2' }, 'Current Members'),
+                      React.createElement('div', { className: 'space-y-1' },
+                        artistExtendedInfo.members.current.map((member, idx) =>
+                          React.createElement('div', {
+                            key: member.mbid || idx,
+                            className: 'text-sm cursor-pointer hover:text-purple-600 transition-colors',
+                            onClick: () => fetchArtistData(member.name)
+                          },
+                            member.name,
+                            member.attributes.length > 0 && React.createElement('span', {
+                              className: 'text-xs text-gray-400 ml-1'
+                            }, `(${member.attributes.join(', ')})`)
+                          )
+                        )
+                      )
+                    ),
+                    // Former Members
+                    artistExtendedInfo.members.former.length > 0 && React.createElement('div', null,
+                      React.createElement('div', { className: 'text-xs text-gray-400 uppercase tracking-wide mb-2' }, 'Former Members'),
+                      React.createElement('div', { className: 'space-y-1' },
+                        artistExtendedInfo.members.former.map((member, idx) =>
+                          React.createElement('div', {
+                            key: member.mbid || idx,
+                            className: 'text-sm text-gray-500 cursor-pointer hover:text-purple-600 transition-colors',
+                            onClick: () => fetchArtistData(member.name)
+                          },
+                            member.name,
+                            member.attributes.length > 0 && React.createElement('span', {
+                              className: 'text-xs text-gray-400 ml-1'
+                            }, `(${member.attributes.join(', ')})`)
+                          )
+                        )
+                      )
+                    )
+                  )
+                ),
+
+                // No extended info found
+                !loadingExtendedInfo && artistExtendedInfo === false && React.createElement('div', {
+                  className: 'text-xs text-gray-400 text-center py-4'
+                }, 'No additional info available')
               )
             ),
-            // No bio found (artistBio === false means we fetched but found nothing)
-            !loadingBio && artistBio === false && React.createElement('div', {
-              className: 'text-center py-12 text-gray-400'
-            }, 'No biography available for this artist.')
+
+            // RIGHT COLUMN: Biography
+            React.createElement('div', { className: 'flex-1 min-w-0 max-w-2xl' },
+              // Loading state - skeleton paragraphs
+              loadingBio && React.createElement('div', { className: 'space-y-4' },
+                // First paragraph skeleton (longer)
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '50ms' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-11/12', style: { backgroundSize: '200% 100%', animationDelay: '100ms' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-4/5', style: { backgroundSize: '200% 100%', animationDelay: '150ms' } })
+                ),
+                // Second paragraph skeleton
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '200ms' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '250ms' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-3/4', style: { backgroundSize: '200% 100%', animationDelay: '300ms' } })
+                ),
+                // Third paragraph skeleton (shorter)
+                React.createElement('div', { className: 'space-y-2' },
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-full', style: { backgroundSize: '200% 100%', animationDelay: '350ms' } }),
+                  React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer w-2/3', style: { backgroundSize: '200% 100%', animationDelay: '400ms' } })
+                )
+              ),
+              // Bio content (artistBio is an object when bio exists)
+              !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
+                React.createElement('div', {
+                  className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
+                }, artistBio.bio),
+                // Source attribution and link
+                React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
+                  React.createElement('span', {
+                    className: 'text-xs text-gray-400'
+                  }, `From ${artistBio.source === 'wikipedia' ? 'Wikipedia' : artistBio.source === 'discogs' ? 'Discogs' : 'Last.fm'}`),
+                  artistBio.url && React.createElement('a', {
+                    href: artistBio.url,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    className: 'text-purple-600 hover:text-purple-700 text-sm'
+                  }, 'Read more →')
+                )
+              ),
+              // No bio found (artistBio === false means we fetched but found nothing)
+              !loadingBio && artistBio === false && React.createElement('div', {
+                className: 'text-center py-12 text-gray-400'
+              }, 'No biography available for this artist.')
+            )
           ),
 
           // RELATED ARTISTS TAB
