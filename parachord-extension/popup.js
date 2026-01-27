@@ -80,6 +80,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'pitchfork', type: 'unknown' };
       }
 
+      // SoundCloud
+      if (hostname === 'soundcloud.com') {
+        const segments = pathname.split('/').filter(Boolean);
+        // Sets (playlists/albums): /artist/sets/name
+        if (pathname.includes('/sets/')) return { service: 'soundcloud', type: 'playlist' };
+        // Likes: /artist/likes
+        if (pathname.endsWith('/likes')) return { service: 'soundcloud', type: 'likes' };
+        // Track: /artist/track-name (2 segments, not a special page)
+        if (segments.length >= 2 && !['tracks', 'albums', 'sets', 'reposts', 'likes', 'followers', 'following'].includes(segments[1])) {
+          return { service: 'soundcloud', type: 'track' };
+        }
+        // Artist page
+        if (segments.length === 1 || segments[1] === 'tracks') {
+          return { service: 'soundcloud', type: 'artist' };
+        }
+        return { service: 'soundcloud', type: 'unknown' };
+      }
+
       return { service: null, type: null };
     } catch (e) {
       return { service: null, type: null };
@@ -213,11 +231,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // For Spotify/Apple Music playlists, Bandcamp, and Pitchfork reviews, scrape the page
+      // For Spotify/Apple Music playlists, Bandcamp, Pitchfork, and SoundCloud, scrape the page
       const shouldScrape = (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
                            (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
                            (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type)) ||
-                           (pageInfo.service === 'pitchfork' && ['track', 'album'].includes(pageInfo.type));
+                           (pageInfo.service === 'pitchfork' && ['track', 'album'].includes(pageInfo.type)) ||
+                           (pageInfo.service === 'soundcloud' && ['track', 'playlist', 'artist', 'likes'].includes(pageInfo.type));
 
       if (shouldScrape) {
         console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);

@@ -22,7 +22,8 @@
     "https://www.last.fm/*",
     "https://last.fm/*",
     "https://listenbrainz.org/*",
-    "https://pitchfork.com/*"
+    "https://pitchfork.com/*",
+    "https://soundcloud.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -69,6 +70,13 @@
         "https://pitchfork.com/reviews/tracks/*"
       ],
       "js": ["content-pitchfork.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://soundcloud.com/*"
+      ],
+      "js": ["content-soundcloud.js"],
       "run_at": "document_idle"
     }
   ],
