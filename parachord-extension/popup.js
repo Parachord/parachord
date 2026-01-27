@@ -151,7 +151,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // Send to background script to forward to desktop
+      const pageInfo = detectPageType(tab.url);
+
+      // For Spotify playlists, scrape the page to avoid API restrictions on editorial playlists
+      if (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') {
+        console.log('[Popup] Spotify playlist detected, scraping tracks...');
+        sendUrlBtnText.textContent = 'Scraping...';
+
+        // Request scrape from content script
+        const scrapeResult = await chrome.tabs.sendMessage(tab.id, { type: 'scrapePlaylist' });
+
+        if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
+          console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
+
+          // Send scraped playlist to Parachord
+          const response = await chrome.runtime.sendMessage({
+            type: 'sendScrapedPlaylist',
+            playlist: scrapeResult,
+            source: 'popup-scrape'
+          });
+
+          if (response && response.sent) {
+            sendUrlBtnText.textContent = `Sent ${scrapeResult.tracks.length} tracks!`;
+            sendUrlBtn.style.background = '#22c55e';
+          } else {
+            sendUrlBtnText.textContent = 'Queued (WS disconnected)';
+            sendUrlBtn.style.background = '#f59e0b';
+          }
+          return;
+        } else {
+          console.log('[Popup] Scrape failed or no tracks found, falling back to URL');
+        }
+      }
+
+      // Default: Send URL to background script to forward to desktop
       console.log('[Popup] Sending message to background script...');
       const response = await chrome.runtime.sendMessage({
         type: 'sendToParachord',

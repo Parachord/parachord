@@ -5353,6 +5353,53 @@ const Parachord = () => {
     await handleUrlDrop(url, 'queue');
   };
 
+  // Handle scraped playlist from browser extension (fallback when API fails for Spotify editorial playlists)
+  const handleScrapedPlaylist = async (playlist) => {
+    if (!playlist || !playlist.tracks || playlist.tracks.length === 0) {
+      console.error('❌ No tracks in scraped playlist');
+      showToast('Could not scrape tracks from page', 'error');
+      return;
+    }
+
+    const playlistName = playlist.name || 'Scraped Playlist';
+    console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks`);
+
+    showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"...`, 'info');
+
+    // Convert scraped tracks to our track format and add to queue
+    const tracks = playlist.tracks.map((track, index) => ({
+      id: `scraped-${Date.now()}-${index}`,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || '',
+      duration: track.duration || 0,
+      // These will be resolved by the resolution system
+      source: null,
+      resolvedBy: null,
+      albumArt: null,
+      context: {
+        type: 'playlist',
+        name: playlistName,
+        url: playlist.url
+      }
+    }));
+
+    // Insert tracks at position 1 (play next) - same as URL drops
+    setCurrentQueue(prev => {
+      const insertPosition = prev.length > 0 ? 1 : 0;
+      return [...prev.slice(0, insertPosition), ...tracks, ...prev.slice(insertPosition)];
+    });
+
+    // If nothing is currently loaded, load the first track
+    if (!currentTrackRef.current && tracks.length > 0) {
+      const firstTrack = tracks[0];
+      setCurrentTrack(firstTrack);
+      setPlaybackSource(null);
+    }
+
+    showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
+  };
+
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
     // Check auth first
@@ -5661,6 +5708,10 @@ const Parachord = () => {
         // Handle URL sent from browser extension context menu
         console.log('🌐 Received URL from browser extension:', message.url);
         handleSendToParachord(message.url);
+      } else if (message.type === 'scrapedPlaylist') {
+        // Handle scraped playlist from browser extension (fallback when API fails)
+        console.log('🌐 Received scraped playlist from browser extension:', message.playlist?.name, `(${message.playlist?.tracks?.length} tracks)`);
+        handleScrapedPlaylist(message.playlist);
       }
     });
 

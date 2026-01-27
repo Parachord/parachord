@@ -413,7 +413,7 @@
 - ✅ Browser extension popup styling - Aligned with main app aesthetic
 - ✅ Browser extension dynamic buttons - Button text changes based on page type (track, album, playlist)
 - ✅ Browser extension "Play Next" for collections - Albums/playlists insert at position 1 instead of end of queue
-- ✅ Spotify playlist URL lookup - Supports user-created playlists via browser extension (note: Spotify editorial playlists like "Today's Top Hits" are API-restricted)
+- ✅ Spotify playlist URL lookup - Supports all playlists via browser extension (API for user playlists, DOM scraping fallback for editorial playlists)
 - ✅ Generative artist placeholders - Unique patterns instead of generic purple
 - ✅ Smooth transitions for sidebar friend list - Animated friend list updates
 - ✅ Playlist detail card styling - Refined to match grid view

@@ -218,4 +218,88 @@
     url: window.location.href
   }).catch(() => {});
 
+  // Scrape playlist/album tracks from the page DOM
+  // This is used as a fallback when the Spotify API returns 404 (editorial playlists)
+  function scrapePlaylistTracks() {
+    const tracks = [];
+
+    // Try to get playlist/album name
+    let collectionName = '';
+    const titleEl = document.querySelector('[data-testid="entityTitle"] h1') ||
+                    document.querySelector('h1[data-encore-id="text"]') ||
+                    document.querySelector('span[data-testid="entityTitle"]');
+    if (titleEl) {
+      collectionName = titleEl.textContent.trim();
+    }
+
+    // Find all track rows - Spotify uses data-testid="tracklist-row"
+    const trackRows = document.querySelectorAll('[data-testid="tracklist-row"]');
+
+    trackRows.forEach((row, index) => {
+      try {
+        // Track name - usually in a link with specific data-testid
+        const trackNameEl = row.querySelector('[data-testid="internal-track-link"] div') ||
+                           row.querySelector('a[href*="/track/"] div') ||
+                           row.querySelector('[data-testid="internal-track-link"]');
+
+        // Artist name(s) - usually in span or link elements after the track name
+        const artistEls = row.querySelectorAll('a[href*="/artist/"]');
+
+        // Album name - in link to album
+        const albumEl = row.querySelector('a[href*="/album/"]');
+
+        // Duration - usually in a specific column
+        const durationEl = row.querySelector('[data-testid="tracklist-duration"]') ||
+                          row.querySelector('div[aria-label*="duration"]');
+
+        if (trackNameEl) {
+          const trackName = trackNameEl.textContent.trim();
+          const artists = Array.from(artistEls).map(a => a.textContent.trim()).join(', ');
+          const album = albumEl ? albumEl.textContent.trim() : '';
+
+          // Parse duration if available (format: "3:45")
+          let duration = 0;
+          if (durationEl) {
+            const durationText = durationEl.textContent.trim();
+            const match = durationText.match(/(\d+):(\d+)/);
+            if (match) {
+              duration = parseInt(match[1]) * 60 + parseInt(match[2]);
+            }
+          }
+
+          if (trackName && artists) {
+            tracks.push({
+              title: trackName,
+              artist: artists,
+              album: album,
+              duration: duration,
+              position: index + 1
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[Parachord] Error scraping track row:', e);
+      }
+    });
+
+    console.log(`[Parachord] Scraped ${tracks.length} tracks from playlist`);
+
+    return {
+      name: collectionName,
+      tracks: tracks,
+      url: window.location.href,
+      scrapedAt: new Date().toISOString()
+    };
+  }
+
+  // Listen for scrape requests from popup/background
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'scrapePlaylist') {
+      console.log('[Parachord] Received scrape request');
+      const result = scrapePlaylistTracks();
+      sendResponse(result);
+      return true;
+    }
+  });
+
 })();

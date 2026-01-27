@@ -187,6 +187,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
     sendResponse({ received: true, sent: sent });
     return true;
+  } else if (message.type === 'sendScrapedPlaylist') {
+    // Forward scraped playlist data to desktop
+    console.log('[Parachord] Sending scraped playlist to desktop:', message.playlist?.name, `(${message.playlist?.tracks?.length} tracks)`);
+    const sent = sendToDesktop({
+      type: 'scrapedPlaylist',
+      playlist: message.playlist,
+      source: message.source || 'scrape'
+    });
+    sendResponse({ received: true, sent: sent });
+    return true;
+  } else if (message.type === 'scrapePlaylist') {
+    // Request to scrape playlist from current tab - forward to content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'scrapePlaylist' }, (response) => {
+          sendResponse(response);
+        });
+      } else {
+        sendResponse({ error: 'No active tab' });
+      }
+    });
+    return true; // Keep channel open for async response
   }
 
   return true;
