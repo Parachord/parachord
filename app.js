@@ -23399,7 +23399,7 @@ React.createElement('div', {
             // LEFT COLUMN: 2x2 album art grid and metadata
             React.createElement('div', {
               className: 'flex-shrink-0 pr-8',
-              style: { width: '240px' }
+              style: { width: '240px', overflow: 'hidden' }
             },
               // Playlist card - matches playlist card style from grid view
               (() => {
@@ -23412,7 +23412,7 @@ React.createElement('div', {
                     borderRadius: '10px',
                     backgroundColor: '#ffffff',
                     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                    width: 'fit-content'
+                    width: '212px'
                   }
                 },
                   // Album art mosaic with hover overlay
