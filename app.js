@@ -8628,6 +8628,16 @@ const Parachord = () => {
       return;
     }
 
+    // End listen-along session if active
+    if (listenAlongFriend) {
+      console.log(`🎧 Ending listen-along with ${listenAlongFriend.displayName} to start Collection Station`);
+      showToast(`Stopped listening along with ${listenAlongFriend.displayName}`);
+      abortSchedulerContext('listen-along');
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+    }
+
     // Deduplicate by id
     const trackMap = new Map();
     allTracks.forEach(track => {
