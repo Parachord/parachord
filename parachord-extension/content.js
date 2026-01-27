@@ -7,6 +7,7 @@
 
   // Detect which site we're on
   const hostname = window.location.hostname;
+  const pathname = window.location.pathname;
   let site = 'unknown';
 
   if (hostname.includes('youtube.com')) {
@@ -15,7 +16,7 @@
     site = 'bandcamp';
   }
 
-  console.log('[Parachord] Content script loaded on:', site);
+  console.log('[Parachord] Content script loaded on:', site, 'hostname:', hostname, 'pathname:', pathname);
 
   // Notify background that we're on a supported page
   chrome.runtime.sendMessage({
@@ -335,6 +336,8 @@
     const isAlbumPage = pathname.includes('/album/');
     const isPlaylistPage = pathname.includes('/playlist/');
 
+    console.log('[Parachord] Scraping Bandcamp, page type:', { isTrackPage, isAlbumPage, isPlaylistPage, pathname });
+
     // Get collection name
     let collectionName = '';
     if (isAlbumPage || isPlaylistPage) {
@@ -421,9 +424,31 @@
       });
     } else if (isPlaylistPage) {
       // User playlist page (bandcamp.com/username/playlist/id)
-      const playlistItems = document.querySelectorAll('.playlist-track') ||
-                           document.querySelectorAll('.collection-item-container') ||
-                           document.querySelectorAll('[class*="playlist"] [class*="track"]');
+      // Try multiple selectors and log what we find
+      let playlistItems = document.querySelectorAll('.playlist-track');
+      console.log('[Parachord] .playlist-track found:', playlistItems.length);
+
+      if (playlistItems.length === 0) {
+        playlistItems = document.querySelectorAll('.collection-item-container');
+        console.log('[Parachord] .collection-item-container found:', playlistItems.length);
+      }
+      if (playlistItems.length === 0) {
+        playlistItems = document.querySelectorAll('[class*="playlist"] [class*="track"]');
+        console.log('[Parachord] [class*="playlist"] [class*="track"] found:', playlistItems.length);
+      }
+      if (playlistItems.length === 0) {
+        // Try more generic selectors for Bandcamp fan playlists
+        playlistItems = document.querySelectorAll('.item-link');
+        console.log('[Parachord] .item-link found:', playlistItems.length);
+      }
+      if (playlistItems.length === 0) {
+        playlistItems = document.querySelectorAll('.track-info');
+        console.log('[Parachord] .track-info found:', playlistItems.length);
+      }
+
+      // Debug: log the page structure
+      console.log('[Parachord] Page body classes:', document.body.className);
+      console.log('[Parachord] Main content:', document.querySelector('main')?.className || document.querySelector('#content')?.className || 'not found');
 
       playlistItems.forEach((item, index) => {
         try {
