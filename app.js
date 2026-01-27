@@ -24869,7 +24869,7 @@ React.createElement('div', {
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
                     key: `${album.title}-${album.artist}-${index}`,
-                    album: { ...album, trackCount: 0 },
+                    album: { ...album, trackCount: collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),
                     animationDelay: Math.min(index * 30, 300)
