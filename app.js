@@ -3018,6 +3018,7 @@ const Parachord = () => {
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
   const [spinoffLoading, setSpinoffLoading] = useState(false);
+  const [spinoffAvailable, setSpinoffAvailable] = useState(null); // null = unchecked, true/false = checked
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
   const [isPlaying, setIsPlaying] = useState(false);
@@ -4155,6 +4156,33 @@ const Parachord = () => {
       }
     }
   }, [currentTrack?.albumArt]);
+
+  // Check if spinoff is available for the current track
+  useEffect(() => {
+    // Reset availability when track changes
+    setSpinoffAvailable(null);
+
+    if (!currentTrack?.artist || !currentTrack?.title) {
+      return;
+    }
+
+    // Don't check while in spinoff mode (we already know it works)
+    if (spinoffMode) {
+      setSpinoffAvailable(true);
+      return;
+    }
+
+    let cancelled = false;
+    const checkAvailability = async () => {
+      const available = await checkSpinoffAvailability(currentTrack.artist, currentTrack.title);
+      if (!cancelled) {
+        setSpinoffAvailable(available);
+      }
+    };
+
+    checkAvailability();
+    return () => { cancelled = true; };
+  }, [currentTrack?.artist, currentTrack?.title, spinoffMode]);
 
   // Scroll queue to bottom when opened (so track 1 is visible at the bottom)
   useEffect(() => {
@@ -16359,6 +16387,36 @@ ${tracks}
     } catch (error) {
       console.error('Failed to fetch similar tracks from Last.fm:', error);
       return [];
+    }
+  };
+
+  // Check if similar tracks are available for spinoff (lightweight check)
+  const checkSpinoffAvailability = async (artistName, trackName) => {
+    if (!artistName || !trackName) return false;
+
+    const apiKey = lastfmApiKey.current;
+    if (!apiKey) {
+      console.log('🔀 Spinoff availability check skipped: no API key');
+      return false;
+    }
+
+    try {
+      // Request just 1 track to check if any similar tracks exist
+      const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=1`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.log('🔀 Spinoff availability check failed:', response.status);
+        return false;
+      }
+
+      const data = await response.json();
+      const hasSimilarTracks = data.similartracks?.track?.length > 0;
+      console.log(`🔀 Spinoff availability for "${trackName}": ${hasSimilarTracks}`);
+      return hasSimilarTracks;
+    } catch (error) {
+      console.error('Failed to check spinoff availability:', error);
+      return false;
     }
   };
 
@@ -29495,7 +29553,9 @@ React.createElement('div', {
         React.createElement('div', { className: 'flex items-center gap-3' },
           // Spinoff button - radio-like playback of similar tracks (with tooltip)
           React.createElement(Tooltip, {
-            content: spinoffMode ? 'Exit spinoff mode' : 'Spinoff',
+            content: spinoffMode ? 'Exit spinoff mode' :
+              spinoffAvailable === false ? 'No related songs available' :
+              spinoffAvailable === null ? 'Checking for related songs...' : 'Spinoff',
             position: 'top',
             variant: 'dark'
           },
@@ -29503,14 +29563,14 @@ React.createElement('div', {
               onClick: () => {
                 if (spinoffMode) {
                   exitSpinoff();
-                } else if (currentTrack) {
+                } else if (currentTrack && spinoffAvailable) {
                   startSpinoff(currentTrack);
                 }
               },
-              disabled: !currentTrack || spinoffLoading,
+              disabled: !currentTrack || spinoffLoading || spinoffAvailable === false || spinoffAvailable === null,
               className: `p-1.5 rounded-full transition-colors ${
-                !currentTrack ? 'text-gray-600 cursor-not-allowed' :
-                spinoffLoading ? 'text-gray-400' :
+                !currentTrack || spinoffAvailable === false ? 'text-gray-600 cursor-not-allowed' :
+                spinoffLoading || spinoffAvailable === null ? 'text-gray-400' :
                 spinoffMode ? 'text-purple-400 hover:text-purple-300' :
                 'text-gray-400 hover:text-white'
               }`
