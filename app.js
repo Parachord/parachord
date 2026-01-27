@@ -28585,7 +28585,7 @@ React.createElement('div', {
                 }
               },
                 // Parachord Logo
-                React.createElement('div', { style: { marginBottom: '20px' } },
+                React.createElement('div', { style: { marginBottom: '20px', display: 'flex', justifyContent: 'center' } },
                   React.createElement(ParachordWordmark, { fill: '#333', height: 56 })
                 ),
 
