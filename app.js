@@ -11052,6 +11052,9 @@ const Parachord = () => {
         return;
       }
 
+      // Clear artist history so back button returns to Collection, not previous artist
+      setArtistHistory([]);
+
       // Show loading state immediately - set artist and navigate before search
       const artist = {
         name: album.artist,
