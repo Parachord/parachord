@@ -3196,6 +3196,10 @@ const Parachord = () => {
   const prefetchedReleasesRef = useRef(prefetchedReleases); // Ref to avoid stale closure in context menu handlers
   const prefetchInProgressRef = useRef(new Set()); // Track which releases are currently being prefetched
 
+  // Cache for top album tracks (from Last.fm history - keyed by artist-album)
+  const topAlbumTracksCache = useRef({}); // { "artist-album": tracks[] }
+  const topAlbumPrefetchInProgress = useRef(new Set());
+
   // Critic's Picks state
   const [criticsPicks, setCriticsPicks] = useState([]);
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
@@ -15575,8 +15579,75 @@ ${tracks}
     return releases;
   };
 
+  // Prefetch album tracks on hover (for Top Albums)
+  const prefetchTopAlbumTracks = (artistName, albumName, albumArt = null) => {
+    const cacheKey = `${artistName}-${albumName}`.toLowerCase();
+
+    // Skip if already cached or in progress
+    if (topAlbumTracksCache.current[cacheKey] || topAlbumPrefetchInProgress.current.has(cacheKey)) {
+      return;
+    }
+
+    // Mark as in progress
+    topAlbumPrefetchInProgress.current.add(cacheKey);
+
+    // Fetch asynchronously
+    (async () => {
+      try {
+        const releases = await searchMusicBrainzRelease(albumName, artistName);
+        if (releases.length === 0) return;
+
+        const releaseId = releases[0].id;
+        const releaseDetailsResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+
+        if (!releaseDetailsResponse.ok) return;
+
+        const releaseData = await releaseDetailsResponse.json();
+        const tracks = [];
+        if (releaseData.media && releaseData.media.length > 0) {
+          releaseData.media.forEach((medium) => {
+            if (medium.tracks) {
+              medium.tracks.forEach(track => {
+                const trackId = `${artistName}-${track.title || 'untitled'}-${albumName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                tracks.push({
+                  id: trackId,
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  duration: track.length ? Math.round(track.length / 1000) : 0,
+                  recordingId: track.recording?.id,
+                  artist: artistName,
+                  album: albumName,
+                  albumArt: albumArt,
+                  sources: {}
+                });
+              });
+            }
+          });
+        }
+
+        // Cache the result
+        topAlbumTracksCache.current[cacheKey] = tracks;
+      } catch (error) {
+        // Silently fail - prefetch is optional
+      } finally {
+        topAlbumPrefetchInProgress.current.delete(cacheKey);
+      }
+    })();
+  };
+
   // Fetch album tracks by artist and album name (for Top Albums hover buttons)
   const fetchAlbumTracksByName = async (artistName, albumName, albumArt = null) => {
+    const cacheKey = `${artistName}-${albumName}`.toLowerCase();
+
+    // Check cache first
+    if (topAlbumTracksCache.current[cacheKey]) {
+      return topAlbumTracksCache.current[cacheKey];
+    }
+
     try {
       // Search MusicBrainz for the release
       const releases = await searchMusicBrainzRelease(albumName, artistName);
@@ -15625,6 +15696,9 @@ ${tracks}
           }
         });
       }
+
+      // Cache the result
+      topAlbumTracksCache.current[cacheKey] = tracks;
 
       return tracks;
     } catch (error) {
@@ -28117,7 +28191,8 @@ React.createElement('div', {
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                         animationDelay: `${Math.min(index * 30, 300)}ms`
                       },
-                      onClick: () => openTopAlbum(album)
+                      onClick: () => openTopAlbum(album),
+                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
                     },
                       // Album art - Cinematic Light design
                       React.createElement('div', {
@@ -28835,7 +28910,8 @@ React.createElement('div', {
                         return React.createElement('div', {
                           key: album.id || index,
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
-                          onClick: () => openTopAlbum(album)
+                          onClick: () => openTopAlbum(album),
+                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',
