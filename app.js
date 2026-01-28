@@ -5279,13 +5279,22 @@ const Parachord = () => {
         const builtinAxeFiles = await loadBuiltinResolvers();
         
         let resolversToLoad = builtinAxeFiles;
-        
+
         if (builtinAxeFiles.length === 0) {
           console.warn('⚠️  No .axe files found in resolvers/builtin/');
           console.log('💾 Using embedded fallback resolvers');
           resolversToLoad = FALLBACK_RESOLVERS;
         } else {
           console.log(`✅ Loaded ${builtinAxeFiles.length} .axe files from disk`);
+
+          // Merge in any FALLBACK_RESOLVERS that aren't already loaded from disk
+          // This ensures builtin resolvers (like soundcloud) are always available
+          const loadedIds = new Set(builtinAxeFiles.map(axe => axe.manifest?.id));
+          const missingBuiltins = FALLBACK_RESOLVERS.filter(axe => !loadedIds.has(axe.manifest?.id));
+          if (missingBuiltins.length > 0) {
+            console.log(`📦 Adding ${missingBuiltins.length} builtin resolver(s) not in cache:`, missingBuiltins.map(r => r.manifest.id).join(', '));
+            resolversToLoad = [...builtinAxeFiles, ...missingBuiltins];
+          }
         }
 
         // Separate content resolvers from meta services by manifest type
