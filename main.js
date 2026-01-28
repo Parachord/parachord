@@ -708,13 +708,8 @@ ipcMain.handle('soundcloud-auth', async () => {
     return { success: false, error: 'Missing SoundCloud Client ID' };
   }
 
-  // SoundCloud OAuth scopes
-  // See: https://developers.soundcloud.com/docs/api/guide#authentication
-  const scopes = [
-    'non-expiring'  // Request non-expiring token (still has refresh token though)
-  ].join(' ');
-
-  const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+  // SoundCloud OAuth - no scope needed (non-expiring tokens are no longer allowed)
+  const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   console.log('Opening SoundCloud auth URL:', authUrl);
 
