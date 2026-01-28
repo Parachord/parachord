@@ -32850,7 +32850,7 @@ React.createElement('div', {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -32865,7 +32865,7 @@ React.createElement('div', {
                 const restoredVolume = preMuteVolumeRef.current || 70;
                 setIsMuted(false);
                 setVolume(restoredVolume);
-                if (activeResolverId === 'localfiles' && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                   applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id);
                 }
                 if (activeResolverId === 'spotify') {
@@ -32875,7 +32875,7 @@ React.createElement('div', {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
                 setIsMuted(true);
-                if (activeResolverId === 'localfiles' && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                   audioRef.current.volume = 0;
                 }
                 if (activeResolverId === 'spotify') {
@@ -32940,8 +32940,8 @@ React.createElement('div', {
                     setVolume(newVolume);
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
-                    // Local files: apply normalized volume immediately
-                    if (activeResolverId === 'localfiles' && audioRef.current) {
+                    // Local files and SoundCloud: apply normalized volume immediately
+                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
                     }
                     // Spotify: debounced API call to prevent rate limiting
