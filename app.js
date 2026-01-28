@@ -688,7 +688,7 @@ const loadBuiltinResolvers = async () => {
 const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"spotify","name":"Spotify","version":"1.0.0","author":"Parachord Team","description":"Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.","icon":"♫","color":"#1DB954","homepage":"https://spotify.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":true,"authType":"oauth","scopes":["user-read-playback-state","user-modify-playback-state","user-read-currently-playing"],"configurable":{"clientId":{"type":"text","label":"Client ID","default":"c040c0ee133344b282e6342198bcbeea","readonly":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) return []; try { const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=20`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) { console.error('Spotify search failed:', response.status); return []; } const data = await response.json(); return data.tracks.items.map(track => ({ id: `spotify-${track.id}`, title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), sources: ['spotify'], spotifyUri: track.uri, spotifyId: track.id, albumArt: track.album.images[0]?.url })); } catch (error) { console.error('Spotify search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `artist:${artist} track:${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!config.token) { console.error('Spotify not connected'); return false; } try { const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!devicesResponse.ok) return false; const devicesData = await devicesResponse.json(); const devices = devicesData.devices || []; if (devices.length === 0) { console.error('No Spotify devices found'); return false; } const controllable = devices.filter(d => !d.is_restricted); const available = controllable.length > 0 ? controllable : devices; const computer = available.find(d => d.type === 'Computer'); const phone = available.find(d => d.type === 'Smartphone'); const speaker = available.find(d => d.type === 'Speaker'); const nonWebActive = available.find(d => d.is_active && !d.name.toLowerCase().includes('web')); const nonWeb = available.find(d => !d.name.toLowerCase().includes('web')); let activeDevice = computer || phone || speaker || nonWebActive || nonWeb || available[0]; console.log('Selected device:', activeDevice.name, activeDevice.type); if (!activeDevice.is_active) { const transferResponse = await fetch('https://api.spotify.com/v1/me/player', { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ device_ids: [activeDevice.id], play: true }) }); if (!transferResponse.ok && transferResponse.status !== 204) { console.error('Failed to transfer playback'); } await new Promise(resolve => setTimeout(resolve, 1000)); } const playResponse = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ uris: [track.spotifyUri] }) }); return playResponse.ok || playResponse.status === 204; } catch (error) { console.error('Spotify play error:', error); return false; } }","init":"async function(config) { console.log('Spotify resolver initialized'); }","cleanup":"async function() { console.log('Spotify resolver cleanup'); }"}},
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
-  {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
+  {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.1.0","author":"Parachord Team","description":"High-quality audio streaming from Qobuz. Login for full tracks, or use 30-second previews.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"credentials","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, qobuzTrackId: track.id, albumArt: track.album?.image?.large || track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, hires: track.hires, hiresStreamable: track.hires_streamable, maximumBitDepth: track.maximum_bit_depth, maximumSamplingRate: track.maximum_sampling_rate, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","getStreamUrl":"async function(track, config) { if (!track.qobuzTrackId && !track.qobuzId) { console.error('No Qobuz track ID'); return null; } const trackId = track.qobuzTrackId || track.qobuzId; if (config.token && window.electron?.qobuz?.getStreamUrl) { try { console.log('Getting Qobuz full stream URL for track:', trackId); const formatId = track.hires && config.hasSubscription ? 27 : 6; const result = await window.electron.qobuz.getStreamUrl(trackId, formatId); if (result.success && result.url) { console.log('Got Qobuz stream URL, quality:', result.bitDepth + 'bit/' + result.samplingRate + 'kHz'); return { url: result.url, bitDepth: result.bitDepth, samplingRate: result.samplingRate, mimeType: result.mimeType }; } } catch (error) { console.error('Failed to get Qobuz stream URL:', error); } } if (track.previewUrl) { console.log('Using Qobuz preview URL (not authenticated)'); return { url: track.previewUrl, isPreview: true }; } return null; }","play":"async function(track, config) { const streamData = await this.getStreamUrl(track, config); if (!streamData || !streamData.url) { console.error('No Qobuz stream URL available'); return false; } try { if (streamData.isPreview) { console.log('Playing Qobuz 30-second preview'); } else { console.log('Playing full Qobuz track'); } return { streamUrl: streamData.url, isPreview: streamData.isPreview || false, bitDepth: streamData.bitDepth, samplingRate: streamData.samplingRate }; } catch (error) { console.error('Failed to play Qobuz track:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized, authenticated:', !!config.token); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
 ];
 
@@ -3288,6 +3288,12 @@ const Parachord = () => {
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
+  const [qobuzUsername, setQobuzUsername] = useState(null);
+  const [qobuzHasSubscription, setQobuzHasSubscription] = useState(false);
+  const [qobuzUsernameInput, setQobuzUsernameInput] = useState('');
+  const [qobuzPasswordInput, setQobuzPasswordInput] = useState('');
+  const [qobuzConnecting, setQobuzConnecting] = useState(false);
+  const [qobuzError, setQobuzError] = useState(null);
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
 
@@ -6222,8 +6228,48 @@ const Parachord = () => {
       return { token };
     }
 
+    // For Qobuz, check for auth token
+    if (resolverId === 'qobuz') {
+      let token = qobuzToken;
+      let hasSubscription = false;
+      let username = null;
+
+      // Try to get a fresh/validated token from the IPC handler
+      if (window.electron?.qobuz) {
+        const tokenData = await window.electron.qobuz.checkToken();
+        if (tokenData && tokenData.token) {
+          token = tokenData.token;
+          hasSubscription = tokenData.hasSubscription || false;
+          username = tokenData.username;
+          // Update React state if token changed
+          if (token !== qobuzToken) {
+            console.log('🔄 Qobuz token updated');
+            setQobuzToken(token);
+            setQobuzConnected(true);
+          }
+        } else if (qobuzToken) {
+          // Token validation failed, clear state
+          setQobuzToken(null);
+          setQobuzConnected(false);
+        }
+      }
+
+      console.log('🔑 Qobuz config:', {
+        hasToken: !!token,
+        hasSubscription,
+        username
+      });
+
+      return {
+        appId: '285473059',
+        volume: volume / 100,
+        token,
+        hasSubscription,
+        username
+      };
+    }
+
     const configs = {
-      qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
     };
     return configs[resolverId] || {};
@@ -18720,6 +18766,85 @@ ${tracks}
     }
   };
 
+  const connectQobuz = async (username, password) => {
+    console.log('=== Connect Qobuz Clicked ===');
+    setQobuzError(null);
+    setQobuzConnecting(true);
+
+    if (!window.electron?.qobuz) {
+      console.error('window.electron.qobuz not available!');
+      setQobuzError('Qobuz API not available');
+      setQobuzConnecting(false);
+      return;
+    }
+
+    try {
+      console.log('Calling Qobuz login...');
+      const result = await window.electron.qobuz.login(username, password);
+      console.log('Qobuz login result:', result);
+
+      if (result.success) {
+        setQobuzToken(result.token || true);
+        setQobuzConnected(true);
+        setQobuzUsername(result.username);
+        setQobuzHasSubscription(result.hasSubscription || false);
+        setQobuzUsernameInput('');
+        setQobuzPasswordInput('');
+
+        if (!result.hasSubscription) {
+          setQobuzError('Account connected but no active subscription found. Streaming may be limited.');
+        }
+      } else {
+        setQobuzError(result.error || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Qobuz login error:', error);
+      setQobuzError(error.message || 'Login failed');
+    } finally {
+      setQobuzConnecting(false);
+    }
+  };
+
+  const disconnectQobuz = async () => {
+    if (window.electron?.qobuz) {
+      await window.electron.qobuz.disconnect();
+      setQobuzToken(null);
+      setQobuzConnected(false);
+      setQobuzUsername(null);
+      setQobuzHasSubscription(false);
+      setQobuzError(null);
+    }
+  };
+
+  // Qobuz authentication check
+  const checkQobuzToken = async () => {
+    console.log('Checking Qobuz token...');
+    if (window.electron?.qobuz) {
+      const tokenData = await window.electron.qobuz.checkToken();
+      console.log('Qobuz token data received:', {
+        hasData: !!tokenData,
+        hasToken: !!tokenData?.token,
+        username: tokenData?.username,
+        hasSubscription: tokenData?.hasSubscription
+      });
+      if (tokenData && tokenData.token) {
+        console.log('Valid Qobuz token found, setting connected state');
+        setQobuzToken(tokenData.token);
+        setQobuzConnected(true);
+        setQobuzUsername(tokenData.username);
+        setQobuzHasSubscription(tokenData.hasSubscription || false);
+      } else {
+        console.log('No valid Qobuz token found');
+        setQobuzToken(null);
+        setQobuzConnected(false);
+        setQobuzUsername(null);
+        setQobuzHasSubscription(false);
+      }
+    } else {
+      console.log('window.electron.qobuz not available');
+    }
+  };
+
   // Meta Service config helpers
   const saveMetaServiceConfig = async (serviceId, config) => {
     const newConfigs = { ...metaServiceConfigs, [serviceId]: config };
@@ -18977,6 +19102,11 @@ useEffect(() => {
   }, 30 * 60 * 1000); // 30 minutes
 
   return () => clearInterval(tokenRefreshInterval);
+}, []);
+
+// Check Qobuz auth on mount
+useEffect(() => {
+  checkQobuzToken();
 }, []);
 
 // Spotify Connect - Get available devices
@@ -34406,25 +34536,184 @@ React.createElement('div', {
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
-            React.createElement('div', null,
-              React.createElement('span', {
-                style: {
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: '#1f2937'
-                }
-              }, 'Qobuz Streaming'),
-              React.createElement('p', {
-                style: {
-                  fontSize: '12px',
-                  color: '#6b7280',
-                  marginTop: '4px',
-                  lineHeight: '1.5'
-                }
-              },
-                'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
-              )
-            )
+            // Connected state
+            qobuzConnected
+              ? React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between' },
+                    React.createElement('div', null,
+                      React.createElement('span', {
+                        style: {
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: '#1f2937'
+                        }
+                      }, 'Qobuz Account'),
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          marginTop: '2px'
+                        }
+                      },
+                        `Connected as ${qobuzUsername || 'Qobuz User'}`
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: disconnectQobuz,
+                      className: 'transition-colors',
+                      style: {
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }
+                    }, 'Disconnect')
+                  ),
+                  React.createElement('div', {
+                    className: 'flex items-center gap-2',
+                    style: {
+                      marginTop: '12px',
+                      fontSize: '12px',
+                      color: qobuzHasSubscription ? '#22c55e' : '#f59e0b'
+                    }
+                  },
+                    React.createElement('span', null, qobuzHasSubscription ? '✓' : '⚠'),
+                    React.createElement('span', null, qobuzHasSubscription
+                      ? 'Full streaming enabled'
+                      : 'Connected (no active subscription - using previews)')
+                  )
+                )
+              // Not connected state - show login form
+              : React.createElement('div', null,
+                  React.createElement('span', {
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#1f2937'
+                    }
+                  }, 'Qobuz Account'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      marginTop: '4px',
+                      marginBottom: '16px',
+                      lineHeight: '1.5'
+                    }
+                  },
+                    'Sign in to stream full tracks. Without login, 30-second previews are available.'
+                  ),
+                  // Email input
+                  React.createElement('div', { style: { marginBottom: '12px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: '#374151',
+                        marginBottom: '6px'
+                      }
+                    }, 'Email'),
+                    React.createElement('input', {
+                      type: 'email',
+                      value: qobuzUsernameInput,
+                      onChange: (e) => setQobuzUsernameInput(e.target.value),
+                      placeholder: 'Your Qobuz email',
+                      disabled: qobuzConnecting,
+                      style: {
+                        width: '100%',
+                        padding: '10px 12px',
+                        fontSize: '13px',
+                        color: '#1f2937',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '8px',
+                        outline: 'none',
+                        opacity: qobuzConnecting ? 0.6 : 1
+                      }
+                    })
+                  ),
+                  // Password input
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        color: '#374151',
+                        marginBottom: '6px'
+                      }
+                    }, 'Password'),
+                    React.createElement('input', {
+                      type: 'password',
+                      value: qobuzPasswordInput,
+                      onChange: (e) => setQobuzPasswordInput(e.target.value),
+                      placeholder: 'Your Qobuz password',
+                      disabled: qobuzConnecting,
+                      onKeyDown: (e) => {
+                        if (e.key === 'Enter' && qobuzUsernameInput.trim() && qobuzPasswordInput) {
+                          connectQobuz(qobuzUsernameInput.trim(), qobuzPasswordInput);
+                        }
+                      },
+                      style: {
+                        width: '100%',
+                        padding: '10px 12px',
+                        fontSize: '13px',
+                        color: '#1f2937',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '8px',
+                        outline: 'none',
+                        opacity: qobuzConnecting ? 0.6 : 1
+                      }
+                    })
+                  ),
+                  // Error message
+                  qobuzError && React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#dc2626',
+                      marginBottom: '12px'
+                    }
+                  }, qobuzError),
+                  // Login button
+                  React.createElement('button', {
+                    onClick: () => connectQobuz(qobuzUsernameInput.trim(), qobuzPasswordInput),
+                    disabled: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput,
+                    className: 'transition-colors',
+                    style: {
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput
+                        ? '#9ca3af'
+                        : '#0E7EBF',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput
+                        ? 'not-allowed'
+                        : 'pointer',
+                      opacity: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput ? 0.6 : 1
+                    }
+                  }, qobuzConnecting ? 'Connecting...' : 'Sign In'),
+                  // Privacy note
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#9ca3af',
+                      marginTop: '12px',
+                      lineHeight: '1.5'
+                    }
+                  },
+                    'Your credentials are sent directly to Qobuz and are not stored by Parachord.'
+                  )
+                )
           ),
 
           // Last.fm authentication section

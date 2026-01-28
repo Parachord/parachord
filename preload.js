@@ -55,6 +55,14 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Qobuz operations
+  qobuz: {
+    login: (username, password) => ipcRenderer.invoke('qobuz-login', username, password),
+    checkToken: () => ipcRenderer.invoke('qobuz-check-token'),
+    disconnect: () => ipcRenderer.invoke('qobuz-disconnect'),
+    getStreamUrl: (trackId, formatId) => ipcRenderer.invoke('qobuz-get-stream-url', trackId, formatId)
+  },
+
   // Shell operations - use IPC for better security
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)
