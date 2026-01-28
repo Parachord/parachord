@@ -32500,7 +32500,7 @@ React.createElement('div', {
                   };
                   const currentIconColor = resolverIconColors[currentResolverId] || '#A855F7';
 
-                  return React.createElement('div', { className: 'flex items-center gap-1.5 mt-1' },
+                  return React.createElement('div', { className: 'flex items-center gap-1.5' },
                     // Custom resolver selector with icon
                     React.createElement('div', { className: 'relative no-drag' },
                       // Current resolver button (icon + dropdown chevron if multiple sources)
