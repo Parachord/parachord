@@ -24993,10 +24993,10 @@ React.createElement('div', {
             },
               // Parachord wordmark centered above title
               React.createElement('img', {
-                src: 'assets/logo-wordmark.png',
+                src: 'assets/logo-wordmark-white.png',
                 alt: 'Parachord',
                 className: 'mb-4',
-                style: { height: '38px', width: 'auto', filter: 'brightness(0) invert(1)' }
+                style: { height: '38px', width: 'auto' }
               }),
               // Title (matching other page headers)
               React.createElement('h1', {
@@ -25027,9 +25027,9 @@ React.createElement('div', {
               }, 'HOME'),
               // Parachord wordmark on the right
               React.createElement('img', {
-                src: 'assets/logo-wordmark.png',
+                src: 'assets/logo-wordmark-white.png',
                 alt: 'Parachord',
-                style: { height: '26px', width: 'auto', filter: 'brightness(0) invert(1)' }
+                style: { height: '26px', width: 'auto' }
               })
             )
           ),
