@@ -28732,7 +28732,7 @@ React.createElement('div', {
                         return React.createElement('div', {
                           key: album.id || index,
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
-                          onClick: () => fetchArtistData(album.artist)
+                          onClick: () => openTopAlbum(album)
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',
