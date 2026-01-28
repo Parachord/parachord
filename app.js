@@ -25564,7 +25564,7 @@ React.createElement('div', {
                   }, 'See all')
                 ),
                 React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
-                  // Recommendations card (matches Recommendations page header: indigo->purple->pink)
+                  // Recommendations card with top artist preview (indigo->purple->pink)
                   React.createElement('button', {
                     className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
                     style: {
@@ -25574,13 +25574,40 @@ React.createElement('div', {
                     },
                     onClick: () => navigateTo('recommendations')
                   },
-                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-                    ),
-                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
-                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'Personalized recommendations')
+                    React.createElement('div', { className: 'flex items-start justify-between' },
+                      React.createElement('div', null,
+                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+                        ),
+                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
+                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations')
+                      ),
+                      // Top artist preview
+                      recommendations.artists.length > 0 && React.createElement('div', {
+                        className: 'flex-shrink-0 ml-4'
+                      },
+                        React.createElement('div', {
+                          className: 'w-16 h-16 rounded-full overflow-hidden border-2 border-white/30',
+                          style: { background: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' }
+                        },
+                          recommendations.artists[0].image
+                            ? React.createElement('img', {
+                                src: recommendations.artists[0].image,
+                                alt: recommendations.artists[0].name,
+                                className: 'w-full h-full object-cover'
+                              })
+                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/60 text-xl font-bold' },
+                                recommendations.artists[0].name.charAt(0).toUpperCase()
+                              )
+                        ),
+                        React.createElement('p', {
+                          className: 'text-white/90 text-xs mt-2 text-center truncate',
+                          style: { maxWidth: '64px' }
+                        }, recommendations.artists[0].name)
+                      )
+                    )
                   ),
-                  // Charts card (matches Pop of the Tops page header: orange->pink->purple)
+                  // Charts card with #1 album preview (orange->pink->purple)
                   React.createElement('button', {
                     className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
                     style: {
@@ -25590,13 +25617,42 @@ React.createElement('div', {
                     },
                     onClick: () => { navigateTo('discover'); loadCharts(); }
                   },
-                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
-                    ),
-                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
-                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'What everyone\'s playing')
+                    React.createElement('div', { className: 'flex items-start justify-between' },
+                      React.createElement('div', null,
+                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+                        ),
+                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
+                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing')
+                      ),
+                      // #1 album preview
+                      charts.length > 0 && React.createElement('div', {
+                        className: 'flex-shrink-0 ml-4'
+                      },
+                        React.createElement('div', {
+                          className: 'w-16 h-16 rounded-lg overflow-hidden border-2 border-white/30 shadow-lg',
+                          style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                        },
+                          charts[0].image
+                            ? React.createElement('img', {
+                                src: charts[0].image,
+                                alt: charts[0].name,
+                                className: 'w-full h-full object-cover'
+                              })
+                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                                React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                  React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                                )
+                              )
+                        ),
+                        React.createElement('p', {
+                          className: 'text-white/90 text-xs mt-2 text-center truncate',
+                          style: { maxWidth: '64px' }
+                        }, charts[0].name)
+                      )
+                    )
                   ),
-                  // Critics Picks card (matches Critical Darlings page header: amber->orange->red)
+                  // Critics Picks card with most recent album preview (amber->orange->red)
                   React.createElement('button', {
                     className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
                     style: {
@@ -25606,11 +25662,45 @@ React.createElement('div', {
                     },
                     onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
                   },
-                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
-                    ),
-                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
-                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'Acclaimed by critics')
+                    React.createElement('div', { className: 'flex items-start justify-between' },
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                        ),
+                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
+                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics'),
+                        // Synopsis snippet for most recent album
+                        criticsPicks.length > 0 && criticsPicks[0].description && React.createElement('p', {
+                          className: 'text-white/60 text-xs mt-2 line-clamp-2',
+                          style: { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                        }, `"${criticsPicks[0].description.slice(0, 100)}${criticsPicks[0].description.length > 100 ? '...' : ''}"`)
+                      ),
+                      // Most recent album preview
+                      criticsPicks.length > 0 && React.createElement('div', {
+                        className: 'flex-shrink-0 ml-4'
+                      },
+                        React.createElement('div', {
+                          className: 'w-16 h-16 rounded-lg overflow-hidden border-2 border-white/30 shadow-lg',
+                          style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                        },
+                          criticsPicks[0].albumArt
+                            ? React.createElement('img', {
+                                src: criticsPicks[0].albumArt,
+                                alt: criticsPicks[0].title,
+                                className: 'w-full h-full object-cover'
+                              })
+                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                                React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                  React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                                )
+                              )
+                        ),
+                        React.createElement('p', {
+                          className: 'text-white/90 text-xs mt-2 text-center truncate',
+                          style: { maxWidth: '64px' }
+                        }, criticsPicks[0].title)
+                      )
+                    )
                   )
                 )
               ),
