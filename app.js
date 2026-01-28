@@ -25002,13 +25002,18 @@ React.createElement('div', {
             React.createElement('div', { className: 'p-6 space-y-8' },
 
               // SECTION: Quick Play / Continue Listening
-              (currentTrack || currentQueue.length > 0) && React.createElement('div', { className: 'mb-8' },
+              currentTrack && React.createElement('div', { className: 'mb-2' },
                 React.createElement('div', { className: 'flex items-center justify-between mb-4' },
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
                 ),
-                currentTrack && React.createElement('div', {
-                  className: 'flex items-center gap-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition-colors',
-                  onClick: () => { if (!isPlaying) handleResume(); }
+                React.createElement('div', {
+                  className: 'release-card flex items-center gap-4 p-4 cursor-pointer',
+                  style: {
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)',
+                    borderRadius: '12px',
+                    border: 'none'
+                  },
+                  onClick: () => { if (!isPlaying) handlePlayPause(); }
                 },
                   React.createElement('div', {
                     className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
@@ -25023,13 +25028,16 @@ React.createElement('div', {
                       )
                   ),
                   React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('p', { className: 'font-medium text-gray-900 truncate' }, currentTrack.title),
+                    React.createElement('p', {
+                      className: 'text-gray-900 truncate',
+                      style: { fontSize: '14px', fontWeight: 500 }
+                    }, currentTrack.title),
                     React.createElement('p', { className: 'text-sm text-gray-500 truncate' }, currentTrack.artist),
-                    currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1' }, `${currentQueue.length} more in queue`)
+                    currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1 font-medium' }, `${currentQueue.length} more in queue`)
                   ),
                   React.createElement('button', {
-                    className: 'w-12 h-12 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-colors',
-                    onClick: (e) => { e.stopPropagation(); isPlaying ? handlePause() : handleResume(); }
+                    className: 'w-12 h-12 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-all hover:scale-110',
+                    onClick: (e) => { e.stopPropagation(); handlePlayPause(); }
                   },
                     React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
                       isPlaying ?
