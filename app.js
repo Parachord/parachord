@@ -25201,18 +25201,18 @@ React.createElement('div', {
                           }
                         },
                           friend.avatar ?
-                            React.createElement('img', { src: friend.avatar, alt: friend.name, className: 'w-full h-full object-cover' }) :
+                            React.createElement('img', { src: friend.avatar, alt: friend.displayName, className: 'w-full h-full object-cover' }) :
                             React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-bold text-sm' },
-                              friend.name?.charAt(0).toUpperCase()
+                              friend.displayName?.charAt(0).toUpperCase()
                             )
                         ),
                         React.createElement('div', { className: 'flex-1 min-w-0' },
                           React.createElement('p', {
                             className: 'text-gray-900',
                             style: { fontSize: '13px', fontWeight: 500 }
-                          }, friend.name),
+                          }, friend.displayName),
                           friend.currentTrack && React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
-                            `${friend.currentTrack.title} · ${friend.currentTrack.artist}`
+                            `${friend.currentTrack.name || friend.currentTrack.title} · ${friend.currentTrack.artist}`
                           )
                         ),
                         // Listen along button
