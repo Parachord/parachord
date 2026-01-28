@@ -25001,6 +25001,12 @@ React.createElement('div', {
             )
           ),
 
+          // Sticky header bar (empty, for visual consistency with other pages)
+          React.createElement('div', {
+            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            style: { flexShrink: 0, minHeight: '52px' }
+          }),
+
           // Scrollable content area
           React.createElement('div', {
             className: 'flex-1 overflow-y-auto scrollable-content',
