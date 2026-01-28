@@ -19201,6 +19201,13 @@ const getCurrentPlaybackState = async () => {
     return;
   }
 
+  // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
+  // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
+  const currentResolver = currentTrackRef.current?._activeResolver;
+  if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
+    return;
+  }
+
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player', {
       headers: {
@@ -19297,15 +19304,21 @@ const getCurrentPlaybackState = async () => {
 // Poll Spotify playback state when playing
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
-  
+
+  // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
+  const activeResolver = currentTrack?._activeResolver;
+  if (activeResolver === 'localfiles' || activeResolver === 'soundcloud') {
+    return;
+  }
+
   const currentIsSpotify = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
   if (!currentIsSpotify) return;
-  
+
   // Poll every 5 seconds (reduced from 2 to minimize flickering)
   const interval = setInterval(() => {
     getCurrentPlaybackState();
   }, 5000);
-  
+
   return () => clearInterval(interval);
 }, [spotifyToken, isPlaying, currentTrack]);
 
