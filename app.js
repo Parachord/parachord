@@ -895,9 +895,11 @@ const SERVICE_LOGOS = {
 // Parachord wordmark logo component
 const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createElement('svg', {
   viewBox: '0 0 1046 273',
-  style: { height: height + 'px', width: 'auto' },
+  style: { height: height + 'px', width: 'auto', display: 'block' },
   fill: 'none',
-  xmlns: 'http://www.w3.org/2000/svg'
+  xmlns: 'http://www.w3.org/2000/svg',
+  preserveAspectRatio: 'xMidYMid meet',
+  shapeRendering: 'geometricPrecision'
 },
   React.createElement('path', { d: 'M764.5 102.5C788.725 102.5 809.5 123.347 809.5 150.5C809.5 177.654 788.725 198.5 764.5 198.5C740.275 198.5 719.5 177.654 719.5 150.5C719.5 123.347 740.275 102.5 764.5 102.5Z', stroke: fill, strokeWidth: 27 }),
   React.createElement('path', { d: 'M237.5 102.5C261.725 102.5 282.5 123.347 282.5 150.5C282.5 177.654 261.725 198.5 237.5 198.5C213.275 198.5 192.5 177.654 192.5 150.5C192.5 123.347 213.275 102.5 237.5 102.5Z', stroke: fill, strokeWidth: 27 }),
