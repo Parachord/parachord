@@ -8883,6 +8883,19 @@ const Parachord = () => {
       window.scrobbleManager.onTrackEnd();
     }
 
+    // Pause Spotify if it was playing (must happen BEFORE resetting streamingPlaybackActiveRef)
+    if (spotifyToken && streamingPlaybackActiveRef.current) {
+      console.log('⏹️ Pausing Spotify before going to previous track');
+      try {
+        await fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        });
+      } catch (e) {
+        console.log('Could not pause Spotify:', e.message);
+      }
+    }
+
     // CRITICAL: Reset streaming playback flag when changing tracks
     streamingPlaybackActiveRef.current = false;
 
