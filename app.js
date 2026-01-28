@@ -14221,6 +14221,73 @@ ${tracks}
     return [];
   };
 
+  // Load weekly jams playlist from ListenBrainz
+  const loadWeeklyJams = async () => {
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+    if (!listenbrainzConfig?.username) return null;
+
+    try {
+      // Fetch playlists created for the user (includes Weekly Jams, Weekly Exploration, etc.)
+      const response = await fetch(
+        `https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/playlists/createdfor`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const playlists = data.playlists || [];
+
+      // Find the most recent Weekly Jams playlist
+      const weeklyJams = playlists.find(p =>
+        p.playlist?.title?.toLowerCase().includes('weekly jams') ||
+        p.playlist?.title?.toLowerCase().includes('weekly exploration')
+      );
+
+      if (!weeklyJams) return null;
+
+      const playlistId = weeklyJams.playlist?.identifier?.split('/').pop();
+      if (!playlistId) return null;
+
+      // Fetch the full playlist with tracks
+      const playlistResponse = await fetch(`https://api.listenbrainz.org/1/playlist/${playlistId}`);
+      if (!playlistResponse.ok) return null;
+
+      const playlistData = await playlistResponse.json();
+      const tracks = playlistData.playlist?.track || [];
+
+      return {
+        id: playlistId,
+        title: weeklyJams.playlist?.title || 'Weekly Jams',
+        description: weeklyJams.playlist?.annotation || 'Personalized weekly discoveries from ListenBrainz',
+        date: weeklyJams.playlist?.date,
+        tracks: tracks.map((track, index) => ({
+          id: track.identifier?.[0]?.split('/').pop() || `weekly-jam-${index}`,
+          title: track.title || 'Unknown Track',
+          artist: track.creator || 'Unknown Artist',
+          duration: track.duration ? Math.floor(track.duration / 1000) : null,
+          sources: {},
+          mbid: track.identifier?.[0]?.split('/').pop() || null
+        }))
+      };
+    } catch (error) {
+      console.error('Failed to load weekly jams:', error);
+      return null;
+    }
+  };
+
+  // Load weekly jams when HOME is active and ListenBrainz is connected
+  useEffect(() => {
+    const fetchWeeklyJams = async () => {
+      if (activeView === 'home' && cacheLoaded && metaServiceConfigs.listenbrainz?.username && !homeData.weeklyJams) {
+        const jams = await loadWeeklyJams();
+        if (jams) {
+          setHomeData(prev => ({ ...prev, weeklyJams: jams }));
+        }
+      }
+    };
+    fetchWeeklyJams();
+  }, [activeView, cacheLoaded, metaServiceConfigs.listenbrainz?.username]);
+
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
     // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
@@ -25034,11 +25101,21 @@ React.createElement('div', {
             )
           ),
 
-          // Sticky header bar (empty, for visual consistency with other pages)
+          // Sticky header bar with Collection Radio button
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center justify-end px-6 py-3 bg-white border-b border-gray-200',
             style: { flexShrink: 0, minHeight: '52px' }
-          }),
+          },
+            // Start Collection Radio button
+            (collectionData.tracks.length > 0 || library.length > 0) && React.createElement('button', {
+              onClick: handleStartCollectionStation,
+              className: 'px-4 py-1.5 rounded-full text-sm font-medium text-white transition-all hover:scale-105 no-drag',
+              style: {
+                backgroundColor: '#E91E63',
+                boxShadow: '0 2px 8px rgba(233, 30, 99, 0.3)'
+              }
+            }, 'Start Collection Radio')
+          ),
 
           // Scrollable content area
           React.createElement('div', {
@@ -25274,11 +25351,11 @@ React.createElement('div', {
                 )
               ),
 
-              // SECTION: Recently Added Albums
-              collectionData.albums.length > 0 && React.createElement('div', null,
+              // SECTION: Recently Added Albums (with skeleton loading)
+              (collectionLoading || collectionData.albums.length > 0) && React.createElement('div', null,
                 React.createElement('div', { className: 'flex items-center justify-between mb-4' },
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recently Added'),
-                  React.createElement('button', {
+                  !collectionLoading && collectionData.albums.length > 0 && React.createElement('button', {
                     onClick: () => { navigateTo('library'); setCollectionTab('albums'); },
                     className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
                   }, 'See all')
@@ -25286,7 +25363,34 @@ React.createElement('div', {
                 React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
-                  [...collectionData.albums]
+                  // Skeleton loaders while loading
+                  collectionLoading && Array.from({ length: 5 }).map((_, i) =>
+                    React.createElement('div', {
+                      key: `album-skeleton-${i}`,
+                      className: 'animate-pulse',
+                      style: {
+                        backgroundColor: '#ffffff',
+                        borderRadius: '10px',
+                        padding: '10px',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'aspect-square rounded-md mb-2',
+                        style: { backgroundColor: '#e5e7eb' }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-4 rounded mb-2',
+                        style: { backgroundColor: '#e5e7eb', width: '80%' }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 rounded',
+                        style: { backgroundColor: '#e5e7eb', width: '60%' }
+                      })
+                    )
+                  ),
+                  // Actual albums
+                  !collectionLoading && [...collectionData.albums]
                     .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
                     .slice(0, 5)
                     .map((album, index) =>
@@ -25409,6 +25513,101 @@ React.createElement('div', {
                         React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
                       )
                     )
+                )
+              ),
+
+              // SECTION: Weekly Jams (ListenBrainz)
+              homeData.weeklyJams && React.createElement('div', null,
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('div', { className: 'flex items-center gap-2' },
+                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, homeData.weeklyJams.title),
+                    React.createElement('span', {
+                      className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                      style: { backgroundColor: '#FFF3E0', color: '#E65100' }
+                    }, 'ListenBrainz')
+                  ),
+                  React.createElement('button', {
+                    onClick: () => {
+                      // Play all tracks from weekly jams
+                      if (homeData.weeklyJams.tracks.length > 0) {
+                        const tracks = homeData.weeklyJams.tracks;
+                        handlePlay(tracks[0]);
+                        if (tracks.length > 1) {
+                          setCurrentQueue(tracks.slice(1));
+                        }
+                        showToast(`Playing ${homeData.weeklyJams.title}`, 'success');
+                      }
+                    },
+                    className: 'text-sm text-orange-600 hover:text-orange-700 font-medium transition-colors flex items-center gap-1'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'currentColor', viewBox: '0 0 24 24' },
+                      React.createElement('path', { d: 'M8 5v14l11-7z' })
+                    ),
+                    'Play all'
+                  )
+                ),
+                React.createElement('div', {
+                  className: 'rounded-xl overflow-hidden',
+                  style: {
+                    background: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)',
+                    border: '1px solid #FFE082'
+                  }
+                },
+                  React.createElement('div', { className: 'p-4' },
+                    // Show first 5 tracks
+                    React.createElement('div', { className: 'space-y-2' },
+                      homeData.weeklyJams.tracks.slice(0, 5).map((track, index) =>
+                        React.createElement('button', {
+                          key: track.id,
+                          className: 'flex items-center gap-3 w-full p-2 rounded-lg transition-colors hover:bg-white/50 text-left',
+                          onClick: () => {
+                            handlePlay(track);
+                            // Queue remaining tracks
+                            const remainingTracks = homeData.weeklyJams.tracks.slice(index + 1);
+                            if (remainingTracks.length > 0) {
+                              setCurrentQueue(remainingTracks);
+                            }
+                          }
+                        },
+                          React.createElement('span', {
+                            className: 'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0',
+                            style: { backgroundColor: '#FF9800', color: 'white' }
+                          }, index + 1),
+                          React.createElement('div', { className: 'flex-1 min-w-0' },
+                            React.createElement('p', {
+                              className: 'text-gray-900 truncate',
+                              style: { fontSize: '13px', fontWeight: 500 }
+                            }, track.title),
+                            React.createElement('p', { className: 'text-xs text-gray-600 truncate' }, track.artist)
+                          ),
+                          React.createElement('svg', {
+                            className: 'w-4 h-4 text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity',
+                            fill: 'currentColor',
+                            viewBox: '0 0 24 24'
+                          },
+                            React.createElement('path', { d: 'M8 5v14l11-7z' })
+                          )
+                        )
+                      )
+                    ),
+                    // Show more link if more tracks
+                    homeData.weeklyJams.tracks.length > 5 && React.createElement('button', {
+                      className: 'mt-3 text-sm text-orange-600 hover:text-orange-700 font-medium transition-colors',
+                      onClick: () => {
+                        // Open full playlist view - convert to internal playlist format
+                        const playlist = {
+                          id: `listenbrainz-${homeData.weeklyJams.id}`,
+                          title: homeData.weeklyJams.title,
+                          description: homeData.weeklyJams.description,
+                          tracks: homeData.weeklyJams.tracks,
+                          isExternal: true,
+                          source: 'listenbrainz'
+                        };
+                        setSelectedPlaylist(playlist);
+                        navigateTo('playlist-view');
+                      }
+                    }, `View all ${homeData.weeklyJams.tracks.length} tracks →`)
+                  )
                 )
               ),
 
