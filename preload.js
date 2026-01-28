@@ -31,6 +31,32 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('spotify-auth-error', (event, error) => {
         callback(error);
       });
+    },
+
+    // Main process polling controls (background-safe)
+    polling: {
+      start: (params) => ipcRenderer.invoke('spotify-polling-start', params),
+      stop: () => ipcRenderer.invoke('spotify-polling-stop'),
+      updateToken: (token) => ipcRenderer.invoke('spotify-polling-update-token', token),
+      updateTrack: (params) => ipcRenderer.invoke('spotify-polling-update-track', params),
+      getStatus: () => ipcRenderer.invoke('spotify-polling-status'),
+
+      // Listen for polling events from main process
+      onAdvance: (callback) => {
+        ipcRenderer.on('spotify-polling-advance', (event, data) => {
+          callback(data);
+        });
+      },
+      onProgress: (callback) => {
+        ipcRenderer.on('spotify-polling-progress', (event, data) => {
+          callback(data);
+        });
+      },
+      onTokenExpired: (callback) => {
+        ipcRenderer.on('spotify-polling-token-expired', () => {
+          callback();
+        });
+      }
     }
   },
 

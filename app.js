@@ -5070,6 +5070,10 @@ const Parachord = () => {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
       }
+      // Also stop main process polling on cleanup
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
+      }
       if (externalTrackTimeoutRef.current) {
         clearTimeout(externalTrackTimeoutRef.current);
         externalTrackTimeoutRef.current = null;
@@ -5944,6 +5948,10 @@ const Parachord = () => {
               clearInterval(pollingRecoveryRef.current);
               pollingRecoveryRef.current = null;
             }
+            // Also stop main process polling
+            if (window.electron?.spotify?.polling) {
+              window.electron.spotify.polling.stop();
+            }
 
             // Close previous tab if one was pending
             if (pendingCloseTabIdRef.current && pendingCloseTabIdRef.current !== message.tabId) {
@@ -6124,22 +6132,25 @@ const Parachord = () => {
   // App lifecycle event handlers - restart Spotify polling when app returns to foreground
   useEffect(() => {
     if (window.electron?.app?.onForeground) {
-      window.electron.app.onForeground(() => {
+      window.electron.app.onForeground(async () => {
         console.log('📱 App returned to foreground');
 
         // Check if we should restart Spotify polling
-        // Conditions: playing Spotify, no active polling, have a token
+        // Conditions: playing Spotify, have a token
         const track = currentTrackRef.current;
         const resolverId = determineResolverIdFromTrack(track);
         const token = spotifyTokenRef.current;
 
         if (resolverId === 'spotify' && token && isPlayingRef.current) {
-          // Check if polling is already active
-          if (!playbackPollerRef.current && !pollingRecoveryRef.current) {
-            console.log('🔄 Restarting Spotify polling after returning to foreground...');
-            startAutoAdvancePolling('spotify', track, { token });
-          } else {
-            console.log('✅ Spotify polling already active');
+          // Check main process polling status
+          if (window.electron?.spotify?.polling) {
+            const status = await window.electron.spotify.polling.getStatus();
+            if (!status.active) {
+              console.log('🔄 Restarting Spotify polling after returning to foreground...');
+              startAutoAdvancePolling('spotify', track, { token });
+            } else {
+              console.log('✅ Main process polling already active');
+            }
           }
         }
       });
@@ -6148,8 +6159,36 @@ const Parachord = () => {
     if (window.electron?.app?.onBackground) {
       window.electron.app.onBackground(() => {
         console.log('📱 App went to background');
-        // Note: We don't stop polling here - just log for debugging
-        // The polling may naturally stop due to OS throttling
+        // Main process polling continues running - no action needed
+      });
+    }
+  }, []);
+
+  // Main process Spotify polling event handlers
+  // This polling runs in main process and is not affected by OS timer throttling
+  useEffect(() => {
+    if (window.electron?.spotify?.polling) {
+      // Handle advance signal from main process polling
+      window.electron.spotify.polling.onAdvance((data) => {
+        console.log('🎵 [Main→Renderer] Advance signal received:', data.reason);
+        if (handleNextRef.current) {
+          handleNextRef.current();
+        }
+      });
+
+      // Handle progress updates (for potential UI sync)
+      window.electron.spotify.polling.onProgress((data) => {
+        // Only log occasionally to avoid spam (progress is sent every 20s)
+        console.log(`▶️ [Main→Renderer] Spotify progress: ${data.percentComplete?.toFixed(1)}%`);
+      });
+
+      // Handle token expiration
+      window.electron.spotify.polling.onTokenExpired(async () => {
+        console.log('🔄 [Main→Renderer] Token expired, refreshing...');
+        const newToken = await refreshSpotifyToken();
+        if (newToken && window.electron?.spotify?.polling) {
+          window.electron.spotify.polling.updateToken(newToken);
+        }
       });
     }
   }, []);
@@ -7385,6 +7424,10 @@ const Parachord = () => {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
       }
+      // Also stop main process polling
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
+      }
 
       // Pause Spotify if it's playing
       if (spotifyToken && streamingPlaybackActiveRef.current) {
@@ -7585,6 +7628,10 @@ const Parachord = () => {
       if (pollingRecoveryRef.current) {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
+      }
+      // Also stop main process polling
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
       }
 
       // Pause Spotify if it's playing
@@ -7864,6 +7911,10 @@ const Parachord = () => {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
       }
+      // Also stop main process polling
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
+      }
       // CRITICAL: Update currentTrack BEFORE showing prompt so handleNext() can find it in queue
       // Merge source with original track, explicitly preserving queue-essential properties
       const trackToSet = trackOrSource.sources ?
@@ -8094,7 +8145,7 @@ const Parachord = () => {
 
   // Auto-advance: Start polling for track completion
   const startAutoAdvancePolling = (resolverId, track, config) => {
-    // Clear any existing poller
+    // Clear any existing renderer-side poller (legacy fallback)
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
       playbackPollerRef.current = null;
@@ -8106,292 +8157,44 @@ const Parachord = () => {
     }
     // Increment generation to invalidate any stale polling callbacks
     pollingGenerationRef.current++;
-    const thisGeneration = pollingGenerationRef.current;
 
     if (resolverId === 'spotify' && config.token) {
       const trackUri = track.spotifyUri || track.uri;
-      console.log(`🔄 Starting Spotify playback polling for auto-advance (5s interval, gen ${thisGeneration})...`);
+      console.log(`🔄 Starting Spotify playback polling via main process...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
       console.log(`   Expected URI: ${trackUri}`);
-      console.log(`   spotifyUri: ${track.spotifyUri}, uri: ${track.uri}`);
 
       if (!trackUri) {
         console.warn('⚠️ No Spotify URI found on track, auto-advance may not work');
+        return;
       }
 
-      let errorCount = 0; // Track consecutive polling errors
-      let lastTrackUri = trackUri; // Track what we started playing
-      let stuckAtZeroCount = 0; // Track how many times we've been stuck at 0% with is_playing=false
-      const MAX_STUCK_AT_ZERO = 3; // After 15 seconds (3 * 5s polls) of being stuck at 0%, give up
-      let pollCount = 0; // Track poll number for first-poll grace period
-      let pendingTrackChange = null; // Track URI from potential external change, needs confirmation
-      let lastProgressMs = 0; // Track previous progress to detect track-end-then-reset scenario
-      let lastKnownDurationMs = 0; // Track the duration when we last had valid progress
-
-      const pollInterval = setInterval(async () => {
-        // Check if this polling generation is still current (prevents stale callbacks)
-        if (thisGeneration !== pollingGenerationRef.current) {
-          console.log(`🚫 Stale poll callback (gen ${thisGeneration} vs current ${pollingGenerationRef.current}), ignoring`);
-          return;
-        }
-        pollCount++; // Increment poll counter
-        try {
-          const response = await fetch('https://api.spotify.com/v1/me/player', {
-            headers: {
-              'Authorization': `Bearer ${config.token}`
-            }
-          });
-
-          if (!response.ok) {
-            if (response.status === 401) {
-              // Token expired - attempt refresh and restart polling
-              console.log('🔄 Spotify token expired during polling, attempting refresh...');
-              clearInterval(pollInterval);
-              playbackPollerRef.current = null;
-              const newToken = await refreshSpotifyToken();
-              if (newToken) {
-                console.log('✅ Token refreshed, restarting auto-advance polling');
-                startAutoAdvancePolling(resolverId, track, { ...config, token: newToken });
-              } else {
-                console.error('❌ Token refresh failed, auto-advance disabled');
-              }
-              return;
-            }
-            throw new Error(`Spotify API error: ${response.status}`);
-          }
-
-          const data = await response.json();
-          errorCount = 0; // Reset on success
-
-          if (!data.item) {
-            // No track playing - playback stopped or track ended naturally
-            // Check if we have more tracks in queue - if so, this likely means the track ended
-            const queue = currentQueueRef.current;
-            clearInterval(pollInterval);
-            playbackPollerRef.current = null;
-
-            if (queue && queue.length > 0) {
-              // Track likely ended naturally, advance to next
-              console.log('🎵 Spotify playback ended (no item), advancing to next track...');
-              if (handleNextRef.current) handleNextRef.current();
-            } else {
-              // No queue, playback genuinely stopped
-              console.log('⏹️ Spotify playback stopped (no queue)');
-            }
-            return;
-          }
-
-          const currentUri = data.item.uri;
-          const progressMs = data.progress_ms;
-          const durationMs = data.item.duration_ms;
-          const isPlaying = data.is_playing;
-
-          // Check if we're still playing the same track we started with
-          if (currentUri === lastTrackUri) {
-            // Calculate if we're at or near the end of the track
-            const isNearEnd = progressMs >= durationMs - 1000;
-            const isAtEnd = progressMs >= durationMs - 100; // Within 100ms of end
-            const percentComplete = (progressMs / durationMs) * 100;
-
-            // If playing and near end, or if stopped and at end, trigger next
-            if (isNearEnd && isPlaying) {
-              console.log('🎵 Track ending, auto-advancing to next...');
-              clearInterval(pollInterval);
-              playbackPollerRef.current = null;
-              if (handleNextRef.current) handleNextRef.current();
-            } else if (!isPlaying && (isAtEnd || percentComplete >= 98)) {
-              // Track finished playing (is_playing=false and at end of track)
-              console.log(`🎵 Track finished (${percentComplete.toFixed(1)}% complete), auto-advancing to next...`);
-              clearInterval(pollInterval);
-              playbackPollerRef.current = null;
-              if (handleNextRef.current) handleNextRef.current();
-            } else if (!isPlaying) {
-              // Track is paused - could be user pause or playback never started
-              if (progressMs === 0) {
-                // Check if we were previously near the end - this means track finished and reset
-                // Use lastKnownDurationMs if available (more reliable than current durationMs which might be stale)
-                const effectiveDuration = lastKnownDurationMs > 0 ? lastKnownDurationMs : durationMs;
-                const lastPercentComplete = effectiveDuration > 0 ? (lastProgressMs / effectiveDuration) * 100 : 0;
-                console.log(`🔍 Track at 0%: lastProgressMs=${lastProgressMs}, effectiveDuration=${effectiveDuration}, lastPercentComplete=${lastPercentComplete.toFixed(1)}%`);
-                if (lastProgressMs > 0 && lastPercentComplete >= 90) {
-                  // We were at 90%+ and now at 0% - track finished naturally
-                  console.log(`🎵 Track finished (was at ${lastPercentComplete.toFixed(1)}%, now reset to 0%), auto-advancing to next...`);
-                  clearInterval(pollInterval);
-                  playbackPollerRef.current = null;
-                  if (handleNextRef.current) handleNextRef.current();
-                } else {
-                  // Stuck at 0% - playback may have failed to start
-                  stuckAtZeroCount++;
-                  if (stuckAtZeroCount >= MAX_STUCK_AT_ZERO) {
-                    // Been stuck at 0% for too long - playback failed to start
-                    console.error(`❌ Spotify playback stuck at 0% for ${stuckAtZeroCount * 5}s - device may not be active`);
-                    clearInterval(pollInterval);
-                    playbackPollerRef.current = null;
-
-                    // Check if queue has more tracks and advance
-                    const queue = currentQueueRef.current;
-                    if (queue && queue.length > 0) {
-                      console.log('⏭️ Auto-advancing to next track due to playback failure...');
-                      if (handleNextRef.current) handleNextRef.current();
-                    }
-                  } else {
-                    console.log(`⏸️ Spotify playback paused at 0% (${stuckAtZeroCount}/${MAX_STUCK_AT_ZERO}), waiting for playback to start...`);
-                  }
-                }
-              } else {
-                // User paused mid-playback (progress > 0) - reset stuck counter
-                stuckAtZeroCount = 0;
-                lastProgressMs = progressMs; // Track progress even when paused
-                lastKnownDurationMs = durationMs; // Track duration for accurate percentage calculation
-                console.log(`⏸️ Spotify playback paused at ${percentComplete.toFixed(1)}%, continuing to poll...`);
-              }
-            } else {
-              // Playing normally - reset stuck counter and log progress periodically
-              stuckAtZeroCount = 0;
-              lastProgressMs = progressMs; // Track progress for end-of-track detection
-              lastKnownDurationMs = durationMs; // Track duration for accurate percentage calculation
-              pendingTrackChange = null; // Clear any pending track change since we're on the right track
-              // Log every poll to confirm polling is working
-              console.log(`▶️ Spotify playing: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
-            }
-          } else {
-            // Track changed - Spotify advanced on its own or user changed track
-            // But wait! On the first few polls, Spotify might not have caught up yet
-            // Give it a grace period before assuming the track truly changed
-            console.log(`🔄 Detected potential track change (poll #${pollCount})...`);
-            console.log(`   Expected URI: ${lastTrackUri}`);
-            console.log(`   Current URI:  ${currentUri}`);
-            console.log(`   Spotify says: ${data.item?.name} by ${data.item?.artists?.[0]?.name}`);
-
-            // If this is one of the first 2 polls, check if Spotify is still catching up
-            if (pollCount <= 2) {
-              // Check if Spotify is playing the track we intended (by comparing track IDs)
-              const expectedId = lastTrackUri?.split(':').pop();
-              const currentId = currentUri?.split(':').pop();
-
-              if (pendingTrackChange === null) {
-                // First time seeing a mismatch - store it and wait for confirmation
-                console.log(`   ⏳ First mismatch on poll #${pollCount}, waiting for confirmation...`);
-                pendingTrackChange = currentUri;
-              } else if (pendingTrackChange === currentUri) {
-                // Confirmed - the track really changed
-                console.log(`   ✅ Track change confirmed after grace period`);
-                clearInterval(pollInterval);
-                playbackPollerRef.current = null;
-                if (handleNextRef.current) handleNextRef.current();
-              } else {
-                // Different URI than pending - reset and wait
-                console.log(`   🔄 URI changed again, resetting confirmation...`);
-                pendingTrackChange = currentUri;
-              }
-            } else {
-              // After grace period, trust the mismatch and advance
-              console.log(`   ✅ Track change detected after grace period, advancing queue...`);
-              clearInterval(pollInterval);
-              playbackPollerRef.current = null;
-              if (handleNextRef.current) handleNextRef.current();
-            }
-          }
-        } catch (error) {
-          console.error('Spotify polling error:', error);
-
-          // Track consecutive errors
-          errorCount = (errorCount || 0) + 1;
-
-          if (errorCount >= 3) {
-            // After 3 consecutive errors, stop polling but start recovery
-            console.error('❌ Too many Spotify polling errors, stopping auto-advance');
-            clearInterval(pollInterval);
-            playbackPollerRef.current = null;
-            // Start recovery interval to retry when API becomes available
-            startPollingRecovery(config);
-          }
-        }
-      }, 5000); // Poll every 5 seconds (consistent with existing playback polling)
-
-      playbackPollerRef.current = pollInterval;
+      // Use main process polling (background-safe, not affected by OS timer throttling)
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.start({
+          token: config.token,
+          trackUri: trackUri,
+          trackTitle: track.title,
+          trackArtist: track.artist
+        }).then(() => {
+          console.log('✅ Main process polling started');
+        }).catch((err) => {
+          console.error('❌ Failed to start main process polling:', err);
+        });
+      } else {
+        console.warn('⚠️ Main process polling not available');
+      }
     }
     // For future HTML5 audio resolvers, add event listener logic here
   };
 
-  // Start recovery polling when Spotify auto-advance fails
-  // Periodically checks if we should restart polling (queue has tracks, nothing playing)
-  const startPollingRecovery = (config) => {
-    // Clear any existing recovery interval
-    if (pollingRecoveryRef.current) {
-      clearInterval(pollingRecoveryRef.current);
-      pollingRecoveryRef.current = null;
+  // Stop main process Spotify polling (helper function)
+  const stopMainProcessPolling = () => {
+    if (window.electron?.spotify?.polling) {
+      window.electron.spotify.polling.stop().catch((err) => {
+        console.error('Error stopping main process polling:', err);
+      });
     }
-
-    console.log('🔄 Starting polling recovery interval (20s)...');
-
-    const recoveryInterval = setInterval(async () => {
-      const queue = currentQueueRef.current;
-      const track = currentTrackRef.current;
-
-      // Stop recovery if queue is empty
-      if (!queue || queue.length === 0) {
-        console.log('🔄 Recovery: Queue empty, stopping recovery');
-        clearInterval(recoveryInterval);
-        pollingRecoveryRef.current = null;
-        return;
-      }
-
-      // Stop recovery if no current track (nothing to monitor)
-      if (!track) {
-        console.log('🔄 Recovery: No current track, stopping recovery');
-        clearInterval(recoveryInterval);
-        pollingRecoveryRef.current = null;
-        return;
-      }
-
-      // Try to check Spotify playback state
-      try {
-        const response = await fetch('https://api.spotify.com/v1/me/player', {
-          headers: {
-            'Authorization': `Bearer ${config.token}`
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-
-          // If Spotify is playing, restart proper polling
-          if (data.is_playing && data.item) {
-            console.log('🔄 Recovery: Spotify responding, restarting auto-advance polling');
-            clearInterval(recoveryInterval);
-            pollingRecoveryRef.current = null;
-            startAutoAdvancePolling('spotify', track, config);
-          } else if (!data.is_playing && queue.length > 0) {
-            // Spotify not playing but we have queue - advance to next track
-            console.log('🔄 Recovery: Spotify not playing, queue has tracks - advancing');
-            clearInterval(recoveryInterval);
-            pollingRecoveryRef.current = null;
-            if (handleNextRef.current) handleNextRef.current();
-          }
-        } else if (response.status === 401) {
-          // Token expired - attempt refresh
-          console.log('🔄 Recovery: Token expired, attempting refresh...');
-          const newToken = await refreshSpotifyToken();
-          if (newToken) {
-            console.log('✅ Recovery: Token refreshed, restarting polling');
-            clearInterval(recoveryInterval);
-            pollingRecoveryRef.current = null;
-            startAutoAdvancePolling('spotify', track, { ...config, token: newToken });
-          } else {
-            console.log('❌ Recovery: Token refresh failed, stopping recovery');
-            clearInterval(recoveryInterval);
-            pollingRecoveryRef.current = null;
-          }
-        }
-        // Other errors: keep trying
-      } catch (error) {
-        console.log('🔄 Recovery: API still unavailable, will retry...', error.message);
-        // Keep recovery interval running
-      }
-    }, 20000); // Check every 20 seconds
-
-    pollingRecoveryRef.current = recoveryInterval;
   };
 
   // Wake Spotify by opening the app via protocol URL
@@ -8773,6 +8576,10 @@ const Parachord = () => {
                 clearInterval(playbackPollerRef.current);
                 playbackPollerRef.current = null;
               }
+              // Also stop main process polling
+              if (window.electron?.spotify?.polling) {
+                window.electron.spotify.polling.stop();
+              }
             }
           } else {
             // Playing - check if we need to explicitly start this track
@@ -8873,6 +8680,10 @@ const Parachord = () => {
       if (pollingRecoveryRef.current) {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
+      }
+      // Also stop main process polling
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
       }
 
       // Notify scrobble manager that current track is ending
@@ -9101,6 +8912,10 @@ const Parachord = () => {
     if (pollingRecoveryRef.current) {
       clearInterval(pollingRecoveryRef.current);
       pollingRecoveryRef.current = null;
+    }
+    // Also stop main process polling
+    if (window.electron?.spotify?.polling) {
+      window.electron.spotify.polling.stop();
     }
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);

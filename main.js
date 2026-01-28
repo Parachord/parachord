@@ -45,6 +45,261 @@ let extensionSocket = null; // Current connected extension
 let localFilesService = null;
 let localFilesServiceReady = null; // Promise that resolves when service is ready
 
+// Spotify Playback Polling Service
+// Runs in main process to avoid OS timer throttling when app is backgrounded
+const spotifyPoller = {
+  interval: null,
+  recoveryInterval: null,
+  token: null,
+  expectedTrackUri: null,
+  trackTitle: null,
+  trackArtist: null,
+  errorCount: 0,
+  stuckAtZeroCount: 0,
+  pollCount: 0,
+  lastProgressMs: 0,
+  lastKnownDurationMs: 0,
+  pendingTrackChange: null,
+
+  POLL_INTERVAL: 20000, // 20 seconds - more reliable for background execution
+  RECOVERY_INTERVAL: 30000, // 30 seconds for recovery
+  MAX_ERRORS: 3,
+  MAX_STUCK_AT_ZERO: 3,
+
+  async start(token, trackUri, trackTitle, trackArtist) {
+    console.log('🔄 [Main] Starting Spotify polling...');
+    console.log(`   Track: ${trackTitle} by ${trackArtist}`);
+    console.log(`   Expected URI: ${trackUri}`);
+
+    this.stop(); // Clear any existing polling
+
+    this.token = token;
+    this.expectedTrackUri = trackUri;
+    this.trackTitle = trackTitle;
+    this.trackArtist = trackArtist;
+    this.errorCount = 0;
+    this.stuckAtZeroCount = 0;
+    this.pollCount = 0;
+    this.lastProgressMs = 0;
+    this.lastKnownDurationMs = 0;
+    this.pendingTrackChange = null;
+
+    // Do an immediate poll, then set up interval
+    await this.poll();
+
+    this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+  },
+
+  stop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    this.token = null;
+    this.expectedTrackUri = null;
+    console.log('⏹️ [Main] Spotify polling stopped');
+  },
+
+  updateToken(newToken) {
+    console.log('🔄 [Main] Updating Spotify token for polling');
+    this.token = newToken;
+  },
+
+  updateTrack(trackUri, trackTitle, trackArtist) {
+    console.log(`🔄 [Main] Updating expected track: ${trackTitle} by ${trackArtist}`);
+    this.expectedTrackUri = trackUri;
+    this.trackTitle = trackTitle;
+    this.trackArtist = trackArtist;
+    this.pollCount = 0;
+    this.stuckAtZeroCount = 0;
+    this.lastProgressMs = 0;
+    this.lastKnownDurationMs = 0;
+    this.pendingTrackChange = null;
+  },
+
+  async poll() {
+    if (!this.token || !this.expectedTrackUri) {
+      console.log('🔄 [Main] Poll skipped - no token or track URI');
+      return;
+    }
+
+    this.pollCount++;
+
+    try {
+      const response = await fetch('https://api.spotify.com/v1/me/player', {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.log('🔄 [Main] Token expired, requesting refresh...');
+          this.sendToRenderer('spotify-polling-token-expired');
+          return;
+        }
+        throw new Error(`Spotify API error: ${response.status}`);
+      }
+
+      // Handle 204 No Content (no active playback)
+      if (response.status === 204) {
+        console.log('🔄 [Main] No active Spotify playback');
+        this.sendToRenderer('spotify-polling-advance', { reason: 'no-playback' });
+        this.stop();
+        return;
+      }
+
+      const data = await response.json();
+      this.errorCount = 0; // Reset on success
+
+      if (!data.item) {
+        console.log('🎵 [Main] Spotify playback ended (no item), signaling advance...');
+        this.sendToRenderer('spotify-polling-advance', { reason: 'no-item' });
+        this.stop();
+        return;
+      }
+
+      const currentUri = data.item.uri;
+      const progressMs = data.progress_ms;
+      const durationMs = data.item.duration_ms;
+      const isPlaying = data.is_playing;
+      const percentComplete = durationMs > 0 ? (progressMs / durationMs) * 100 : 0;
+
+      // Send progress update to renderer (for UI updates if needed)
+      this.sendToRenderer('spotify-polling-progress', {
+        progressMs,
+        durationMs,
+        percentComplete,
+        isPlaying,
+        currentUri
+      });
+
+      // Check if we're still playing the expected track
+      if (currentUri === this.expectedTrackUri) {
+        const isNearEnd = progressMs >= durationMs - 2000; // Within 2 seconds
+        const isAtEnd = progressMs >= durationMs - 100;
+
+        if (isNearEnd && isPlaying) {
+          console.log('🎵 [Main] Track ending, signaling advance...');
+          this.sendToRenderer('spotify-polling-advance', { reason: 'near-end' });
+          this.stop();
+        } else if (!isPlaying && (isAtEnd || percentComplete >= 98)) {
+          console.log(`🎵 [Main] Track finished (${percentComplete.toFixed(1)}%), signaling advance...`);
+          this.sendToRenderer('spotify-polling-advance', { reason: 'finished' });
+          this.stop();
+        } else if (!isPlaying && progressMs === 0) {
+          // Check for track-finished-and-reset scenario
+          const effectiveDuration = this.lastKnownDurationMs > 0 ? this.lastKnownDurationMs : durationMs;
+          const lastPercentComplete = effectiveDuration > 0 ? (this.lastProgressMs / effectiveDuration) * 100 : 0;
+
+          if (this.lastProgressMs > 0 && lastPercentComplete >= 90) {
+            console.log(`🎵 [Main] Track finished (was at ${lastPercentComplete.toFixed(1)}%, now 0%), signaling advance...`);
+            this.sendToRenderer('spotify-polling-advance', { reason: 'reset-after-end' });
+            this.stop();
+          } else {
+            this.stuckAtZeroCount++;
+            if (this.stuckAtZeroCount >= this.MAX_STUCK_AT_ZERO) {
+              console.log(`❌ [Main] Stuck at 0% for too long, signaling advance...`);
+              this.sendToRenderer('spotify-polling-advance', { reason: 'stuck-at-zero' });
+              this.stop();
+            } else {
+              console.log(`⏸️ [Main] Paused at 0% (${this.stuckAtZeroCount}/${this.MAX_STUCK_AT_ZERO})`);
+            }
+          }
+        } else {
+          // Playing normally
+          this.stuckAtZeroCount = 0;
+          this.lastProgressMs = progressMs;
+          this.lastKnownDurationMs = durationMs;
+          this.pendingTrackChange = null;
+          console.log(`▶️ [Main] Spotify: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
+        }
+      } else {
+        // Track changed externally
+        console.log(`🔄 [Main] Track URI mismatch (poll #${this.pollCount})`);
+        console.log(`   Expected: ${this.expectedTrackUri}`);
+        console.log(`   Current:  ${currentUri}`);
+
+        if (this.pollCount <= 2) {
+          // Grace period for first few polls
+          if (this.pendingTrackChange === null) {
+            this.pendingTrackChange = currentUri;
+            console.log('   ⏳ First mismatch, waiting for confirmation...');
+          } else if (this.pendingTrackChange === currentUri) {
+            console.log('   ✅ Track change confirmed');
+            this.sendToRenderer('spotify-polling-advance', { reason: 'track-changed' });
+            this.stop();
+          } else {
+            this.pendingTrackChange = currentUri;
+          }
+        } else {
+          console.log('   ✅ Track change detected after grace period');
+          this.sendToRenderer('spotify-polling-advance', { reason: 'track-changed' });
+          this.stop();
+        }
+      }
+
+    } catch (error) {
+      console.error('[Main] Spotify polling error:', error.message);
+      this.errorCount++;
+
+      if (this.errorCount >= this.MAX_ERRORS) {
+        console.log('❌ [Main] Too many errors, starting recovery...');
+        this.startRecovery();
+      }
+    }
+  },
+
+  startRecovery() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+    }
+
+    console.log('🔄 [Main] Starting polling recovery...');
+
+    this.recoveryInterval = setInterval(async () => {
+      try {
+        const response = await fetch('https://api.spotify.com/v1/me/player', {
+          headers: { 'Authorization': `Bearer ${this.token}` }
+        });
+
+        if (response.ok && response.status !== 204) {
+          const data = await response.json();
+          if (data.is_playing) {
+            console.log('🔄 [Main] Recovery: Spotify responding, restarting polling');
+            clearInterval(this.recoveryInterval);
+            this.recoveryInterval = null;
+            this.errorCount = 0;
+            this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+          } else {
+            console.log('🔄 [Main] Recovery: Spotify not playing, signaling advance');
+            this.sendToRenderer('spotify-polling-advance', { reason: 'recovery-not-playing' });
+            this.stop();
+          }
+        } else if (response.status === 401) {
+          console.log('🔄 [Main] Recovery: Token expired');
+          this.sendToRenderer('spotify-polling-token-expired');
+        }
+      } catch (error) {
+        console.log('🔄 [Main] Recovery: Still unavailable...', error.message);
+      }
+    }, this.RECOVERY_INTERVAL);
+  },
+
+  sendToRenderer(channel, data = {}) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data);
+    }
+  }
+};
+
 // Helper to wait for local files service to be ready
 async function waitForLocalFilesService() {
   // If already initialized, return immediately
@@ -894,6 +1149,39 @@ ipcMain.handle('spotify-launch-background', async () => {
     console.error('❌ Failed to launch Spotify:', error);
     return { success: false, error: error.message };
   }
+});
+
+// Spotify Polling IPC Handlers
+// These allow the renderer to control background polling from the main process
+ipcMain.handle('spotify-polling-start', async (event, { token, trackUri, trackTitle, trackArtist }) => {
+  console.log('=== Start Spotify Polling (IPC) ===');
+  await spotifyPoller.start(token, trackUri, trackTitle, trackArtist);
+  return { success: true };
+});
+
+ipcMain.handle('spotify-polling-stop', async () => {
+  console.log('=== Stop Spotify Polling (IPC) ===');
+  spotifyPoller.stop();
+  return { success: true };
+});
+
+ipcMain.handle('spotify-polling-update-token', async (event, token) => {
+  console.log('=== Update Spotify Polling Token (IPC) ===');
+  spotifyPoller.updateToken(token);
+  return { success: true };
+});
+
+ipcMain.handle('spotify-polling-update-track', async (event, { trackUri, trackTitle, trackArtist }) => {
+  console.log('=== Update Spotify Polling Track (IPC) ===');
+  spotifyPoller.updateTrack(trackUri, trackTitle, trackArtist);
+  return { success: true };
+});
+
+ipcMain.handle('spotify-polling-status', async () => {
+  return {
+    active: spotifyPoller.interval !== null || spotifyPoller.recoveryInterval !== null,
+    expectedTrackUri: spotifyPoller.expectedTrackUri
+  };
 });
 
 // Playback window for external content (Bandcamp, etc.) with autoplay enabled
