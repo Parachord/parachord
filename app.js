@@ -24104,14 +24104,19 @@ React.createElement('div', {
                     title: selectedPlaylist.title
                   }, selectedPlaylist.title),
                   // Track count - matching grid typography (11px)
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      marginTop: '2px'
-                    }
-                  }, `${playlistTracks.length} Songs`)
+                  playlistTracks.length === 0 && selectedPlaylist?.isEphemeral ?
+                    React.createElement('div', {
+                      className: 'h-4 w-20 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                      style: { marginTop: '2px' }
+                    }) :
+                    React.createElement('div', {
+                      className: 'truncate',
+                      style: {
+                        fontSize: '11px',
+                        color: '#6b7280',
+                        marginTop: '2px'
+                      }
+                    }, `${playlistTracks.length} Songs`)
                 );
               })(),
 
@@ -24436,8 +24441,47 @@ React.createElement('div', {
                   })
                 )
               :
-                React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  'Loading tracks...'
+                // Skeleton loaders while tracks are loading
+                React.createElement('div', { className: 'space-y-0' },
+                  Array.from({ length: 8 }).map((_, index) =>
+                    React.createElement('div', {
+                      key: `skeleton-${index}`,
+                      className: 'flex items-center gap-4 py-3 px-4',
+                      style: { borderRadius: '8px', marginBottom: '2px' }
+                    },
+                      // Track number skeleton
+                      React.createElement('div', {
+                        className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '32px', animationDelay: `${index * 50}ms` }
+                      }),
+                      // Track title skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '360px', flexShrink: 0, animationDelay: `${index * 50 + 25}ms` }
+                      }),
+                      // Artist name skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '180px', flexShrink: 0, animationDelay: `${index * 50 + 50}ms` }
+                      }),
+                      // Duration skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '40px', marginLeft: 'auto', animationDelay: `${index * 50 + 75}ms` }
+                      }),
+                      // Resolver icons skeleton
+                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: '100px', flexShrink: 0 } },
+                        React.createElement('div', {
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                          style: { animationDelay: `${index * 50 + 100}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                          style: { animationDelay: `${index * 50 + 125}ms` }
+                        })
+                      )
+                    )
+                  )
                 );
               })()
             )
@@ -25688,10 +25732,10 @@ React.createElement('div', {
                           tracksLoaded: jam.tracksLoaded,
                           isExternal: true,
                           isEphemeral: true,
-                          source: 'listenbrainz'
+                          source: 'listenbrainz',
+                          creator: 'ListenBrainz'
                         };
-                        setSelectedPlaylist(playlist);
-                        navigateTo('playlist-view');
+                        loadPlaylist(playlist);
                       }
                     },
                       // 2x2 mosaic album art with hover play button
