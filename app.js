@@ -25593,7 +25593,7 @@ React.createElement('div', {
                 React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
                   // 1. For You / Recommendations card (indigo->purple->pink)
                   React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden',
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
                     style: {
                       background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)',
                       animationDelay: '0ms'
@@ -25612,7 +25612,7 @@ React.createElement('div', {
                     ),
                     // Top artist preview - clickable to artist page
                     recommendations.artists.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(recommendations.artists[0].name);
@@ -25638,12 +25638,12 @@ React.createElement('div', {
                       )
                     ),
                     // Padding when no preview
-                    recommendations.artists.length === 0 && React.createElement('div', { className: 'pb-5' })
+                    recommendations.artists.length === 0 && React.createElement('div', { className: 'flex-1' })
                   ),
 
                   // 2. Critical Darlings card (amber->orange->red)
                   React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden',
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
                     style: {
                       background: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)',
                       animationDelay: '50ms'
@@ -25662,7 +25662,7 @@ React.createElement('div', {
                     ),
                     // Most recent album preview - clickable to album page
                     criticsPicks.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         openCriticsPicksAlbum(criticsPicks[0]);
@@ -25691,12 +25691,12 @@ React.createElement('div', {
                       )
                     ),
                     // Padding when no preview
-                    criticsPicks.length === 0 && React.createElement('div', { className: 'pb-5' })
+                    criticsPicks.length === 0 && React.createElement('div', { className: 'flex-1' })
                   ),
 
                   // 3. Pop of the Tops / Charts card (orange->pink->purple)
                   React.createElement('div', {
-                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden',
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
                     style: {
                       background: 'linear-gradient(135deg, #f97316 0%, #ec4899 50%, #9333ea 100%)',
                       animationDelay: '100ms'
@@ -25715,7 +25715,7 @@ React.createElement('div', {
                     ),
                     // #1 album preview - clickable to open the album
                     charts.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         // Open the #1 chart album with correct field mapping
@@ -25745,7 +25745,7 @@ React.createElement('div', {
                       )
                     ),
                     // Padding when no preview
-                    charts.length === 0 && React.createElement('div', { className: 'pb-5' })
+                    charts.length === 0 && React.createElement('div', { className: 'flex-1' })
                   )
                 )
               ),
