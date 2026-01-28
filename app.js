@@ -8691,8 +8691,8 @@ const Parachord = () => {
       return;
     }
 
-    // Handle local file playback
-    if (audioRef.current && currentTrack?.sources?.localfiles) {
+    // Handle local file or SoundCloud playback (both use HTML5 Audio)
+    if (audioRef.current && (currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud')) {
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -32778,7 +32778,8 @@ React.createElement('div', {
                     if (browserPlaybackActive || !currentTrack || isSpotifyTrack) return;
                     const newPosition = Number(e.target.value);
                     setProgress(newPosition);
-                    if (currentTrack?.sources?.localfiles && audioRef.current) {
+                    // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
+                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
                     }
                   },
