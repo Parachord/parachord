@@ -895,9 +895,16 @@ const SERVICE_LOGOS = {
 // Parachord wordmark logo component
 const ParachordWordmark = ({ fill = 'black', height = 40 }) => React.createElement('svg', {
   viewBox: '0 0 1046 273',
-  style: { height: height + 'px', width: 'auto' },
+  style: {
+    height: height + 'px',
+    width: 'auto',
+    display: 'block',
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden'
+  },
   fill: 'none',
-  xmlns: 'http://www.w3.org/2000/svg'
+  xmlns: 'http://www.w3.org/2000/svg',
+  preserveAspectRatio: 'xMidYMid meet'
 },
   React.createElement('path', { d: 'M764.5 102.5C788.725 102.5 809.5 123.347 809.5 150.5C809.5 177.654 788.725 198.5 764.5 198.5C740.275 198.5 719.5 177.654 719.5 150.5C719.5 123.347 740.275 102.5 764.5 102.5Z', stroke: fill, strokeWidth: 27 }),
   React.createElement('path', { d: 'M237.5 102.5C261.725 102.5 282.5 123.347 282.5 150.5C282.5 177.654 261.725 198.5 237.5 198.5C213.275 198.5 192.5 177.654 192.5 150.5C192.5 123.347 213.275 102.5 237.5 102.5Z', stroke: fill, strokeWidth: 27 }),
@@ -3157,7 +3164,7 @@ const Parachord = () => {
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
   const [searchHistory, setSearchHistory] = useState([]);
-  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'library'
+  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'home'
   const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -3209,6 +3216,21 @@ const Parachord = () => {
   const [charts, setCharts] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
+
+  // HOME view state
+  const [homeData, setHomeData] = useState({
+    topAlbumThisWeek: null,        // { album, artist, playCount, albumArt }
+    recentAlbums: [],               // Albums recently added to collection
+    recentPlaylists: [],            // Recently modified playlists
+    newArtistDiscoveries: [],       // Artists not in collection but recommended
+    friendActivity: [],             // What friends are currently listening to
+    criticsPickPreview: [],         // Preview of critical darlings
+    weeklyJams: null,               // ListenBrainz weekly jams playlist
+    surpriseMeSeeds: []             // Seeds for AI playlist generation
+  });
+  const [homeLoading, setHomeLoading] = useState(true);
+  const [homeDataLoaded, setHomeDataLoaded] = useState(false);
+  const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
@@ -4055,8 +4077,8 @@ const Parachord = () => {
   const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
 
-  // Browser extension state
-  const [extensionConnected, setExtensionConnected] = useState(false);
+  // Browser extension state (null = unknown/checking, false = not connected, true = connected)
+  const [extensionConnected, setExtensionConnected] = useState(null);
   const [browserPlaybackActive, setBrowserPlaybackActive] = useState(false);
   const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
   const pendingCloseTabIdRef = useRef(null);
@@ -10082,21 +10104,26 @@ const Parachord = () => {
               tab: savedLastView.friendHistoryTab || 'recent'
             });
             console.log(`📦 Restoring last view: friendHistory (${savedLastView.friendId})`);
+          } else if (savedLastView.view === 'home') {
+            // Restore home view
+            setActiveView('home');
+            setViewHistory(['home']);
+            console.log(`📦 Restoring last view: home`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
-            setViewHistory(['library', savedLastView.view]);
+            setViewHistory(['home', savedLastView.view]);
             console.log(`📦 Restoring last view: ${savedLastView.view}`);
           }
         } else {
-          // No saved view or invalid - default to library
-          setActiveView('library');
-          setViewHistory(['library']);
+          // No saved view or invalid - default to home
+          setActiveView('home');
+          setViewHistory(['home']);
         }
       } else {
-        // No saved view data - default to library
-        setActiveView('library');
-        setViewHistory(['library']);
+        // No saved view data - default to home
+        setActiveView('home');
+        setViewHistory(['home']);
       }
 
       // Check if this is the first run (tutorial not completed)
@@ -10115,10 +10142,10 @@ const Parachord = () => {
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
-      // Default to library view on error
+      // Default to home view on error
       if (activeView === null) {
-        setActiveView('library');
-        setViewHistory(['library']);
+        setActiveView('home');
+        setViewHistory(['home']);
       }
     }
   };
@@ -10291,11 +10318,11 @@ const Parachord = () => {
         else if (pendingFriendLoad.tab === 'topArtists') loadFriendTopArtists(friend);
         else loadFriendRecentTracks(friend);
       } else {
-        // Friend not found, fall back to library
-        console.log(`📦 Friend not found: ${pendingFriendLoad.id}, falling back to library`);
+        // Friend not found, fall back to home
+        console.log(`📦 Friend not found: ${pendingFriendLoad.id}, falling back to home`);
         setPendingFriendLoad(null);
-        setActiveView('library');
-        setViewHistory(['library']);
+        setActiveView('home');
+        setViewHistory(['home']);
       }
     }
   }, [friends, pendingFriendLoad]);
@@ -14218,6 +14245,25 @@ ${tracks}
     }
   }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
+  // Load discovery data (recommendations, charts, critics picks) for HOME view previews
+  useEffect(() => {
+    if (activeView === 'home' && cacheLoaded) {
+      // Load recommendations if user has a scrobbler connected and hasn't loaded yet
+      const hasScrobbler = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
+      if (hasScrobbler && recommendations.artists.length === 0 && !recommendations.error) {
+        loadRecommendations();
+      }
+      // Load charts if not already loaded
+      if (!chartsLoaded && !chartsLoading) {
+        loadCharts();
+      }
+      // Load critics picks if not already loaded
+      if (!criticsPicksLoaded && !criticsPicksLoading) {
+        loadCriticsPicks();
+      }
+    }
+  }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
+
   // Resolve recommendation tracks using the resolver pipeline
   // Fetch images for recommended artists
   const resolveRecommendationArtistImages = async (artists) => {
@@ -17506,7 +17552,29 @@ ${tracks}
   };
 
   const navigateBack = () => {
-    // If we're viewing a release/album, close it first and go back to artist page
+    // If we're viewing a release/album opened directly (not from artist browsing),
+    // close it and navigate back in one step
+    if (activeView === 'artist' && currentRelease && artistHistory.length === 0 && viewHistory.length > 1) {
+      setCurrentRelease(null);
+      // Also navigate back to previous view (e.g., HOME or Collection)
+      const newHistory = [...viewHistory];
+      const currentView = newHistory.pop();
+      const previousView = newHistory[newHistory.length - 1];
+      setViewHistory(newHistory);
+      setForwardHistory(prev => [...prev, currentView]);
+      setActiveView(previousView);
+      // Clear artist state since we're leaving artist view
+      setCurrentArtist(null);
+      setArtistImage(null);
+      setArtistImagePosition('center 25%');
+      setArtistReleases([]);
+      setReleaseTypeFilter('all');
+      albumArtQueue.current = [];
+      visibleAlbumIds.current.clear();
+      return;
+    }
+
+    // If we're viewing a release/album from artist browsing, close it first
     if (activeView === 'artist' && currentRelease) {
       setCurrentRelease(null);
       return;
@@ -18696,19 +18764,19 @@ useEffect(() => {
         // Search - navigates to search page
         React.createElement('div', {
           style: {
-            padding: '4px 16px 12px',
+            padding: '4px 8px 12px',
             borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
           }
         },
           React.createElement('button', {
-            className: 'w-full flex items-center gap-2 cursor-pointer transition-colors',
+            className: 'w-full flex items-center gap-3 px-3 cursor-pointer transition-colors',
             style: {
               color: activeView === 'search' ? '#1f2937' : '#6b7280',
               fontWeight: activeView === 'search' ? '500' : '400'
             },
             onClick: () => navigateTo('search')
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+            React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
             ),
             React.createElement('span', {
@@ -18724,69 +18792,21 @@ useEffect(() => {
 
         // Scrollable navigation area
         React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content px-2 py-2' },
-          // DISCOVER section
-          React.createElement('div', { className: 'mb-4' },
-            React.createElement('div', {
-              style: {
-                padding: '8px 12px',
-                fontSize: '11px',
-                fontWeight: '600',
-                color: '#9ca3af',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em'
-              }
-            }, 'Discover'),
-            React.createElement('button', {
-              onClick: () => navigateTo('recommendations'),
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'recommendations' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'recommendations' ? '#1f2937' : '#4b5563',
-                fontWeight: activeView === 'recommendations' ? '500' : '400'
-              }
-            },
-              // Star icon for Recommendations
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-              ),
-              "Recommendations"
+          // HOME button at the top
+          React.createElement('button', {
+            onClick: () => navigateTo('home'),
+            className: 'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors mb-3',
+            style: {
+              backgroundColor: activeView === 'home' ? 'rgba(124, 58, 237, 0.1)' : 'transparent',
+              color: activeView === 'home' ? '#7c3aed' : '#4b5563',
+              fontWeight: activeView === 'home' ? '600' : '500'
+            }
+          },
+            // Home icon
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: activeView === 'home' ? 2.5 : 2 },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' })
             ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('discover');
-                loadCharts();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'discover' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'discover' ? '#1f2937' : '#4b5563',
-                fontWeight: activeView === 'discover' ? '500' : '400'
-              }
-            },
-              // Bar chart icon for Charts
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
-              ),
-              'Pop of the Tops'
-            ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('critics-picks');
-                loadCriticsPicks();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'critics-picks' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'critics-picks' ? '#1f2937' : '#4b5563',
-                fontWeight: activeView === 'critics-picks' ? '500' : '400'
-              }
-            },
-              // Award/trophy icon for Critical Darlings
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
-              ),
-              "Critical Darlings"
-            )
+            'Home'
           ),
 
           // YOUR MUSIC section
@@ -18805,8 +18825,8 @@ useEffect(() => {
               onClick: () => navigateTo('playlists'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#1f2937' : '#4b5563',
+                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899' : '#4b5563',
                 fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
               }
             },
@@ -18838,8 +18858,8 @@ useEffect(() => {
                 border: '2px solid #a78bfa',
                 color: '#7c3aed'
               } : {
-                backgroundColor: activeView === 'library' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'library' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'library' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
+                color: activeView === 'library' ? '#9333ea' : '#4b5563',
                 fontWeight: activeView === 'library' ? '500' : '400'
               }
             },
@@ -18866,8 +18886,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'history' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'history' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'history' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                color: activeView === 'history' ? '#3b82f6' : '#4b5563',
                 fontWeight: activeView === 'history' ? '500' : '400'
               }
             },
@@ -18875,6 +18895,71 @@ useEffect(() => {
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
               ),
               'History'
+            )
+          ),
+
+          // DISCOVER section
+          React.createElement('div', { className: 'mb-4' },
+            React.createElement('div', {
+              style: {
+                padding: '8px 12px',
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#9ca3af',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em'
+              }
+            }, 'Discover'),
+            React.createElement('button', {
+              onClick: () => navigateTo('recommendations'),
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'recommendations' ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                color: activeView === 'recommendations' ? '#a855f7' : '#4b5563',
+                fontWeight: activeView === 'recommendations' ? '500' : '400'
+              }
+            },
+              // Star icon for Recommendations
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+              ),
+              "Recommendations"
+            ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('discover');
+                loadCharts();
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'discover' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                color: activeView === 'discover' ? '#ec4899' : '#4b5563',
+                fontWeight: activeView === 'discover' ? '500' : '400'
+              }
+            },
+              // Bar chart icon for Charts
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+              ),
+              'Pop of the Tops'
+            ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('critics-picks');
+                loadCriticsPicks();
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'critics-picks' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+                color: activeView === 'critics-picks' ? '#f97316' : '#4b5563',
+                fontWeight: activeView === 'critics-picks' ? '500' : '400'
+              }
+            },
+              // Award/trophy icon for Critical Darlings
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+              ),
+              "Critical Darlings"
             )
           ),
 
@@ -24846,16 +24931,16 @@ React.createElement('div', {
         )
       )
 
-      // Main content area - Normal views (Library, Search, etc.)
+      // Main content area - Normal views (Library, Search, Home, etc.)
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
+          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -24864,11 +24949,903 @@ React.createElement('div', {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
+        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'friends' ? 'Friends' :
             'Discover'
+          )
+        ),
+
+        // HOME view - dynamic personalized landing page
+        activeView === 'home' && React.createElement('div', {
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
+        },
+          // Hero header with gradient
+          React.createElement('div', {
+            className: 'relative',
+            style: {
+              height: homeHeaderCollapsed ? '80px' : '280px',
+              flexShrink: 0,
+              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              overflow: 'hidden'
+            }
+          },
+            // Gradient background - warm sunset vibes
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)'
+              }
+            }),
+            // Animated background pattern
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                opacity: 0.1,
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // EXPANDED STATE
+            !homeHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
+            },
+              // Parachord wordmark centered above title
+              React.createElement('img', {
+                src: 'assets/logo-wordmark-white.png',
+                alt: 'Parachord',
+                className: 'mb-4',
+                style: { height: '38px', width: 'auto' }
+              }),
+              // Title (matching other page headers)
+              React.createElement('h1', {
+                className: 'text-5xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase'
+                }
+              }, 'HOME'),
+              // Subtitle with stats
+              React.createElement('p', {
+                className: 'text-white/70 text-sm mt-6',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+              }, `${collectionData.albums.length} albums · ${collectionData.artists.length} artists · ${playlists.length} playlists`)
+            ),
+            // COLLAPSED STATE
+            homeHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center justify-between px-6 z-10'
+            },
+              React.createElement('h1', {
+                className: 'text-2xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase'
+                }
+              }, 'HOME'),
+              // Parachord wordmark on the right
+              React.createElement('img', {
+                src: 'assets/logo-wordmark-white.png',
+                alt: 'Parachord',
+                style: { height: '26px', width: 'auto' }
+              })
+            )
+          ),
+
+          // Sticky header bar (empty, for visual consistency with other pages)
+          React.createElement('div', {
+            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            style: { flexShrink: 0, minHeight: '52px' }
+          }),
+
+          // Scrollable content area
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto scrollable-content',
+            style: { minHeight: 0 },
+            onScroll: (e) => {
+              const scrollTop = e.target.scrollTop;
+              if (scrollTop > 50 && !homeHeaderCollapsed) {
+                setHomeHeaderCollapsed(true);
+              } else if (scrollTop <= 50 && homeHeaderCollapsed) {
+                setHomeHeaderCollapsed(false);
+              }
+            }
+          },
+            React.createElement('div', { className: 'p-6 space-y-8' },
+
+              // SECTION: Enhance Your Experience (Setup suggestions for new users)
+              (() => {
+                // Build list of suggestions
+                const suggestions = [];
+
+                // Check for uninstalled popular resolvers
+                const popularResolverIds = ['youtube', 'soundcloud', 'deezer'];
+                const installedIds = allResolvers.map(r => r.id);
+                const uninstalledPopular = popularResolverIds.filter(id => !installedIds.includes(id));
+
+                if (uninstalledPopular.length > 0) {
+                  suggestions.push({
+                    id: 'resolvers',
+                    icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+                    title: 'Add More Music Sources',
+                    description: `Install ${uninstalledPopular.length} more resolver${uninstalledPopular.length > 1 ? 's' : ''} to expand your library`,
+                    action: () => { navigateTo('settings'); setSettingsTab('marketplace'); },
+                    actionLabel: 'Browse Plugins',
+                    color: '#8b5cf6'
+                  });
+                }
+
+                // Check Last.fm configuration
+                if (!metaServiceConfigs.lastfm?.username) {
+                  suggestions.push({
+                    id: 'lastfm',
+                    icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
+                    title: 'Connect Last.fm',
+                    description: 'Scrobble tracks and get personalized recommendations',
+                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
+                    actionLabel: 'Set Up',
+                    color: '#dc2626'
+                  });
+                }
+
+                // Check ListenBrainz configuration
+                if (!metaServiceConfigs.listenbrainz?.username) {
+                  suggestions.push({
+                    id: 'listenbrainz',
+                    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
+                    title: 'Connect ListenBrainz',
+                    description: 'Open-source scrobbling and weekly playlists',
+                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
+                    actionLabel: 'Set Up',
+                    color: '#ea580c'
+                  });
+                }
+
+                // Check Spotify connection
+                if (!spotifyConnected) {
+                  suggestions.push({
+                    id: 'spotify',
+                    icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
+                    title: 'Connect Spotify',
+                    description: 'Stream music directly through Spotify Connect',
+                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
+                    actionLabel: 'Connect',
+                    color: '#1DB954'
+                  });
+                }
+
+                // Check browser extension connection (only show if explicitly false, not null/unknown)
+                if (extensionConnected === false) {
+                  suggestions.push({
+                    id: 'extension',
+                    icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
+                    title: 'Install Browser Extension',
+                    description: 'Control YouTube, Bandcamp, SoundCloud from Parachord',
+                    action: () => {
+                      // Show installation instructions
+                      showToast(
+                        'In Chrome: Extensions → Developer Mode → Load Unpacked → parachord-extension',
+                        'info'
+                      );
+                    },
+                    actionLabel: 'How to Install',
+                    color: '#4285f4'
+                  });
+                }
+
+                // Empty collection prompt
+                if (collectionData.tracks.length === 0 && collectionData.albums.length === 0) {
+                  suggestions.push({
+                    id: 'collection',
+                    icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
+                    title: 'Build Your Collection',
+                    description: 'Search for music and add favorites to your library',
+                    action: () => navigateTo('search'),
+                    actionLabel: 'Start Searching',
+                    color: '#0ea5e9'
+                  });
+                }
+
+                // No suggestions? Don't render section
+                if (suggestions.length === 0) return null;
+
+                // Limit to 3 suggestions max
+                const visibleSuggestions = suggestions.slice(0, 3);
+
+                return React.createElement('div', { className: 'mb-2' },
+                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Enhance Your Experience'),
+                    suggestions.length > 3 && React.createElement('button', {
+                      onClick: () => { navigateTo('settings'); setSettingsTab('general'); },
+                      className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                    }, 'See all')
+                  ),
+                  React.createElement('div', {
+                    className: 'grid grid-cols-1 md:grid-cols-3 gap-3'
+                  },
+                    visibleSuggestions.map((suggestion, index) =>
+                      React.createElement('button', {
+                        key: suggestion.id,
+                        className: 'release-card card-fade-up flex items-start gap-3 p-4 text-left',
+                        style: {
+                          backgroundColor: '#ffffff',
+                          borderRadius: '10px',
+                          border: 'none',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                          animationDelay: `${index * 50}ms`
+                        },
+                        onClick: suggestion.action
+                      },
+                        // Icon
+                        React.createElement('div', {
+                          className: 'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
+                          style: { backgroundColor: `${suggestion.color}15` }
+                        },
+                          React.createElement('svg', {
+                            className: 'w-5 h-5',
+                            style: { color: suggestion.color },
+                            fill: 'none',
+                            viewBox: '0 0 24 24',
+                            stroke: 'currentColor'
+                          },
+                            React.createElement('path', {
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round',
+                              strokeWidth: 2,
+                              d: suggestion.icon
+                            })
+                          )
+                        ),
+                        // Content
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('p', {
+                            className: 'text-gray-900 font-medium',
+                            style: { fontSize: '13px' }
+                          }, suggestion.title),
+                          React.createElement('p', {
+                            className: 'text-gray-500 mt-0.5',
+                            style: { fontSize: '12px', lineHeight: '1.4' }
+                          }, suggestion.description)
+                        ),
+                        // Arrow
+                        React.createElement('svg', {
+                          className: 'w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor'
+                        },
+                          React.createElement('path', {
+                            strokeLinecap: 'round',
+                            strokeLinejoin: 'round',
+                            strokeWidth: 2,
+                            d: 'M9 5l7 7-7 7'
+                          })
+                        )
+                      )
+                    )
+                  )
+                );
+              })(),
+
+              // SECTION: Quick Play / Continue Listening
+              currentTrack && React.createElement('div', { className: 'mb-2' },
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
+                ),
+                React.createElement('div', {
+                  className: 'release-card flex items-center gap-4 p-4 cursor-pointer',
+                  style: {
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)',
+                    borderRadius: '12px',
+                    border: 'none'
+                  },
+                  onClick: () => { if (!isPlaying) handlePlayPause(); }
+                },
+                  React.createElement('div', {
+                    className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
+                    style: { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                  },
+                    currentTrack.albumArt ?
+                      React.createElement('img', { src: currentTrack.albumArt, alt: currentTrack.album, className: 'w-full h-full object-cover' }) :
+                      React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-purple-400 to-indigo-500 flex items-center justify-center' },
+                        React.createElement('svg', { className: 'w-8 h-8 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        )
+                      )
+                  ),
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('p', {
+                      className: 'text-gray-900 truncate',
+                      style: { fontSize: '14px', fontWeight: 500 }
+                    }, currentTrack.title),
+                    React.createElement('p', { className: 'text-sm text-gray-500 truncate' }, currentTrack.artist),
+                    currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1 font-medium' }, `${currentQueue.length} more in queue`)
+                  ),
+                  React.createElement('button', {
+                    className: 'w-10 h-10 flex items-center justify-center transition-all hover:scale-110',
+                    onClick: (e) => { e.stopPropagation(); handlePlayPause(); }
+                  },
+                    isPlaying
+                      ? React.createElement(Pause, { size: 24, className: 'text-purple-500 fill-purple-500' })
+                      : React.createElement(Play, { size: 24, className: 'text-purple-500 fill-purple-500' })
+                  )
+                )
+              ),
+
+              // SECTION: Recently Added Albums
+              collectionData.albums.length > 0 && React.createElement('div', null,
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recently Added'),
+                  React.createElement('button', {
+                    onClick: () => { navigateTo('library'); setCollectionTab('albums'); },
+                    className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                  }, 'See all')
+                ),
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                },
+                  [...collectionData.albums]
+                    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+                    .slice(0, 5)
+                    .map((album, index) =>
+                      React.createElement('button', {
+                        key: album.id || `${album.artist}-${album.title}`,
+                        className: 'release-card card-fade-up text-left group/art',
+                        style: {
+                          backgroundColor: '#ffffff',
+                          borderRadius: '10px',
+                          padding: '10px',
+                          border: 'none',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                          animationDelay: `${index * 50}ms`
+                        },
+                        onClick: () => handleCollectionAlbumClick(album)
+                      },
+                        React.createElement('div', {
+                          className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
+                          style: { position: 'relative' }
+                        },
+                          album.art ?
+                            React.createElement('img', {
+                              src: album.art,
+                              alt: album.title,
+                              className: 'w-full h-full object-cover transition-transform duration-300 group-hover/art:scale-105'
+                            }) :
+                            React.createElement('div', {
+                              className: 'w-full h-full flex items-center justify-center',
+                              style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                            },
+                              React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                              )
+                            ),
+                          // Hover overlay with action buttons
+                          React.createElement('div', {
+                            className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2',
+                            style: { pointerEvents: 'auto' }
+                          },
+                            // Add to Playlist button
+                            React.createElement('button', {
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                // Open playlist selector for this album
+                                setPlaylistSelectorTrack({
+                                  title: album.title,
+                                  artist: album.artist,
+                                  album: album.title,
+                                  albumArt: album.art,
+                                  isAlbum: true
+                                });
+                              },
+                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                              title: 'Add to Playlist'
+                            },
+                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                              )
+                            ),
+                            // Play button (center, larger)
+                            React.createElement('button', {
+                              onClick: async (e) => {
+                                e.stopPropagation();
+                                // Fetch and play album tracks
+                                showToast(`Playing ${album.title}...`, 'info');
+                                const tracks = await getArtistTopTracks(album.artist);
+                                if (tracks.length > 0) {
+                                  const albumTracks = tracks.filter(t =>
+                                    t.album?.toLowerCase() === album.title.toLowerCase()
+                                  );
+                                  const tracksToPlay = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
+                                  if (tracksToPlay.length > 0) {
+                                    handlePlay(tracksToPlay[0]);
+                                    if (tracksToPlay.length > 1) {
+                                      setCurrentQueue(tracksToPlay.slice(1));
+                                    }
+                                  }
+                                }
+                              },
+                              className: 'w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                              style: { border: 'none', cursor: 'pointer' },
+                              title: 'Play'
+                            },
+                              React.createElement('svg', { className: 'w-5 h-5 text-gray-800 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M8 5v14l11-7z' })
+                              )
+                            ),
+                            // Add to Queue button
+                            React.createElement('button', {
+                              onClick: async (e) => {
+                                e.stopPropagation();
+                                showToast(`Adding ${album.title} to queue...`, 'info');
+                                const tracks = await getArtistTopTracks(album.artist);
+                                if (tracks.length > 0) {
+                                  const albumTracks = tracks.filter(t =>
+                                    t.album?.toLowerCase() === album.title.toLowerCase()
+                                  );
+                                  const tracksToAdd = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
+                                  if (tracksToAdd.length > 0) {
+                                    setCurrentQueue(prev => [...prev, ...tracksToAdd]);
+                                    showToast(`Added ${tracksToAdd.length} tracks to queue`, 'success');
+                                  }
+                                }
+                              },
+                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                              title: 'Add to Queue'
+                            },
+                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                              )
+                            )
+                          )
+                        ),
+                        React.createElement('p', {
+                          className: 'text-gray-900 truncate',
+                          style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                        }, album.title),
+                        React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
+                      )
+                    )
+                )
+              ),
+
+              // SECTION: Your Playlists & Friends Listening Now (side by side)
+              (() => {
+                const onlineFriends = friends.filter(f => isOnAir(f));
+                const showPlaylists = playlists.length > 0;
+                const showFriends = onlineFriends.length > 0;
+
+                // Only render if at least one section has content
+                if (!showPlaylists && !showFriends) return null;
+
+                return React.createElement('div', {
+                  className: 'grid grid-cols-1 md:grid-cols-2 gap-6',
+                  style: { minHeight: '220px' } // Minimum height for 3 playlist cards
+                },
+                  // Left column: Your Playlists
+                  showPlaylists && React.createElement('div', { className: 'flex flex-col' },
+                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Your Playlists'),
+                      React.createElement('button', {
+                        onClick: () => navigateTo('playlists'),
+                        className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                      }, 'See all')
+                    ),
+                    React.createElement('div', { className: 'space-y-2 flex-1' },
+                      [...playlists]
+                        .sort((a, b) => (b.lastModified || b.addedAt || 0) - (a.lastModified || a.addedAt || 0))
+                        .slice(0, 3)
+                        .map((playlist, index) =>
+                          React.createElement('button', {
+                            key: playlist.id,
+                            className: 'release-card card-fade-up flex items-center gap-3 p-3 text-left w-full',
+                            style: {
+                              backgroundColor: '#ffffff',
+                              borderRadius: '10px',
+                              border: 'none',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                              animationDelay: `${index * 50}ms`
+                            },
+                            onClick: () => {
+                              setSelectedPlaylist(playlist);
+                              navigateTo('playlist-view');
+                            }
+                          },
+                            // 2x2 album art grid or placeholder with hover play button
+                            React.createElement('div', {
+                              className: 'relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 group/mosaic'
+                            },
+                              React.createElement('div', {
+                                className: 'w-full h-full grid grid-cols-2 grid-rows-2',
+                                style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                              },
+                                allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
+                                  React.createElement('img', {
+                                    key: i,
+                                    src: url,
+                                    alt: '',
+                                    className: 'w-full h-full object-cover'
+                                  })
+                                ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
+                                  React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+                                  )
+                                )
+                              ),
+                              // Hover play button overlay
+                              React.createElement('div', {
+                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
+                              },
+                                React.createElement('button', {
+                                  className: 'w-8 h-8 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg',
+                                  onClick: async (e) => {
+                                    e.stopPropagation();
+                                    // Play all tracks in the playlist
+                                    if (playlist.tracks && playlist.tracks.length > 0) {
+                                      setQueue(playlist.tracks);
+                                      handlePlay(playlist.tracks[0]);
+                                      showToast(`Playing ${playlist.title}`, 'success');
+                                    } else {
+                                      showToast('Playlist is empty', 'info');
+                                    }
+                                  }
+                                },
+                                  React.createElement('svg', { className: 'w-4 h-4 text-gray-900 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                    React.createElement('path', { d: 'M8 5v14l11-7z' })
+                                  )
+                                )
+                              )
+                            ),
+                            React.createElement('div', { className: 'flex-1 min-w-0' },
+                              React.createElement('p', {
+                                className: 'text-gray-900 truncate',
+                                style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                              }, playlist.title),
+                              React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' }, `${playlist.tracks?.length || 0} tracks`)
+                            )
+                          )
+                        )
+                    )
+                  ),
+
+                  // Right column: Friends Listening Now
+                  showFriends && React.createElement('div', { className: 'flex flex-col' },
+                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friends Listening Now'),
+                      React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
+                        React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
+                        `${onlineFriends.length} online`
+                      )
+                    ),
+                    React.createElement('div', { className: 'space-y-2 flex-1' },
+                      onlineFriends.map((friend, index) =>
+                        React.createElement('div', {
+                          key: friend.id,
+                          className: 'release-card card-fade-up flex items-center gap-3 p-3 cursor-pointer',
+                          style: {
+                            backgroundColor: '#ffffff',
+                            borderRadius: '10px',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                            animationDelay: `${index * 50}ms`
+                          },
+                          onClick: () => navigateToFriend(friend)
+                        },
+                          // Friend avatar with hexagon shape (matching sidebar style)
+                          React.createElement('div', {
+                            className: 'relative w-10 h-10 flex-shrink-0'
+                          },
+                            React.createElement('div', {
+                              className: 'w-full h-full overflow-hidden',
+                              style: {
+                                clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                              }
+                            },
+                              friend.avatarUrl
+                                ? React.createElement('img', { src: friend.avatarUrl, alt: friend.displayName, className: 'w-full h-full object-cover' })
+                                : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-purple-400 to-pink-400' },
+                                    friend.displayName?.charAt(0).toUpperCase()
+                                  )
+                            ),
+                            // On-air indicator dot
+                            React.createElement('div', {
+                              className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white'
+                            })
+                          ),
+                          React.createElement('div', { className: 'flex-1 min-w-0' },
+                            React.createElement('p', {
+                              className: 'text-gray-900',
+                              style: { fontSize: '13px', fontWeight: 500 }
+                            }, friend.displayName),
+                            friend.currentTrack && React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
+                              `${friend.currentTrack.name || friend.currentTrack.title} · ${friend.currentTrack.artist}`
+                            )
+                          ),
+                          // Listen along button
+                          React.createElement('button', {
+                            className: `px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                              listenAlongFriend?.id === friend.id
+                                ? 'bg-purple-600 text-white'
+                                : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
+                            }`,
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              if (listenAlongFriend?.id === friend.id) {
+                                deactivateListenAlong();
+                              } else {
+                                activateListenAlong(friend);
+                              }
+                            }
+                          }, listenAlongFriend?.id === friend.id ? 'Listening' : 'Listen Along')
+                        )
+                      )
+                    )
+                  ),
+
+                  // If only playlists but no friends, show placeholder in right column
+                  showPlaylists && !showFriends && React.createElement('div', { className: 'flex flex-col' },
+                    React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friends Listening Now')
+                    ),
+                    React.createElement('div', {
+                      className: 'flex-1 flex flex-col items-center justify-center rounded-xl p-6',
+                      style: { backgroundColor: '#f9fafb' }
+                    },
+                      React.createElement('svg', { className: 'w-12 h-12 text-gray-300 mb-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
+                      ),
+                      React.createElement('p', { className: 'text-gray-500 text-sm text-center' }, 'No friends currently listening'),
+                      friends.length === 0 && React.createElement('button', {
+                        onClick: () => { navigateTo('library'); setCollectionTab('friends'); },
+                        className: 'mt-3 text-sm text-purple-600 hover:text-purple-700 font-medium'
+                      }, 'Add friends')
+                    )
+                  )
+                );
+              })(),
+
+              // SECTION: Discover New Music
+              React.createElement('div', null,
+                React.createElement('div', { className: 'mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Discover')
+                ),
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
+                  // 1. For You / Recommendations card (indigo->purple->pink)
+                  React.createElement('div', {
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
+                    style: {
+                      background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)',
+                      animationDelay: '0ms'
+                    }
+                  },
+                    // Header section - clickable to recommendations page
+                    React.createElement('button', {
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      onClick: () => navigateTo('recommendations')
+                    },
+                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+                      ),
+                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
+                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations')
+                    ),
+                    // Top artist preview - clickable to artist page
+                    recommendations.artists.length > 0 && React.createElement('button', {
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        fetchArtistData(recommendations.artists[0].name);
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-full overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' }
+                      },
+                        recommendations.artists[0].image
+                          ? React.createElement('img', {
+                              src: recommendations.artists[0].image,
+                              alt: recommendations.artists[0].name,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/60 text-lg font-bold' },
+                              recommendations.artists[0].name.charAt(0).toUpperCase()
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Top pick'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, recommendations.artists[0].name)
+                      )
+                    ),
+                    // Padding when no preview
+                    recommendations.artists.length === 0 && React.createElement('div', { className: 'flex-1' })
+                  ),
+
+                  // 2. Critical Darlings card (amber->orange->red)
+                  React.createElement('div', {
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
+                    style: {
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%)',
+                      animationDelay: '50ms'
+                    }
+                  },
+                    // Header section - clickable to critics-picks page
+                    React.createElement('button', {
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
+                    },
+                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                      ),
+                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
+                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics')
+                    ),
+                    // Most recent album preview - clickable to album page
+                    criticsPicks.length > 0 && React.createElement('button', {
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        openCriticsPicksAlbum(criticsPicks[0]);
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                      },
+                        criticsPicks[0].albumArt
+                          ? React.createElement('img', {
+                              src: criticsPicks[0].albumArt,
+                              alt: criticsPicks[0].title,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                              )
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest review'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, criticsPicks[0].title),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, criticsPicks[0].artist)
+                      )
+                    ),
+                    // Padding when no preview
+                    criticsPicks.length === 0 && React.createElement('div', { className: 'flex-1' })
+                  ),
+
+                  // 3. Pop of the Tops / Charts card (orange->pink->purple)
+                  React.createElement('div', {
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
+                    style: {
+                      background: 'linear-gradient(135deg, #f97316 0%, #ec4899 50%, #9333ea 100%)',
+                      animationDelay: '100ms'
+                    }
+                  },
+                    // Header section - clickable to discover page
+                    React.createElement('button', {
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      onClick: () => { navigateTo('discover'); loadCharts(); }
+                    },
+                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+                      ),
+                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
+                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing')
+                    ),
+                    // #1 album preview - clickable to open the album
+                    charts.length > 0 && React.createElement('button', {
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        // Open the #1 chart album with correct field mapping
+                        openTopAlbum({ ...charts[0], name: charts[0].title, image: charts[0].albumArt });
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                      },
+                        charts[0].albumArt
+                          ? React.createElement('img', {
+                              src: charts[0].albumArt,
+                              alt: charts[0].title,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                              )
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, '#1 Album'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, charts[0].title),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, charts[0].artist)
+                      )
+                    ),
+                    // Padding when no preview
+                    charts.length === 0 && React.createElement('div', { className: 'flex-1' })
+                  )
+                )
+              ),
+
+              // SECTION: Surprise Me (AI Playlist)
+              React.createElement('div', {
+                className: 'p-6 rounded-xl text-center',
+                style: {
+                  background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)'
+                }
+              },
+                React.createElement('div', { className: 'inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 mb-4' },
+                  React.createElement('svg', { className: 'w-8 h-8 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M13 10V3L4 14h7v7l9-11h-7z' })
+                  )
+                ),
+                React.createElement('h3', { className: 'text-xl font-bold text-white mb-2' }, 'Surprise Me'),
+                React.createElement('p', { className: 'text-white/70 text-sm mb-4 max-w-md mx-auto' },
+                  hasScrobblerConnected()
+                    ? 'Let AI create a personalized playlist based on your listening history'
+                    : 'Connect Last.fm or ListenBrainz to unlock AI-powered playlist generation'
+                ),
+                hasScrobblerConnected()
+                  ? React.createElement('button', {
+                      className: `px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors ${aiLoading ? 'opacity-50 cursor-not-allowed' : ''}`,
+                      disabled: aiLoading,
+                      onClick: () => {
+                        if (!aiLoading) {
+                          handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.');
+                        }
+                      }
+                    }, aiLoading ? 'Generating...' : 'Generate Playlist')
+                  : React.createElement('button', {
+                      className: 'px-6 py-2.5 bg-white/20 text-white font-semibold rounded-full hover:bg-white/30 transition-colors',
+                      onClick: () => {
+                        navigateTo('settings');
+                        // Scroll to meta services section after navigation
+                        setTimeout(() => {
+                          const metaSection = document.querySelector('[data-settings-section="meta-services"]');
+                          if (metaSection) metaSection.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }, 'Connect Scrobbler')
+              ),
+
+              // SECTION: Quick Stats
+              React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
+                [
+                  { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: '#8b5cf6', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
+                  { label: 'Artists', value: collectionData.artists.length, icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', color: '#ec4899', onClick: () => { navigateTo('library'); setCollectionTab('artists'); } },
+                  { label: 'Playlists', value: playlists.length, icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: '#f59e0b', onClick: () => navigateTo('playlists') },
+                  { label: 'Friends', value: friends.length, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', color: '#10b981', onClick: () => { navigateTo('library'); setCollectionTab('friends'); } }
+                ].map((stat, index) =>
+                  React.createElement('button', {
+                    key: stat.label,
+                    className: 'release-card card-fade-up p-4 text-left',
+                    style: {
+                      backgroundColor: '#ffffff',
+                      borderRadius: '10px',
+                      border: 'none',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                      animationDelay: `${index * 50}ms`
+                    },
+                    onClick: stat.onClick
+                  },
+                    React.createElement('div', {
+                      className: 'w-10 h-10 rounded-lg flex items-center justify-center mb-3',
+                      style: { backgroundColor: `${stat.color}15` }
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', style: { color: stat.color }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: stat.icon })
+                      )
+                    ),
+                    React.createElement('p', { className: 'text-2xl font-bold text-gray-900' }, stat.value),
+                    React.createElement('p', { className: 'text-sm text-gray-500' }, stat.label)
+                  )
+                )
+              )
+            )
           )
         ),
 
