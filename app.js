@@ -18821,16 +18821,6 @@ useEffect(() => {
               }, `+${sidebarBadges.playlists}`)
             ),
             React.createElement('button', {
-              onClick: () => {}, // Placeholder
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm',
-              style: { color: '#9ca3af', cursor: 'not-allowed' }
-            },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z' })
-              ),
-              'Stations'
-            ),
-            React.createElement('button', {
               onClick: () => {
                 navigateTo('history');
                 loadTopTracks();
