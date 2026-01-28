@@ -2124,8 +2124,8 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
       ),
       // Hover overlay with action buttons
       React.createElement('div', {
-        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-        style: { pointerEvents: 'auto', borderRadius: '6px' }
+        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+        style: { borderRadius: '6px', zIndex: 20 }
       },
         // Add to Playlist button
         onAddToPlaylist && React.createElement('button', {
@@ -28220,8 +28220,8 @@ React.createElement('div', {
                         }, `#${album.rank}`),
                         // Hover overlay with action buttons
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { pointerEvents: 'auto', borderRadius: '6px' }
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          style: { borderRadius: '6px', zIndex: 20 }
                         },
                           // Add to Playlist button
                           React.createElement('button', {
@@ -28903,8 +28903,8 @@ React.createElement('div', {
                             }, `#${album.rank}`),
                             // Hover overlay with action buttons
                             React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                              style: { pointerEvents: 'auto' }
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                              style: { zIndex: 20 }
                             },
                               // Add to Playlist button
                               React.createElement('button', {
