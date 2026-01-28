@@ -204,6 +204,20 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // App lifecycle events - for background/foreground handling
+  app: {
+    onForeground: (callback) => {
+      ipcRenderer.on('app-foreground', () => {
+        callback();
+      });
+    },
+    onBackground: (callback) => {
+      ipcRenderer.on('app-background', () => {
+        callback();
+      });
+    }
+  },
+
   // Config - expose select environment variables to renderer
   config: {
     get: (key) => ipcRenderer.invoke('config-get', key)

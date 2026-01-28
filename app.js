@@ -6121,6 +6121,39 @@ const Parachord = () => {
     }
   }, []);
 
+  // App lifecycle event handlers - restart Spotify polling when app returns to foreground
+  useEffect(() => {
+    if (window.electron?.app?.onForeground) {
+      window.electron.app.onForeground(() => {
+        console.log('📱 App returned to foreground');
+
+        // Check if we should restart Spotify polling
+        // Conditions: playing Spotify, no active polling, have a token
+        const track = currentTrackRef.current;
+        const resolverId = determineResolverIdFromTrack(track);
+        const token = spotifyTokenRef.current;
+
+        if (resolverId === 'spotify' && token && isPlayingRef.current) {
+          // Check if polling is already active
+          if (!playbackPollerRef.current && !pollingRecoveryRef.current) {
+            console.log('🔄 Restarting Spotify polling after returning to foreground...');
+            startAutoAdvancePolling('spotify', track, { token });
+          } else {
+            console.log('✅ Spotify polling already active');
+          }
+        }
+      });
+    }
+
+    if (window.electron?.app?.onBackground) {
+      window.electron.app.onBackground(() => {
+        console.log('📱 App went to background');
+        // Note: We don't stop polling here - just log for debugging
+        // The polling may naturally stop due to OS throttling
+      });
+    }
+  }, []);
+
   // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {

@@ -113,10 +113,12 @@ function createWindow() {
 
   mainWindow.on('focus', () => {
     localFilesService?.onAppForeground();
+    mainWindow?.webContents.send('app-foreground');
   });
 
   mainWindow.on('blur', () => {
     localFilesService?.onAppBackground();
+    mainWindow?.webContents.send('app-background');
   });
 }
 
