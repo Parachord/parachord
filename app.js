@@ -13281,7 +13281,7 @@ const Parachord = () => {
 
     try {
       // Download resolver from URL
-      const downloadResult = await window.electron.resolvers.downloadResolver(downloadUrl);
+      const downloadResult = await window.electron.resolvers.downloadFromMarketplace(downloadUrl);
 
       if (!downloadResult.success) {
         showConfirmDialog({
