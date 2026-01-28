@@ -66,6 +66,27 @@
       "tags": ["streaming", "hi-res", "audiophile", "preview"]
     },
     {
+      "id": "soundcloud",
+      "name": "SoundCloud",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Search and stream music from SoundCloud. Free with optional Go+ subscription. Requires OAuth login.",
+      "icon": "☁",
+      "color": "#FF5500",
+      "homepage": "https://soundcloud.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": true
+      },
+      "requiresAuth": true,
+      "builtin": true,
+      "category": "streaming",
+      "tags": ["streaming", "free", "indie", "soundcloud", "oauth"]
+    },
+    {
       "id": "youtube",
       "name": "YouTube",
       "version": "1.0.0",

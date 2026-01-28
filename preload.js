@@ -34,6 +34,27 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // SoundCloud operations
+  soundcloud: {
+    authenticate: () => ipcRenderer.invoke('soundcloud-auth'),
+    checkToken: () => ipcRenderer.invoke('soundcloud-check-token'),
+    disconnect: () => ipcRenderer.invoke('soundcloud-disconnect'),
+
+    // Listen for auth success events from main process
+    onAuthSuccess: (callback) => {
+      ipcRenderer.on('soundcloud-auth-success', (event, data) => {
+        callback(data);
+      });
+    },
+
+    // Listen for auth error events from main process
+    onAuthError: (callback) => {
+      ipcRenderer.on('soundcloud-auth-error', (event, error) => {
+        callback(error);
+      });
+    }
+  },
+
   // Shell operations - use IPC for better security
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)

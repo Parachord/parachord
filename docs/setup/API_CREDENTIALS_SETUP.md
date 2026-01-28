@@ -109,23 +109,30 @@ YOUTUBE_API_KEY=your_api_key_here
 
 ---
 
-### 🔮 **SoundCloud** (Future Implementation)
+### 🟡 **SoundCloud** (Partial Implementation)
 
-**Status:** Not yet implemented
+**Status:** Browser extension scraping works; desktop search resolver not yet implemented
 
-**When Implemented:** Will need SoundCloud app credentials
+**What Works Now:**
+- Browser extension can scrape tracks, playlists, and artist pages from SoundCloud
+- Scraped content can be queued in Parachord
 
-**How to Get (for future):**
+**What's Not Implemented:**
+- Desktop app search (cannot search SoundCloud from within Parachord)
+- Direct URL resolution
+
+**How to Get Credentials:**
 1. Go to: https://soundcloud.com/you/apps
 2. Register a new app
-3. Get your Client ID
+3. Get your Client ID and Client Secret
 
-**Add to .env (when implemented):**
+**Add to .env:**
 ```bash
 SOUNDCLOUD_CLIENT_ID=your_client_id_here
+SOUNDCLOUD_CLIENT_SECRET=your_client_secret_here
 ```
 
-**Current Status:** SoundCloud resolver is a placeholder and doesn't search anything yet.
+**Note:** SoundCloud's official API has been deprecated, so full resolver implementation may require alternative approaches.
 
 ---
 
@@ -180,8 +187,9 @@ SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 # YouTube API Credentials (optional - for future implementation)
 YOUTUBE_API_KEY=
 
-# SoundCloud API Credentials (optional - for future implementation)
+# SoundCloud API Credentials (optional - extension scraping works, desktop resolver WIP)
 SOUNDCLOUD_CLIENT_ID=
+SOUNDCLOUD_CLIENT_SECRET=
 
 # MusicBrainz (no credentials needed)
 # Bandcamp (no credentials needed)

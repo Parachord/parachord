@@ -689,6 +689,7 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"spotify","name":"Spotify","version":"1.0.0","author":"Parachord Team","description":"Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.","icon":"♫","color":"#1DB954","homepage":"https://spotify.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":true,"authType":"oauth","scopes":["user-read-playback-state","user-modify-playback-state","user-read-currently-playing"],"configurable":{"clientId":{"type":"text","label":"Client ID","default":"c040c0ee133344b282e6342198bcbeea","readonly":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) return []; try { const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=20`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) { console.error('Spotify search failed:', response.status); return []; } const data = await response.json(); return data.tracks.items.map(track => ({ id: `spotify-${track.id}`, title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), sources: ['spotify'], spotifyUri: track.uri, spotifyId: track.id, albumArt: track.album.images[0]?.url })); } catch (error) { console.error('Spotify search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `artist:${artist} track:${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!config.token) { console.error('Spotify not connected'); return false; } try { const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!devicesResponse.ok) return false; const devicesData = await devicesResponse.json(); const devices = devicesData.devices || []; if (devices.length === 0) { console.error('No Spotify devices found'); return false; } const controllable = devices.filter(d => !d.is_restricted); const available = controllable.length > 0 ? controllable : devices; const computer = available.find(d => d.type === 'Computer'); const phone = available.find(d => d.type === 'Smartphone'); const speaker = available.find(d => d.type === 'Speaker'); const nonWebActive = available.find(d => d.is_active && !d.name.toLowerCase().includes('web')); const nonWeb = available.find(d => !d.name.toLowerCase().includes('web')); let activeDevice = computer || phone || speaker || nonWebActive || nonWeb || available[0]; console.log('Selected device:', activeDevice.name, activeDevice.type); if (!activeDevice.is_active) { const transferResponse = await fetch('https://api.spotify.com/v1/me/player', { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ device_ids: [activeDevice.id], play: true }) }); if (!transferResponse.ok && transferResponse.status !== 204) { console.error('Failed to transfer playback'); } await new Promise(resolve => setTimeout(resolve, 1000)); } const playResponse = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ uris: [track.spotifyUri] }) }); return playResponse.ok || playResponse.status === 204; } catch (error) { console.error('Spotify play error:', error); return false; } }","init":"async function(config) { console.log('Spotify resolver initialized'); }","cleanup":"async function() { console.log('Spotify resolver cleanup'); }"}},
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
+  {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
 ];
 
 
@@ -724,7 +725,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     spotify: { label: 'Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
     youtube: { label: 'YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
     bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
-    qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' }
+    qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' },
+    soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' }
   };
 
   // Determine which resolver will be used (based on priority)
@@ -828,6 +830,7 @@ const SERVICE_LOGO_PATHS = {
   youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
   localfiles: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z',
   applemusic: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
+  soundcloud: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z',
   wikipedia: 'M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l2.681-5.476-2.607-5.24c-.237-.477-.42-.752-.545-.825-.126-.073-.437-.123-.934-.147l-.356-.022c-.152 0-.228-.053-.228-.166v-.457c0-.119.085-.17.253-.15l4.834.045.042.045v.447c0 .119-.07.176-.212.176l-.453.022c-.454.022-.681.155-.681.4 0 .106.043.274.133.502l2.008 4.097 1.905-3.971c.09-.183.137-.38.137-.597 0-.243-.233-.383-.7-.424l-.453-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.134.176-.15l4.063-.045.042.045v.457c0 .106-.07.164-.212.164l-.534.031c-.391.022-.681.142-.863.36-.182.218-.404.573-.668 1.068l-2.388 4.786 2.715 5.455s3.767-7.894 4.916-10.442c.15-.326.223-.586.223-.78 0-.263-.233-.405-.7-.427l-.534-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.129.176-.129h4.863l.033.045v.457c0 .106-.07.164-.212.164-.609.014-1.055.089-1.34.22-.285.133-.542.398-.767.792-.346.6-4.608 9.075-5.906 11.667-.377.755-.882.939-1.268.047-.54-1.254-2.7-5.471-2.7-5.471l-2.625 5.42c-.27.549-.748.704-1.14.013-.54-1.125-2.841-5.773-2.841-5.773z',
   discogs: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z'
 };
@@ -859,8 +862,8 @@ const SERVICE_LOGOS = {
   youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
   ),
-  soundcloud: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('path', { d: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z' })
+  soundcloud: React.createElement('svg', { viewBox: '0 208.952 1048.713 581.696', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M0 686.216c0 13.014 4.718 22.854 14.152 29.524 9.435 6.669 19.52 9.027 30.256 7.076 10.085-1.952 17.161-5.531 21.229-10.736 4.066-5.205 6.1-13.827 6.1-25.864v-141.52c0-10.086-3.497-18.626-10.492-25.62-6.994-6.995-15.534-10.492-25.62-10.492-9.76 0-18.137 3.497-25.132 10.492C3.498 526.07 0 534.61 0 544.696v141.52zm112.24 60.512c0 9.436 3.335 16.511 10.004 21.229 6.67 4.718 15.21 7.076 25.62 7.076 10.736 0 19.438-2.359 26.108-7.076 6.669-4.717 10.004-11.793 10.004-21.229V416.84c0-9.76-3.498-18.138-10.492-25.132-6.995-6.994-15.535-10.492-25.62-10.492-9.76 0-18.138 3.498-25.132 10.492-6.995 6.995-10.492 15.372-10.492 25.132v329.888zm111.752 15.616c0 9.435 3.416 16.511 10.248 21.229 6.832 4.717 15.616 7.076 26.353 7.076 10.41 0 18.95-2.359 25.619-7.076 6.67-4.718 10.005-11.794 10.005-21.229V461.248c0-10.085-3.498-18.707-10.492-25.864-6.995-7.157-15.372-10.735-25.132-10.735-10.086 0-18.707 3.578-25.864 10.735s-10.736 15.779-10.736 25.864v301.096zm112.24 1.464c0 17.894 12.037 26.841 36.112 26.841 24.074 0 36.111-8.947 36.111-26.841v-488c0-27.328-8.296-42.781-24.888-46.36-10.736-2.603-21.31.488-31.72 9.272-10.411 8.784-15.616 21.146-15.616 37.088v488zm114.193 14.152V247.016c0-16.917 5.042-27.002 15.128-30.256 21.797-5.205 43.432-7.808 64.904-7.808 49.775 0 96.136 11.712 139.079 35.136 42.944 23.424 77.674 55.388 104.188 95.892 26.515 40.505 41.887 85.156 46.116 133.957 19.845-8.459 40.991-12.688 63.439-12.688 45.547 0 84.506 16.104 116.876 48.312 32.371 32.209 48.557 70.923 48.557 116.145 0 45.547-16.186 84.424-48.557 116.632-32.37 32.208-71.166 48.312-116.388 48.312l-424.56-.488c-2.929-.976-5.125-2.766-6.589-5.368s-2.193-4.882-2.193-6.834z' })
   ),
   applemusic: React.createElement('svg', { viewBox: '0 0 361 361', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M263.54,234.26c0,4.56-0.04,8.7-1,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.66-12.5,4.55c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.4-12.99-6.6c-5.17-4.74-8.39-11.14-9.09-17.82c-0.82-7.84,1.79-16.21,7.67-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.13-2.61,2.17-5.78,2.17-8.92l0-79.29c0-6.07-2.72-7.72-8.52-6.61c-4.14,0.81-93.09,18.75-93.09,18.75c-5.02,1.21-6.78,2.85-6.78,9.08l0,116.15c0,4.56-0.24,8.7-1.19,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.72-12.5,4.61c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.47-12.99-6.66c-5.17-4.74-8.17-11.14-8.88-17.82c-0.82-7.84,1.57-16.21,7.46-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.12-2.59,2.37-5.64,2.37-8.76c0-24.6,0-133.92,0-133.92c0-1.8,0.15-3.02,0.24-3.62c0.43-2.82,1.56-5.24,3.6-6.95c1.7-1.42,3.88-2.41,6.67-3l0.04-0.01l107-21.59c0.93-0.19,8.66-1.56,9.53-1.64c5.78-0.5,9.03,3.3,9.03,9.46V234.26z' })
@@ -3285,6 +3288,8 @@ const Parachord = () => {
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
+  const [soundcloudToken, setSoundcloudToken] = useState(null);
+  const [soundcloudConnected, setSoundcloudConnected] = useState(false);
 
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
@@ -4101,6 +4106,7 @@ const Parachord = () => {
   const deactivateListenAlongRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
+  const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
@@ -5274,13 +5280,22 @@ const Parachord = () => {
         const builtinAxeFiles = await loadBuiltinResolvers();
         
         let resolversToLoad = builtinAxeFiles;
-        
+
         if (builtinAxeFiles.length === 0) {
           console.warn('⚠️  No .axe files found in resolvers/builtin/');
           console.log('💾 Using embedded fallback resolvers');
           resolversToLoad = FALLBACK_RESOLVERS;
         } else {
           console.log(`✅ Loaded ${builtinAxeFiles.length} .axe files from disk`);
+
+          // Merge in any FALLBACK_RESOLVERS that aren't already loaded from disk
+          // This ensures builtin resolvers (like soundcloud) are always available
+          const loadedIds = new Set(builtinAxeFiles.map(axe => axe.manifest?.id));
+          const missingBuiltins = FALLBACK_RESOLVERS.filter(axe => !loadedIds.has(axe.manifest?.id));
+          if (missingBuiltins.length > 0) {
+            console.log(`📦 Adding ${missingBuiltins.length} builtin resolver(s) not in cache:`, missingBuiltins.map(r => r.manifest.id).join(', '));
+            resolversToLoad = [...builtinAxeFiles, ...missingBuiltins];
+          }
         }
 
         // Separate content resolvers from meta services by manifest type
@@ -6173,6 +6188,32 @@ const Parachord = () => {
       }
 
       console.log('🔑 Spotify token status:', {
+        hasToken: !!token,
+        tokenLength: token?.length,
+        tokenPreview: token ? token.substring(0, 20) + '...' : 'null'
+      });
+
+      return { token };
+    }
+
+    // For SoundCloud, always get a fresh token from the IPC handler
+    if (resolverId === 'soundcloud') {
+      let token = soundcloudToken;
+
+      // Try to get a fresh/refreshed token from the IPC handler
+      if (window.electron?.soundcloud) {
+        const tokenData = await window.electron.soundcloud.checkToken();
+        if (tokenData && tokenData.token) {
+          token = tokenData.token;
+          // Update React state if token changed
+          if (token !== soundcloudToken) {
+            console.log('🔄 SoundCloud token was refreshed, updating state');
+            setSoundcloudToken(token);
+          }
+        }
+      }
+
+      console.log('🔑 SoundCloud token status:', {
         hasToken: !!token,
         tokenLength: token?.length,
         tokenPreview: token ? token.substring(0, 20) + '...' : 'null'
@@ -7276,6 +7317,7 @@ const Parachord = () => {
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
+      else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
       else {
         console.error('❌ Could not determine resolver for source');
@@ -7491,6 +7533,276 @@ const Parachord = () => {
           type: 'error',
           title: 'Playback Error',
           message: errorMessage
+        });
+      }
+      return;
+    }
+
+    // Handle SoundCloud playback with HTML5 Audio (stream from API)
+    if (resolverId === 'soundcloud') {
+      console.log('🎵 Playing SoundCloud track:', sourceToPlay.title);
+      console.log('🎵 SoundCloud source details:', { soundcloudId: sourceToPlay.soundcloudId, streamable: sourceToPlay.streamable });
+
+      // Stop Spotify polling when switching to SoundCloud playback
+      if (playbackPollerRef.current) {
+        console.log('⏹️ Stopping Spotify polling for SoundCloud playback');
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
+
+      // Pause Spotify if it's playing
+      if (spotifyToken && streamingPlaybackActiveRef.current) {
+        console.log('⏹️ Pausing Spotify for SoundCloud playback');
+        try {
+          await fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+        } catch (e) {
+          console.log('Could not pause Spotify:', e.message);
+        }
+      }
+
+      // Get the OAuth token
+      const config = await getResolverConfig('soundcloud');
+      if (!config.token) {
+        console.error('❌ SoundCloud not authenticated');
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'SoundCloud Not Connected',
+          message: 'Please connect your SoundCloud account in Settings > Resolvers to play this track.'
+        });
+        return;
+      }
+
+      // Get stream URL from SoundCloud API
+      try {
+        // Try the direct /stream endpoint first (older API, more compatible)
+        // This endpoint returns a redirect to the actual MP3 stream
+        const directStreamUrl = `https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/stream?oauth_token=${config.token}`;
+        console.log('🎵 Trying direct stream URL');
+
+        // Test if the direct stream works by making a HEAD request
+        let streamUrl = directStreamUrl;
+        try {
+          const testResponse = await fetch(directStreamUrl, { method: 'HEAD' });
+          if (!testResponse.ok) {
+            console.log('🎵 Direct stream not available, trying /streams endpoint');
+            // Fall back to /streams endpoint
+            const streamsResponse = await fetch(`https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/streams`, {
+              headers: { 'Authorization': `OAuth ${config.token}` }
+            });
+
+            if (streamsResponse.ok) {
+              const streams = await streamsResponse.json();
+              console.log('🎵 Streams response keys:', Object.keys(streams));
+              // Log available stream URLs for debugging
+              if (streams.http_mp3_128_url) console.log('🎵 http_mp3_128_url available');
+              if (streams.hls_mp3_128_url) console.log('🎵 hls_mp3_128_url available (HLS - not compatible)');
+              if (streams.preview_mp3_128_url) console.log('🎵 preview_mp3_128_url available');
+
+              // Prefer HTTP MP3 (direct stream) over HLS or preview
+              // These URLs are pre-signed and should NOT have additional auth appended
+              streamUrl = streams.http_mp3_128_url || streams.preview_mp3_128_url;
+              if (streamUrl) {
+                console.log('🎵 Using stream URL (pre-signed, no token needed)');
+              }
+            }
+          }
+        } catch (testError) {
+          console.log('🎵 Stream test failed, using direct URL anyway:', testError.message);
+        }
+
+        if (!streamUrl) {
+          console.error('❌ No stream URL available for this track');
+          // Fall back to opening in browser
+          if (sourceToPlay.soundcloudUrl) {
+            console.log('📱 Falling back to browser playback');
+            if (window.electron?.shell?.openExternal) {
+              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+            }
+          }
+          setTrackLoading(false);
+          return;
+        }
+
+        console.log('🎵 Using SoundCloud stream URL');
+
+        // Clean up any previous blob URL to prevent memory leaks
+        if (audioBlobUrlRef.current) {
+          URL.revokeObjectURL(audioBlobUrlRef.current);
+          audioBlobUrlRef.current = null;
+        }
+
+        // Fetch the audio through Electron's proxy to handle CORS and auth headers
+        // HTML5 Audio can't send Authorization headers, so we need to fetch the data
+        // and create a blob URL that the Audio element can play
+        let blobUrl;
+        try {
+          console.log('🎵 Fetching audio through proxy...');
+
+          // Use proxyFetch to get the audio with proper headers
+          // For the /stream endpoint, pass oauth_token in query
+          // For pre-signed URLs from /streams, no additional auth needed
+          const fetchOptions = {
+            responseType: 'arraybuffer' // Get binary data for audio
+          };
+
+          // If using the direct stream endpoint, we need the token
+          // Pre-signed URLs already have auth built in
+          if (streamUrl.includes('oauth_token=')) {
+            // Direct stream URL with token in query - should work
+            console.log('🎵 Stream URL has token in query');
+          } else if (streamUrl.includes('api.soundcloud.com')) {
+            // API URL needs Authorization header
+            fetchOptions.headers = { 'Authorization': `OAuth ${config.token}` };
+            console.log('🎵 Adding OAuth header for API URL');
+          } else {
+            // Pre-signed CDN URL - may need OAuth header anyway
+            fetchOptions.headers = { 'Authorization': `OAuth ${config.token}` };
+            console.log('🎵 Adding OAuth header for CDN URL');
+          }
+
+          const audioResponse = await window.electron.proxyFetch(streamUrl, fetchOptions);
+
+          if (audioResponse.error) {
+            throw new Error(`Proxy fetch failed: ${audioResponse.error}`);
+          }
+
+          // audioResponse.data is base64-encoded when responseType is arraybuffer
+          // Convert base64 to ArrayBuffer
+          let audioData;
+          if (audioResponse.data) {
+            // Decode base64 to binary
+            const binaryString = atob(audioResponse.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            audioData = bytes.buffer;
+          } else {
+            throw new Error('No audio data received');
+          }
+
+          // Create blob URL from the audio data
+          const blob = new Blob([audioData], { type: 'audio/mpeg' });
+          blobUrl = URL.createObjectURL(blob);
+          audioBlobUrlRef.current = blobUrl; // Store for cleanup
+          console.log('🎵 Created blob URL for audio playback');
+        } catch (proxyError) {
+          console.error('🎵 Proxy fetch failed:', proxyError);
+          // Fall back to opening in browser
+          if (sourceToPlay.soundcloudUrl) {
+            console.log('📱 Falling back to browser playback');
+            if (window.electron?.shell?.openExternal) {
+              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+            }
+          }
+          setTrackLoading(false);
+          return;
+        }
+
+        // Create audio element if needed (same setup as local files)
+        if (!audioRef.current) {
+          console.log('🎵 Creating new Audio element for SoundCloud');
+          audioRef.current = new Audio();
+          audioRef.current.addEventListener('timeupdate', () => {
+            if (audioRef.current) {
+              const currentTime = audioRef.current.currentTime;
+              setProgress(currentTime);
+              if (window.scrobbleManager) {
+                window.scrobbleManager.onProgressUpdate(currentTime);
+              }
+            }
+          });
+          audioRef.current.addEventListener('loadedmetadata', () => {
+            const audioDuration = audioRef.current?.duration;
+            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+              console.log('🎵 SoundCloud audio metadata loaded, duration:', audioDuration);
+              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+            }
+          });
+          audioRef.current.addEventListener('durationchange', () => {
+            const audioDuration = audioRef.current?.duration;
+            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+              console.log('🎵 SoundCloud audio duration changed:', audioDuration);
+              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+            }
+          });
+          audioRef.current.addEventListener('ended', () => {
+            console.log('🎵 SoundCloud playback ended');
+            handleNextRef.current?.();
+          });
+          audioRef.current.addEventListener('error', (e) => {
+            const mediaError = e.target.error;
+            console.error('🎵 SoundCloud audio error:', mediaError);
+            let errorMessage = 'Could not play this SoundCloud track.';
+            if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+              errorMessage = 'Network error while streaming. Please try again.';
+            } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+              errorMessage = 'Error decoding the audio stream.';
+            }
+            showConfirmDialog({
+              type: 'error',
+              title: 'SoundCloud Playback Error',
+              message: errorMessage
+            });
+          });
+        }
+
+        // Use HTML5 Audio to play the blob URL (pre-fetched with auth headers)
+        audioRef.current.src = blobUrl;
+        const volumeToApply = isMutedRef.current ? 0 : volume;
+        const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
+        audioRef.current.volume = effectiveVolume / 100;
+        console.log(`🔊 Applied SoundCloud volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+
+        audioRef.current.load();
+
+        await audioRef.current.play();
+
+        // Set current track state
+        const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+        const trackToSet = trackOrSource.sources ? {
+          ...sourceToPlay,
+          id: trackOrSource.id,
+          artist: trackOrSource.artist,
+          title: trackOrSource.title,
+          album: trackOrSource.album,
+          duration: duration,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
+          sources: trackOrSource.sources,
+          _playbackContext: trackOrSource._playbackContext,
+          _activeResolver: resolverId
+        } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+
+        setCurrentTrack(trackToSet);
+        setIsPlaying(true);
+        setProgress(0);
+        setTrackLoading(false);
+        streamingPlaybackActiveRef.current = false;
+        setBrowserPlaybackActive(false);
+        setIsExternalPlayback(false);
+        trackNeedsExplicitStart.current = false;
+
+        console.log('✅ SoundCloud playing via HTML5 Audio');
+
+        // Notify scrobble manager of track start
+        if (window.scrobbleManager) {
+          window.scrobbleManager.onTrackStart(trackToSet);
+        }
+      } catch (error) {
+        console.error('❌ SoundCloud playback error:', error);
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Playback Error',
+          message: 'Failed to play SoundCloud track: ' + error.message
         });
       }
       return;
@@ -8379,8 +8691,8 @@ const Parachord = () => {
       return;
     }
 
-    // Handle local file playback
-    if (audioRef.current && currentTrack?.sources?.localfiles) {
+    // Handle local file or SoundCloud playback (both use HTML5 Audio)
+    if (audioRef.current && (currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud')) {
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -13237,7 +13549,7 @@ const Parachord = () => {
 
   // Install resolver from marketplace
   const handleInstallFromMarketplace = async (marketplaceResolver) => {
-    const { id, name, downloadUrl } = marketplaceResolver;
+    const { id, name, downloadUrl, builtin } = marketplaceResolver;
 
     // Check if already installing
     if (installingResolvers.has(id)) {
@@ -13249,8 +13561,39 @@ const Parachord = () => {
     console.log(`📦 Installing ${name} from marketplace...`);
 
     try {
+      // For builtin resolvers, just enable them - they're already available as FALLBACK_RESOLVERS
+      if (builtin) {
+        // Check if already in allResolvers
+        const existing = allResolvers.find(r => r.id === id);
+        if (existing) {
+          showConfirmDialog({
+            type: 'info',
+            title: 'Already Available',
+            message: `${name} is a built-in resolver and is already available. You can enable it in Settings > Resolvers.`
+          });
+        } else {
+          // Find in FALLBACK_RESOLVERS and add to allResolvers
+          const fallbackResolver = FALLBACK_RESOLVERS.find(r => r.id === id);
+          if (fallbackResolver) {
+            setAllResolvers(prev => [...prev, { ...fallbackResolver, enabled: true, weight: prev.length }]);
+            showConfirmDialog({
+              type: 'success',
+              title: 'Resolver Enabled',
+              message: `${name} has been enabled. Configure it in Settings > Resolvers.`
+            });
+          } else {
+            showConfirmDialog({
+              type: 'info',
+              title: 'Built-in Resolver',
+              message: `${name} is a built-in resolver. Enable it in Settings > Resolvers.`
+            });
+          }
+        }
+        return;
+      }
+
       // Download resolver from URL
-      const downloadResult = await window.electron.resolvers.downloadResolver(downloadUrl);
+      const downloadResult = await window.electron.resolvers.downloadFromMarketplace(downloadUrl);
 
       if (!downloadResult.success) {
         showConfirmDialog({
@@ -18299,6 +18642,84 @@ ${tracks}
     }
   };
 
+  // SoundCloud authentication functions
+  const checkSoundcloudToken = async () => {
+    console.log('Checking SoundCloud token...');
+    if (window.electron?.soundcloud) {
+      const tokenData = await window.electron.soundcloud.checkToken();
+      console.log('SoundCloud token data received:', {
+        hasData: !!tokenData,
+        hasToken: !!tokenData?.token,
+        tokenLength: tokenData?.token?.length,
+        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '...' : 'null',
+        expiry: tokenData?.expiresAt
+      });
+      if (tokenData && tokenData.token) {
+        console.log('Valid SoundCloud token found, setting connected state');
+        setSoundcloudToken(tokenData.token);
+        setSoundcloudConnected(true);
+        // Enable SoundCloud resolver if authenticated
+        setActiveResolvers(prev => {
+          if (!prev.includes('soundcloud')) {
+            console.log('Adding SoundCloud to active resolvers');
+            return [...prev, 'soundcloud'];
+          }
+          return prev;
+        });
+      } else {
+        console.log('No valid SoundCloud token found');
+      }
+    } else {
+      console.log('window.electron.soundcloud not available');
+    }
+  };
+
+  const connectSoundcloud = async () => {
+    console.log('=== Connect SoundCloud Clicked ===');
+    console.log('window.electron:', !!window.electron);
+    console.log('window.electron.soundcloud:', !!window.electron?.soundcloud);
+
+    if (window.electron?.soundcloud) {
+      try {
+        console.log('Calling SoundCloud authenticate...');
+        const result = await window.electron.soundcloud.authenticate();
+        console.log('SoundCloud authenticate result:', result);
+        if (!result.success && result.error) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Authentication Failed',
+            message: result.error
+          });
+        }
+      } catch (error) {
+        console.error('SoundCloud auth error:', error);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Authentication Failed',
+          message: 'SoundCloud authentication failed. Check console for details.'
+        });
+      }
+    } else {
+      console.error('window.electron.soundcloud not available!');
+      showConfirmDialog({
+        type: 'error',
+        title: 'API Not Available',
+        message: 'SoundCloud API not available. Make sure preload.js is loaded correctly.'
+      });
+    }
+  };
+
+  const disconnectSoundcloud = async () => {
+    if (window.electron?.soundcloud) {
+      await window.electron.soundcloud.disconnect();
+      setSoundcloudToken(null);
+      setSoundcloudConnected(false);
+      // Remove SoundCloud sources from all tracks and remove from active resolvers
+      removeResolverSources('soundcloud');
+      setActiveResolvers(prev => prev.filter(id => id !== 'soundcloud'));
+    }
+  };
+
   // Meta Service config helpers
   const saveMetaServiceConfig = async (serviceId, config) => {
     const newConfigs = { ...metaServiceConfigs, [serviceId]: config };
@@ -18513,6 +18934,47 @@ useEffect(() => {
     console.log('⏰ Periodic token refresh check...');
     checkSpotifyToken();
   }, 5 * 60 * 1000); // 5 minutes
+
+  return () => clearInterval(tokenRefreshInterval);
+}, []);
+
+// Listen for SoundCloud auth events
+useEffect(() => {
+  checkSoundcloudToken();
+
+  if (window.electron?.soundcloud) {
+    window.electron.soundcloud.onAuthSuccess((data) => {
+      console.log('SoundCloud auth success!', {
+        hasToken: !!data.token,
+        tokenLength: data.token?.length,
+        tokenPreview: data.token ? data.token.substring(0, 20) + '...' : 'null'
+      });
+      setSoundcloudToken(data.token);
+      setSoundcloudConnected(true);
+      // Automatically enable SoundCloud resolver after successful auth
+      setActiveResolvers(prev => {
+        if (!prev.includes('soundcloud')) {
+          return [...prev, 'soundcloud'];
+        }
+        return prev;
+      });
+      console.log('SoundCloud connected and enabled!');
+    });
+    window.electron.soundcloud.onAuthError((error) => {
+      console.error('SoundCloud auth failed:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'SoundCloud Authentication Failed',
+        message: error
+      });
+    });
+  }
+
+  // Periodically check and refresh SoundCloud token every 30 minutes
+  const tokenRefreshInterval = setInterval(() => {
+    console.log('⏰ Periodic SoundCloud token refresh check...');
+    checkSoundcloudToken();
+  }, 30 * 60 * 1000); // 30 minutes
 
   return () => clearInterval(tokenRefreshInterval);
 }, []);
@@ -18739,6 +19201,13 @@ const getCurrentPlaybackState = async () => {
     return;
   }
 
+  // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
+  // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
+  const currentResolver = currentTrackRef.current?._activeResolver;
+  if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
+    return;
+  }
+
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player', {
       headers: {
@@ -18835,15 +19304,21 @@ const getCurrentPlaybackState = async () => {
 // Poll Spotify playback state when playing
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
-  
+
+  // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
+  const activeResolver = currentTrack?._activeResolver;
+  if (activeResolver === 'localfiles' || activeResolver === 'soundcloud') {
+    return;
+  }
+
   const currentIsSpotify = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
   if (!currentIsSpotify) return;
-  
+
   // Poll every 5 seconds (reduced from 2 to minimize flickering)
   const interval = setInterval(() => {
     getCurrentPlaybackState();
   }, 5000);
-  
+
   return () => clearInterval(interval);
 }, [spotifyToken, isPlaying, currentTrack]);
 
@@ -32316,7 +32791,8 @@ React.createElement('div', {
                     if (browserPlaybackActive || !currentTrack || isSpotifyTrack) return;
                     const newPosition = Number(e.target.value);
                     setProgress(newPosition);
-                    if (currentTrack?.sources?.localfiles && audioRef.current) {
+                    // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
+                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
                     }
                   },
@@ -32374,7 +32850,7 @@ React.createElement('div', {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -32389,7 +32865,7 @@ React.createElement('div', {
                 const restoredVolume = preMuteVolumeRef.current || 70;
                 setIsMuted(false);
                 setVolume(restoredVolume);
-                if (activeResolverId === 'localfiles' && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                   applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id);
                 }
                 if (activeResolverId === 'spotify') {
@@ -32399,7 +32875,7 @@ React.createElement('div', {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
                 setIsMuted(true);
-                if (activeResolverId === 'localfiles' && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                   audioRef.current.volume = 0;
                 }
                 if (activeResolverId === 'spotify') {
@@ -32464,8 +32940,8 @@ React.createElement('div', {
                     setVolume(newVolume);
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
-                    // Local files: apply normalized volume immediately
-                    if (activeResolverId === 'localfiles' && audioRef.current) {
+                    // Local files and SoundCloud: apply normalized volume immediately
+                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id);
                     }
                     // Spotify: debounced API call to prevent rate limiting
@@ -33841,6 +34317,85 @@ React.createElement('div', {
                   className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
                 })
               )
+            )
+          ),
+
+          // SoundCloud authentication section
+          selectedResolver.id === 'soundcloud' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#1f2937'
+                  }
+                }, 'SoundCloud Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginTop: '2px'
+                  }
+                },
+                  soundcloudConnected ? 'Connected and ready' : 'Sign in to enable search and streaming'
+                )
+              ),
+              soundcloudConnected
+                ? React.createElement('button', {
+                    onClick: disconnectSoundcloud,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#dc2626',
+                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Disconnect')
+                : React.createElement('button', {
+                    onClick: connectSoundcloud,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#FF5500',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Connect')
+            ),
+            soundcloudConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: '#FF5500'
+              }
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'SoundCloud connected')
+            ),
+            React.createElement('p', {
+              style: {
+                fontSize: '11px',
+                color: '#9ca3af',
+                marginTop: '12px',
+                lineHeight: '1.5'
+              }
+            },
+              'Note: Streaming availability depends on individual track permissions set by uploaders.'
             )
           ),
 
