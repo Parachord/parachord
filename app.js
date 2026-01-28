@@ -21733,15 +21733,7 @@ useEffect(() => {
                     }`
                   }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
                 ]).flat().filter(Boolean)
-              ),
-              // Right side: Start Album Station button - responsive sizing
-              React.createElement('button', {
-                className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
-                style: {
-                  backgroundColor: '#E91E63',
-                  boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-                }
-              }, isCompactHeader ? 'Station' : 'Start Album Station')
+              )
             )
           ),
           // Skeleton content with white background (matching release page)
@@ -21926,16 +21918,7 @@ React.createElement('div', {
                   }`
                 }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
-            ),
-            // Right side: Start Album Station button - responsive sizing
-            React.createElement('button', {
-              onClick: () => console.log('Start Album Station - placeholder'),
-              className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
-              style: {
-                backgroundColor: '#E91E63',
-                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-              }
-            }, isCompactHeader ? 'Station' : 'Start Album Station')
+            )
           )
         ),
 
@@ -31635,9 +31618,9 @@ React.createElement('div', {
 
     // Import Playlist Dialog Modal
     showUrlImportDialog && React.createElement('div', {
-      className: 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50',
+      className: 'fixed inset-0 flex items-center justify-center z-50',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(8px)' },
       onClick: (e) => {
-        // Close when clicking backdrop
         if (e.target === e.currentTarget) {
           setShowUrlImportDialog(false);
           setUrlImportValue('');
@@ -31645,58 +31628,174 @@ React.createElement('div', {
       }
     },
       React.createElement('div', {
-        className: 'bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl'
+        className: 'max-w-md w-full mx-4 overflow-hidden',
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
+        onClick: (e) => e.stopPropagation()
       },
         // Header
         React.createElement('div', {
-          className: 'flex items-center justify-between mb-6'
+          className: 'flex items-center justify-between',
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
         },
-          React.createElement('h2', { className: 'text-xl font-bold text-gray-900' }, '📥 Import Playlist'),
+          React.createElement('h3', {
+            style: { fontSize: '17px', fontWeight: '600', color: '#1f2937' }
+          }, 'Import Playlist'),
           React.createElement('button', {
             onClick: () => {
               setShowUrlImportDialog(false);
               setUrlImportValue('');
             },
-            className: 'p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500'
-          }, React.createElement(X))
-        ),
-
-        // Option 1: Import from file
-        React.createElement('div', { className: 'mb-6' },
-          React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 mb-2' }, '📁 From File'),
-          React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import an XSPF playlist file from your computer.'),
-          React.createElement('button', {
-            onClick: async () => {
-              setShowUrlImportDialog(false);
-              await handleImportPlaylist();
+            className: 'transition-colors',
+            style: {
+              padding: '6px',
+              color: '#9ca3af',
+              borderRadius: '8px'
             },
-            className: 'w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2',
-            disabled: urlImportLoading
+            onMouseEnter: (e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
-            React.createElement('span', null, '📁'),
-            'Choose File...'
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+            )
           )
         ),
 
-        // Divider
-        React.createElement('div', { className: 'flex items-center gap-4 mb-6' },
-          React.createElement('div', { className: 'flex-1 h-px bg-gray-200' }),
-          React.createElement('span', { className: 'text-gray-400 text-sm' }, 'or'),
-          React.createElement('div', { className: 'flex-1 h-px bg-gray-200' })
+        // Body
+        React.createElement('div', { style: { padding: '20px 24px' } },
+          // Option 1: Import from URL (Spotify, Apple Music, hosted XSPF)
+          React.createElement('div', { style: { marginBottom: '20px' } },
+            React.createElement('h4', {
+              style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
+            }, 'Import from URL'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: '#6b7280', marginBottom: '12px', lineHeight: '1.5' }
+            }, 'Paste a Spotify playlist, Apple Music playlist, or hosted .xspf file URL.'),
+            React.createElement('input', {
+              type: 'url',
+              value: urlImportValue,
+              onChange: (e) => setUrlImportValue(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
+                  (async () => {
+                    setUrlImportLoading(true);
+                    try {
+                      const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+                      setShowUrlImportDialog(false);
+                      setUrlImportValue('');
+                      showConfirmDialog({
+                        type: 'success',
+                        title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
+                        message: result.playlist.title
+                      });
+                    } catch (error) {
+                      showConfirmDialog({
+                        type: 'error',
+                        title: 'Import Failed',
+                        message: error.message
+                      });
+                    } finally {
+                      setUrlImportLoading(false);
+                    }
+                  })();
+                }
+              },
+              placeholder: 'https://open.spotify.com/playlist/...',
+              style: {
+                width: '100%',
+                padding: '12px 16px',
+                fontSize: '14px',
+                color: '#1f2937',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e5e7eb',
+                borderRadius: '10px',
+                outline: 'none',
+                transition: 'border-color 150ms ease, box-shadow 150ms ease'
+              },
+              onFocus: (e) => { e.target.style.borderColor = '#a78bfa'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
+              onBlur: (e) => { e.target.style.borderColor = '#e5e7eb'; e.target.style.boxShadow = 'none'; },
+              disabled: urlImportLoading,
+              autoFocus: true
+            }),
+            // Example hints
+            React.createElement('div', { style: { marginTop: '8px', fontSize: '12px', color: '#9ca3af' } },
+              React.createElement('span', null, 'Examples: '),
+              React.createElement('span', { style: { color: '#7c3aed' } }, 'Spotify'),
+              React.createElement('span', null, ', '),
+              React.createElement('span', { style: { color: '#7c3aed' } }, 'Apple Music'),
+              React.createElement('span', null, ', or '),
+              React.createElement('span', { style: { color: '#7c3aed' } }, '.xspf'),
+              React.createElement('span', null, ' URLs')
+            )
+          ),
+
+          // Divider
+          React.createElement('div', { className: 'flex items-center gap-4', style: { marginBottom: '20px' } },
+            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } }),
+            React.createElement('span', { style: { fontSize: '12px', color: '#9ca3af', fontWeight: '500' } }, 'or'),
+            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } })
+          ),
+
+          // Option 2: Load from file
+          React.createElement('div', null,
+            React.createElement('h4', {
+              style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
+            }, 'Load from File'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: '#6b7280', marginBottom: '12px', lineHeight: '1.5' }
+            }, 'Import an .xspf playlist file from your computer.'),
+            React.createElement('button', {
+              onClick: async () => {
+                setShowUrlImportDialog(false);
+                await handleImportPlaylist();
+              },
+              className: 'w-full flex items-center justify-center gap-2 transition-colors',
+              style: {
+                padding: '12px 16px',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: '#6b7280',
+                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                border: '1px solid #e5e7eb',
+                borderRadius: '10px',
+                cursor: 'pointer'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'; e.currentTarget.style.color = '#374151'; },
+              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; e.currentTarget.style.color = '#6b7280'; },
+              disabled: urlImportLoading
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' })
+              ),
+              'Choose File...'
+            )
+          )
         ),
 
-        // Option 2: Import from URL
-        React.createElement('div', null,
-          React.createElement('h3', { className: 'text-sm font-semibold text-gray-700 mb-2' }, '🌐 From URL'),
-          React.createElement('p', { className: 'text-xs text-gray-500 mb-3' }, 'Import a hosted XSPF playlist. It will auto-update when the source changes.'),
-          React.createElement('input', {
-            type: 'url',
-            value: urlImportValue,
-            onChange: (e) => setUrlImportValue(e.target.value),
-            placeholder: 'https://example.com/playlist.xspf',
-            className: 'w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 focus:border-green-500 focus:outline-none text-gray-900 mb-3',
-            disabled: urlImportLoading
-          }),
+        // Footer
+        React.createElement('div', {
+          className: 'flex justify-end gap-3',
+          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
+        },
+          React.createElement('button', {
+            onClick: () => {
+              setShowUrlImportDialog(false);
+              setUrlImportValue('');
+            },
+            className: 'transition-colors',
+            style: {
+              padding: '10px 18px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#6b7280',
+              borderRadius: '10px'
+            },
+            onMouseEnter: (e) => { e.currentTarget.style.color = '#374151'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent'; }
+          }, 'Cancel'),
           React.createElement('button', {
             onClick: async () => {
               if (!urlImportValue.trim()) return;
@@ -31721,11 +31820,29 @@ React.createElement('div', {
               }
             },
             disabled: urlImportLoading || !urlImportValue.trim(),
-            className: `w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              (urlImportLoading || !urlImportValue.trim()) ? 'opacity-50 cursor-not-allowed' : ''
-            }`
+            className: 'flex items-center gap-2 transition-colors',
+            style: {
+              padding: '10px 18px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: urlImportLoading || !urlImportValue.trim() ? '#c4b5fd' : '#7c3aed',
+              borderRadius: '10px',
+              cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
+              opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1'
+            },
+            onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
+            onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
           },
-            urlImportLoading ? '⏳ Importing...' : '🌐 Import from URL'
+            urlImportLoading && React.createElement('svg', {
+              className: 'w-4 h-4 animate-spin',
+              fill: 'none',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
+              React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
+            ),
+            urlImportLoading ? 'Importing...' : 'Import'
           )
         )
       )
