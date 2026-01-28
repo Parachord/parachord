@@ -7333,16 +7333,35 @@ const Parachord = () => {
           handleNextRef.current?.();
         });
         audioRef.current.addEventListener('error', (e) => {
-          console.error('🎵 Audio error:', e.target.error);
+          const mediaError = e.target.error;
+          console.error('🎵 Audio error:', mediaError);
           // Don't show error dialog if fallback is in progress (it will be handled by the catch block)
           if (localFileFallbackInProgressRef.current) {
             console.log('🔄 Audio error during fallback attempt, skipping dialog');
             return;
           }
+
+          // Provide helpful error message based on error code
+          let errorMessage = 'Could not play this file. It may have been moved or deleted.';
+          if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+            const track = localFilePlaybackTrackRef.current;
+            const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
+            const ext = filePath.split('.').pop()?.toLowerCase();
+            if (ext === 'wav') {
+              errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
+            } else {
+              errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
+            }
+          } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+            errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
+          } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+            errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
+          }
+
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
-            message: 'Could not play this file. It may have been moved or deleted.'
+            message: errorMessage
           });
         });
       }
@@ -7432,10 +7451,23 @@ const Parachord = () => {
 
         localFileFallbackInProgressRef.current = false;
         setTrackLoading(false); // Clear loading state on error
+
+        // Provide helpful error message based on error type
+        let errorMessage = 'Could not play this file: ' + error.message;
+        if (error.name === 'NotSupportedError' || error.message?.includes('no supported source')) {
+          const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl || '';
+          const ext = filePath.split('.').pop()?.toLowerCase();
+          if (ext === 'wav') {
+            errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
+          } else {
+            errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
+          }
+        }
+
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
-          message: 'Could not play this file: ' + error.message
+          message: errorMessage
         });
       }
       return;
