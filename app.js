@@ -3174,7 +3174,7 @@ const Parachord = () => {
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
   const [artistReleases, setArtistReleases] = useState([]); // Discography
-  const [releaseTypeFilter, setReleaseTypeFilter] = useState('album'); // album, ep, single, live, compilation
+  const [releaseTypeFilter, setReleaseTypeFilter] = useState('all'); // all, album, ep, single, live, compilation
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false); // Artist page header collapse state
   const [artistPageTab, setArtistPageTab] = useState('music'); // music | biography | related
   const [artistSearchOpen, setArtistSearchOpen] = useState(false);
@@ -3883,23 +3883,9 @@ const Parachord = () => {
     { value: 'alpha-desc', label: 'Z-A' }
   ];
 
-  // Set smart default release type filter based on available releases
+  // Set default release type filter to 'all' to show complete discography
   const setSmartReleaseTypeFilter = useCallback((releases) => {
-    const hasAlbums = releases.some(r => r.releaseType === 'album');
-    const hasEPs = releases.some(r => r.releaseType === 'ep');
-    const hasSingles = releases.some(r => r.releaseType === 'single');
-
-    if (hasAlbums) {
-      setReleaseTypeFilter('album');
-    } else if (hasEPs) {
-      setReleaseTypeFilter('ep');
-    } else if (hasSingles) {
-      setReleaseTypeFilter('single');
-    } else {
-      // Fallback to first available type
-      const firstType = releases[0]?.releaseType;
-      if (firstType) setReleaseTypeFilter(firstType);
-    }
+    setReleaseTypeFilter('all');
   }, []);
 
   // Filter and sort charts
