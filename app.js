@@ -7018,6 +7018,13 @@ const Parachord = () => {
     }
   }, [aiIncludeHistory, cacheLoaded]);
 
+  // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('playlists_view_mode', playlistsViewMode);
+    }
+  }, [playlistsViewMode, cacheLoaded]);
+
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
     prefetchedReleasesRef.current = prefetchedReleases;
