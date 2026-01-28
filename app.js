@@ -19465,8 +19465,13 @@ useEffect(() => {
       // Main content area
       React.createElement('div', {
         ref: mainContentRef,
-        className: 'flex-1 flex flex-col overflow-hidden bg-white'
+        className: 'flex-1 flex flex-col overflow-hidden bg-white relative'
       },
+        // Draggable title bar area (space for macOS traffic lights) - mirrors sidebar drag area
+        React.createElement('div', {
+          className: 'h-8 drag flex-shrink-0 absolute top-0 left-0 right-0 z-10',
+          style: { pointerEvents: 'auto' }
+        }),
 
     // External Track Prompt Modal - refined styling
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
