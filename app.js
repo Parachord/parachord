@@ -25493,17 +25493,15 @@ React.createElement('div', {
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
                 ),
                 React.createElement('div', {
-                  className: 'release-card flex items-center gap-4 p-4 cursor-pointer',
+                  className: 'flex items-center gap-4 p-4 cursor-pointer rounded-xl transition-colors duration-200 hover:bg-purple-50/80',
                   style: {
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)',
-                    borderRadius: '12px',
-                    border: 'none'
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%)'
                   },
                   onClick: () => { if (!isPlaying) handlePlayPause(); }
                 },
                   React.createElement('div', {
                     className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
-                    style: { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                    style: { boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }
                   },
                     currentTrack.albumArt ?
                       React.createElement('img', { src: currentTrack.albumArt, alt: currentTrack.album, className: 'w-full h-full object-cover' }) :
