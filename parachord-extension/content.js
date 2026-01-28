@@ -211,7 +211,7 @@
                          document.querySelector('[class*="skip-button"]') ||
                          document.querySelector('button.ytp-ad-skip-button-modern');
 
-      if (skipButton && skipButton.offsetParent !== null) { // Check if visible
+      if (skipButton && skipButton.offsetWidth > 0 && skipButton.offsetHeight > 0) { // Check if visible
         console.log('[Parachord] 🚫 Found skip ad button, clicking...');
         skipButton.click();
         return true;
@@ -220,7 +220,7 @@
       // Also check for "Skip Ads" text button (newer YouTube UI)
       const skipButtons = document.querySelectorAll('button');
       for (const btn of skipButtons) {
-        if (btn.textContent.includes('Skip') && btn.offsetParent !== null) {
+        if (btn.textContent.includes('Skip') && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
           const isAdSkip = btn.closest('.ytp-ad-module') ||
                           btn.closest('.video-ads') ||
                           btn.className.includes('ad');
