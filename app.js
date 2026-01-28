@@ -18689,6 +18689,31 @@ useEffect(() => {
               }
             }, 'Your Music'),
             React.createElement('button', {
+              onClick: () => navigateTo('playlists'),
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
+                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#1f2937' : '#4b5563',
+                fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
+              }
+            },
+              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+              ),
+              'Playlists',
+              sidebarBadges.playlists && React.createElement('span', {
+                key: `playlists-badge-${Date.now()}`,
+                className: 'ml-auto sidebar-badge',
+                style: {
+                  fontSize: '11px',
+                  backgroundColor: '#7c3aed',
+                  color: '#ffffff',
+                  padding: '2px 6px',
+                  borderRadius: '10px'
+                }
+              }, `+${sidebarBadges.playlists}`)
+            ),
+            React.createElement('button', {
               onClick: () => navigateTo('library'),
               onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
               onDragEnter: (e) => { e.preventDefault(); setCollectionDropHighlight(true); },
@@ -18720,31 +18745,6 @@ useEffect(() => {
                   borderRadius: '10px'
                 }
               }, `+${sidebarBadges.collection}`)
-            ),
-            React.createElement('button', {
-              onClick: () => navigateTo('playlists'),
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#1f2937' : '#4b5563',
-                fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
-              }
-            },
-              React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
-              ),
-              'Playlists',
-              sidebarBadges.playlists && React.createElement('span', {
-                key: `playlists-badge-${Date.now()}`,
-                className: 'ml-auto sidebar-badge',
-                style: {
-                  fontSize: '11px',
-                  backgroundColor: '#7c3aed',
-                  color: '#ffffff',
-                  padding: '2px 6px',
-                  borderRadius: '10px'
-                }
-              }, `+${sidebarBadges.playlists}`)
             ),
             React.createElement('button', {
               onClick: () => {
