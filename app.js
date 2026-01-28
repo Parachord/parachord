@@ -2151,7 +2151,9 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onPlay, onAddToQu
           onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
           title: 'Add album to queue'
         },
-          React.createElement(ListPlus, { size: 20 })
+          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+          )
         )
       )
     ),
@@ -28168,7 +28170,9 @@ React.createElement('div', {
                             onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                             title: 'Add album to queue'
                           },
-                            React.createElement(ListPlus, { size: 20 })
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+          )
                           )
                         )
                       ),
@@ -28837,7 +28841,9 @@ React.createElement('div', {
                                 onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
                                 title: 'Add album to queue'
                               },
-                                React.createElement(ListPlus, { size: 20 })
+                                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+          )
                               )
                             )
                           ),
