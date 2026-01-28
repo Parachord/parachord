@@ -14238,6 +14238,26 @@ ${tracks}
     }
   }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
+  // Load discovery data (recommendations, charts, critics picks) for HOME view previews
+  useEffect(() => {
+    if (activeView === 'home' && cacheLoaded) {
+      // Load recommendations if not already loaded and user has a scrobbler connected
+      if (!recommendations.loading && recommendations.artists.length === 0 && !recommendations.error) {
+        if (metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username) {
+          loadRecommendations();
+        }
+      }
+      // Load charts if not already loaded
+      if (!chartsLoading && !chartsLoaded) {
+        loadCharts();
+      }
+      // Load critics picks if not already loaded
+      if (!criticsPicksLoading && !criticsPicksLoaded) {
+        loadCriticsPicks();
+      }
+    }
+  }, [activeView, cacheLoaded]);
+
   // Resolve recommendation tracks using the resolver pipeline
   // Fetch images for recommended artists
   const resolveRecommendationArtistImages = async (artists) => {
@@ -25567,36 +25587,33 @@ React.createElement('div', {
                     },
                     onClick: () => navigateTo('recommendations')
                   },
-                    React.createElement('div', { className: 'flex items-start justify-between' },
-                      React.createElement('div', null,
-                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
-                        ),
-                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
-                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations')
-                      ),
-                      // Top artist preview
-                      recommendations.artists.length > 0 && React.createElement('div', {
-                        className: 'flex-shrink-0 ml-4'
+                    // Header row
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
+                    React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations'),
+                    // Top artist preview - new row
+                    recommendations.artists.length > 0 && React.createElement('div', {
+                      className: 'flex items-center gap-3 mt-4 pt-4 border-t border-white/20'
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-full overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' }
                       },
-                        React.createElement('div', {
-                          className: 'w-16 h-16 rounded-full overflow-hidden border-2 border-white/30',
-                          style: { background: 'linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)' }
-                        },
-                          recommendations.artists[0].image
-                            ? React.createElement('img', {
-                                src: recommendations.artists[0].image,
-                                alt: recommendations.artists[0].name,
-                                className: 'w-full h-full object-cover'
-                              })
-                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/60 text-xl font-bold' },
-                                recommendations.artists[0].name.charAt(0).toUpperCase()
-                              )
-                        ),
-                        React.createElement('p', {
-                          className: 'text-white/90 text-xs mt-2 text-center truncate',
-                          style: { maxWidth: '64px' }
-                        }, recommendations.artists[0].name)
+                        recommendations.artists[0].image
+                          ? React.createElement('img', {
+                              src: recommendations.artists[0].image,
+                              alt: recommendations.artists[0].name,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/60 text-lg font-bold' },
+                              recommendations.artists[0].name.charAt(0).toUpperCase()
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Top pick'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, recommendations.artists[0].name)
                       )
                     )
                   ),
@@ -25610,38 +25627,36 @@ React.createElement('div', {
                     },
                     onClick: () => { navigateTo('discover'); loadCharts(); }
                   },
-                    React.createElement('div', { className: 'flex items-start justify-between' },
-                      React.createElement('div', null,
-                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
-                        ),
-                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
-                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing')
-                      ),
-                      // #1 album preview
-                      charts.length > 0 && React.createElement('div', {
-                        className: 'flex-shrink-0 ml-4'
+                    // Header row
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
+                    React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing'),
+                    // #1 album preview - new row
+                    charts.length > 0 && React.createElement('div', {
+                      className: 'flex items-center gap-3 mt-4 pt-4 border-t border-white/20'
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
                       },
-                        React.createElement('div', {
-                          className: 'w-16 h-16 rounded-lg overflow-hidden border-2 border-white/30 shadow-lg',
-                          style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
-                        },
-                          charts[0].image
-                            ? React.createElement('img', {
-                                src: charts[0].image,
-                                alt: charts[0].name,
-                                className: 'w-full h-full object-cover'
-                              })
-                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
-                                React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                  React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                                )
+                        charts[0].image
+                          ? React.createElement('img', {
+                              src: charts[0].image,
+                              alt: charts[0].name,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
                               )
-                        ),
-                        React.createElement('p', {
-                          className: 'text-white/90 text-xs mt-2 text-center truncate',
-                          style: { maxWidth: '64px' }
-                        }, charts[0].name)
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, '#1 Album'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, charts[0].name),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, charts[0].artist)
                       )
                     )
                   ),
@@ -25655,43 +25670,40 @@ React.createElement('div', {
                     },
                     onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
                   },
-                    React.createElement('div', { className: 'flex items-start justify-between' },
-                      React.createElement('div', { className: 'flex-1 min-w-0' },
-                        React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
-                        ),
-                        React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
-                        React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics'),
-                        // Synopsis snippet for most recent album
-                        criticsPicks.length > 0 && criticsPicks[0].description && React.createElement('p', {
-                          className: 'text-white/60 text-xs mt-2 line-clamp-2',
-                          style: { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
-                        }, `"${criticsPicks[0].description.slice(0, 100)}${criticsPicks[0].description.length > 100 ? '...' : ''}"`)
-                      ),
-                      // Most recent album preview
-                      criticsPicks.length > 0 && React.createElement('div', {
-                        className: 'flex-shrink-0 ml-4'
+                    // Header row
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
+                    React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics'),
+                    // Most recent album preview - new row
+                    criticsPicks.length > 0 && React.createElement('div', {
+                      className: 'flex items-center gap-3 mt-4 pt-4 border-t border-white/20'
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
                       },
-                        React.createElement('div', {
-                          className: 'w-16 h-16 rounded-lg overflow-hidden border-2 border-white/30 shadow-lg',
-                          style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
-                        },
-                          criticsPicks[0].albumArt
-                            ? React.createElement('img', {
-                                src: criticsPicks[0].albumArt,
-                                alt: criticsPicks[0].title,
-                                className: 'w-full h-full object-cover'
-                              })
-                            : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
-                                React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                  React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                                )
+                        criticsPicks[0].albumArt
+                          ? React.createElement('img', {
+                              src: criticsPicks[0].albumArt,
+                              alt: criticsPicks[0].title,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
                               )
-                        ),
-                        React.createElement('p', {
-                          className: 'text-white/90 text-xs mt-2 text-center truncate',
-                          style: { maxWidth: '64px' }
-                        }, criticsPicks[0].title)
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest review'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, criticsPicks[0].title),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, criticsPicks[0].artist),
+                        criticsPicks[0].description && React.createElement('p', {
+                          className: 'text-white/50 text-xs mt-1 line-clamp-1',
+                          style: { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                        }, `"${criticsPicks[0].description.slice(0, 60)}..."`)
                       )
                     )
                   )
