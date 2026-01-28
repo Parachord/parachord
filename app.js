@@ -4070,8 +4070,8 @@ const Parachord = () => {
   const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
 
-  // Browser extension state
-  const [extensionConnected, setExtensionConnected] = useState(false);
+  // Browser extension state (null = unknown/checking, false = not connected, true = connected)
+  const [extensionConnected, setExtensionConnected] = useState(null);
   const [browserPlaybackActive, setBrowserPlaybackActive] = useState(false);
   const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
   const pendingCloseTabIdRef = useRef(null);
@@ -25082,8 +25082,8 @@ React.createElement('div', {
                   });
                 }
 
-                // Check browser extension connection
-                if (!extensionConnected) {
+                // Check browser extension connection (only show if explicitly false, not null/unknown)
+                if (extensionConnected === false) {
                   suggestions.push({
                     id: 'extension',
                     icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
@@ -25599,7 +25599,7 @@ React.createElement('div', {
                     ),
                     // Top artist preview - clickable to artist page
                     recommendations.artists.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(recommendations.artists[0].name);
@@ -25649,7 +25649,7 @@ React.createElement('div', {
                     ),
                     // Most recent album preview - clickable to album page
                     criticsPicks.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
                       onClick: (e) => {
                         e.stopPropagation();
                         openCriticsPicksAlbum(criticsPicks[0]);
@@ -25702,7 +25702,7 @@ React.createElement('div', {
                     ),
                     // #1 album preview - clickable to open the album
                     charts.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
                       onClick: (e) => {
                         e.stopPropagation();
                         // Open the #1 chart album with correct field mapping
