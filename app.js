@@ -2040,7 +2040,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 };
 
 // CollectionAlbumCard component - Cinematic Light design
-const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onPlay, onAddToQueue, animationDelay = 0 }) => {
+const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, onPlay, onAddToQueue, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no art found), string (URL)
   const [imageUrl, setImageUrl] = useState(album.art || undefined);
 
@@ -2127,6 +2127,22 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onPlay, onAddToQu
         className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
         style: { pointerEvents: 'auto', borderRadius: '6px' }
       },
+        // Add to Playlist button
+        onAddToPlaylist && React.createElement('button', {
+          onClick: (e) => {
+            e.stopPropagation();
+            onAddToPlaylist(album);
+          },
+          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+          title: 'Add to Playlist'
+        },
+          React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+          )
+        ),
         // Play album button
         onPlay && React.createElement('button', {
           onClick: (e) => {
@@ -25105,6 +25121,19 @@ React.createElement('div', {
                     album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),
+                    onAddToPlaylist: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        setAddToPlaylistPanel({
+                          open: true,
+                          tracks: albumTracks,
+                          sourceName: `${albumData.title} by ${albumData.artist}`,
+                          sourceType: 'album'
+                        });
+                      }
+                    },
                     onPlay: (albumData) => {
                       const albumTracks = collectionData.tracks
                         .filter(t => t.artist === albumData.artist && t.album === albumData.title)
@@ -28103,6 +28132,45 @@ React.createElement('div', {
                           className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
                           style: { pointerEvents: 'auto', borderRadius: '6px' }
                         },
+                          // Add to Playlist button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                if (albumInfo?.tracks?.length > 0) {
+                                  const tracks = albumInfo.tracks.map((t, i) => ({
+                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                    title: t.name,
+                                    artist: album.artist,
+                                    album: album.name,
+                                    duration: t.duration || 0,
+                                    trackNumber: i + 1,
+                                    sources: {}
+                                  }));
+                                  setAddToPlaylistPanel({
+                                    open: true,
+                                    tracks: tracks,
+                                    sourceName: `${album.name} by ${album.artist}`,
+                                    sourceType: 'album'
+                                  });
+                                } else {
+                                  showToast(`No tracks found for ${album.name}`, 'error');
+                                }
+                              } catch (err) {
+                                showToast(`Failed to load album`, 'error');
+                              }
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add to Playlist'
+                          },
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                            )
+                          ),
                           // Play album button
                           React.createElement('button', {
                             onClick: async (e) => {
@@ -28774,6 +28842,45 @@ React.createElement('div', {
                               className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
                               style: { pointerEvents: 'auto' }
                             },
+                              // Add to Playlist button
+                              React.createElement('button', {
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                    if (albumInfo?.tracks?.length > 0) {
+                                      const tracks = albumInfo.tracks.map((t, i) => ({
+                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                        title: t.name,
+                                        artist: album.artist,
+                                        album: album.name,
+                                        duration: t.duration || 0,
+                                        trackNumber: i + 1,
+                                        sources: {}
+                                      }));
+                                      setAddToPlaylistPanel({
+                                        open: true,
+                                        tracks: tracks,
+                                        sourceName: `${album.name} by ${album.artist}`,
+                                        sourceType: 'album'
+                                      });
+                                    } else {
+                                      showToast(`No tracks found for ${album.name}`, 'error');
+                                    }
+                                  } catch (err) {
+                                    showToast(`Failed to load album`, 'error');
+                                  }
+                                },
+                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                title: 'Add to Playlist'
+                              },
+                                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                                )
+                              ),
                               // Play album button
                               React.createElement('button', {
                                 onClick: async (e) => {
