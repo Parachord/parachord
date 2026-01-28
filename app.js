@@ -17552,7 +17552,29 @@ ${tracks}
   };
 
   const navigateBack = () => {
-    // If we're viewing a release/album, close it first and go back to artist page
+    // If we're viewing a release/album opened directly (not from artist browsing),
+    // close it and navigate back in one step
+    if (activeView === 'artist' && currentRelease && artistHistory.length === 0 && viewHistory.length > 1) {
+      setCurrentRelease(null);
+      // Also navigate back to previous view (e.g., HOME or Collection)
+      const newHistory = [...viewHistory];
+      const currentView = newHistory.pop();
+      const previousView = newHistory[newHistory.length - 1];
+      setViewHistory(newHistory);
+      setForwardHistory(prev => [...prev, currentView]);
+      setActiveView(previousView);
+      // Clear artist state since we're leaving artist view
+      setCurrentArtist(null);
+      setArtistImage(null);
+      setArtistImagePosition('center 25%');
+      setArtistReleases([]);
+      setReleaseTypeFilter('all');
+      albumArtQueue.current = [];
+      visibleAlbumIds.current.clear();
+      return;
+    }
+
+    // If we're viewing a release/album from artist browsing, close it first
     if (activeView === 'artist' && currentRelease) {
       setCurrentRelease(null);
       return;
