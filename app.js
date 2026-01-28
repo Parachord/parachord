@@ -25381,8 +25381,8 @@ React.createElement('div', {
                 style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((track, index) => {
-                  // Use track's own sources (updated by resolution)
-                  const effectiveSources = track.sources || {};
+                  // Merge track.sources (e.g., localfiles) with resolved sources from trackSources state
+                  const effectiveSources = { ...(track.sources || {}), ...(trackSources[track.id] || {}) };
                   const hasResolved = Object.keys(effectiveSources).length > 0;
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
