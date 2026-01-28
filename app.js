@@ -7665,7 +7665,12 @@ const Parachord = () => {
         }
 
         // Use HTML5 Audio to play the stream
-        audioRef.current.src = streamUrl;
+        // Append OAuth token as query parameter since HTML5 Audio can't pass headers
+        const streamUrlWithAuth = streamUrl.includes('?')
+          ? `${streamUrl}&oauth_token=${config.token}`
+          : `${streamUrl}?oauth_token=${config.token}`;
+        console.log('🎵 Stream URL with auth appended');
+        audioRef.current.src = streamUrlWithAuth;
         const volumeToApply = isMutedRef.current ? 0 : volume;
         const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
         audioRef.current.volume = effectiveVolume / 100;
