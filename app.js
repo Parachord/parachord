@@ -7581,25 +7581,38 @@ const Parachord = () => {
 
       // Get stream URL from SoundCloud API
       try {
-        const streamsResponse = await fetch(`https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/streams`, {
-          headers: { 'Authorization': `OAuth ${config.token}` }
-        });
+        // Try the direct /stream endpoint first (older API, more compatible)
+        // This endpoint returns a redirect to the actual MP3 stream
+        const directStreamUrl = `https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/stream?oauth_token=${config.token}`;
+        console.log('🎵 Trying direct stream URL');
 
-        if (!streamsResponse.ok) {
-          console.error('❌ Failed to get SoundCloud stream:', streamsResponse.status);
-          // Fall back to opening in browser
-          if (sourceToPlay.soundcloudUrl) {
-            console.log('📱 Falling back to browser playback');
-            if (window.electron?.shell?.openExternal) {
-              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+        // Test if the direct stream works by making a HEAD request
+        let streamUrl = directStreamUrl;
+        try {
+          const testResponse = await fetch(directStreamUrl, { method: 'HEAD' });
+          if (!testResponse.ok) {
+            console.log('🎵 Direct stream not available, trying /streams endpoint');
+            // Fall back to /streams endpoint
+            const streamsResponse = await fetch(`https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/streams`, {
+              headers: { 'Authorization': `OAuth ${config.token}` }
+            });
+
+            if (streamsResponse.ok) {
+              const streams = await streamsResponse.json();
+              console.log('🎵 Streams response:', Object.keys(streams));
+              // Prefer HTTP MP3 over HLS
+              streamUrl = streams.http_mp3_128_url || streams.preview_mp3_128_url;
+              if (streamUrl) {
+                // These URLs may already be signed, but add token just in case
+                streamUrl = streamUrl.includes('?')
+                  ? `${streamUrl}&oauth_token=${config.token}`
+                  : `${streamUrl}?oauth_token=${config.token}`;
+              }
             }
           }
-          setTrackLoading(false);
-          return;
+        } catch (testError) {
+          console.log('🎵 Stream test failed, using direct URL anyway:', testError.message);
         }
-
-        const streams = await streamsResponse.json();
-        const streamUrl = streams.http_mp3_128_url || streams.hls_mp3_128_url || streams.preview_mp3_128_url;
 
         if (!streamUrl) {
           console.error('❌ No stream URL available for this track');
@@ -7614,7 +7627,7 @@ const Parachord = () => {
           return;
         }
 
-        console.log('🎵 Got SoundCloud stream URL');
+        console.log('🎵 Using SoundCloud stream URL');
 
         // Create audio element if needed (same setup as local files)
         if (!audioRef.current) {
@@ -7664,13 +7677,8 @@ const Parachord = () => {
           });
         }
 
-        // Use HTML5 Audio to play the stream
-        // Append OAuth token as query parameter since HTML5 Audio can't pass headers
-        const streamUrlWithAuth = streamUrl.includes('?')
-          ? `${streamUrl}&oauth_token=${config.token}`
-          : `${streamUrl}?oauth_token=${config.token}`;
-        console.log('🎵 Stream URL with auth appended');
-        audioRef.current.src = streamUrlWithAuth;
+        // Use HTML5 Audio to play the stream (token already in URL)
+        audioRef.current.src = streamUrl;
         const volumeToApply = isMutedRef.current ? 0 : volume;
         const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
         audioRef.current.volume = effectiveVolume / 100;
