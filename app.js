@@ -3157,7 +3157,7 @@ const Parachord = () => {
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
   const [searchHistory, setSearchHistory] = useState([]);
-  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'library'
+  const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'home'
   const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -3209,6 +3209,21 @@ const Parachord = () => {
   const [charts, setCharts] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
+
+  // HOME view state
+  const [homeData, setHomeData] = useState({
+    topAlbumThisWeek: null,        // { album, artist, playCount, albumArt }
+    recentAlbums: [],               // Albums recently added to collection
+    recentPlaylists: [],            // Recently modified playlists
+    newArtistDiscoveries: [],       // Artists not in collection but recommended
+    friendActivity: [],             // What friends are currently listening to
+    criticsPickPreview: [],         // Preview of critical darlings
+    weeklyJams: null,               // ListenBrainz weekly jams playlist
+    surpriseMeSeeds: []             // Seeds for AI playlist generation
+  });
+  const [homeLoading, setHomeLoading] = useState(true);
+  const [homeDataLoaded, setHomeDataLoaded] = useState(false);
+  const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
@@ -10082,21 +10097,26 @@ const Parachord = () => {
               tab: savedLastView.friendHistoryTab || 'recent'
             });
             console.log(`📦 Restoring last view: friendHistory (${savedLastView.friendId})`);
+          } else if (savedLastView.view === 'home') {
+            // Restore home view
+            setActiveView('home');
+            setViewHistory(['home']);
+            console.log(`📦 Restoring last view: home`);
           } else if (savedLastView.view !== 'artist') {
             // For other views, just set the view directly
             setActiveView(savedLastView.view);
-            setViewHistory(['library', savedLastView.view]);
+            setViewHistory(['home', savedLastView.view]);
             console.log(`📦 Restoring last view: ${savedLastView.view}`);
           }
         } else {
-          // No saved view or invalid - default to library
-          setActiveView('library');
-          setViewHistory(['library']);
+          // No saved view or invalid - default to home
+          setActiveView('home');
+          setViewHistory(['home']);
         }
       } else {
-        // No saved view data - default to library
-        setActiveView('library');
-        setViewHistory(['library']);
+        // No saved view data - default to home
+        setActiveView('home');
+        setViewHistory(['home']);
       }
 
       // Check if this is the first run (tutorial not completed)
@@ -10115,10 +10135,10 @@ const Parachord = () => {
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
-      // Default to library view on error
+      // Default to home view on error
       if (activeView === null) {
-        setActiveView('library');
-        setViewHistory(['library']);
+        setActiveView('home');
+        setViewHistory(['home']);
       }
     }
   };
@@ -10291,11 +10311,11 @@ const Parachord = () => {
         else if (pendingFriendLoad.tab === 'topArtists') loadFriendTopArtists(friend);
         else loadFriendRecentTracks(friend);
       } else {
-        // Friend not found, fall back to library
-        console.log(`📦 Friend not found: ${pendingFriendLoad.id}, falling back to library`);
+        // Friend not found, fall back to home
+        console.log(`📦 Friend not found: ${pendingFriendLoad.id}, falling back to home`);
         setPendingFriendLoad(null);
-        setActiveView('library');
-        setViewHistory(['library']);
+        setActiveView('home');
+        setViewHistory(['home']);
       }
     }
   }, [friends, pendingFriendLoad]);
@@ -18724,6 +18744,23 @@ useEffect(() => {
 
         // Scrollable navigation area
         React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content px-2 py-2' },
+          // HOME button at the top
+          React.createElement('button', {
+            onClick: () => navigateTo('home'),
+            className: 'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors mb-3',
+            style: {
+              backgroundColor: activeView === 'home' ? 'rgba(124, 58, 237, 0.1)' : 'transparent',
+              color: activeView === 'home' ? '#7c3aed' : '#4b5563',
+              fontWeight: activeView === 'home' ? '600' : '500'
+            }
+          },
+            // Home icon
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: activeView === 'home' ? 2.5 : 2 },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' })
+            ),
+            'Home'
+          ),
+
           // DISCOVER section
           React.createElement('div', { className: 'mb-4' },
             React.createElement('div', {
@@ -24846,16 +24883,16 @@ React.createElement('div', {
         )
       )
 
-      // Main content area - Normal views (Library, Search, etc.)
+      // Main content area - Normal views (Library, Search, Home, etc.)
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
+          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -24864,11 +24901,471 @@ React.createElement('div', {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
+        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'friends' ? 'Friends' :
             'Discover'
+          )
+        ),
+
+        // HOME view - dynamic personalized landing page
+        activeView === 'home' && React.createElement('div', {
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
+        },
+          // Hero header with gradient
+          React.createElement('div', {
+            className: 'relative',
+            style: {
+              height: homeHeaderCollapsed ? '80px' : '280px',
+              flexShrink: 0,
+              transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              overflow: 'hidden'
+            }
+          },
+            // Gradient background - warm sunset vibes
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)'
+              }
+            }),
+            // Animated background pattern
+            React.createElement('div', {
+              className: 'absolute inset-0',
+              style: {
+                opacity: 0.1,
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
+              }
+            }),
+            // EXPANDED STATE
+            !homeHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+              style: {
+                opacity: homeHeaderCollapsed ? 0 : 1,
+                transition: 'opacity 300ms ease-out'
+              }
+            },
+              // Greeting based on time of day
+              React.createElement('p', {
+                className: 'text-white/80 text-lg mb-2',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+              }, (() => {
+                const hour = new Date().getHours();
+                if (hour < 12) return 'Good morning';
+                if (hour < 17) return 'Good afternoon';
+                return 'Good evening';
+              })()),
+              // Title
+              React.createElement('h1', {
+                className: 'text-5xl font-bold text-white',
+                style: {
+                  textShadow: '0 2px 20px rgba(0,0,0,0.4)',
+                  letterSpacing: '-0.02em'
+                }
+              }, 'Welcome Back'),
+              // Subtitle with stats
+              React.createElement('p', {
+                className: 'text-white/70 text-sm mt-4',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
+              }, `${collectionData.albums.length} albums · ${collectionData.artists.length} artists · ${playlists.length} playlists`)
+            ),
+            // COLLAPSED STATE
+            homeHeaderCollapsed && React.createElement('div', {
+              className: 'absolute inset-0 flex items-center px-6 z-10',
+              style: {
+                opacity: homeHeaderCollapsed ? 1 : 0,
+                transition: 'opacity 300ms ease-out'
+              }
+            },
+              React.createElement('h1', {
+                className: 'text-2xl font-bold text-white',
+                style: { textShadow: '0 2px 10px rgba(0,0,0,0.4)' }
+              }, 'Home')
+            )
+          ),
+
+          // Scrollable content area
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto scrollable-content',
+            style: { minHeight: 0 },
+            onScroll: (e) => {
+              const scrollTop = e.target.scrollTop;
+              if (scrollTop > 50 && !homeHeaderCollapsed) {
+                setHomeHeaderCollapsed(true);
+              } else if (scrollTop <= 50 && homeHeaderCollapsed) {
+                setHomeHeaderCollapsed(false);
+              }
+            }
+          },
+            React.createElement('div', { className: 'p-6 space-y-8' },
+
+              // SECTION: Quick Play / Continue Listening
+              (currentTrack || currentQueue.length > 0) && React.createElement('div', { className: 'mb-8' },
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
+                ),
+                currentTrack && React.createElement('div', {
+                  className: 'flex items-center gap-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl cursor-pointer hover:from-purple-100 hover:to-indigo-100 transition-colors',
+                  onClick: () => { if (!isPlaying) handleResume(); }
+                },
+                  React.createElement('div', {
+                    className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
+                    style: { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                  },
+                    currentTrack.albumArt ?
+                      React.createElement('img', { src: currentTrack.albumArt, alt: currentTrack.album, className: 'w-full h-full object-cover' }) :
+                      React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-purple-400 to-indigo-500 flex items-center justify-center' },
+                        React.createElement('svg', { className: 'w-8 h-8 text-white/80', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        )
+                      )
+                  ),
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('p', { className: 'font-medium text-gray-900 truncate' }, currentTrack.title),
+                    React.createElement('p', { className: 'text-sm text-gray-500 truncate' }, currentTrack.artist),
+                    currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1' }, `${currentQueue.length} more in queue`)
+                  ),
+                  React.createElement('button', {
+                    className: 'w-12 h-12 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-colors',
+                    onClick: (e) => { e.stopPropagation(); isPlaying ? handlePause() : handleResume(); }
+                  },
+                    React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
+                      isPlaying ?
+                        React.createElement('path', { d: 'M6 4h4v16H6V4zm8 0h4v16h-4V4z' }) :
+                        React.createElement('path', { d: 'M8 5v14l11-7z' })
+                    )
+                  )
+                )
+              ),
+
+              // SECTION: Recently Added Albums
+              collectionData.albums.length > 0 && React.createElement('div', null,
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recently Added'),
+                  React.createElement('button', {
+                    onClick: () => { navigateTo('library'); setCollectionTab('albums'); },
+                    className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                  }, 'See all')
+                ),
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                },
+                  [...collectionData.albums]
+                    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+                    .slice(0, 5)
+                    .map((album, index) =>
+                      React.createElement('button', {
+                        key: album.id || `${album.artist}-${album.title}`,
+                        className: 'release-card card-fade-up text-left group/art',
+                        style: {
+                          backgroundColor: '#ffffff',
+                          borderRadius: '10px',
+                          padding: '10px',
+                          border: 'none',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                          animationDelay: `${index * 50}ms`
+                        },
+                        onClick: () => fetchArtistData(album.artist)
+                      },
+                        React.createElement('div', {
+                          className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
+                          style: { position: 'relative' }
+                        },
+                          album.art ?
+                            React.createElement('img', {
+                              src: album.art,
+                              alt: album.title,
+                              className: 'w-full h-full object-cover transition-transform duration-300 group-hover/art:scale-105'
+                            }) :
+                            React.createElement('div', {
+                              className: 'w-full h-full flex items-center justify-center',
+                              style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                            },
+                              React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                              )
+                            )
+                        ),
+                        React.createElement('p', {
+                          className: 'text-gray-900 truncate',
+                          style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                        }, album.title),
+                        React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
+                      )
+                    )
+                )
+              ),
+
+              // SECTION: Your Playlists
+              playlists.length > 0 && React.createElement('div', null,
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Your Playlists'),
+                  React.createElement('button', {
+                    onClick: () => navigateTo('playlists'),
+                    className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                  }, 'See all')
+                ),
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4'
+                },
+                  [...playlists]
+                    .sort((a, b) => (b.lastModified || b.addedAt || 0) - (a.lastModified || a.addedAt || 0))
+                    .slice(0, 4)
+                    .map((playlist, index) =>
+                      React.createElement('button', {
+                        key: playlist.id,
+                        className: 'release-card card-fade-up flex items-center gap-3 p-3 text-left',
+                        style: {
+                          backgroundColor: '#ffffff',
+                          borderRadius: '10px',
+                          border: 'none',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                          animationDelay: `${index * 50}ms`
+                        },
+                        onClick: () => {
+                          setSelectedPlaylist(playlist);
+                          navigateTo('playlist-view');
+                        }
+                      },
+                        // 2x2 album art grid or placeholder
+                        React.createElement('div', {
+                          className: 'w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 grid grid-cols-2 grid-rows-2',
+                          style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                        },
+                          allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
+                            React.createElement('img', {
+                              key: i,
+                              src: url,
+                              alt: '',
+                              className: 'w-full h-full object-cover'
+                            })
+                          ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
+                            React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+                            )
+                          )
+                        ),
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('p', {
+                            className: 'text-gray-900 truncate',
+                            style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                          }, playlist.title),
+                          React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' }, `${playlist.tracks?.length || 0} tracks`)
+                        )
+                      )
+                    )
+                )
+              ),
+
+              // SECTION: Friend Activity (if friends are online)
+              (() => {
+                const onlineFriends = friends.filter(f => isOnAir(f));
+                if (onlineFriends.length === 0) return null;
+                return React.createElement('div', null,
+                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friends Listening Now'),
+                    React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
+                      React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
+                      `${onlineFriends.length} online`
+                    )
+                  ),
+                  React.createElement('div', { className: 'space-y-2' },
+                    onlineFriends.slice(0, 3).map((friend, index) =>
+                      React.createElement('div', {
+                        key: friend.id,
+                        className: 'release-card card-fade-up flex items-center gap-3 p-3 cursor-pointer',
+                        style: {
+                          backgroundColor: '#ffffff',
+                          borderRadius: '10px',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                          animationDelay: `${index * 50}ms`
+                        },
+                        onClick: () => navigateToFriend(friend)
+                      },
+                        // Friend avatar with hexagon shape
+                        React.createElement('div', {
+                          className: 'w-10 h-10 overflow-hidden flex-shrink-0 on-air-indicator',
+                          style: {
+                            clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
+                            backgroundColor: '#e5e7eb'
+                          }
+                        },
+                          friend.avatar ?
+                            React.createElement('img', { src: friend.avatar, alt: friend.name, className: 'w-full h-full object-cover' }) :
+                            React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-bold text-sm' },
+                              friend.name?.charAt(0).toUpperCase()
+                            )
+                        ),
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('p', {
+                            className: 'text-gray-900',
+                            style: { fontSize: '13px', fontWeight: 500 }
+                          }, friend.name),
+                          friend.currentTrack && React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
+                            `${friend.currentTrack.title} · ${friend.currentTrack.artist}`
+                          )
+                        ),
+                        // Listen along button
+                        React.createElement('button', {
+                          className: `px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
+                            listenAlongFriend?.id === friend.id
+                              ? 'bg-purple-600 text-white'
+                              : 'text-purple-600 bg-purple-50 hover:bg-purple-100'
+                          }`,
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            if (listenAlongFriend?.id === friend.id) {
+                              deactivateListenAlong();
+                            } else {
+                              activateListenAlong(friend);
+                            }
+                          }
+                        }, listenAlongFriend?.id === friend.id ? 'Listening' : 'Listen Along')
+                      )
+                    )
+                  )
+                );
+              })(),
+
+              // SECTION: Discover New Music
+              React.createElement('div', null,
+                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
+                  React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Discover'),
+                  React.createElement('button', {
+                    onClick: () => navigateTo('recommendations'),
+                    className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                  }, 'See all')
+                ),
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
+                  // Recommendations card
+                  React.createElement('button', {
+                    className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
+                    style: {
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                      border: 'none',
+                      animationDelay: '0ms'
+                    },
+                    onClick: () => navigateTo('recommendations')
+                  },
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
+                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'Personalized recommendations')
+                  ),
+                  // Charts card
+                  React.createElement('button', {
+                    className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
+                    style: {
+                      background: 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+                      border: 'none',
+                      animationDelay: '50ms'
+                    },
+                    onClick: () => { navigateTo('discover'); loadCharts(); }
+                  },
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
+                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'What everyone\'s playing')
+                  ),
+                  // Critics Picks card
+                  React.createElement('button', {
+                    className: 'card-fade-up p-5 rounded-xl text-left text-white transition-all hover:scale-[1.02] hover:shadow-lg',
+                    style: {
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                      border: 'none',
+                      animationDelay: '100ms'
+                    },
+                    onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
+                  },
+                    React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                    ),
+                    React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
+                    React.createElement('p', { className: 'text-white/80 text-sm mt-1' }, 'Acclaimed by critics')
+                  )
+                )
+              ),
+
+              // SECTION: Surprise Me (AI Playlist)
+              React.createElement('div', {
+                className: 'p-6 rounded-xl text-center',
+                style: {
+                  background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)'
+                }
+              },
+                React.createElement('div', { className: 'inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 mb-4' },
+                  React.createElement('svg', { className: 'w-8 h-8 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M13 10V3L4 14h7v7l9-11h-7z' })
+                  )
+                ),
+                React.createElement('h3', { className: 'text-xl font-bold text-white mb-2' }, 'Surprise Me'),
+                React.createElement('p', { className: 'text-white/70 text-sm mb-4 max-w-md mx-auto' },
+                  'Start a radio station based on your music taste'
+                ),
+                React.createElement('button', {
+                  className: 'px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors',
+                  onClick: async () => {
+                    // Start spinoff from current track or a random collection artist
+                    if (currentTrack) {
+                      startSpinoff(currentTrack);
+                    } else if (collectionData.artists.length > 0) {
+                      // Get a random artist and fetch their top tracks to seed the spinoff
+                      const randomArtist = collectionData.artists[Math.floor(Math.random() * collectionData.artists.length)];
+                      showToast(`Finding tracks from ${randomArtist.name}...`, 'info');
+                      const topTracks = await getArtistTopTracks(randomArtist.name);
+                      if (topTracks.length > 0) {
+                        const seedTrack = topTracks[0];
+                        handlePlay(seedTrack);
+                        // Give it a moment to start playing then launch spinoff
+                        setTimeout(() => startSpinoff(seedTrack), 500);
+                      } else {
+                        showToast(`Couldn't find tracks for ${randomArtist.name}`, 'error');
+                      }
+                    } else {
+                      showToast('Add some music to your collection first!', 'info');
+                    }
+                  }
+                }, 'Start Radio')
+              ),
+
+              // SECTION: Quick Stats
+              React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
+                [
+                  { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: '#8b5cf6', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
+                  { label: 'Artists', value: collectionData.artists.length, icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', color: '#ec4899', onClick: () => { navigateTo('library'); setCollectionTab('artists'); } },
+                  { label: 'Playlists', value: playlists.length, icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: '#f59e0b', onClick: () => navigateTo('playlists') },
+                  { label: 'Friends', value: friends.length, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', color: '#10b981', onClick: () => { navigateTo('library'); setCollectionTab('friends'); } }
+                ].map((stat, index) =>
+                  React.createElement('button', {
+                    key: stat.label,
+                    className: 'release-card card-fade-up p-4 text-left',
+                    style: {
+                      backgroundColor: '#ffffff',
+                      borderRadius: '10px',
+                      border: 'none',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                      animationDelay: `${index * 50}ms`
+                    },
+                    onClick: stat.onClick
+                  },
+                    React.createElement('div', {
+                      className: 'w-10 h-10 rounded-lg flex items-center justify-center mb-3',
+                      style: { backgroundColor: `${stat.color}15` }
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', style: { color: stat.color }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: stat.icon })
+                      )
+                    ),
+                    React.createElement('p', { className: 'text-2xl font-bold text-gray-900' }, stat.value),
+                    React.createElement('p', { className: 'text-sm text-gray-500' }, stat.label)
+                  )
+                )
+              )
+            )
           )
         ),
 
