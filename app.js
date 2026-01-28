@@ -8894,15 +8894,26 @@ const Parachord = () => {
       _playbackContext: context
     }));
     console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
-    setCurrentQueue(taggedTracks);
-    setPlaybackContext(context);
-    // Reset shuffle state when replacing queue with new content
-    // The new queue isn't shuffled, so the UI should reflect that
-    if (shuffleMode) {
-      setShuffleMode(false);
-      originalQueueRef.current = null;
-      console.log('🔀 Shuffle OFF - queue replaced with new content');
+
+    // If shuffle is on, shuffle the new queue and store original order
+    if (shuffleMode && taggedTracks.length > 1) {
+      originalQueueRef.current = [...taggedTracks];
+      // Fisher-Yates shuffle
+      const shuffled = [...taggedTracks];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      setCurrentQueue(shuffled);
+      console.log('🔀 Shuffle ON - new queue shuffled');
+    } else {
+      setCurrentQueue(taggedTracks);
+      // Clear original queue ref since this is a fresh unshuffled queue
+      if (shuffleMode) {
+        originalQueueRef.current = null;
+      }
     }
+    setPlaybackContext(context);
   };
 
   // Helper to add tracks to existing queue with context
@@ -24604,11 +24615,21 @@ React.createElement('div', {
                           return { ...track, id: trackId, sources: {} };
                         });
                         // Set all tracks after first as queue
-                        setCurrentQueue(tracksWithIds.slice(1));
-                        // Reset shuffle state when replacing queue
-                        if (shuffleMode) {
-                          setShuffleMode(false);
-                          originalQueueRef.current = null;
+                        const remainingTracks = tracksWithIds.slice(1);
+                        // If shuffle is on, shuffle the queue
+                        if (shuffleMode && remainingTracks.length > 1) {
+                          originalQueueRef.current = [...remainingTracks];
+                          const shuffled = [...remainingTracks];
+                          for (let i = shuffled.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                          }
+                          setCurrentQueue(shuffled);
+                        } else {
+                          setCurrentQueue(remainingTracks);
+                          if (shuffleMode) {
+                            originalQueueRef.current = null;
+                          }
                         }
                         // Play first track
                         handlePlay(tracksWithIds[0]);
