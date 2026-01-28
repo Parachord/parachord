@@ -13268,7 +13268,7 @@ const Parachord = () => {
 
   // Install resolver from marketplace
   const handleInstallFromMarketplace = async (marketplaceResolver) => {
-    const { id, name, downloadUrl } = marketplaceResolver;
+    const { id, name, downloadUrl, builtin } = marketplaceResolver;
 
     // Check if already installing
     if (installingResolvers.has(id)) {
@@ -13280,6 +13280,37 @@ const Parachord = () => {
     console.log(`📦 Installing ${name} from marketplace...`);
 
     try {
+      // For builtin resolvers, just enable them - they're already available as FALLBACK_RESOLVERS
+      if (builtin) {
+        // Check if already in allResolvers
+        const existing = allResolvers.find(r => r.id === id);
+        if (existing) {
+          showConfirmDialog({
+            type: 'info',
+            title: 'Already Available',
+            message: `${name} is a built-in resolver and is already available. You can enable it in Settings > Resolvers.`
+          });
+        } else {
+          // Find in FALLBACK_RESOLVERS and add to allResolvers
+          const fallbackResolver = FALLBACK_RESOLVERS.find(r => r.id === id);
+          if (fallbackResolver) {
+            setAllResolvers(prev => [...prev, { ...fallbackResolver, enabled: true, weight: prev.length }]);
+            showConfirmDialog({
+              type: 'success',
+              title: 'Resolver Enabled',
+              message: `${name} has been enabled. Configure it in Settings > Resolvers.`
+            });
+          } else {
+            showConfirmDialog({
+              type: 'info',
+              title: 'Built-in Resolver',
+              message: `${name} is a built-in resolver. Enable it in Settings > Resolvers.`
+            });
+          }
+        }
+        return;
+      }
+
       // Download resolver from URL
       const downloadResult = await window.electron.resolvers.downloadFromMarketplace(downloadUrl);
 
