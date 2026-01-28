@@ -14241,22 +14241,21 @@ ${tracks}
   // Load discovery data (recommendations, charts, critics picks) for HOME view previews
   useEffect(() => {
     if (activeView === 'home' && cacheLoaded) {
-      // Load recommendations if not already loaded and user has a scrobbler connected
-      if (!recommendations.loading && recommendations.artists.length === 0 && !recommendations.error) {
-        if (metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username) {
-          loadRecommendations();
-        }
+      // Load recommendations if user has a scrobbler connected and hasn't loaded yet
+      const hasScrobbler = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
+      if (hasScrobbler && recommendations.artists.length === 0 && !recommendations.error) {
+        loadRecommendations();
       }
       // Load charts if not already loaded
-      if (!chartsLoading && !chartsLoaded) {
+      if (!chartsLoaded && !chartsLoading) {
         loadCharts();
       }
       // Load critics picks if not already loaded
-      if (!criticsPicksLoading && !criticsPicksLoaded) {
+      if (!criticsPicksLoaded && !criticsPicksLoading) {
         loadCriticsPicks();
       }
     }
-  }, [activeView, cacheLoaded]);
+  }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
 
   // Resolve recommendation tracks using the resolver pipeline
   // Fetch images for recommended artists
@@ -25589,7 +25588,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to recommendations page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-0 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => navigateTo('recommendations')
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25600,7 +25599,7 @@ React.createElement('div', {
                     ),
                     // Top artist preview - clickable to artist page
                     recommendations.artists.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 pt-4 mt-4 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(recommendations.artists[0].name);
@@ -25639,7 +25638,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to critics-picks page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-0 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25650,7 +25649,7 @@ React.createElement('div', {
                     ),
                     // Most recent album preview - clickable to album page
                     criticsPicks.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 pt-4 mt-4 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         openCriticsPicksAlbum(criticsPicks[0]);
@@ -25692,7 +25691,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to discover page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-0 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => { navigateTo('discover'); loadCharts(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25703,21 +25702,21 @@ React.createElement('div', {
                     ),
                     // #1 album preview - clickable to open the album
                     charts.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 pt-4 mt-4 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
-                        // Open the #1 chart album - fetch and play like openTopAlbum
-                        openTopAlbum(charts[0]);
+                        // Open the #1 chart album with correct field mapping
+                        openTopAlbum({ ...charts[0], name: charts[0].title, image: charts[0].albumArt });
                       }
                     },
                       React.createElement('div', {
                         className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
                         style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
                       },
-                        charts[0].image
+                        charts[0].albumArt
                           ? React.createElement('img', {
-                              src: charts[0].image,
-                              alt: charts[0].name,
+                              src: charts[0].albumArt,
+                              alt: charts[0].title,
                               className: 'w-full h-full object-cover'
                             })
                           : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
@@ -25728,7 +25727,7 @@ React.createElement('div', {
                       ),
                       React.createElement('div', { className: 'flex-1 min-w-0' },
                         React.createElement('p', { className: 'text-white/60 text-xs' }, '#1 Album'),
-                        React.createElement('p', { className: 'text-white font-medium truncate' }, charts[0].name),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, charts[0].title),
                         React.createElement('p', { className: 'text-white/70 text-xs truncate' }, charts[0].artist)
                       )
                     ),
