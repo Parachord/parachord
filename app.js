@@ -25585,7 +25585,7 @@ React.createElement('div', {
                           // Show shimmer skeletons while resolving (for both local and collection tracks)
                           const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
                           return React.createElement('div', { className: 'flex items-center gap-1' },
-                            // LO icon only for local files
+                            // Local files icon for local files
                             track.filePath && localFilesResolver && React.createElement('button', {
                               key: 'localfiles',
                               className: 'no-drag',
@@ -25606,16 +25606,13 @@ React.createElement('div', {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '9px',
-                                fontWeight: 'bold',
-                                color: 'white',
                                 pointerEvents: 'auto',
                                 transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                               title: 'Play from Local Files'
-                            }, 'LO'),
+                            }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 })),
                             // Shimmer skeletons
                             React.createElement('div', {
                               className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
@@ -25627,7 +25624,7 @@ React.createElement('div', {
                             })
                           );
                         } else if (track.filePath) {
-                          // Show just the LO icon for local tracks that finished resolving without finding external sources
+                          // Show just the local files icon for local tracks that finished resolving without finding external sources
                           const localFilesResolver = allResolvers.find(r => r.id === 'localfiles');
                           if (!localFilesResolver) return null;
                           return React.createElement('button', {
@@ -25650,16 +25647,13 @@ React.createElement('div', {
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              fontSize: '9px',
-                              fontWeight: 'bold',
-                              color: 'white',
                               pointerEvents: 'auto',
                               transition: 'transform 0.1s'
                             },
                             onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                             onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
                             title: 'Play from Local Files'
-                          }, 'LO');
+                          }, React.createElement(ResolverIcon, { resolverId: 'localfiles', size: 12 }));
                         }
                         return null;
                       })()
