@@ -24970,9 +24970,12 @@ React.createElement('div', {
               className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
             },
               // Parachord wordmark centered above title
-              React.createElement('div', { className: 'mb-4' },
-                React.createElement(ParachordWordmark, { fill: 'white', height: 38 })
-              ),
+              React.createElement('img', {
+                src: 'assets/logo-wordmark.png',
+                alt: 'Parachord',
+                className: 'mb-4',
+                style: { height: '38px', width: 'auto', filter: 'brightness(0) invert(1)' }
+              }),
               // Title (matching other page headers)
               React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
@@ -25001,7 +25004,11 @@ React.createElement('div', {
                 }
               }, 'HOME'),
               // Parachord wordmark on the right
-              React.createElement(ParachordWordmark, { fill: 'white', height: 26 })
+              React.createElement('img', {
+                src: 'assets/logo-wordmark.png',
+                alt: 'Parachord',
+                style: { height: '26px', width: 'auto', filter: 'brightness(0) invert(1)' }
+              })
             )
           ),
 
