@@ -1139,6 +1139,7 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   console.log('URL:', url);
   console.log('Method:', options.method || 'GET');
   console.log('Headers:', JSON.stringify(options.headers || {}, null, 2));
+  console.log('Response type:', options.responseType || 'text');
 
   try {
     const fetchOptions = {
@@ -1163,6 +1164,15 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
       const errorText = await response.text();
       console.log('Error response body:', errorText.substring(0, 500));
       return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText };
+    }
+
+    // Handle arraybuffer response type (for audio/binary data)
+    if (options.responseType === 'arraybuffer') {
+      const arrayBuffer = await response.arrayBuffer();
+      console.log('Proxy fetch got arraybuffer, size:', arrayBuffer.byteLength);
+      // Convert ArrayBuffer to base64 for IPC transfer
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      return { success: true, status: response.status, data: base64 };
     }
 
     const text = await response.text();

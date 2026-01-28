@@ -4106,6 +4106,7 @@ const Parachord = () => {
   const deactivateListenAlongRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
+  const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
@@ -7632,6 +7633,80 @@ const Parachord = () => {
 
         console.log('🎵 Using SoundCloud stream URL');
 
+        // Clean up any previous blob URL to prevent memory leaks
+        if (audioBlobUrlRef.current) {
+          URL.revokeObjectURL(audioBlobUrlRef.current);
+          audioBlobUrlRef.current = null;
+        }
+
+        // Fetch the audio through Electron's proxy to handle CORS and auth headers
+        // HTML5 Audio can't send Authorization headers, so we need to fetch the data
+        // and create a blob URL that the Audio element can play
+        let blobUrl;
+        try {
+          console.log('🎵 Fetching audio through proxy...');
+
+          // Use proxyFetch to get the audio with proper headers
+          // For the /stream endpoint, pass oauth_token in query
+          // For pre-signed URLs from /streams, no additional auth needed
+          const fetchOptions = {
+            responseType: 'arraybuffer' // Get binary data for audio
+          };
+
+          // If using the direct stream endpoint, we need the token
+          // Pre-signed URLs already have auth built in
+          if (streamUrl.includes('oauth_token=')) {
+            // Direct stream URL with token in query - should work
+            console.log('🎵 Stream URL has token in query');
+          } else if (streamUrl.includes('api.soundcloud.com')) {
+            // API URL needs Authorization header
+            fetchOptions.headers = { 'Authorization': `OAuth ${config.token}` };
+            console.log('🎵 Adding OAuth header for API URL');
+          } else {
+            // Pre-signed CDN URL - may need OAuth header anyway
+            fetchOptions.headers = { 'Authorization': `OAuth ${config.token}` };
+            console.log('🎵 Adding OAuth header for CDN URL');
+          }
+
+          const audioResponse = await window.electron.proxyFetch(streamUrl, fetchOptions);
+
+          if (audioResponse.error) {
+            throw new Error(`Proxy fetch failed: ${audioResponse.error}`);
+          }
+
+          // audioResponse.data is base64-encoded when responseType is arraybuffer
+          // Convert base64 to ArrayBuffer
+          let audioData;
+          if (audioResponse.data) {
+            // Decode base64 to binary
+            const binaryString = atob(audioResponse.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            audioData = bytes.buffer;
+          } else {
+            throw new Error('No audio data received');
+          }
+
+          // Create blob URL from the audio data
+          const blob = new Blob([audioData], { type: 'audio/mpeg' });
+          blobUrl = URL.createObjectURL(blob);
+          audioBlobUrlRef.current = blobUrl; // Store for cleanup
+          console.log('🎵 Created blob URL for audio playback');
+        } catch (proxyError) {
+          console.error('🎵 Proxy fetch failed:', proxyError);
+          // Fall back to opening in browser
+          if (sourceToPlay.soundcloudUrl) {
+            console.log('📱 Falling back to browser playback');
+            if (window.electron?.shell?.openExternal) {
+              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+            }
+          }
+          setTrackLoading(false);
+          return;
+        }
+
         // Create audio element if needed (same setup as local files)
         if (!audioRef.current) {
           console.log('🎵 Creating new Audio element for SoundCloud');
@@ -7680,8 +7755,8 @@ const Parachord = () => {
           });
         }
 
-        // Use HTML5 Audio to play the stream (token already in URL)
-        audioRef.current.src = streamUrl;
+        // Use HTML5 Audio to play the blob URL (pre-fetched with auth headers)
+        audioRef.current.src = blobUrl;
         const volumeToApply = isMutedRef.current ? 0 : volume;
         const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
         audioRef.current.volume = effectiveVolume / 100;
