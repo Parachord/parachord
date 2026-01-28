@@ -18931,7 +18931,7 @@ useEffect(() => {
           )
         ),
 
-        // Search - navigates to search page
+        // Search - navigates to search page (styled as search box)
         React.createElement('div', {
           style: {
             padding: '4px 8px 12px',
@@ -18939,10 +18939,10 @@ useEffect(() => {
           }
         },
           React.createElement('button', {
-            className: 'w-full flex items-center gap-3 px-3 cursor-pointer transition-colors',
+            className: 'w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors rounded-lg',
             style: {
-              color: activeView === 'search' ? '#1f2937' : '#6b7280',
-              fontWeight: activeView === 'search' ? '500' : '400'
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              color: activeView === 'search' ? '#1f2937' : '#9ca3af'
             },
             onClick: () => navigateTo('search')
           },
@@ -18951,10 +18951,8 @@ useEffect(() => {
             ),
             React.createElement('span', {
               style: {
-                fontSize: '11px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em'
+                fontSize: '13px',
+                fontWeight: '400'
               }
             }, 'Search')
           )
