@@ -25268,7 +25268,87 @@ React.createElement('div', {
                               React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                               )
+                            ),
+                          // Hover overlay with action buttons
+                          React.createElement('div', {
+                            className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2',
+                            style: { pointerEvents: 'auto' }
+                          },
+                            // Add to Playlist button
+                            React.createElement('button', {
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                // Open playlist selector for this album
+                                setPlaylistSelectorTrack({
+                                  title: album.title,
+                                  artist: album.artist,
+                                  album: album.title,
+                                  albumArt: album.art,
+                                  isAlbum: true
+                                });
+                              },
+                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                              title: 'Add to Playlist'
+                            },
+                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                              )
+                            ),
+                            // Play button (center, larger)
+                            React.createElement('button', {
+                              onClick: async (e) => {
+                                e.stopPropagation();
+                                // Fetch and play album tracks
+                                showToast(`Playing ${album.title}...`, 'info');
+                                const tracks = await getArtistTopTracks(album.artist);
+                                if (tracks.length > 0) {
+                                  const albumTracks = tracks.filter(t =>
+                                    t.album?.toLowerCase() === album.title.toLowerCase()
+                                  );
+                                  const tracksToPlay = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
+                                  if (tracksToPlay.length > 0) {
+                                    handlePlay(tracksToPlay[0]);
+                                    if (tracksToPlay.length > 1) {
+                                      setCurrentQueue(tracksToPlay.slice(1));
+                                    }
+                                  }
+                                }
+                              },
+                              className: 'w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                              style: { border: 'none', cursor: 'pointer' },
+                              title: 'Play'
+                            },
+                              React.createElement('svg', { className: 'w-5 h-5 text-gray-800 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M8 5v14l11-7z' })
+                              )
+                            ),
+                            // Add to Queue button
+                            React.createElement('button', {
+                              onClick: async (e) => {
+                                e.stopPropagation();
+                                showToast(`Adding ${album.title} to queue...`, 'info');
+                                const tracks = await getArtistTopTracks(album.artist);
+                                if (tracks.length > 0) {
+                                  const albumTracks = tracks.filter(t =>
+                                    t.album?.toLowerCase() === album.title.toLowerCase()
+                                  );
+                                  const tracksToAdd = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
+                                  if (tracksToAdd.length > 0) {
+                                    setCurrentQueue(prev => [...prev, ...tracksToAdd]);
+                                    showToast(`Added ${tracksToAdd.length} tracks to queue`, 'success');
+                                  }
+                                }
+                              },
+                              className: 'w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                              style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                              title: 'Add to Queue'
+                            },
+                              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                              )
                             )
+                          )
                         ),
                         React.createElement('p', {
                           className: 'text-gray-900 truncate',
@@ -25311,21 +25391,48 @@ React.createElement('div', {
                           navigateTo('playlist-view');
                         }
                       },
-                        // 2x2 album art grid or placeholder
+                        // 2x2 album art grid or placeholder with hover play button
                         React.createElement('div', {
-                          className: 'w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 grid grid-cols-2 grid-rows-2',
-                          style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                          className: 'relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 group/mosaic'
                         },
-                          allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
-                            React.createElement('img', {
-                              key: i,
-                              src: url,
-                              alt: '',
-                              className: 'w-full h-full object-cover'
-                            })
-                          ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
-                            React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+                          React.createElement('div', {
+                            className: 'w-full h-full grid grid-cols-2 grid-rows-2',
+                            style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                          },
+                            allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
+                              React.createElement('img', {
+                                key: i,
+                                src: url,
+                                alt: '',
+                                className: 'w-full h-full object-cover'
+                              })
+                            ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
+                              React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
+                              )
+                            )
+                          ),
+                          // Hover play button overlay
+                          React.createElement('div', {
+                            className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
+                          },
+                            React.createElement('button', {
+                              className: 'w-8 h-8 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg',
+                              onClick: async (e) => {
+                                e.stopPropagation();
+                                // Play all tracks in the playlist
+                                if (playlist.tracks && playlist.tracks.length > 0) {
+                                  setQueue(playlist.tracks);
+                                  handlePlay(playlist.tracks[0]);
+                                  showToast(`Playing ${playlist.title}`, 'success');
+                                } else {
+                                  showToast('Playlist is empty', 'info');
+                                }
+                              }
+                            },
+                              React.createElement('svg', { className: 'w-4 h-4 text-gray-900 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M8 5v14l11-7z' })
+                              )
                             )
                           )
                         ),
@@ -25366,19 +25473,26 @@ React.createElement('div', {
                         },
                         onClick: () => navigateToFriend(friend)
                       },
-                        // Friend avatar with hexagon shape
+                        // Friend avatar with hexagon shape (matching sidebar style)
                         React.createElement('div', {
-                          className: 'w-10 h-10 overflow-hidden flex-shrink-0 on-air-indicator',
-                          style: {
-                            clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
-                            backgroundColor: '#e5e7eb'
-                          }
+                          className: 'relative w-10 h-10 flex-shrink-0'
                         },
-                          friend.avatar ?
-                            React.createElement('img', { src: friend.avatar, alt: friend.displayName, className: 'w-full h-full object-cover' }) :
-                            React.createElement('div', { className: 'w-full h-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-bold text-sm' },
-                              friend.displayName?.charAt(0).toUpperCase()
-                            )
+                          React.createElement('div', {
+                            className: 'w-full h-full overflow-hidden',
+                            style: {
+                              clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                            }
+                          },
+                            friend.avatarUrl
+                              ? React.createElement('img', { src: friend.avatarUrl, alt: friend.displayName, className: 'w-full h-full object-cover' })
+                              : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-purple-400 to-pink-400' },
+                                  friend.displayName?.charAt(0).toUpperCase()
+                                )
+                          ),
+                          // On-air indicator dot
+                          React.createElement('div', {
+                            className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white'
+                          })
                         ),
                         React.createElement('div', { className: 'flex-1 min-w-0' },
                           React.createElement('p', {
@@ -25486,32 +25600,31 @@ React.createElement('div', {
                 ),
                 React.createElement('h3', { className: 'text-xl font-bold text-white mb-2' }, 'Surprise Me'),
                 React.createElement('p', { className: 'text-white/70 text-sm mb-4 max-w-md mx-auto' },
-                  'Start a radio station based on your music taste'
+                  hasScrobblerConnected()
+                    ? 'Let AI create a personalized playlist based on your listening history'
+                    : 'Connect Last.fm or ListenBrainz to unlock AI-powered playlist generation'
                 ),
-                React.createElement('button', {
-                  className: 'px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors',
-                  onClick: async () => {
-                    // Start spinoff from current track or a random collection artist
-                    if (currentTrack) {
-                      startSpinoff(currentTrack);
-                    } else if (collectionData.artists.length > 0) {
-                      // Get a random artist and fetch their top tracks to seed the spinoff
-                      const randomArtist = collectionData.artists[Math.floor(Math.random() * collectionData.artists.length)];
-                      showToast(`Finding tracks from ${randomArtist.name}...`, 'info');
-                      const topTracks = await getArtistTopTracks(randomArtist.name);
-                      if (topTracks.length > 0) {
-                        const seedTrack = topTracks[0];
-                        handlePlay(seedTrack);
-                        // Give it a moment to start playing then launch spinoff
-                        setTimeout(() => startSpinoff(seedTrack), 500);
-                      } else {
-                        showToast(`Couldn't find tracks for ${randomArtist.name}`, 'error');
+                hasScrobblerConnected()
+                  ? React.createElement('button', {
+                      className: `px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors ${aiLoading ? 'opacity-50 cursor-not-allowed' : ''}`,
+                      disabled: aiLoading,
+                      onClick: () => {
+                        if (!aiLoading) {
+                          handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.');
+                        }
                       }
-                    } else {
-                      showToast('Add some music to your collection first!', 'info');
-                    }
-                  }
-                }, 'Start Radio')
+                    }, aiLoading ? 'Generating...' : 'Generate Playlist')
+                  : React.createElement('button', {
+                      className: 'px-6 py-2.5 bg-white/20 text-white font-semibold rounded-full hover:bg-white/30 transition-colors',
+                      onClick: () => {
+                        navigateTo('settings');
+                        // Scroll to meta services section after navigation
+                        setTimeout(() => {
+                          const metaSection = document.querySelector('[data-settings-section="meta-services"]');
+                          if (metaSection) metaSection.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }, 'Connect Scrobbler')
               ),
 
               // SECTION: Quick Stats
