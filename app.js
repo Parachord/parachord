@@ -24966,6 +24966,13 @@ React.createElement('div', {
                 transition: 'opacity 300ms ease-out'
               }
             },
+              // Parachord wordmark centered above title
+              React.createElement('div', {
+                className: 'mb-4',
+                style: { filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.3))' }
+              },
+                React.createElement(ParachordWordmark, { fill: 'white', height: 32 })
+              ),
               // Title (matching other page headers)
               React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
@@ -24983,7 +24990,7 @@ React.createElement('div', {
             ),
             // COLLAPSED STATE
             homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-6 z-10',
+              className: 'absolute inset-0 flex items-center justify-between px-6 z-10',
               style: {
                 opacity: homeHeaderCollapsed ? 1 : 0,
                 transition: 'opacity 300ms ease-out'
@@ -24996,7 +25003,13 @@ React.createElement('div', {
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase'
                 }
-              }, 'HOME')
+              }, 'HOME'),
+              // Parachord wordmark on the right
+              React.createElement('div', {
+                style: { filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))' }
+              },
+                React.createElement(ParachordWordmark, { fill: 'white', height: 22 })
+              )
             )
           ),
 
