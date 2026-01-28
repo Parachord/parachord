@@ -7316,6 +7316,7 @@ const Parachord = () => {
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
+      else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
       else {
         console.error('❌ Could not determine resolver for source');
@@ -7531,6 +7532,138 @@ const Parachord = () => {
           type: 'error',
           title: 'Playback Error',
           message: errorMessage
+        });
+      }
+      return;
+    }
+
+    // Handle SoundCloud playback with HTML5 Audio (stream from API)
+    if (resolverId === 'soundcloud') {
+      console.log('🎵 Playing SoundCloud track:', sourceToPlay.title);
+      console.log('🎵 SoundCloud source details:', { soundcloudId: sourceToPlay.soundcloudId, streamable: sourceToPlay.streamable });
+
+      // Stop Spotify polling when switching to SoundCloud playback
+      if (playbackPollerRef.current) {
+        console.log('⏹️ Stopping Spotify polling for SoundCloud playback');
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
+
+      // Pause Spotify if it's playing
+      if (spotifyToken && streamingPlaybackActiveRef.current) {
+        console.log('⏹️ Pausing Spotify for SoundCloud playback');
+        try {
+          await fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+        } catch (e) {
+          console.log('Could not pause Spotify:', e.message);
+        }
+      }
+
+      // Get the OAuth token
+      const config = await getResolverConfig('soundcloud');
+      if (!config.token) {
+        console.error('❌ SoundCloud not authenticated');
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'SoundCloud Not Connected',
+          message: 'Please connect your SoundCloud account in Settings > Resolvers to play this track.'
+        });
+        return;
+      }
+
+      // Get stream URL from SoundCloud API
+      try {
+        const streamsResponse = await fetch(`https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/streams`, {
+          headers: { 'Authorization': `OAuth ${config.token}` }
+        });
+
+        if (!streamsResponse.ok) {
+          console.error('❌ Failed to get SoundCloud stream:', streamsResponse.status);
+          // Fall back to opening in browser
+          if (sourceToPlay.soundcloudUrl) {
+            console.log('📱 Falling back to browser playback');
+            if (window.electron?.shell?.openExternal) {
+              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+            }
+          }
+          setTrackLoading(false);
+          return;
+        }
+
+        const streams = await streamsResponse.json();
+        const streamUrl = streams.http_mp3_128_url || streams.hls_mp3_128_url || streams.preview_mp3_128_url;
+
+        if (!streamUrl) {
+          console.error('❌ No stream URL available for this track');
+          // Fall back to opening in browser
+          if (sourceToPlay.soundcloudUrl) {
+            console.log('📱 Falling back to browser playback');
+            if (window.electron?.shell?.openExternal) {
+              await window.electron.shell.openExternal(sourceToPlay.soundcloudUrl);
+            }
+          }
+          setTrackLoading(false);
+          return;
+        }
+
+        console.log('🎵 Got SoundCloud stream URL');
+
+        // Use HTML5 Audio to play the stream
+        audioRef.current.src = streamUrl;
+        const volumeToApply = isMutedRef.current ? 0 : volume;
+        const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
+        audioRef.current.volume = effectiveVolume / 100;
+        console.log(`🔊 Applied SoundCloud volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+
+        audioRef.current.load();
+
+        await audioRef.current.play();
+
+        // Set current track state
+        const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+        const trackToSet = trackOrSource.sources ? {
+          ...sourceToPlay,
+          id: trackOrSource.id,
+          artist: trackOrSource.artist,
+          title: trackOrSource.title,
+          album: trackOrSource.album,
+          duration: duration,
+          albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
+          sources: trackOrSource.sources,
+          _playbackContext: trackOrSource._playbackContext,
+          _activeResolver: resolverId
+        } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+
+        setCurrentTrack(trackToSet);
+        setIsPlaying(true);
+        setProgress(0);
+        setTrackLoading(false);
+        streamingPlaybackActiveRef.current = false;
+        setBrowserPlaybackActive(false);
+        setIsExternalPlayback(false);
+        trackNeedsExplicitStart.current = false;
+
+        console.log('✅ SoundCloud playing via HTML5 Audio');
+
+        // Notify scrobble manager of track start
+        if (window.scrobbleManager) {
+          window.scrobbleManager.handleTrackStart(trackToSet);
+        }
+      } catch (error) {
+        console.error('❌ SoundCloud playback error:', error);
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Playback Error',
+          message: 'Failed to play SoundCloud track: ' + error.message
         });
       }
       return;
