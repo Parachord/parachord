@@ -22165,12 +22165,12 @@ React.createElement('div', {
             // Release type filter pills
             React.createElement('div', { className: 'flex gap-2 flex-wrap' },
               [
+                { value: 'all', label: 'All' },
                 { value: 'album', label: 'Studio Albums' },
                 { value: 'ep', label: 'EPs' },
                 { value: 'single', label: 'Singles' },
                 { value: 'live', label: 'Live' },
-                { value: 'compilation', label: 'Compilations' },
-                { value: 'all', label: 'All' }
+                { value: 'compilation', label: 'Compilations' }
               ].map(({ value, label }) => {
                 const searchFiltered = filterArtistReleases(artistReleases);
                 const count = value === 'all'
