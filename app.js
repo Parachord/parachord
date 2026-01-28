@@ -25601,7 +25601,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to recommendations page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => navigateTo('recommendations')
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25612,7 +25612,7 @@ React.createElement('div', {
                     ),
                     // Top artist preview - clickable to artist page
                     recommendations.artists.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         fetchArtistData(recommendations.artists[0].name);
@@ -25651,7 +25651,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to critics-picks page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25662,7 +25662,7 @@ React.createElement('div', {
                     ),
                     // Most recent album preview - clickable to album page
                     criticsPicks.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         openCriticsPicksAlbum(criticsPicks[0]);
@@ -25704,7 +25704,7 @@ React.createElement('div', {
                   },
                     // Header section - clickable to discover page
                     React.createElement('button', {
-                      className: 'w-full p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
                       onClick: () => { navigateTo('discover'); loadCharts(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -25715,7 +25715,7 @@ React.createElement('div', {
                     ),
                     // #1 album preview - clickable to open the album
                     charts.length > 0 && React.createElement('button', {
-                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors rounded-b-xl',
+                      className: 'w-full flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
                         // Open the #1 chart album with correct field mapping
