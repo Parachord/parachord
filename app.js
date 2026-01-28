@@ -7599,14 +7599,17 @@ const Parachord = () => {
 
             if (streamsResponse.ok) {
               const streams = await streamsResponse.json();
-              console.log('🎵 Streams response:', Object.keys(streams));
-              // Prefer HTTP MP3 over HLS
+              console.log('🎵 Streams response keys:', Object.keys(streams));
+              // Log available stream URLs for debugging
+              if (streams.http_mp3_128_url) console.log('🎵 http_mp3_128_url available');
+              if (streams.hls_mp3_128_url) console.log('🎵 hls_mp3_128_url available (HLS - not compatible)');
+              if (streams.preview_mp3_128_url) console.log('🎵 preview_mp3_128_url available');
+
+              // Prefer HTTP MP3 (direct stream) over HLS or preview
+              // These URLs are pre-signed and should NOT have additional auth appended
               streamUrl = streams.http_mp3_128_url || streams.preview_mp3_128_url;
               if (streamUrl) {
-                // These URLs may already be signed, but add token just in case
-                streamUrl = streamUrl.includes('?')
-                  ? `${streamUrl}&oauth_token=${config.token}`
-                  : `${streamUrl}?oauth_token=${config.token}`;
+                console.log('🎵 Using stream URL (pre-signed, no token needed)');
               }
             }
           }
