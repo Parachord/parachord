@@ -18796,8 +18796,8 @@ useEffect(() => {
               onClick: () => navigateTo('playlists'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#1f2937' : '#4b5563',
+                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899' : '#4b5563',
                 fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
               }
             },
@@ -18829,8 +18829,8 @@ useEffect(() => {
                 border: '2px solid #a78bfa',
                 color: '#7c3aed'
               } : {
-                backgroundColor: activeView === 'library' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'library' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'library' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
+                color: activeView === 'library' ? '#9333ea' : '#4b5563',
                 fontWeight: activeView === 'library' ? '500' : '400'
               }
             },
@@ -18857,8 +18857,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'history' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'history' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'history' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                color: activeView === 'history' ? '#3b82f6' : '#4b5563',
                 fontWeight: activeView === 'history' ? '500' : '400'
               }
             },
@@ -18885,8 +18885,8 @@ useEffect(() => {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'recommendations' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'recommendations' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'recommendations' ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                color: activeView === 'recommendations' ? '#a855f7' : '#4b5563',
                 fontWeight: activeView === 'recommendations' ? '500' : '400'
               }
             },
@@ -18903,8 +18903,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'discover' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'discover' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'discover' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                color: activeView === 'discover' ? '#ec4899' : '#4b5563',
                 fontWeight: activeView === 'discover' ? '500' : '400'
               }
             },
@@ -18921,8 +18921,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'critics-picks' ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
-                color: activeView === 'critics-picks' ? '#1f2937' : '#4b5563',
+                backgroundColor: activeView === 'critics-picks' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+                color: activeView === 'critics-picks' ? '#f97316' : '#4b5563',
                 fontWeight: activeView === 'critics-picks' ? '500' : '400'
               }
             },
