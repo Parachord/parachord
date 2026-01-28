@@ -31596,184 +31596,202 @@ React.createElement('div', {
         ),
 
         // Body
-        React.createElement('div', { style: { padding: '20px 24px' } },
-          // Option 1: Import from URL (Spotify, Apple Music, hosted XSPF)
-          React.createElement('div', { style: { marginBottom: '20px' } },
-            React.createElement('h4', {
-              style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
-            }, 'Import from URL'),
-            React.createElement('p', {
-              style: { fontSize: '13px', color: '#6b7280', marginBottom: '12px', lineHeight: '1.5' }
-            }, 'Paste a Spotify playlist, Apple Music playlist, or hosted .xspf file URL.'),
-            React.createElement('input', {
-              type: 'url',
-              value: urlImportValue,
-              onChange: (e) => setUrlImportValue(e.target.value),
-              onKeyDown: (e) => {
-                if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
-                  (async () => {
-                    setUrlImportLoading(true);
-                    try {
-                      const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
-                      setShowUrlImportDialog(false);
-                      setUrlImportValue('');
-                      showConfirmDialog({
-                        type: 'success',
-                        title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
-                        message: result.playlist.title
-                      });
-                    } catch (error) {
-                      showConfirmDialog({
-                        type: 'error',
-                        title: 'Import Failed',
-                        message: error.message
-                      });
-                    } finally {
-                      setUrlImportLoading(false);
-                    }
-                  })();
+        React.createElement('div', { style: { padding: '20px 24px 24px' } },
+          // Option 1: Import from URL - Card style
+          React.createElement('div', {
+            style: {
+              padding: '16px',
+              backgroundColor: '#faf5ff',
+              borderRadius: '12px',
+              border: '1px solid #e9d5ff',
+              marginBottom: '16px'
+            }
+          },
+            React.createElement('div', { className: 'flex items-start gap-3', style: { marginBottom: '12px' } },
+              // Icon
+              React.createElement('div', {
+                style: {
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  backgroundColor: '#7c3aed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
                 }
               },
-              placeholder: 'https://open.spotify.com/playlist/...',
-              style: {
-                width: '100%',
-                padding: '12px 16px',
-                fontSize: '14px',
-                color: '#1f2937',
-                backgroundColor: '#ffffff',
-                border: '1px solid #e5e7eb',
-                borderRadius: '10px',
-                outline: 'none',
-                transition: 'border-color 150ms ease, box-shadow 150ms ease'
+                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
+                )
+              ),
+              // Text
+              React.createElement('div', { style: { flex: 1 } },
+                React.createElement('h4', {
+                  style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '4px' }
+                }, 'Import from URL'),
+                React.createElement('p', {
+                  style: { fontSize: '13px', color: '#6b7280', lineHeight: '1.4' }
+                }, 'Spotify, Apple Music, or hosted .xspf')
+              )
+            ),
+            // Input with inline button
+            React.createElement('div', { className: 'flex gap-2' },
+              React.createElement('input', {
+                type: 'url',
+                value: urlImportValue,
+                onChange: (e) => setUrlImportValue(e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
+                    (async () => {
+                      setUrlImportLoading(true);
+                      try {
+                        const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+                        setShowUrlImportDialog(false);
+                        setUrlImportValue('');
+                        showConfirmDialog({
+                          type: 'success',
+                          title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
+                          message: result.playlist.title
+                        });
+                      } catch (error) {
+                        showConfirmDialog({
+                          type: 'error',
+                          title: 'Import Failed',
+                          message: error.message
+                        });
+                      } finally {
+                        setUrlImportLoading(false);
+                      }
+                    })();
+                  }
+                },
+                placeholder: 'Paste playlist URL...',
+                style: {
+                  flex: 1,
+                  padding: '10px 14px',
+                  fontSize: '14px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #d8b4fe',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  transition: 'border-color 150ms ease, box-shadow 150ms ease'
+                },
+                onFocus: (e) => { e.target.style.borderColor = '#a78bfa'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.15)'; },
+                onBlur: (e) => { e.target.style.borderColor = '#d8b4fe'; e.target.style.boxShadow = 'none'; },
+                disabled: urlImportLoading,
+                autoFocus: true
+              }),
+              React.createElement('button', {
+                onClick: async () => {
+                  if (!urlImportValue.trim()) return;
+                  setUrlImportLoading(true);
+                  try {
+                    const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
+                    setShowUrlImportDialog(false);
+                    setUrlImportValue('');
+                    showConfirmDialog({
+                      type: 'success',
+                      title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
+                      message: result.playlist.title
+                    });
+                  } catch (error) {
+                    showConfirmDialog({
+                      type: 'error',
+                      title: 'Import Failed',
+                      message: error.message
+                    });
+                  } finally {
+                    setUrlImportLoading(false);
+                  }
+                },
+                disabled: urlImportLoading || !urlImportValue.trim(),
+                className: 'flex items-center justify-center gap-2 transition-all',
+                style: {
+                  padding: '10px 16px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#ffffff',
+                  backgroundColor: urlImportLoading || !urlImportValue.trim() ? '#c4b5fd' : '#7c3aed',
+                  borderRadius: '8px',
+                  cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
+                  opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1',
+                  minWidth: '80px'
+                },
+                onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
               },
-              onFocus: (e) => { e.target.style.borderColor = '#a78bfa'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.1)'; },
-              onBlur: (e) => { e.target.style.borderColor = '#e5e7eb'; e.target.style.boxShadow = 'none'; },
-              disabled: urlImportLoading,
-              autoFocus: true
-            }),
-            // Example hints
-            React.createElement('div', { style: { marginTop: '8px', fontSize: '12px', color: '#9ca3af' } },
-              React.createElement('span', null, 'Examples: '),
-              React.createElement('span', { style: { color: '#7c3aed' } }, 'Spotify'),
-              React.createElement('span', null, ', '),
-              React.createElement('span', { style: { color: '#7c3aed' } }, 'Apple Music'),
-              React.createElement('span', null, ', or '),
-              React.createElement('span', { style: { color: '#7c3aed' } }, '.xspf'),
-              React.createElement('span', null, ' URLs')
+                urlImportLoading ? React.createElement('svg', {
+                  className: 'w-4 h-4 animate-spin',
+                  fill: 'none',
+                  viewBox: '0 0 24 24'
+                },
+                  React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
+                  React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
+                ) : 'Import'
+              )
             )
           ),
 
           // Divider
-          React.createElement('div', { className: 'flex items-center gap-4', style: { marginBottom: '20px' } },
+          React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' } },
             React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } }),
             React.createElement('span', { style: { fontSize: '12px', color: '#9ca3af', fontWeight: '500' } }, 'or'),
             React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } })
           ),
 
-          // Option 2: Load from file
-          React.createElement('div', null,
-            React.createElement('h4', {
-              style: { fontSize: '14px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
-            }, 'Load from File'),
-            React.createElement('p', {
-              style: { fontSize: '13px', color: '#6b7280', marginBottom: '12px', lineHeight: '1.5' }
-            }, 'Import an .xspf playlist file from your computer.'),
-            React.createElement('button', {
-              onClick: async () => {
-                setShowUrlImportDialog(false);
-                await handleImportPlaylist();
-              },
-              className: 'w-full flex items-center justify-center gap-2 transition-colors',
-              style: {
-                padding: '12px 16px',
-                fontSize: '14px',
-                fontWeight: '500',
-                color: '#6b7280',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                border: '1px solid #e5e7eb',
-                borderRadius: '10px',
-                cursor: 'pointer'
-              },
-              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'; e.currentTarget.style.color = '#374151'; },
-              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; e.currentTarget.style.color = '#6b7280'; },
-              disabled: urlImportLoading
-            },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' })
-              ),
-              'Choose File...'
-            )
-          )
-        ),
-
-        // Footer
-        React.createElement('div', {
-          className: 'flex justify-end gap-3',
-          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
-        },
-          React.createElement('button', {
-            onClick: () => {
-              setShowUrlImportDialog(false);
-              setUrlImportValue('');
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#6b7280',
-              borderRadius: '10px'
-            },
-            onMouseEnter: (e) => { e.currentTarget.style.color = '#374151'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent'; }
-          }, 'Cancel'),
+          // Option 2: Load from file - Card style with dashed border
           React.createElement('button', {
             onClick: async () => {
-              if (!urlImportValue.trim()) return;
-              setUrlImportLoading(true);
-              try {
-                const result = await handleImportPlaylistFromUrl(urlImportValue.trim());
-                setShowUrlImportDialog(false);
-                setUrlImportValue('');
-                showConfirmDialog({
-                  type: 'success',
-                  title: result.updated ? 'Playlist Updated' : 'Playlist Imported',
-                  message: result.playlist.title
-                });
-              } catch (error) {
-                showConfirmDialog({
-                  type: 'error',
-                  title: 'Import Failed',
-                  message: error.message
-                });
-              } finally {
-                setUrlImportLoading(false);
-              }
+              setShowUrlImportDialog(false);
+              await handleImportPlaylist();
             },
-            disabled: urlImportLoading || !urlImportValue.trim(),
-            className: 'flex items-center gap-2 transition-colors',
+            className: 'w-full transition-all',
             style: {
-              padding: '10px 18px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: urlImportLoading || !urlImportValue.trim() ? '#c4b5fd' : '#7c3aed',
-              borderRadius: '10px',
-              cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
-              opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1'
+              padding: '20px',
+              backgroundColor: '#fafafa',
+              borderRadius: '12px',
+              border: '2px dashed #d1d5db',
+              cursor: 'pointer',
+              textAlign: 'center'
             },
-            onMouseEnter: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-            onMouseLeave: (e) => { if (!urlImportLoading && urlImportValue.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
+            onMouseEnter: (e) => {
+              e.currentTarget.style.backgroundColor = '#f3f4f6';
+              e.currentTarget.style.borderColor = '#9ca3af';
+            },
+            onMouseLeave: (e) => {
+              e.currentTarget.style.backgroundColor = '#fafafa';
+              e.currentTarget.style.borderColor = '#d1d5db';
+            },
+            disabled: urlImportLoading
           },
-            urlImportLoading && React.createElement('svg', {
-              className: 'w-4 h-4 animate-spin',
-              fill: 'none',
-              viewBox: '0 0 24 24'
-            },
-              React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-              React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-            ),
-            urlImportLoading ? 'Importing...' : 'Import'
+            React.createElement('div', { className: 'flex flex-col items-center gap-2' },
+              // Folder icon
+              React.createElement('div', {
+                style: {
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: '#e5e7eb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }
+              },
+                React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: '#6b7280', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' })
+                )
+              ),
+              React.createElement('div', null,
+                React.createElement('p', {
+                  style: { fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '2px' }
+                }, 'Load from File'),
+                React.createElement('p', {
+                  style: { fontSize: '12px', color: '#9ca3af' }
+                }, 'Choose an .xspf file from your computer')
+              )
+            )
           )
         )
       )
