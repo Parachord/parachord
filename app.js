@@ -7794,7 +7794,7 @@ const Parachord = () => {
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.handleTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet);
         }
       } catch (error) {
         console.error('❌ SoundCloud playback error:', error);
