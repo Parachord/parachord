@@ -21659,15 +21659,7 @@ useEffect(() => {
                     }`
                   }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
                 ]).flat().filter(Boolean)
-              ),
-              // Right side: Start Album Station button - responsive sizing
-              React.createElement('button', {
-                className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
-                style: {
-                  backgroundColor: '#E91E63',
-                  boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-                }
-              }, isCompactHeader ? 'Station' : 'Start Album Station')
+              )
             )
           ),
           // Skeleton content with white background (matching release page)
@@ -21852,16 +21844,7 @@ React.createElement('div', {
                   }`
                 }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
-            ),
-            // Right side: Start Album Station button - responsive sizing
-            React.createElement('button', {
-              onClick: () => console.log('Start Album Station - placeholder'),
-              className: `ml-auto rounded-full font-medium text-white no-drag transition-all hover:scale-105 ${isCompactHeader ? 'px-3 py-1.5 text-xs' : 'px-5 py-2 text-sm'}`,
-              style: {
-                backgroundColor: '#E91E63',
-                boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
-              }
-            }, isCompactHeader ? 'Station' : 'Start Album Station')
+            )
           )
         ),
 
