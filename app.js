@@ -8896,6 +8896,13 @@ const Parachord = () => {
     console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
     setCurrentQueue(taggedTracks);
     setPlaybackContext(context);
+    // Reset shuffle state when replacing queue with new content
+    // The new queue isn't shuffled, so the UI should reflect that
+    if (shuffleMode) {
+      setShuffleMode(false);
+      originalQueueRef.current = null;
+      console.log('🔀 Shuffle OFF - queue replaced with new content');
+    }
   };
 
   // Helper to add tracks to existing queue with context
@@ -24598,6 +24605,11 @@ React.createElement('div', {
                         });
                         // Set all tracks after first as queue
                         setCurrentQueue(tracksWithIds.slice(1));
+                        // Reset shuffle state when replacing queue
+                        if (shuffleMode) {
+                          setShuffleMode(false);
+                          originalQueueRef.current = null;
+                        }
                         // Play first track
                         handlePlay(tracksWithIds[0]);
                       }
