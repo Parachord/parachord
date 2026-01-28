@@ -18735,19 +18735,19 @@ useEffect(() => {
         // Search - navigates to search page
         React.createElement('div', {
           style: {
-            padding: '4px 16px 12px',
+            padding: '4px 8px 12px',
             borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
           }
         },
           React.createElement('button', {
-            className: 'w-full flex items-center gap-2 cursor-pointer transition-colors',
+            className: 'w-full flex items-center gap-3 px-3 cursor-pointer transition-colors',
             style: {
               color: activeView === 'search' ? '#1f2937' : '#6b7280',
               fontWeight: activeView === 'search' ? '500' : '400'
             },
             onClick: () => navigateTo('search')
           },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+            React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
             ),
             React.createElement('span', {
