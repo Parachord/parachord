@@ -2040,7 +2040,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 };
 
 // CollectionAlbumCard component - Cinematic Light design
-const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, animationDelay = 0 }) => {
+const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onPlay, onAddToQueue, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no art found), string (URL)
   const [imageUrl, setImageUrl] = useState(album.art || undefined);
 
@@ -2077,7 +2077,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, animationDelay = 
   },
     // Album art - shimmer while fetching, dark placeholder if no art
     React.createElement('div', {
-      className: `album-art-container ${imageUrl === undefined ? 'animate-shimmer' : ''}`,
+      className: `album-art-container group/art ${imageUrl === undefined ? 'animate-shimmer' : ''}`,
       style: {
         width: '100%',
         aspectRatio: '1',
@@ -2097,12 +2097,13 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, animationDelay = 
       imageUrl && typeof imageUrl === 'string' && React.createElement('img', {
         src: imageUrl,
         alt: album.title,
+        className: 'group-hover/art:scale-105',
         style: {
           width: '100%',
           height: '100%',
           objectFit: 'cover',
           opacity: 0,
-          transition: 'opacity 0.35s ease-out'
+          transition: 'opacity 0.35s ease-out, transform 0.3s ease'
         },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; },
@@ -2119,6 +2120,38 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, animationDelay = 
           stroke: 'currentColor'
         },
           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+        )
+      ),
+      // Hover overlay with action buttons
+      React.createElement('div', {
+        className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+        style: { pointerEvents: 'auto', borderRadius: '6px' }
+      },
+        // Play album button
+        onPlay && React.createElement('button', {
+          onClick: (e) => {
+            e.stopPropagation();
+            onPlay(album);
+          },
+          className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+          style: { border: 'none', cursor: 'pointer' },
+          title: 'Play album'
+        },
+          React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+        ),
+        // Add to queue button
+        onAddToQueue && React.createElement('button', {
+          onClick: (e) => {
+            e.stopPropagation();
+            onAddToQueue(album);
+          },
+          className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+          style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+          onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+          onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+          title: 'Add album to queue'
+        },
+          React.createElement(ListPlus, { size: 20 })
         )
       )
     ),
@@ -25070,6 +25103,27 @@ React.createElement('div', {
                     album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
                     getAlbumArt: getAlbumArt,
                     onNavigate: () => handleCollectionAlbumClick(album),
+                    onPlay: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        setTrackLoading(true);
+                        const context = { type: 'album', name: albumData.title, artist: albumData.artist };
+                        const [firstTrack, ...remainingTracks] = albumTracks;
+                        setQueueWithContext(remainingTracks, context);
+                        handlePlay(firstTrack);
+                      }
+                    },
+                    onAddToQueue: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
+                        showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
+                      }
+                    },
                     animationDelay: Math.min(index * 30, 300)
                   })
                 )
@@ -27138,6 +27192,12 @@ React.createElement('div', {
                           }
                         }, track.artist),
 
+                        // Album name - fixed width column
+                        React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
+
                         // Duration - fixed width column
                         React.createElement('span', {
                           className: 'text-right tabular-nums',
@@ -27614,6 +27674,10 @@ React.createElement('div', {
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
                         React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
+                        React.createElement('span', {
                           className: 'text-right tabular-nums',
                           style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
                         }, track.duration ? formatTime(track.duration) : '--:--'),
@@ -27724,6 +27788,10 @@ React.createElement('div', {
                           style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
+                        React.createElement('span', {
+                          className: 'truncate',
+                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                        }, track.album || ''),
                         React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '100px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
@@ -27964,7 +28032,7 @@ React.createElement('div', {
                     },
                       // Album art - Cinematic Light design
                       React.createElement('div', {
-                        className: `album-art-container ${album.image === null || album.image === '' ? '' : !album.image ? 'animate-shimmer' : ''}`,
+                        className: `album-art-container group/art ${album.image === null || album.image === '' ? '' : !album.image ? 'animate-shimmer' : ''}`,
                         style: {
                           aspectRatio: '1',
                           borderRadius: '6px',
@@ -27998,7 +28066,7 @@ React.createElement('div', {
                         album.image && typeof album.image === 'string' && React.createElement('img', {
                           src: album.image,
                           alt: album.name,
-                          className: 'group-hover:scale-105',
+                          className: 'group-hover/art:scale-105',
                           style: {
                             position: 'absolute',
                             inset: 0,
@@ -28024,9 +28092,85 @@ React.createElement('div', {
                             color: '#ffffff',
                             fontSize: '11px',
                             fontWeight: '600',
-                            letterSpacing: '0.02em'
+                            letterSpacing: '0.02em',
+                            zIndex: 10
                           }
-                        }, `#${album.rank}`)
+                        }, `#${album.rank}`),
+                        // Hover overlay with action buttons
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                          style: { pointerEvents: 'auto', borderRadius: '6px' }
+                        },
+                          // Play album button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              setTrackLoading(true);
+                              try {
+                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                if (albumInfo?.tracks?.length > 0) {
+                                  const tracks = albumInfo.tracks.map((t, i) => ({
+                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                    title: t.name,
+                                    artist: album.artist,
+                                    album: album.name,
+                                    duration: t.duration || 0,
+                                    trackNumber: i + 1,
+                                    sources: {}
+                                  }));
+                                  const context = { type: 'album', name: album.name, artist: album.artist };
+                                  const [firstTrack, ...remainingTracks] = tracks;
+                                  setQueueWithContext(remainingTracks, context);
+                                  handlePlay(firstTrack);
+                                } else {
+                                  showToast(`No tracks found for ${album.name}`, 'error');
+                                  setTrackLoading(false);
+                                }
+                              } catch (err) {
+                                showToast(`Failed to load album`, 'error');
+                                setTrackLoading(false);
+                              }
+                            },
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            style: { border: 'none', cursor: 'pointer' },
+                            title: 'Play album'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          ),
+                          // Add to queue button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                if (albumInfo?.tracks?.length > 0) {
+                                  const tracks = albumInfo.tracks.map((t, i) => ({
+                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                    title: t.name,
+                                    artist: album.artist,
+                                    album: album.name,
+                                    duration: t.duration || 0,
+                                    trackNumber: i + 1,
+                                    sources: {}
+                                  }));
+                                  addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
+                                  showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
+                                } else {
+                                  showToast(`No tracks found for ${album.name}`, 'error');
+                                }
+                              } catch (err) {
+                                showToast(`Failed to load album`, 'error');
+                              }
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add album to queue'
+                          },
+                            React.createElement(ListPlus, { size: 20 })
+                          )
+                        )
                       ),
                       // Album info - refined typography
                       React.createElement('div', null,
@@ -28538,6 +28682,10 @@ React.createElement('div', {
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
                           React.createElement('span', {
+                            className: 'truncate',
+                            style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                          }, track.album || ''),
+                          React.createElement('span', {
                             className: 'text-right tabular-nums',
                             style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
                           }, `${track.playCount} plays`),
@@ -28584,10 +28732,10 @@ React.createElement('div', {
                         return React.createElement('div', {
                           key: album.id || index,
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
-                          onClick: () => fetchArtistData(album.artist)
+                          onClick: () => openTopAlbum(album)
                         },
                           React.createElement('div', {
-                            className: 'aspect-square relative',
+                            className: 'aspect-square relative group/art',
                             style: { background: album.imageLoaded && !album.image ? albumPattern.gradient : '#e5e7eb' }
                           },
                             // Shimmer while loading (imageLoaded not yet true)
@@ -28608,15 +28756,90 @@ React.createElement('div', {
                             album.image && React.createElement('img', {
                               src: album.image,
                               alt: album.name,
-                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                               style: { opacity: 0 },
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                               onLoad: (e) => { e.target.style.opacity = '1'; },
                               onError: (e) => { e.target.style.display = 'none'; }
                             }),
                             React.createElement('div', {
-                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium'
-                            }, `#${album.rank}`)
+                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium z-10'
+                            }, `#${album.rank}`),
+                            // Hover overlay with action buttons
+                            React.createElement('div', {
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                              style: { pointerEvents: 'auto' }
+                            },
+                              // Play album button
+                              React.createElement('button', {
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  setTrackLoading(true);
+                                  try {
+                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                    if (albumInfo?.tracks?.length > 0) {
+                                      const tracks = albumInfo.tracks.map((t, i) => ({
+                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                        title: t.name,
+                                        artist: album.artist,
+                                        album: album.name,
+                                        duration: t.duration || 0,
+                                        trackNumber: i + 1,
+                                        sources: {}
+                                      }));
+                                      const context = { type: 'album', name: album.name, artist: album.artist };
+                                      const [firstTrack, ...remainingTracks] = tracks;
+                                      setQueueWithContext(remainingTracks, context);
+                                      handlePlay(firstTrack);
+                                    } else {
+                                      showToast(`No tracks found for ${album.name}`, 'error');
+                                      setTrackLoading(false);
+                                    }
+                                  } catch (err) {
+                                    showToast(`Failed to load album`, 'error');
+                                    setTrackLoading(false);
+                                  }
+                                },
+                                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                style: { border: 'none', cursor: 'pointer' },
+                                title: 'Play album'
+                              },
+                                React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                              ),
+                              // Add to queue button
+                              React.createElement('button', {
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
+                                    if (albumInfo?.tracks?.length > 0) {
+                                      const tracks = albumInfo.tracks.map((t, i) => ({
+                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                        title: t.name,
+                                        artist: album.artist,
+                                        album: album.name,
+                                        duration: t.duration || 0,
+                                        trackNumber: i + 1,
+                                        sources: {}
+                                      }));
+                                      addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
+                                      showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
+                                    } else {
+                                      showToast(`No tracks found for ${album.name}`, 'error');
+                                    }
+                                  } catch (err) {
+                                    showToast(`Failed to load album`, 'error');
+                                  }
+                                },
+                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                title: 'Add album to queue'
+                              },
+                                React.createElement(ListPlus, { size: 20 })
+                              )
+                            )
                           ),
                           React.createElement('div', { className: 'p-3' },
                             React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm' }, album.name),
@@ -28640,7 +28863,7 @@ React.createElement('div', {
                           onClick: () => fetchArtistData(artist.name)
                         },
                           React.createElement('div', {
-                            className: 'aspect-square relative',
+                            className: 'aspect-square relative group/art',
                             style: { background: artist.imageLoaded && !artist.image ? artistPattern.gradient : '#e5e7eb' }
                           },
                             // Shimmer while loading (imageLoaded not yet true)
@@ -28662,14 +28885,62 @@ React.createElement('div', {
                               src: artist.image,
                               alt: artist.name,
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                              className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+                              className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                               style: { opacity: 0 },
                               onLoad: (e) => { e.target.style.opacity = '1'; },
                               onError: (e) => { e.target.style.display = 'none'; }
                             }),
                             React.createElement('div', {
-                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium'
-                            }, `#${artist.rank}`)
+                              className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium z-10'
+                            }, `#${artist.rank}`),
+                            // Hover overlay with action buttons
+                            React.createElement('div', {
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                              style: { pointerEvents: 'auto' }
+                            },
+                              // Play top tracks button
+                              React.createElement('button', {
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  setTrackLoading(true);
+                                  const tracks = await getArtistTopTracks(artist.name);
+                                  if (tracks.length > 0) {
+                                    const context = { type: 'artist', name: artist.name };
+                                    const [firstTrack, ...remainingTracks] = tracks;
+                                    setQueueWithContext(remainingTracks, context);
+                                    handlePlay(firstTrack);
+                                  } else {
+                                    showToast(`No top tracks found for ${artist.name}`, 'error');
+                                    setTrackLoading(false);
+                                  }
+                                },
+                                className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                style: { border: 'none', cursor: 'pointer' },
+                                title: 'Play top 10 tracks'
+                              },
+                                React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                              ),
+                              // Add to queue button
+                              React.createElement('button', {
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  const tracks = await getArtistTopTracks(artist.name);
+                                  if (tracks.length > 0) {
+                                    addToQueue(tracks, { type: 'artist', name: artist.name });
+                                    showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                  } else {
+                                    showToast(`No top tracks found for ${artist.name}`, 'error');
+                                  }
+                                },
+                                className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                title: 'Add top 10 to queue'
+                              },
+                                React.createElement(QueueTop10Icon, { size: 20 })
+                              )
+                            )
                           ),
                           React.createElement('div', { className: 'p-3' },
                             React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm' }, artist.name),
