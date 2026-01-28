@@ -15582,6 +15582,64 @@ ${tracks}
     return releases;
   };
 
+  // Fetch album tracks by artist and album name (for Top Albums hover buttons)
+  const fetchAlbumTracksByName = async (artistName, albumName, albumArt = null) => {
+    try {
+      // Search MusicBrainz for the release
+      const releases = await searchMusicBrainzRelease(albumName, artistName);
+
+      if (releases.length === 0) {
+        console.log(`No MusicBrainz release found for: ${artistName} - ${albumName}`);
+        return [];
+      }
+
+      const release = releases[0];
+      const releaseId = release.id;
+
+      // Fetch the release details with tracks
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+      );
+
+      if (!releaseDetailsResponse.ok) {
+        console.log(`Failed to fetch release details for: ${releaseId}`);
+        return [];
+      }
+
+      const releaseData = await releaseDetailsResponse.json();
+
+      // Extract tracks
+      const tracks = [];
+      if (releaseData.media && releaseData.media.length > 0) {
+        releaseData.media.forEach((medium) => {
+          if (medium.tracks) {
+            medium.tracks.forEach(track => {
+              const trackId = `${artistName}-${track.title || 'untitled'}-${albumName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              tracks.push({
+                id: trackId,
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                length: track.length,
+                duration: track.length ? Math.round(track.length / 1000) : 0,
+                recordingId: track.recording?.id,
+                artist: artistName,
+                album: albumName,
+                albumArt: albumArt,
+                sources: {}
+              });
+            });
+          }
+        });
+      }
+
+      return tracks;
+    } catch (error) {
+      console.error(`Error fetching album tracks for ${artistName} - ${albumName}:`, error);
+      return [];
+    }
+  };
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
@@ -28149,17 +28207,8 @@ React.createElement('div', {
                             onClick: async (e) => {
                               e.stopPropagation();
                               try {
-                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                if (albumInfo?.tracks?.length > 0) {
-                                  const tracks = albumInfo.tracks.map((t, i) => ({
-                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                    title: t.name,
-                                    artist: album.artist,
-                                    album: album.name,
-                                    duration: t.duration || 0,
-                                    trackNumber: i + 1,
-                                    sources: {}
-                                  }));
+                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                if (tracks.length > 0) {
                                   setAddToPlaylistPanel({
                                     open: true,
                                     tracks: tracks,
@@ -28189,17 +28238,8 @@ React.createElement('div', {
                               e.stopPropagation();
                               setTrackLoading(true);
                               try {
-                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                if (albumInfo?.tracks?.length > 0) {
-                                  const tracks = albumInfo.tracks.map((t, i) => ({
-                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                    title: t.name,
-                                    artist: album.artist,
-                                    album: album.name,
-                                    duration: t.duration || 0,
-                                    trackNumber: i + 1,
-                                    sources: {}
-                                  }));
+                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                if (tracks.length > 0) {
                                   const context = { type: 'album', name: album.name, artist: album.artist };
                                   const [firstTrack, ...remainingTracks] = tracks;
                                   setQueueWithContext(remainingTracks, context);
@@ -28224,17 +28264,8 @@ React.createElement('div', {
                             onClick: async (e) => {
                               e.stopPropagation();
                               try {
-                                const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                if (albumInfo?.tracks?.length > 0) {
-                                  const tracks = albumInfo.tracks.map((t, i) => ({
-                                    id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                    title: t.name,
-                                    artist: album.artist,
-                                    album: album.name,
-                                    duration: t.duration || 0,
-                                    trackNumber: i + 1,
-                                    sources: {}
-                                  }));
+                                const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                if (tracks.length > 0) {
                                   addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
                                   showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
                                 } else {
@@ -28859,17 +28890,8 @@ React.createElement('div', {
                                 onClick: async (e) => {
                                   e.stopPropagation();
                                   try {
-                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                    if (albumInfo?.tracks?.length > 0) {
-                                      const tracks = albumInfo.tracks.map((t, i) => ({
-                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                        title: t.name,
-                                        artist: album.artist,
-                                        album: album.name,
-                                        duration: t.duration || 0,
-                                        trackNumber: i + 1,
-                                        sources: {}
-                                      }));
+                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                    if (tracks.length > 0) {
                                       setAddToPlaylistPanel({
                                         open: true,
                                         tracks: tracks,
@@ -28899,17 +28921,8 @@ React.createElement('div', {
                                   e.stopPropagation();
                                   setTrackLoading(true);
                                   try {
-                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                    if (albumInfo?.tracks?.length > 0) {
-                                      const tracks = albumInfo.tracks.map((t, i) => ({
-                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                        title: t.name,
-                                        artist: album.artist,
-                                        album: album.name,
-                                        duration: t.duration || 0,
-                                        trackNumber: i + 1,
-                                        sources: {}
-                                      }));
+                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                    if (tracks.length > 0) {
                                       const context = { type: 'album', name: album.name, artist: album.artist };
                                       const [firstTrack, ...remainingTracks] = tracks;
                                       setQueueWithContext(remainingTracks, context);
@@ -28934,17 +28947,8 @@ React.createElement('div', {
                                 onClick: async (e) => {
                                   e.stopPropagation();
                                   try {
-                                    const albumInfo = await window.electron?.lastfm?.getAlbumInfo?.(album.artist, album.name);
-                                    if (albumInfo?.tracks?.length > 0) {
-                                      const tracks = albumInfo.tracks.map((t, i) => ({
-                                        id: `${album.artist}-${album.name}-${t.name}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                        title: t.name,
-                                        artist: album.artist,
-                                        album: album.name,
-                                        duration: t.duration || 0,
-                                        trackNumber: i + 1,
-                                        sources: {}
-                                      }));
+                                    const tracks = await fetchAlbumTracksByName(album.artist, album.name, album.image);
+                                    if (tracks.length > 0) {
                                       addToQueue(tracks, { type: 'album', name: album.name, artist: album.artist });
                                       showToast(`Added ${tracks.length} tracks from ${album.name}`, 'success');
                                     } else {
