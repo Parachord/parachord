@@ -24973,7 +24973,7 @@ React.createElement('div', {
                 className: 'mb-4',
                 style: { filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.3))' }
               },
-                React.createElement(ParachordWordmark, { fill: 'white', height: 32 })
+                React.createElement(ParachordWordmark, { fill: 'white', height: 38 })
               ),
               // Title (matching other page headers)
               React.createElement('h1', {
@@ -25010,7 +25010,7 @@ React.createElement('div', {
               React.createElement('div', {
                 style: { filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))' }
               },
-                React.createElement(ParachordWordmark, { fill: 'white', height: 22 })
+                React.createElement(ParachordWordmark, { fill: 'white', height: 26 })
               )
             )
           ),
