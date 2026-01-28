@@ -24947,27 +24947,18 @@ React.createElement('div', {
                 transition: 'opacity 300ms ease-out'
               }
             },
-              // Greeting based on time of day
-              React.createElement('p', {
-                className: 'text-white/80 text-lg mb-2',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
-              }, (() => {
-                const hour = new Date().getHours();
-                if (hour < 12) return 'Good morning';
-                if (hour < 17) return 'Good afternoon';
-                return 'Good evening';
-              })()),
-              // Title
+              // Title (matching other page headers)
               React.createElement('h1', {
-                className: 'text-5xl font-bold text-white',
+                className: 'text-5xl font-light text-white',
                 style: {
-                  textShadow: '0 2px 20px rgba(0,0,0,0.4)',
-                  letterSpacing: '-0.02em'
+                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase'
                 }
-              }, 'Welcome Back'),
+              }, 'HOME'),
               // Subtitle with stats
               React.createElement('p', {
-                className: 'text-white/70 text-sm mt-4',
+                className: 'text-white/70 text-sm mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
               }, `${collectionData.albums.length} albums · ${collectionData.artists.length} artists · ${playlists.length} playlists`)
             ),
@@ -24980,9 +24971,13 @@ React.createElement('div', {
               }
             },
               React.createElement('h1', {
-                className: 'text-2xl font-bold text-white',
-                style: { textShadow: '0 2px 10px rgba(0,0,0,0.4)' }
-              }, 'Home')
+                className: 'text-2xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase'
+                }
+              }, 'HOME')
             )
           ),
 
@@ -25210,14 +25205,12 @@ React.createElement('div', {
                     currentQueue.length > 0 && React.createElement('p', { className: 'text-xs text-purple-600 mt-1 font-medium' }, `${currentQueue.length} more in queue`)
                   ),
                   React.createElement('button', {
-                    className: 'w-12 h-12 rounded-full bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-all hover:scale-110',
+                    className: 'w-10 h-10 flex items-center justify-center transition-all hover:scale-110',
                     onClick: (e) => { e.stopPropagation(); handlePlayPause(); }
                   },
-                    React.createElement('svg', { className: 'w-6 h-6', fill: 'currentColor', viewBox: '0 0 24 24' },
-                      isPlaying ?
-                        React.createElement('path', { d: 'M6 4h4v16H6V4zm8 0h4v16h-4V4z' }) :
-                        React.createElement('path', { d: 'M8 5v14l11-7z' })
-                    )
+                    isPlaying
+                      ? React.createElement(Pause, { size: 24, className: 'text-purple-500 fill-purple-500' })
+                      : React.createElement(Play, { size: 24, className: 'text-purple-500 fill-purple-500' })
                   )
                 )
               ),
@@ -25371,7 +25364,7 @@ React.createElement('div', {
 
                 return React.createElement('div', {
                   className: 'grid grid-cols-1 md:grid-cols-2 gap-6',
-                  style: { minHeight: '280px' } // Minimum height for 4 playlist cards
+                  style: { minHeight: '220px' } // Minimum height for 3 playlist cards
                 },
                   // Left column: Your Playlists
                   showPlaylists && React.createElement('div', { className: 'flex flex-col' },
@@ -25385,7 +25378,7 @@ React.createElement('div', {
                     React.createElement('div', { className: 'space-y-2 flex-1' },
                       [...playlists]
                         .sort((a, b) => (b.lastModified || b.addedAt || 0) - (a.lastModified || a.addedAt || 0))
-                        .slice(0, 4)
+                        .slice(0, 3)
                         .map((playlist, index) =>
                           React.createElement('button', {
                             key: playlist.id,
