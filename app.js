@@ -25279,7 +25279,7 @@ React.createElement('div', {
                           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                           animationDelay: `${index * 50}ms`
                         },
-                        onClick: () => fetchArtistData(album.artist)
+                        onClick: () => handleCollectionAlbumClick(album)
                       },
                         React.createElement('div', {
                           className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
