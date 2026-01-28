@@ -24967,11 +24967,7 @@ React.createElement('div', {
             }),
             // EXPANDED STATE
             !homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
-              style: {
-                opacity: homeHeaderCollapsed ? 0 : 1,
-                transition: 'opacity 300ms ease-out'
-              }
+              className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
             },
               // Parachord wordmark centered above title
               React.createElement('div', { className: 'mb-4' },
@@ -24994,11 +24990,7 @@ React.createElement('div', {
             ),
             // COLLAPSED STATE
             homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center justify-between px-6 z-10',
-              style: {
-                opacity: homeHeaderCollapsed ? 1 : 0,
-                transition: 'opacity 300ms ease-out'
-              }
+              className: 'absolute inset-0 flex items-center justify-between px-6 z-10'
             },
               React.createElement('h1', {
                 className: 'text-2xl font-light text-white',
