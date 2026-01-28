@@ -8929,7 +8929,7 @@ const Parachord = () => {
     setShuffleMode(true);
 
     // Set queue and play
-    setQueueWithContext(remainingTracks, context);
+    setQueueWithContext(remainingTracks, context, true);
     setPlaybackContext(context);
     handlePlay(firstTrack);
 
@@ -8939,15 +8939,17 @@ const Parachord = () => {
 
   // Helper to set queue with playback context tagged on each track
   // This allows the context to update when tracks from different sources come up
-  const setQueueWithContext = (tracks, context) => {
+  // respectShuffle: if true and shuffle is ON, shuffle the new queue (for "Play All" actions)
+  //                 if false (default) and shuffle is ON, turn off shuffle (for clicking specific tracks)
+  const setQueueWithContext = (tracks, context, respectShuffle = false) => {
     const taggedTracks = tracks.map(track => ({
       ...track,
       _playbackContext: context
     }));
     console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
 
-    // If shuffle is on, shuffle the new queue and store original order
-    if (shuffleMode && taggedTracks.length > 1) {
+    if (respectShuffle && shuffleMode && taggedTracks.length > 1) {
+      // "Play All" action with shuffle ON - shuffle the new queue
       originalQueueRef.current = [...taggedTracks];
       // Fisher-Yates shuffle
       const shuffled = [...taggedTracks];
@@ -8958,10 +8960,13 @@ const Parachord = () => {
       setCurrentQueue(shuffled);
       console.log('🔀 Shuffle ON - new queue shuffled');
     } else {
+      // Click specific track OR shuffle is off - set queue in order
       setCurrentQueue(taggedTracks);
-      // Clear original queue ref since this is a fresh unshuffled queue
-      if (shuffleMode) {
+      // Turn off shuffle when clicking a specific track (not respecting shuffle)
+      if (!respectShuffle && shuffleMode) {
+        setShuffleMode(false);
         originalQueueRef.current = null;
+        console.log('🔀 Shuffle OFF - user selected specific track');
       }
     }
     setPlaybackContext(context);
@@ -19940,7 +19945,7 @@ useEffect(() => {
                                 const context = { type: 'artist', name: artist.name };
                                 const [firstTrack, ...remainingTracks] = tracks;
                                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context);
+                                setQueueWithContext(remainingTracks, context, true);
                                 handlePlay(taggedFirstTrack);
                               } else {
                                 setTrackLoading(false);
@@ -20137,7 +20142,7 @@ useEffect(() => {
                                 const [firstTrack, ...remainingTracks] = prefetched.tracks;
                                 // Tag the first track with context so queue navigation works correctly
                                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context);
+                                setQueueWithContext(remainingTracks, context, true);
                                 handlePlay(taggedFirstTrack);
                               } else {
                                 setTrackLoading(false);
@@ -20549,7 +20554,7 @@ useEffect(() => {
                               const [firstTrack, ...remainingTracks] = tracksWithIds;
                               // Tag the first track with context so queue navigation works correctly
                               const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                              setQueueWithContext(remainingTracks, context);
+                              setQueueWithContext(remainingTracks, context, true);
                               handlePlay(taggedFirstTrack);
                             } else {
                               setTrackLoading(false);
@@ -20859,7 +20864,7 @@ useEffect(() => {
                       const [firstTrack, ...remainingTracks] = tracks;
                       // Tag the first track with context so queue navigation works correctly
                       const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                      setQueueWithContext(remainingTracks, context);
+                      setQueueWithContext(remainingTracks, context, true);
                       handlePlay(taggedFirstTrack);
                     } else {
                       setTrackLoading(false);
@@ -21263,7 +21268,7 @@ useEffect(() => {
                             const context = { type: 'album', name: album.title, artist: album['artist-credit']?.[0]?.name };
                             const [firstTrack, ...remainingTracks] = prefetched.tracks;
                             const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context);
+                            setQueueWithContext(remainingTracks, context, true);
                             handlePlay(taggedFirstTrack);
                           } else {
                             showToast('Could not load album tracks', 'error');
@@ -21525,7 +21530,7 @@ useEffect(() => {
                   const context = { type: 'artist', name: currentArtist.name };
                   const [firstTrack, ...remainingTracks] = tracks;
                   const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                  setQueueWithContext(remainingTracks, context);
+                  setQueueWithContext(remainingTracks, context, true);
                   handlePlay(taggedFirstTrack);
                 } else {
                   setTrackLoading(false);
@@ -21602,7 +21607,7 @@ useEffect(() => {
                   const context = { type: 'artist', name: currentArtist.name };
                   const [firstTrack, ...remainingTracks] = tracks;
                   const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                  setQueueWithContext(remainingTracks, context);
+                  setQueueWithContext(remainingTracks, context, true);
                   handlePlay(taggedFirstTrack);
                 } else {
                   setTrackLoading(false);
@@ -21981,7 +21986,7 @@ React.createElement('div', {
                 });
                 const [firstTrack, ...remainingTracks] = tracks;
                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                setQueueWithContext(remainingTracks, context);
+                setQueueWithContext(remainingTracks, context, true);
                 handlePlay(taggedFirstTrack);
               }
             },
@@ -22410,7 +22415,7 @@ React.createElement('div', {
                       const [firstTrack, ...remainingTracks] = tracks;
                       // Tag the first track with context so queue navigation works correctly
                       const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                      setQueueWithContext(remainingTracks, context);
+                      setQueueWithContext(remainingTracks, context, true);
                       handlePlay(taggedFirstTrack);
                     } else {
                       // Fetch and play if no tracks cached
@@ -22421,7 +22426,7 @@ React.createElement('div', {
                         const [firstTrack, ...remainingTracks] = newPrefetched.tracks;
                         // Tag the first track with context so queue navigation works correctly
                         const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                        setQueueWithContext(remainingTracks, context);
+                        setQueueWithContext(remainingTracks, context, true);
                         handlePlay(taggedFirstTrack);
                       }
                     }
@@ -23081,7 +23086,7 @@ React.createElement('div', {
                                 const [firstTrack, ...remainingTracks] = tracks;
                                 // Tag the first track with context so queue navigation works correctly
                                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context);
+                                setQueueWithContext(remainingTracks, context, true);
                                 handlePlay(taggedFirstTrack);
                               } else {
                                 setTrackLoading(false);
@@ -23686,7 +23691,7 @@ React.createElement('div', {
                             const context = { type: 'playlist', id: selectedPlaylist.id, name: selectedPlaylist.title };
                             const [firstTrack, ...remainingTracks] = tracksWithIds;
                             const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context);
+                            setQueueWithContext(remainingTracks, context, true);
                             handlePlay(taggedFirstTrack);
                           } else {
                             setTrackLoading(false);
@@ -24504,7 +24509,7 @@ React.createElement('div', {
                               const [firstTrack, ...remainingTracks] = tracksWithIds;
                               // Tag the first track with context so queue navigation works correctly
                               const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                              setQueueWithContext(remainingTracks, context);
+                              setQueueWithContext(remainingTracks, context, true);
                               handlePlay(taggedFirstTrack);
                             } else {
                               setTrackLoading(false);
@@ -24723,25 +24728,11 @@ React.createElement('div', {
                           const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
                           return { ...track, id: trackId, sources: {} };
                         });
-                        // Set all tracks after first as queue
-                        const remainingTracks = tracksWithIds.slice(1);
-                        // If shuffle is on, shuffle the queue
-                        if (shuffleMode && remainingTracks.length > 1) {
-                          originalQueueRef.current = [...remainingTracks];
-                          const shuffled = [...remainingTracks];
-                          for (let i = shuffled.length - 1; i > 0; i--) {
-                            const j = Math.floor(Math.random() * (i + 1));
-                            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-                          }
-                          setCurrentQueue(shuffled);
-                        } else {
-                          setCurrentQueue(remainingTracks);
-                          if (shuffleMode) {
-                            originalQueueRef.current = null;
-                          }
-                        }
-                        // Play first track
-                        handlePlay(tracksWithIds[0]);
+                        const context = { type: 'playlist', name: playlist.title };
+                        const [firstTrack, ...remainingTracks] = tracksWithIds;
+                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                        setQueueWithContext(remainingTracks, context, true);
+                        handlePlay(taggedFirstTrack);
                       }
                     }
                   },
@@ -25143,7 +25134,7 @@ React.createElement('div', {
                         const [firstTrack, ...remainingTracks] = tracks;
                         // Tag the first track with context so queue navigation works correctly
                         const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                        setQueueWithContext(remainingTracks, context);
+                        setQueueWithContext(remainingTracks, context, true);
                         handlePlay(taggedFirstTrack);
                       } else {
                         setTrackLoading(false);
@@ -25233,7 +25224,7 @@ React.createElement('div', {
                         setTrackLoading(true);
                         const context = { type: 'album', name: albumData.title, artist: albumData.artist };
                         const [firstTrack, ...remainingTracks] = albumTracks;
-                        setQueueWithContext(remainingTracks, context);
+                        setQueueWithContext(remainingTracks, context, true);
                         handlePlay(firstTrack);
                       }
                     },
@@ -26239,7 +26230,7 @@ React.createElement('div', {
                             const [firstTrack, ...remainingTracks] = tracks;
                             // Tag the first track with context so queue navigation works correctly
                             const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                            setQueueWithContext(remainingTracks, context);
+                            setQueueWithContext(remainingTracks, context, true);
                             handlePlay(taggedFirstTrack);
                           } else {
                             setTrackLoading(false);
@@ -26717,7 +26708,7 @@ React.createElement('div', {
                           const [firstTrack, ...remainingTracks] = tracks;
                           // Tag the first track with context so queue navigation works correctly
                           const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                          setQueueWithContext(remainingTracks, context);
+                          setQueueWithContext(remainingTracks, context, true);
                           handlePlay(taggedFirstTrack);
                         } else {
                           setTrackLoading(false);
@@ -27176,7 +27167,7 @@ React.createElement('div', {
                                 const [firstTrack, ...remainingTracks] = tracks;
                                 // Tag the first track with context so queue navigation works correctly
                                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context);
+                                setQueueWithContext(remainingTracks, context, true);
                                 handlePlay(taggedFirstTrack);
                               } else {
                                 setTrackLoading(false);
@@ -28059,7 +28050,7 @@ React.createElement('div', {
                                 const [firstTrack, ...remainingTracks] = tracks;
                                 // Tag the first track with context so queue navigation works correctly
                                 const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context);
+                                setQueueWithContext(remainingTracks, context, true);
                                 handlePlay(taggedFirstTrack);
                               } else {
                                 setTrackLoading(false);
@@ -28263,7 +28254,7 @@ React.createElement('div', {
                                 if (tracks.length > 0) {
                                   const context = { type: 'album', name: album.name, artist: album.artist };
                                   const [firstTrack, ...remainingTracks] = tracks;
-                                  setQueueWithContext(remainingTracks, context);
+                                  setQueueWithContext(remainingTracks, context, true);
                                   handlePlay(firstTrack);
                                 } else {
                                   showToast(`No tracks found for ${album.name}`, 'error');
@@ -28946,7 +28937,7 @@ React.createElement('div', {
                                     if (tracks.length > 0) {
                                       const context = { type: 'album', name: album.name, artist: album.artist };
                                       const [firstTrack, ...remainingTracks] = tracks;
-                                      setQueueWithContext(remainingTracks, context);
+                                      setQueueWithContext(remainingTracks, context, true);
                                       handlePlay(firstTrack);
                                     } else {
                                       showToast(`No tracks found for ${album.name}`, 'error');
@@ -29057,7 +29048,7 @@ React.createElement('div', {
                                   if (tracks.length > 0) {
                                     const context = { type: 'artist', name: artist.name };
                                     const [firstTrack, ...remainingTracks] = tracks;
-                                    setQueueWithContext(remainingTracks, context);
+                                    setQueueWithContext(remainingTracks, context, true);
                                     handlePlay(firstTrack);
                                   } else {
                                     showToast(`No top tracks found for ${artist.name}`, 'error');
