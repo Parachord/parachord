@@ -7289,13 +7289,13 @@ const Parachord = () => {
       }
 
       // Pause Spotify if it's playing
-      if (spotifyPlayer && streamingPlaybackActiveRef.current) {
+      if (spotifyToken && streamingPlaybackActiveRef.current) {
         console.log('⏹️ Pausing Spotify for local file playback');
-        try {
-          spotifyPlayer.pause();
-        } catch (e) {
-          console.error('Failed to pause Spotify:', e);
-        }
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        }).catch(e => console.error('Failed to pause Spotify:', e));
+        streamingPlaybackActiveRef.current = false;
       }
 
       // Create audio element if needed
