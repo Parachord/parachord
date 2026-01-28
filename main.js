@@ -17,6 +17,8 @@ console.log('Working directory:', __dirname);
 console.log('SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? '✅ Loaded' : '❌ MISSING');
 console.log('SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? '✅ Loaded' : '❌ MISSING');
 console.log('SPOTIFY_REDIRECT_URI:', process.env.SPOTIFY_REDIRECT_URI || 'Using default');
+console.log('SOUNDCLOUD_CLIENT_ID:', process.env.SOUNDCLOUD_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
+console.log('SOUNDCLOUD_CLIENT_SECRET:', process.env.SOUNDCLOUD_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
 if (!process.env.SPOTIFY_CLIENT_ID) {
   console.error('');
   console.error('⚠️  WARNING: .env file not found or SPOTIFY_CLIENT_ID not set!');
@@ -152,9 +154,44 @@ function startAuthServer() {
           </body>
         </html>
       `);
-      
+
       // Exchange code for token
       exchangeCodeForToken(code);
+    }
+  });
+
+  // SoundCloud OAuth callback
+  expressApp.get('/callback/soundcloud', (req, res) => {
+    const code = req.query.code;
+    const error = req.query.error;
+
+    if (error) {
+      res.send(`
+        <html>
+          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>❌ Authentication Failed</h1>
+            <p>${error}</p>
+            <p>You can close this window.</p>
+          </body>
+        </html>
+      `);
+      mainWindow?.webContents.send('soundcloud-auth-error', error);
+      return;
+    }
+
+    if (code) {
+      res.send(`
+        <html>
+          <body style="background: #1e1b4b; color: #FF5500; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>✅ Success!</h1>
+            <p>SoundCloud authentication successful. You can close this window.</p>
+            <script>setTimeout(() => window.close(), 2000);</script>
+          </body>
+        </html>
+      `);
+
+      // Exchange code for token
+      exchangeSoundCloudCodeForToken(code);
     }
   });
 
@@ -264,6 +301,70 @@ async function exchangeCodeForToken(code) {
   } catch (error) {
     console.error('Token exchange error:', error);
     mainWindow?.webContents.send('spotify-auth-error', error.message);
+  }
+}
+
+// SoundCloud token exchange
+async function exchangeSoundCloudCodeForToken(code) {
+  console.log('=== SoundCloud Exchange Code for Token ===');
+  console.log('Code received:', code ? 'Yes' : 'No');
+
+  // Get credentials from environment variables
+  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
+  const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
+  const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+
+  // Validate credentials exist
+  if (!clientId || !clientSecret) {
+    console.error('❌ Missing SoundCloud credentials in .env file!');
+    console.error('Please add SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET to your .env file');
+    mainWindow?.webContents.send('soundcloud-auth-error', 'Missing SoundCloud credentials');
+    return;
+  }
+
+  try {
+    const response = await fetch('https://api.soundcloud.com/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirectUri,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+
+    const data = await response.json();
+    console.log('SoundCloud API response:', data.access_token ? 'Token received' : 'No token', data.error || '');
+
+    if (data.access_token) {
+      const expiryTime = Date.now() + (data.expires_in * 1000);
+
+      console.log('Saving SoundCloud token to store...');
+      store.set('soundcloud_token', data.access_token);
+      store.set('soundcloud_refresh_token', data.refresh_token);
+      store.set('soundcloud_token_expiry', expiryTime);
+      console.log('SoundCloud token saved. Expiry:', new Date(expiryTime).toISOString());
+
+      // Verify it was saved
+      const savedToken = store.get('soundcloud_token');
+      console.log('Verification - SoundCloud token saved:', !!savedToken);
+
+      mainWindow?.webContents.send('soundcloud-auth-success', {
+        token: data.access_token,
+        expiresIn: data.expires_in
+      });
+      console.log('SoundCloud auth success event sent to renderer');
+    } else {
+      console.error('No access token in SoundCloud response:', data);
+      mainWindow?.webContents.send('soundcloud-auth-error', data.error_description || 'Failed to get access token');
+    }
+  } catch (error) {
+    console.error('SoundCloud token exchange error:', error);
+    mainWindow?.webContents.send('soundcloud-auth-error', error.message);
   }
 }
 
@@ -593,6 +694,119 @@ ipcMain.handle('spotify-check-token', async () => {
 
   console.log('✗ No valid token found and refresh failed or not available');
   return null;
+});
+
+// SoundCloud OAuth handler
+ipcMain.handle('soundcloud-auth', async () => {
+  // Get credentials from environment variables
+  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
+  const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+
+  // Validate client ID exists
+  if (!clientId) {
+    console.error('❌ Missing SOUNDCLOUD_CLIENT_ID in .env file!');
+    return { success: false, error: 'Missing SoundCloud Client ID' };
+  }
+
+  // SoundCloud OAuth scopes
+  // See: https://developers.soundcloud.com/docs/api/guide#authentication
+  const scopes = [
+    'non-expiring'  // Request non-expiring token (still has refresh token though)
+  ].join(' ');
+
+  const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+
+  console.log('Opening SoundCloud auth URL:', authUrl);
+
+  // Open in system browser
+  shell.openExternal(authUrl);
+
+  return { success: true };
+});
+
+// Check if SoundCloud token exists and auto-refresh if expired
+ipcMain.handle('soundcloud-check-token', async () => {
+  console.log('=== SoundCloud Check Token Handler Called ===');
+  const token = store.get('soundcloud_token');
+  const expiry = store.get('soundcloud_token_expiry');
+  const refreshToken = store.get('soundcloud_refresh_token');
+
+  console.log('SoundCloud token exists:', !!token);
+  console.log('Expiry:', expiry);
+  console.log('Refresh token exists:', !!refreshToken);
+  console.log('Current time:', Date.now());
+  console.log('Is expired:', expiry && Date.now() >= expiry);
+
+  // If token is valid, return it
+  if (token && expiry && Date.now() < expiry) {
+    console.log('✓ Returning valid SoundCloud token');
+    return { token, expiresAt: expiry };
+  }
+
+  // Get credentials from environment
+  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
+  const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
+
+  // If token is expired but we have a refresh token, try to refresh
+  if (refreshToken && clientId && clientSecret) {
+    console.log('🔄 SoundCloud token expired, attempting automatic refresh...');
+
+    try {
+      const response = await fetch('https://api.soundcloud.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret
+        })
+      });
+
+      if (!response.ok) {
+        console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
+        throw new Error(`Token refresh failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ SoundCloud token refreshed successfully');
+
+      // Calculate expiry time (tokens typically last 1 hour)
+      const expiresIn = data.expires_in || 3600; // Default to 1 hour
+      const newExpiry = Date.now() + (expiresIn * 1000);
+
+      // Save new token
+      store.set('soundcloud_token', data.access_token);
+      store.set('soundcloud_token_expiry', newExpiry);
+
+      // Update refresh token if a new one was provided
+      if (data.refresh_token) {
+        store.set('soundcloud_refresh_token', data.refresh_token);
+      }
+
+      console.log('New SoundCloud token expiry:', new Date(newExpiry).toISOString());
+
+      return { token: data.access_token, expiresAt: newExpiry };
+    } catch (error) {
+      console.error('Failed to refresh SoundCloud token:', error);
+      // Fall through to return null
+    }
+  }
+
+  console.log('✗ No valid SoundCloud token found and refresh failed or not available');
+  return null;
+});
+
+// Disconnect SoundCloud (clear tokens)
+ipcMain.handle('soundcloud-disconnect', async () => {
+  console.log('=== SoundCloud Disconnect ===');
+  store.delete('soundcloud_token');
+  store.delete('soundcloud_refresh_token');
+  store.delete('soundcloud_token_expiry');
+  console.log('SoundCloud tokens cleared');
+  return { success: true };
 });
 
 // Debug handler to inspect store contents

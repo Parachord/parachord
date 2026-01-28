@@ -370,6 +370,16 @@ class ResolverLoader {
       if (url.includes('/album/')) return 'album';
       if (url.includes('/track/')) return 'track';
     }
+    // SoundCloud
+    if (url.includes('soundcloud.com')) {
+      if (url.includes('/sets/')) return 'playlist';
+      // Artist page: soundcloud.com/username (no additional path segments for tracks)
+      // Track page: soundcloud.com/username/trackname
+      const path = url.replace(/^https?:\/\/(www\.)?soundcloud\.com\/?/, '');
+      const segments = path.split('/').filter(s => s && !s.startsWith('?'));
+      if (segments.length >= 2) return 'track';
+      if (segments.length === 1) return 'artist';
+    }
     return 'unknown';
   }
 }
