@@ -24104,14 +24104,19 @@ React.createElement('div', {
                     title: selectedPlaylist.title
                   }, selectedPlaylist.title),
                   // Track count - matching grid typography (11px)
-                  React.createElement('div', {
-                    className: 'truncate',
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      marginTop: '2px'
-                    }
-                  }, `${playlistTracks.length} Songs`)
+                  playlistTracks.length === 0 && selectedPlaylist?.isEphemeral ?
+                    React.createElement('div', {
+                      className: 'h-4 w-20 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                      style: { marginTop: '2px' }
+                    }) :
+                    React.createElement('div', {
+                      className: 'truncate',
+                      style: {
+                        fontSize: '11px',
+                        color: '#6b7280',
+                        marginTop: '2px'
+                      }
+                    }, `${playlistTracks.length} Songs`)
                 );
               })(),
 
@@ -24436,8 +24441,47 @@ React.createElement('div', {
                   })
                 )
               :
-                React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-                  'Loading tracks...'
+                // Skeleton loaders while tracks are loading
+                React.createElement('div', { className: 'space-y-0' },
+                  Array.from({ length: 8 }).map((_, index) =>
+                    React.createElement('div', {
+                      key: `skeleton-${index}`,
+                      className: 'flex items-center gap-4 py-3 px-4',
+                      style: { borderRadius: '8px', marginBottom: '2px' }
+                    },
+                      // Track number skeleton
+                      React.createElement('div', {
+                        className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '32px', animationDelay: `${index * 50}ms` }
+                      }),
+                      // Track title skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '360px', flexShrink: 0, animationDelay: `${index * 50 + 25}ms` }
+                      }),
+                      // Artist name skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '180px', flexShrink: 0, animationDelay: `${index * 50 + 50}ms` }
+                      }),
+                      // Duration skeleton
+                      React.createElement('div', {
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { width: '40px', marginLeft: 'auto', animationDelay: `${index * 50 + 75}ms` }
+                      }),
+                      // Resolver icons skeleton
+                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: '100px', flexShrink: 0 } },
+                        React.createElement('div', {
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                          style: { animationDelay: `${index * 50 + 100}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                          style: { animationDelay: `${index * 50 + 125}ms` }
+                        })
+                      )
+                    )
+                  )
                 );
               })()
             )
@@ -25449,17 +25493,15 @@ React.createElement('div', {
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Continue Listening')
                 ),
                 React.createElement('div', {
-                  className: 'release-card flex items-center gap-4 p-4 cursor-pointer',
+                  className: 'flex items-center gap-4 p-4 cursor-pointer rounded-xl transition-colors duration-200 hover:bg-purple-50/80',
                   style: {
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)',
-                    borderRadius: '12px',
-                    border: 'none'
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%)'
                   },
                   onClick: () => { if (!isPlaying) handlePlayPause(); }
                 },
                   React.createElement('div', {
                     className: 'w-16 h-16 rounded-lg overflow-hidden flex-shrink-0',
-                    style: { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+                    style: { boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }
                   },
                     currentTrack.albumArt ?
                       React.createElement('img', { src: currentTrack.albumArt, alt: currentTrack.album, className: 'w-full h-full object-cover' }) :
@@ -25688,10 +25730,10 @@ React.createElement('div', {
                           tracksLoaded: jam.tracksLoaded,
                           isExternal: true,
                           isEphemeral: true,
-                          source: 'listenbrainz'
+                          source: 'listenbrainz',
+                          creator: 'ListenBrainz'
                         };
-                        setSelectedPlaylist(playlist);
-                        navigateTo('playlist-view');
+                        loadPlaylist(playlist);
                       }
                     },
                       // 2x2 mosaic album art with hover play button
@@ -25964,14 +26006,16 @@ React.createElement('div', {
                       React.createElement('svg', { className: 'w-12 h-12 text-gray-300 mb-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })
                       ),
-                      friends.length === 0 ? React.createElement(React.Fragment, null,
-                        React.createElement('p', { className: 'text-gray-600 text-sm text-center font-medium mb-1' }, 'Add friends to see what they\'re listening to'),
-                        React.createElement('p', { className: 'text-gray-400 text-xs text-center mb-4' }, 'Import users from Last.fm or ListenBrainz'),
+                      React.createElement(React.Fragment, null,
+                        React.createElement('p', { className: 'text-gray-600 text-sm text-center font-medium mb-1' },
+                          friends.length === 0 ? 'Add friends to see what they\'re listening to' : 'No friends currently listening'
+                        ),
+                        friends.length === 0 && React.createElement('p', { className: 'text-gray-400 text-xs text-center mb-3' }, 'Import users from Last.fm or ListenBrainz'),
                         React.createElement('button', {
                           onClick: () => setAddFriendModalOpen(true),
-                          className: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
+                          className: 'mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors'
                         }, 'Add Friend')
-                      ) : React.createElement('p', { className: 'text-gray-500 text-sm text-center' }, 'No friends currently listening')
+                      )
                     )
                   )
                 );
