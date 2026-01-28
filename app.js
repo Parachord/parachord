@@ -7616,6 +7616,54 @@ const Parachord = () => {
 
         console.log('🎵 Got SoundCloud stream URL');
 
+        // Create audio element if needed (same setup as local files)
+        if (!audioRef.current) {
+          console.log('🎵 Creating new Audio element for SoundCloud');
+          audioRef.current = new Audio();
+          audioRef.current.addEventListener('timeupdate', () => {
+            if (audioRef.current) {
+              const currentTime = audioRef.current.currentTime;
+              setProgress(currentTime);
+              if (window.scrobbleManager) {
+                window.scrobbleManager.onProgressUpdate(currentTime);
+              }
+            }
+          });
+          audioRef.current.addEventListener('loadedmetadata', () => {
+            const audioDuration = audioRef.current?.duration;
+            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+              console.log('🎵 SoundCloud audio metadata loaded, duration:', audioDuration);
+              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+            }
+          });
+          audioRef.current.addEventListener('durationchange', () => {
+            const audioDuration = audioRef.current?.duration;
+            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+              console.log('🎵 SoundCloud audio duration changed:', audioDuration);
+              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+            }
+          });
+          audioRef.current.addEventListener('ended', () => {
+            console.log('🎵 SoundCloud playback ended');
+            handleNextRef.current?.();
+          });
+          audioRef.current.addEventListener('error', (e) => {
+            const mediaError = e.target.error;
+            console.error('🎵 SoundCloud audio error:', mediaError);
+            let errorMessage = 'Could not play this SoundCloud track.';
+            if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+              errorMessage = 'Network error while streaming. Please try again.';
+            } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+              errorMessage = 'Error decoding the audio stream.';
+            }
+            showConfirmDialog({
+              type: 'error',
+              title: 'SoundCloud Playback Error',
+              message: errorMessage
+            });
+          });
+        }
+
         // Use HTML5 Audio to play the stream
         audioRef.current.src = streamUrl;
         const volumeToApply = isMutedRef.current ? 0 : volume;
