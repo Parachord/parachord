@@ -82,7 +82,7 @@
         "urlLookup": true
       },
       "requiresAuth": true,
-      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/soundcloud.axe",
+      "builtin": true,
       "category": "streaming",
       "tags": ["streaming", "free", "indie", "soundcloud", "oauth"]
     },
