@@ -32495,6 +32495,7 @@ useEffect(() => {
                     key: 'prev-art-' + playbarAlbumArt.previous,
                     src: playbarAlbumArt.previous,
                     alt: '',
+                    draggable: false,
                     className: 'absolute inset-0 w-full h-full object-cover',
                     style: {
                       opacity: playbarAlbumArt.isLoaded ? 0 : 1,
@@ -32506,6 +32507,7 @@ useEffect(() => {
                     key: 'curr-art-' + playbarAlbumArt.current,
                     src: playbarAlbumArt.current,
                     alt: currentTrack.album,
+                    draggable: false,
                     className: 'absolute inset-0 w-full h-full object-cover',
                     style: {
                       opacity: playbarAlbumArt.isLoaded ? 1 : 0,
