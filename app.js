@@ -6172,6 +6172,12 @@ const Parachord = () => {
       window.electron.onMenuAction((action) => {
         console.log('📋 Menu action:', action);
         switch (action) {
+          case 'new-playlist':
+            // Open new playlist form and navigate to playlists view
+            setActiveView('playlists');
+            setNewPlaylistFormOpen(true);
+            setNewPlaylistName('');
+            break;
           case 'open-settings':
             setActiveView('settings');
             break;
@@ -6200,7 +6206,7 @@ const Parachord = () => {
             }
             break;
           case 'next-track':
-            handleNext();
+            handleNext(true);
             break;
           case 'previous-track':
             handlePrevious();
@@ -6208,27 +6214,11 @@ const Parachord = () => {
           case 'toggle-shuffle':
             setShuffleMode(prev => !prev);
             break;
-          case 'toggle-repeat':
-            setRepeatMode(prev => prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off');
-            break;
           case 'volume-up':
             setVolume(prev => Math.min(1, prev + 0.1));
             break;
           case 'volume-down':
             setVolume(prev => Math.max(0, prev - 0.1));
-            break;
-          case 'show-queue':
-            setQueueDrawerOpen(true);
-            break;
-          case 'show-collection':
-            setActiveView('collection');
-            break;
-          case 'show-local-files':
-            setActiveView('localFiles');
-            break;
-          case 'view-logs':
-            // Open DevTools console
-            window.electron?.invoke?.('toggle-devtools');
             break;
         }
       });

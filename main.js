@@ -753,6 +753,12 @@ app.whenReady().then(() => {
       label: 'File',
       submenu: [
         {
+          label: 'New Playlist',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-playlist')
+        },
+        { type: 'separator' },
+        {
           label: 'Open URL...',
           accelerator: 'CmdOrCtrl+U',
           click: () => mainWindow?.webContents.send('menu-action', 'open-url')
@@ -828,11 +834,6 @@ app.whenReady().then(() => {
           accelerator: 'CmdOrCtrl+S',
           click: () => mainWindow?.webContents.send('menu-action', 'toggle-shuffle')
         },
-        {
-          label: 'Repeat',
-          accelerator: 'CmdOrCtrl+R',
-          click: () => mainWindow?.webContents.send('menu-action', 'toggle-repeat')
-        },
         { type: 'separator' },
         {
           label: 'Volume Up',
@@ -851,25 +852,7 @@ app.whenReady().then(() => {
     {
       label: 'View',
       submenu: [
-        {
-          label: 'Queue',
-          accelerator: 'CmdOrCtrl+1',
-          click: () => mainWindow?.webContents.send('menu-action', 'show-queue')
-        },
-        {
-          label: 'Collection',
-          accelerator: 'CmdOrCtrl+2',
-          click: () => mainWindow?.webContents.send('menu-action', 'show-collection')
-        },
-        {
-          label: 'Local Files',
-          accelerator: 'CmdOrCtrl+3',
-          click: () => mainWindow?.webContents.send('menu-action', 'show-local-files')
-        },
-        { type: 'separator' },
         { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
@@ -909,10 +892,8 @@ app.whenReady().then(() => {
           }
         },
         { type: 'separator' },
-        {
-          label: 'View Logs',
-          click: () => mainWindow?.webContents.send('menu-action', 'view-logs')
-        }
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' }
       ]
     }
   ];
