@@ -762,16 +762,6 @@ app.whenReady().then(() => {
           accelerator: 'CmdOrCtrl+N',
           click: () => mainWindow?.webContents.send('menu-action', 'new-playlist')
         },
-        { type: 'separator' },
-        {
-          label: 'Open URL...',
-          accelerator: 'CmdOrCtrl+U',
-          click: () => mainWindow?.webContents.send('menu-action', 'open-url')
-        },
-        {
-          label: 'Add Folder to Library...',
-          click: () => mainWindow?.webContents.send('menu-action', 'add-folder')
-        },
         {
           label: 'Add Friend...',
           click: () => mainWindow?.webContents.send('menu-action', 'add-friend')
@@ -832,27 +822,11 @@ app.whenReady().then(() => {
           accelerator: 'CmdOrCtrl+Right',
           click: () => mainWindow?.webContents.send('menu-action', 'next-track')
         },
-        {
-          label: 'Previous Track',
-          accelerator: 'CmdOrCtrl+Left',
-          click: () => mainWindow?.webContents.send('menu-action', 'previous-track')
-        },
         { type: 'separator' },
         {
           label: 'Shuffle',
           accelerator: 'CmdOrCtrl+S',
           click: () => mainWindow?.webContents.send('menu-action', 'toggle-shuffle')
-        },
-        { type: 'separator' },
-        {
-          label: 'Volume Up',
-          accelerator: 'CmdOrCtrl+Up',
-          click: () => mainWindow?.webContents.send('menu-action', 'volume-up')
-        },
-        {
-          label: 'Volume Down',
-          accelerator: 'CmdOrCtrl+Down',
-          click: () => mainWindow?.webContents.send('menu-action', 'volume-down')
         }
       ]
     },
