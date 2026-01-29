@@ -9262,6 +9262,9 @@ const Parachord = () => {
       return div.innerHTML;
     };
 
+    // Embed track data for Play in Parachord
+    const trackData = JSON.stringify(track).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9278,6 +9281,7 @@ const Parachord = () => {
       --bg-secondary: #1a1a1a;
       --text-primary: #ffffff;
       --text-secondary: #a0a0a0;
+      --accent: #8b5cf6;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -9319,7 +9323,60 @@ const Parachord = () => {
     .track-artist {
       font-size: 1.125rem;
       color: var(--text-secondary);
-      margin-bottom: 32px;
+      margin-bottom: 24px;
+    }
+    .parachord-section {
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #333;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    .status-dot.connected {
+      background: #22c55e;
+    }
+    .play-btn {
+      width: 100%;
+      padding: 16px 24px;
+      background: linear-gradient(135deg, var(--accent), #ec4899);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, opacity 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .play-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+    }
+    .play-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .services-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
     }
     .services {
       display: flex;
@@ -9361,7 +9418,7 @@ const Parachord = () => {
       font-size: 0.75rem;
       color: var(--text-secondary);
     }
-    .footer a { color: #8b5cf6; text-decoration: none; }
+    .footer a { color: var(--accent); text-decoration: none; }
   </style>
 </head>
 <body>
@@ -9371,11 +9428,108 @@ const Parachord = () => {
     </div>
     <h1 class="track-title">${escapeHtml(track.title || query)}</h1>
     ${track.artist ? `<p class="track-artist">${escapeHtml(track.artist)}</p>` : ''}
+
+    <div class="parachord-section">
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Checking for Parachord...</span>
+      </div>
+      <button class="play-btn" id="playBtn" disabled>
+        ▶ Play in Parachord
+      </button>
+    </div>
+
+    <p class="services-header">Also Available On</p>
     <div class="services">
       ${serviceLinksHtml}
     </div>
     <p class="footer">Created with <a href="https://parachord.app">Parachord</a></p>
   </div>
+
+  <script>
+    const TRACK = ${trackData};
+    const WS_URL = 'ws://127.0.0.1:9876';
+
+    let socket = null;
+    let isConnected = false;
+    let requestId = 0;
+    const pending = new Map();
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const playBtn = document.getElementById('playBtn');
+
+    function connect() {
+      try {
+        socket = new WebSocket(WS_URL);
+
+        socket.onopen = () => {
+          isConnected = true;
+          statusDot.classList.add('connected');
+          statusText.textContent = 'Connected to Parachord';
+          playBtn.disabled = false;
+        };
+
+        socket.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.requestId && pending.has(msg.requestId)) {
+              pending.get(msg.requestId)(msg);
+              pending.delete(msg.requestId);
+            }
+          } catch (err) {}
+        };
+
+        socket.onclose = () => {
+          isConnected = false;
+          statusDot.classList.remove('connected');
+          statusText.textContent = 'Parachord not detected';
+          playBtn.disabled = true;
+          setTimeout(connect, 3000);
+        };
+
+        socket.onerror = () => {};
+      } catch (err) {
+        statusText.textContent = 'Parachord not detected';
+        setTimeout(connect, 3000);
+      }
+    }
+
+    function send(msg) {
+      return new Promise((resolve) => {
+        const id = 'req-' + (++requestId);
+        msg.requestId = id;
+        pending.set(id, resolve);
+        socket.send(JSON.stringify(msg));
+        setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            resolve({ success: false });
+          }
+        }, 5000);
+      });
+    }
+
+    playBtn.addEventListener('click', async () => {
+      if (!isConnected || !TRACK) return;
+      playBtn.textContent = 'Playing...';
+      playBtn.disabled = true;
+
+      await send({
+        type: 'embed',
+        action: 'play',
+        payload: { track: TRACK }
+      });
+
+      playBtn.textContent = '✓ Sent to Parachord';
+      setTimeout(() => {
+        playBtn.textContent = '▶ Play in Parachord';
+        playBtn.disabled = false;
+      }, 2000);
+    });
+
+    connect();
+  </script>
 </body>
 </html>`;
 
