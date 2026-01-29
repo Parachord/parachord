@@ -9443,7 +9443,7 @@ const Parachord = () => {
     <div class="services">
       ${serviceLinksHtml}
     </div>
-    <p class="footer">Created with <a href="https://parachord.app">Parachord</a></p>
+    <p class="footer">Created with <a href="https://parachord.app" target="_blank" rel="noopener">Parachord</a></p>
   </div>
 
   <script>
