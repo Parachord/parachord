@@ -10173,8 +10173,9 @@ const Parachord = () => {
     });
 
     // Fetch album art for tracks - prefer release-group ID for cache consistency
+    // Local files without embedded art should still try MusicBrainz lookup
     const trackPromises = tracks.slice(0, 10).map(async (track) => {
-      if (track.albumArt || track.isLocal) return; // Skip if already has art or is local file
+      if (track.albumArt) return; // Skip if already has art
 
       const trackId = track.id;
       const releaseId = track.releaseId;
@@ -10206,20 +10207,47 @@ const Parachord = () => {
         return;
       }
 
-      // Need at least one ID to fetch art (if no cached art found)
-      if (!releaseGroupId && !releaseId) return;
+      // If no IDs available, try MusicBrainz search to find the release
+      let searchedReleaseGroupId = releaseGroupId;
+      let searchedReleaseId = releaseId;
+      if (!releaseGroupId && !releaseId && track.artist && track.album) {
+        try {
+          const searchQuery = `release:"${track.album}" AND artist:"${track.artist}"`;
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release?query=${encodeURIComponent(searchQuery)}&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+          );
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            if (searchData.releases?.length > 0) {
+              searchedReleaseId = searchData.releases[0].id;
+              searchedReleaseGroupId = searchData.releases[0]['release-group']?.id;
+              // Cache the lookup for future use
+              if (searchedReleaseId || searchedReleaseGroupId) {
+                const lookupKey = `${track.artist}-${track.album}`.toLowerCase();
+                albumToReleaseIdCache.current[lookupKey] = { releaseId: searchedReleaseId, releaseGroupId: searchedReleaseGroupId };
+              }
+            }
+          }
+        } catch (e) {
+          // Continue without search results
+        }
+      }
+
+      // Need at least one ID to fetch art
+      if (!searchedReleaseGroupId && !searchedReleaseId) return;
 
       // Skip if already fetching this ID (prefer releaseGroupId)
-      const requestKey = releaseGroupId ? `rg:${releaseGroupId}` : `rel:${releaseId}`;
+      const requestKey = searchedReleaseGroupId ? `rg:${searchedReleaseGroupId}` : `rel:${searchedReleaseId}`;
       if (inFlightArtRequests.current.has(requestKey)) return;
       inFlightArtRequests.current.add(requestKey);
 
       try {
         // Prefer release-group endpoint (consistent with album/artist pages)
         // Fall back to release endpoint if no release-group ID
-        const endpoint = releaseGroupId
-          ? `https://coverartarchive.org/release-group/${releaseGroupId}`
-          : `https://coverartarchive.org/release/${releaseId}`;
+        const endpoint = searchedReleaseGroupId
+          ? `https://coverartarchive.org/release-group/${searchedReleaseGroupId}`
+          : `https://coverartarchive.org/release/${searchedReleaseId}`;
 
         const artResponse = await fetch(endpoint, {
           headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
@@ -10234,11 +10262,11 @@ const Parachord = () => {
             // Cache under releaseGroupId as primary key (consistent with album/artist pages)
             // Also cache under releaseId for fallback lookups
             const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            if (releaseGroupId) {
-              albumArtCache.current[releaseGroupId] = cacheEntry;
+            if (searchedReleaseGroupId) {
+              albumArtCache.current[searchedReleaseGroupId] = cacheEntry;
             }
-            if (releaseId) {
-              albumArtCache.current[releaseId] = cacheEntry;
+            if (searchedReleaseId) {
+              albumArtCache.current[searchedReleaseId] = cacheEntry;
             }
 
             // Update search results with new album art
