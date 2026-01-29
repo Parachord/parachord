@@ -2827,6 +2827,34 @@ const ReleasePage = ({
 
     // RIGHT COLUMN: Tracklist
     React.createElement('div', { className: 'flex-1 min-w-0' },
+      // Show skeleton while tracks are loading
+      !release.tracks ? React.createElement('div', { className: 'space-y-0' },
+        [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
+          React.createElement('div', {
+            key: `track-skeleton-${i}`,
+            className: 'flex items-center gap-4 py-3 px-4',
+            style: { borderRadius: '8px', marginBottom: '2px' }
+          },
+            // Track number
+            React.createElement('div', {
+              className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+              style: { backgroundSize: '200% 100%' }
+            }),
+            // Track title
+            React.createElement('div', { className: 'flex-1' },
+              React.createElement('div', {
+                className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                style: { width: `${width}%`, backgroundSize: '200% 100%' }
+              })
+            ),
+            // Duration
+            React.createElement('div', {
+              className: 'w-10 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+              style: { backgroundSize: '200% 100%' }
+            })
+          )
+        )
+      ) :
       release.tracks.length > 0 ?
         React.createElement('div', { className: 'space-y-0' },
           release.tracks.map((track, index) => {
@@ -11019,8 +11047,20 @@ const Parachord = () => {
 
   // Fetch release data (album/EP/single) with full track listing
   const fetchReleaseData = async (release, artist) => {
+    // Show partial data immediately (from ReleaseCard) while fetching full track list
+    // This avoids showing a skeleton for info we already have
+    const partialRelease = {
+      id: release.id,
+      title: release.title,
+      artist: artist,
+      date: release.date,
+      releaseType: release.releaseType,
+      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
+      tracks: null, // null indicates tracks are loading
+      _isPartial: true
+    };
+    setCurrentRelease(partialRelease);
     setLoadingRelease(true);
-    setCurrentRelease(null);
     // Collapse header smoothly when opening a release
     setIsHeaderCollapsed(true);
 
@@ -22596,155 +22636,8 @@ useEffect(() => {
           )
         ),
         
-        // Loading state for release - show real header (already loaded), skeleton for content only
-        loadingRelease && React.createElement('div', {
-          className: 'flex-1 flex flex-col',
-          style: { backgroundColor: 'white' }
-        },
-          // Real header with artist image (already loaded)
-          React.createElement('div', {
-            className: 'relative',
-            style: { height: '80px', flexShrink: 0, overflow: 'hidden' }
-          },
-            // Background image
-            artistImage && React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                backgroundImage: `url(${artistImage})`,
-                backgroundSize: 'cover',
-                backgroundPosition: artistImagePosition
-              }
-            }),
-            // Gradient overlay
-            React.createElement('div', {
-              className: 'absolute inset-0',
-              style: {
-                background: artistImage
-                  ? 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(17,17,17,0.95) 100%)'
-                  : 'linear-gradient(to bottom, rgba(60,60,80,0.4) 0%, rgba(17,17,17,1) 100%)'
-              }
-            }),
-            // Artist info overlay (matching collapsed artist header)
-            React.createElement('div', {
-              className: 'absolute inset-0 flex items-center px-16 z-10'
-            },
-              // Left side: Artist name
-              React.createElement('h1', {
-                className: 'text-2xl font-light mr-6 text-white flex-shrink-0',
-                style: {
-                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  maxWidth: '40%',
-                  lineHeight: '1.2'
-                }
-              }, currentArtist?.name || ''),
-              // Center: Navigation tabs
-              React.createElement('div', {
-                className: 'flex items-center gap-1',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              },
-                ['music', 'biography', 'related'].map((tab, index) => [
-                  index > 0 && React.createElement('span', {
-                    key: `sep-loading-${tab}`,
-                    className: 'text-gray-400 mx-2'
-                  }, '|'),
-                  React.createElement('span', {
-                    key: `loading-${tab}`,
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider ${
-                      tab === 'music' ? 'text-white' : 'text-gray-400'
-                    }`
-                  }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
-                ]).flat().filter(Boolean)
-              )
-            )
-          ),
-          // Skeleton content with white background (matching release page)
-          React.createElement('div', { className: 'bg-white flex-1' },
-            // ALBUM DETAILS header with breadcrumb (artist name known, album loading)
-            React.createElement('div', {
-              className: 'flex items-center justify-between px-6 py-4 border-b border-gray-200'
-            },
-              // Breadcrumb navigation: Artist Name > Loading...
-              React.createElement('div', {
-                className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
-              },
-                React.createElement('button', {
-                  onClick: () => {
-                    setCurrentRelease(null);
-                  },
-                  className: 'text-gray-400 hover:text-gray-600 transition-colors uppercase'
-                }, currentArtist?.name || 'Artist'),
-                React.createElement('span', { className: 'text-gray-300' }, '/'),
-React.createElement('div', {
-                  className: 'h-3 w-24 rounded bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
-                  style: { backgroundSize: '200% 100%' }
-                })
-              ),
-              React.createElement('div')
-            ),
-            // Two-column layout matching ReleasePage
-            React.createElement('div', { className: 'flex gap-0 p-6' },
-              // Left column - album art skeleton (matches ReleasePage: width 240px, pr-8)
-              React.createElement('div', {
-                className: 'flex-shrink-0 pr-8',
-                style: { width: '240px' }
-              },
-                // Album art (w-48 h-48 = 192px)
-                React.createElement('div', {
-                  className: 'w-48 h-48 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                  style: { backgroundSize: '200% 100%' }
-                }),
-                // Metadata below art
-                React.createElement('div', { className: 'mt-4 space-y-1' },
-                  React.createElement('div', {
-                    className: 'h-5 rounded w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                    style: { backgroundSize: '200% 100%' }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 rounded w-1/2 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                    style: { backgroundSize: '200% 100%' }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 rounded w-1/3 mt-1 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                    style: { backgroundSize: '200% 100%' }
-                  })
-                )
-              ),
-              // Right column - track list skeleton
-              React.createElement('div', { className: 'flex-1 min-w-0 space-y-0' },
-                [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
-                  React.createElement('div', {
-                    key: `track-skeleton-${i}`,
-                    className: 'flex items-center gap-4 py-3 px-2',
-                    style: { backgroundColor: i % 2 === 0 ? '#fafafa' : 'transparent' }
-                  },
-                    // Track number
-                    React.createElement('div', {
-                      className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { backgroundSize: '200% 100%' }
-                    }),
-                    // Track title
-                    React.createElement('div', { className: 'flex-1' },
-                      React.createElement('div', {
-                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: `${width}%`, backgroundSize: '200% 100%' }
-                      })
-                    ),
-                    // Duration
-                    React.createElement('div', {
-                      className: 'w-10 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { backgroundSize: '200% 100%' }
-                    })
-                  )
-                )
-              )
-            )
-          )
-        ),
-        
         // Release page - artist header (shows artist image/name/tabs at top)
-        !loadingRelease && currentRelease && React.createElement('div', {
+        currentRelease && React.createElement('div', {
           className: 'relative',
           style: {
             height: '80px',
@@ -22846,7 +22739,8 @@ React.createElement('div', {
         ),
 
         // Release page content (scrollable) - new layout with album details header
-        !loadingRelease && currentRelease && React.createElement('div', {
+        // Show immediately with partial data (tracks may still be loading)
+        currentRelease && React.createElement('div', {
           className: 'scrollable-content bg-white',
           style: {
             flex: 1,
