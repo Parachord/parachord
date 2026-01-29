@@ -5388,6 +5388,9 @@ const Parachord = () => {
         
         let resolversToLoad = builtinAxeFiles;
 
+        // Get list of user-uninstalled resolvers to exclude
+        const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+
         if (builtinAxeFiles.length === 0) {
           console.warn('⚠️  No .axe files found in resolvers/builtin/');
           console.log('💾 Using embedded fallback resolvers');
@@ -5402,6 +5405,16 @@ const Parachord = () => {
           if (missingBuiltins.length > 0) {
             console.log(`📦 Adding ${missingBuiltins.length} builtin resolver(s) not in cache:`, missingBuiltins.map(r => r.manifest.id).join(', '));
             resolversToLoad = [...builtinAxeFiles, ...missingBuiltins];
+          }
+        }
+
+        // Filter out user-uninstalled resolvers (they can reinstall from marketplace)
+        if (uninstalledResolvers.length > 0) {
+          const beforeCount = resolversToLoad.length;
+          resolversToLoad = resolversToLoad.filter(axe => !uninstalledResolvers.includes(axe.manifest?.id));
+          const removedCount = beforeCount - resolversToLoad.length;
+          if (removedCount > 0) {
+            console.log(`🚫 Excluded ${removedCount} user-uninstalled resolver(s)`);
           }
         }
 
@@ -13984,7 +13997,7 @@ const Parachord = () => {
     }
   };
 
-  // Uninstall resolver (permanently delete from disk)
+  // Uninstall resolver (remove from state and optionally delete from disk)
   const handleUninstallResolver = async (resolverId) => {
     console.log('=== handleUninstallResolver called ===');
     console.log('  Resolver ID:', resolverId);
@@ -13997,15 +14010,21 @@ const Parachord = () => {
       console.error('❌ Resolver not found:', resolverId);
       showConfirmDialog({
         type: 'error',
-        title: 'Resolver Not Found',
-        message: `Resolver "${resolverId}" not found. This might be a bug.`
+        title: 'Uninstall Failed',
+        message: 'Plugin not found'
       });
       return;
     }
 
     console.log('  Found resolver:', resolver.name);
 
-    const confirmMessage = `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
+    // Check if this plugin is available in the marketplace (can be reinstalled easily)
+    const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
+
+    // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
+    const confirmMessage = isInMarketplace
+      ? `Remove "${resolver.name}"?`
+      : `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
 
     const shouldUninstall = confirm(confirmMessage);
 
@@ -14016,10 +14035,11 @@ const Parachord = () => {
     console.log(`🗑️ Uninstalling resolver: ${resolver.name}`);
 
     try {
-      // Delete the resolver file from disk
+      // Try to delete the resolver file from disk
       const result = await window.electron.resolvers.uninstall(resolverId);
 
-      if (!result.success) {
+      // Even if the file doesn't exist (built-in resolver), we still remove from state
+      if (!result.success && result.error !== 'Plugin not found') {
         showConfirmDialog({
           type: 'error',
           title: 'Uninstall Failed',
@@ -14038,9 +14058,15 @@ const Parachord = () => {
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
 
+      // Save the uninstalled resolver ID so it doesn't reappear on restart
+      const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+      if (!uninstalledResolvers.includes(resolverId)) {
+        await window.electron.store.set('uninstalled_resolvers', [...uninstalledResolvers, resolverId]);
+      }
+
       showConfirmDialog({
         type: 'success',
-        title: 'Resolver Uninstalled',
+        title: 'Removed',
         message: resolver.name
       });
     } catch (error) {
@@ -14171,6 +14197,12 @@ const Parachord = () => {
             axe._filename = filename;
       const newResolverInstance = await resolverLoader.current.loadResolver(axe);
 
+      // Remove from uninstalled list if it was previously uninstalled
+      const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+      if (uninstalledResolvers.includes(resolverId)) {
+        await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
+      }
+
       if (existing) {
         setLoadedResolvers(prev => prev.map(r =>
           r.id === resolverId ? newResolverInstance : r
@@ -14186,7 +14218,7 @@ const Parachord = () => {
         setActiveResolvers(prev => [...prev, resolverId]);
         showConfirmDialog({
           type: 'success',
-          title: 'Resolver Installed',
+          title: 'Installed',
           message: resolverName
         });
       }
@@ -31699,9 +31731,9 @@ useEffect(() => {
               ),
 
               // Search and filter bar
-              React.createElement('div', { className: 'flex flex-wrap items-center gap-4 mb-6' },
-                // Search input
-                React.createElement('div', { className: 'relative' },
+              React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
+                // Top row: Search input
+                React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
                   React.createElement('svg', {
                     className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400',
                     fill: 'none',
@@ -31718,21 +31750,21 @@ useEffect(() => {
                     className: 'w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
                   })
                 ),
-                // Install status dropdown filter
-                React.createElement('select', {
-                  value: pluginsFilter,
-                  onChange: (e) => setPluginsFilter(e.target.value),
-                  className: 'px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent',
-                  style: { minWidth: '110px' }
-                },
-                  React.createElement('option', { value: 'all' }, 'All'),
-                  React.createElement('option', { value: 'installed' }, 'Installed'),
-                  React.createElement('option', { value: 'available' }, 'Available')
-                ),
-                // Category filter pills
-                React.createElement('div', { className: 'flex gap-2 flex-wrap' },
+                // Bottom row: Dropdown + Category pills together
+                React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
+                  // Install status dropdown filter
+                  React.createElement('select', {
+                    value: pluginsFilter,
+                    onChange: (e) => setPluginsFilter(e.target.value),
+                    className: 'px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                    style: { minWidth: '100px' }
+                  },
+                    React.createElement('option', { value: 'all' }, 'All'),
+                    React.createElement('option', { value: 'installed' }, 'Installed'),
+                    React.createElement('option', { value: 'available' }, 'Available')
+                  ),
+                  // Category filter pills
                   [
-                    { value: 'all', label: 'All Categories' },
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
