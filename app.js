@@ -23810,28 +23810,9 @@ useEffect(() => {
               ),
               // Content with padding
               React.createElement('div', { className: 'p-6' },
-                // Loading state - skeleton grid with square card style
-                loadingRelated && React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  Array.from({ length: 12 }).map((_, i) =>
-                    React.createElement('div', { key: `skeleton-${i}`, className: 'bg-white rounded-lg overflow-hidden' },
-                      React.createElement('div', {
-                        className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                      }),
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('div', {
-                          className: 'w-3/4 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                        })
-                      )
-                    )
-                  )
-                ),
                 // Related artists grid (sorted by match, highest first) - Square card design
-                !loadingRelated && filteredArtists.length > 0 && React.createElement('div', {
+                // Cards handle their own image loading shimmer, no need for full skeleton grid
+                filteredArtists.length > 0 && React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
@@ -23959,6 +23940,7 @@ useEffect(() => {
                     );
                   })
                 ),
+                // Cards will appear with their own shimmer animations when data is ready
                 // No related artists found (or filtered to none)
                 !loadingRelated && filteredArtists.length === 0 && React.createElement('div', {
                   className: 'text-center py-12 text-gray-400'
@@ -27049,20 +27031,9 @@ useEffect(() => {
             React.createElement('div', { className: 'p-6' },
               // Artists tab
             collectionTab === 'artists' && (() => {
-              // Show loading skeletons while collection is loading
+              // Cards will appear with their own shimmer animations when data is ready
               if (collectionLoading) {
-                return React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
-                  style: { minHeight: 'calc(100vh - 160px)' }
-                },
-                  Array.from({ length: 10 }).map((_, i) =>
-                    React.createElement('div', { key: `artist-skeleton-${i}`, className: 'animate-pulse' },
-                      React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
-                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
-                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
-                    )
-                  )
-                );
+                return null;
               }
 
               const filtered = filterCollectionItems(collectionData.artists, 'artists');
@@ -27126,20 +27097,9 @@ useEffect(() => {
 
             // Albums tab
             collectionTab === 'albums' && (() => {
-              // Show loading skeletons while collection is loading
+              // Cards will appear with their own shimmer animations when data is ready
               if (collectionLoading) {
-                return React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
-                  style: { minHeight: 'calc(100vh - 160px)' }
-                },
-                  Array.from({ length: 10 }).map((_, i) =>
-                    React.createElement('div', { key: `album-skeleton-${i}`, className: 'animate-pulse' },
-                      React.createElement('div', { className: 'aspect-square bg-gray-200 rounded-lg mb-3' }),
-                      React.createElement('div', { className: 'h-4 bg-gray-200 rounded w-3/4 mb-2' }),
-                      React.createElement('div', { className: 'h-3 bg-gray-200 rounded w-1/2' })
-                    )
-                  )
-                );
+                return null;
               }
 
               const filtered = filterCollectionItems(collectionData.albums, 'albums');
@@ -28940,20 +28900,8 @@ useEffect(() => {
                 // Loading state - show skeleton for active tab
                 recommendations.loading ?
               React.createElement('div', null,
-                // Artists skeleton (when artists tab active) - square card design
-                recommendationsTab === 'artists' && React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  ...Array(12).fill(null).map((_, i) =>
-                    React.createElement('div', { key: `rec-artist-skeleton-${i}`, className: 'bg-white rounded-lg overflow-hidden' },
-                      React.createElement('div', { className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('div', { className: 'w-3/4 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
-                      )
-                    )
-                  )
-                ),
+                // Artists tab - cards will appear with their own shimmer animations
+                recommendationsTab === 'artists' && null,
                 // Songs skeleton (when songs tab active)
                 recommendationsTab === 'songs' && React.createElement('div', { className: 'space-y-0' },
                   ...Array(15).fill(null).map((_, i) =>
@@ -29898,20 +29846,8 @@ useEffect(() => {
             // TOP ARTISTS TAB
             historyTab === 'topArtists' && (
               topArtists.loading ?
-                // Skeleton - square card style
-                React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  ...Array(12).fill(null).map((_, i) =>
-                    React.createElement('div', { key: `artist-skeleton-${i}`, className: 'bg-white rounded-lg overflow-hidden' },
-                      React.createElement('div', { className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('div', { className: 'w-3/4 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
-                      )
-                    )
-                  )
-                )
+                // Cards will appear with their own shimmer animations when data is ready
+                null
               : topArtists.error ?
                 React.createElement('div', { className: 'text-center py-12' },
                   React.createElement('div', { className: 'text-gray-400 mb-4' }, topArtists.error),
@@ -30064,19 +30000,8 @@ useEffect(() => {
             // TOP ALBUMS TAB
             historyTab === 'topAlbums' && (
               topAlbums.loading ?
-                React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8 pb-6'
-                },
-                  ...Array(12).fill(null).map((_, i) =>
-                    React.createElement('div', { key: `album-skeleton-${i}` },
-                      React.createElement('div', { className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'space-y-1' },
-                        React.createElement('div', { className: 'h-4 w-3/4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } }),
-                        React.createElement('div', { className: 'h-3 w-1/2 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer rounded', style: { backgroundSize: '200% 100%' } })
-                      )
-                    )
-                  )
-                )
+                // Cards will appear with their own shimmer animations when data is ready
+                null
               : topAlbums.error ?
                 React.createElement('div', { className: 'text-center py-12' },
                   React.createElement('div', { className: 'text-gray-400 mb-4' }, topAlbums.error),
