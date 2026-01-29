@@ -1008,9 +1008,21 @@ const pauseSpotifyPlayback = async () => {
   }
 };
 
+let isQuitting = false;
+
 app.on('before-quit', async (event) => {
-  // Pause Spotify before quitting - this is more reliable than beforeunload
+  // Prevent multiple quit attempts and ensure we wait for cleanup
+  if (isQuitting) return;
+
+  // Prevent default quit to allow async cleanup
+  event.preventDefault();
+  isQuitting = true;
+
+  // Pause Spotify before quitting
   await pauseSpotifyPlayback();
+
+  // Now actually quit
+  app.exit(0);
 });
 
 app.on('window-all-closed', async () => {
