@@ -32,7 +32,7 @@
     "better-sqlite3": "^12.6.2",
     "chokidar": "^3.5.0",
     "dotenv": "^16.3.1",
-    "electron-store": "^8.1.0",
+    "electron-store": "^6.0.1",
     "express": "^4.18.2",
     "music-metadata": "^7.0.0",
     "node-id3": "^0.2.6",
@@ -46,8 +46,15 @@
     },
     "files": [
       "**/*",
-      "!**/{.DS_Store,.git,.gitignore,npm-debug.log,dist,node_modules,*.md}"
+      "!.DS_Store",
+      "!.git",
+      "!.gitignore",
+      "!npm-debug.log",
+      "!dist",
+      "!**/*.md",
+      "!collection.json"
     ],
+    "asar": false,
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",

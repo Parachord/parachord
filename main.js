@@ -28,7 +28,7 @@ if (!process.env.SPOTIFY_CLIENT_ID) {
 console.log('====================================');
 console.log('');
 
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
@@ -721,6 +721,187 @@ app.whenReady().then(() => {
   createWindow();
   startAuthServer();
   startExtensionServer();
+
+  // Set up application menu
+  const isMac = process.platform === 'darwin';
+
+  const template = [
+    // App menu (macOS only)
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Settings...',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('menu-action', 'open-settings')
+        },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+
+    // File menu
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Playlist',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-playlist')
+        },
+        { type: 'separator' },
+        {
+          label: 'Open URL...',
+          accelerator: 'CmdOrCtrl+U',
+          click: () => mainWindow?.webContents.send('menu-action', 'open-url')
+        },
+        {
+          label: 'Add Folder to Library...',
+          click: () => mainWindow?.webContents.send('menu-action', 'add-folder')
+        },
+        {
+          label: 'Add Friend...',
+          click: () => mainWindow?.webContents.send('menu-action', 'add-friend')
+        },
+        { type: 'separator' },
+        {
+          label: 'Import Playlist...',
+          click: () => mainWindow?.webContents.send('menu-action', 'import-playlist')
+        },
+        {
+          label: 'Export Queue as Playlist...',
+          click: () => mainWindow?.webContents.send('menu-action', 'export-playlist')
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' }
+      ]
+    },
+
+    // Edit menu
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        ...(isMac ? [
+          { role: 'pasteAndMatchStyle' },
+          { role: 'delete' },
+          { role: 'selectAll' }
+        ] : [
+          { role: 'delete' },
+          { type: 'separator' },
+          { role: 'selectAll' }
+        ]),
+        { type: 'separator' },
+        {
+          label: 'Find...',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => mainWindow?.webContents.send('menu-action', 'focus-search')
+        }
+      ]
+    },
+
+    // Playback menu
+    {
+      label: 'Playback',
+      submenu: [
+        {
+          label: 'Play/Pause',
+          accelerator: 'Space',
+          click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
+        },
+        {
+          label: 'Next Track',
+          accelerator: 'CmdOrCtrl+Right',
+          click: () => mainWindow?.webContents.send('menu-action', 'next-track')
+        },
+        {
+          label: 'Previous Track',
+          accelerator: 'CmdOrCtrl+Left',
+          click: () => mainWindow?.webContents.send('menu-action', 'previous-track')
+        },
+        { type: 'separator' },
+        {
+          label: 'Shuffle',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu-action', 'toggle-shuffle')
+        },
+        { type: 'separator' },
+        {
+          label: 'Volume Up',
+          accelerator: 'CmdOrCtrl+Up',
+          click: () => mainWindow?.webContents.send('menu-action', 'volume-up')
+        },
+        {
+          label: 'Volume Down',
+          accelerator: 'CmdOrCtrl+Down',
+          click: () => mainWindow?.webContents.send('menu-action', 'volume-down')
+        }
+      ]
+    },
+
+    // View menu
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' }
+      ]
+    },
+
+    // Window menu
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' },
+          { type: 'separator' },
+          { role: 'window' }
+        ] : [
+          { role: 'close' }
+        ])
+      ]
+    },
+
+    // Help menu
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Parachord Website',
+          click: async () => {
+            await shell.openExternal('https://parachord.com');
+          }
+        },
+        {
+          label: 'Report an Issue...',
+          click: async () => {
+            await shell.openExternal('https://github.com/Parachord/parachord/issues');
+          }
+        },
+        { type: 'separator' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 
   // Initialize Local Files service
   localFilesService = new LocalFilesService(app.getPath('userData'));
