@@ -234,3 +234,64 @@ async function publishSmartLink(track, resolvedUrls) {
 - Social preview images (og:image with album art)
 - Expiring links
 - User accounts for managing links
+
+---
+
+## Cloudflare Setup Instructions (Free Tier)
+
+**TODO: Set this up when ready**
+
+### 1. Create Cloudflare Account
+- Sign up at https://cloudflare.com (free)
+- Can use free `*.pages.dev` subdomain or connect your own domain
+
+### 2. Project Structure
+```
+smart-links/
+├── functions/
+│   ├── api/
+│   │   └── create.js      # POST handler to create links
+│   └── [[id]].js          # Dynamic route to serve links
+├── package.json
+└── wrangler.toml          # Cloudflare config
+```
+
+### 3. Code (~100 lines total)
+
+**functions/api/create.js** - Creates a link:
+```javascript
+export async function onRequestPost({ request, env }) {
+  const data = await request.json();
+  const id = crypto.randomUUID().slice(0, 8);
+  await env.LINKS.put(id, JSON.stringify(data));
+  return Response.json({ id, url: `https://links.parachord.app/${id}` });
+}
+```
+
+**functions/[[id]].js** - Serves a link:
+```javascript
+export async function onRequestGet({ params, env }) {
+  const data = await env.LINKS.get(params.id, 'json');
+  if (!data) return new Response('Not found', { status: 404 });
+  return new Response(generateHtml(data), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+```
+
+### 4. Deploy Commands
+```bash
+npm install -g wrangler
+wrangler login
+wrangler pages deploy . --project-name=parachord-links
+wrangler kv:namespace create LINKS
+```
+
+### 5. Update Parachord
+- Add "Publish Link" button next to "Download Smart Link"
+- POST to the API, show the returned URL with copy button
+
+### Free Tier Limits (more than enough)
+- 100k KV reads/day (~100k link views)
+- 1k KV writes/day (~1k new links)
+- 1 GB storage (~500k+ links)
