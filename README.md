@@ -1,6 +1,6 @@
 # Parachord
 
-A modern multi-source music player inspired by [Tomahawk](https://github.com/tomahawk-player/tomahawk). Play music from Spotify, YouTube, Bandcamp, local files, and more - all in one unified interface.
+A modern multi-source music player inspired by [Tomahawk](https://github.com/tomahawk-player/tomahawk). Play music from Spotify, YouTube, Bandcamp, SoundCloud, local files, and more - all in one unified interface.
 
 ![Parachord Screenshot](assets/screenshot.png)
 
@@ -16,9 +16,15 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse and play from independent artists
+- **SoundCloud** - Stream from SoundCloud's catalog
 - **Qobuz** - High-quality audio streaming
 - **Local Files** - Scan and play your local music library with metadata extraction
 - **Apple Music** - Preview support
+
+### Library Sync
+- **Import from Streaming Services** - Sync your playlists and liked songs from Spotify, Apple Music, and more
+- **Collection Management** - Build a unified collection from multiple sources
+- **Favorites** - Star tracks to add them to your collection
 
 ### Artist Discovery
 - **Rich Artist Pages** - Browse full discographies powered by MusicBrainz
@@ -27,9 +33,11 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Release Filtering** - Filter by albums, EPs, singles, live releases, and compilations
 
 ### Playlists & Queue
-- **XSPF Import/Export** - Standard playlist format for portability
+- **URL Import** - Paste Spotify, Apple Music, or hosted .xspf playlist URLs
+- **File Import** - Load local .xspf playlist files
+- **Export** - Save your queue as an .xspf playlist
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
-- **Shuffle & Repeat** - Standard playback modes
+- **Shuffle Mode** - Randomize your playback
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
 
 ### Plug-in Architecture
@@ -42,20 +50,36 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Send to Parachord** - Right-click any song link to send it to the desktop app
 - **Bandcamp Integration** - Play Bandcamp pages directly in Parachord
 - **YouTube Support** - Queue YouTube videos from your browser
+- **WebSocket Communication** - Real-time connection between browser and desktop app
+
+### Social Features
+- **Friend Activity** - See what your friends are listening to in real-time
+- **Add Friends** - Connect with other Parachord users
+- **Listening History** - Track your listening activity
 
 ### Additional Features
 - **Global Search** - Search across all sources with unified results
 - **Collection View** - Browse your aggregated music collection
 - **Recommendations** - Personalized suggestions via Last.fm
 - **Scrobbling** - Track your listening history with Last.fm
-- **Keyboard Shortcuts** - Control playback without leaving your keyboard
+- **Application Menu** - Full menu bar with keyboard shortcuts
+- **Auto-Updates** - Automatic update checking with GitHub Releases
+- **Configurable Media Keys** - Control media key behavior when Spotify is running
 - **Dark Player Bar** - Modern UI with glassmorphism effects
 
 ## Installation
 
+### Download
+Download the latest release for your platform from the [Releases](https://github.com/Parachord/parachord/releases) page:
+- **macOS**: `.dmg` or `.zip`
+- **Windows**: `.exe` installer or portable
+- **Linux**: `.AppImage`, `.deb`, or `.rpm`
+
+### Build from Source
+
 ```bash
 # Clone the repository
-git clone https://github.com/jherskowitz/parachord.git
+git clone https://github.com/Parachord/parachord.git
 cd parachord
 
 # Install dependencies
@@ -99,12 +123,7 @@ parachord/
 │   └── watcher.js         # File system watcher
 ├── resolvers/             # Content resolver plug-ins (.axe)
 ├── parachord-extension/   # Browser extension source
-├── playlists/             # User playlists (XSPF)
-└── docs/                  # Documentation
-    ├── setup/             # Installation guides
-    ├── features/          # Feature documentation
-    ├── architecture/      # Technical specifications
-    └── development/       # Development notes
+└── .github/workflows/     # CI/CD pipeline
 ```
 
 ### Plug-in System
@@ -114,7 +133,7 @@ Parachord uses a plug-in architecture with two types:
 **Content Resolvers** - Find and play music from services
 - Implement `search(query)` and `resolve(artist, track, album)`
 - Return playable stream URLs or embed codes
-- Examples: Spotify, YouTube, Bandcamp
+- Examples: Spotify, YouTube, Bandcamp, SoundCloud
 
 **Meta Services** - Provide metadata and recommendations
 - Implement service-specific APIs for artist info, recommendations, scrobbling
@@ -130,6 +149,7 @@ Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript 
 - **SQLite** - Local music library database (via better-sqlite3)
 - **Express** - OAuth callback server for Spotify
 - **WebSocket** - Real-time communication with browser extension
+- **electron-updater** - Auto-update functionality
 
 ## Development
 
@@ -142,6 +162,25 @@ npm run build:mac    # macOS (.dmg, .zip)
 npm run build:win    # Windows (.exe, portable)
 npm run build:linux  # Linux (.AppImage, .deb, .rpm)
 ```
+
+### CI/CD
+
+The project uses GitHub Actions for automated builds on all platforms. Builds are triggered on:
+- Push to main/master branches
+- Pull requests to main/master
+- Version tags (v*)
+
+Tagged releases automatically create draft GitHub Releases with all platform artifacts.
+
+## Keyboard Shortcuts
+
+| Action | Shortcut |
+|--------|----------|
+| New Playlist | Cmd/Ctrl+N |
+| Find/Search | Cmd/Ctrl+F |
+| Play/Pause | Space |
+| Next Track | Cmd/Ctrl+Right |
+| Toggle Shuffle | Cmd/Ctrl+S |
 
 ## Contributing
 

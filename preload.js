@@ -115,6 +115,19 @@ contextBridge.exposeInMainWorld('electron', {
     });
   },
 
+  // Auto-updater
+  updater: {
+    check: () => ipcRenderer.invoke('updater-check'),
+    download: () => ipcRenderer.invoke('updater-download'),
+    install: () => ipcRenderer.invoke('updater-install'),
+    getVersion: () => ipcRenderer.invoke('updater-get-version'),
+    onStatus: (callback) => {
+      ipcRenderer.on('updater-status', (event, status) => {
+        callback(status);
+      });
+    }
+  },
+
   // Plugin operations
   resolvers: {
     loadBuiltin: () => ipcRenderer.invoke('resolvers-load-builtin'),

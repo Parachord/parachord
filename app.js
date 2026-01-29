@@ -6181,27 +6181,14 @@ const Parachord = () => {
           case 'open-settings':
             setActiveView('settings');
             break;
-          case 'open-url':
-            // Focus search and show URL input hint
-            searchInputRef.current?.focus();
-            break;
-          case 'add-folder':
-            window.electron.localFiles?.addWatchFolder().then(result => {
-              if (result?.success) {
-                showToast(`Added folder: ${result.folderPath.split('/').pop()}`);
-                // Navigate to local files to see the new folder
-                setActiveView('localFiles');
-              } else if (result?.error) {
-                showToast(`Failed to add folder: ${result.error}`);
-              }
-            });
-            break;
           case 'add-friend':
             setAddFriendModalOpen(true);
             setAddFriendInput('');
             break;
           case 'import-playlist':
-            handleImportPlaylist();
+            // Open Import Playlist dialog (URL or file import)
+            setShowUrlImportDialog(true);
+            setUrlImportValue('');
             break;
           case 'export-playlist':
             // Open save queue dialog with a default name
@@ -6228,22 +6215,54 @@ const Parachord = () => {
           case 'next-track':
             handleNext(true);
             break;
-          case 'previous-track':
-            handlePrevious();
-            break;
           case 'toggle-shuffle':
             setShuffleMode(prev => !prev);
             break;
-          case 'volume-up':
-            setVolume(prev => Math.min(1, prev + 0.1));
-            break;
-          case 'volume-down':
-            setVolume(prev => Math.max(0, prev - 0.1));
+          case 'check-for-updates':
+            showToast('Checking for updates...');
+            window.electron.updater?.check();
             break;
         }
       });
     }
   }, [isPlaying, currentTrack]);
+
+  // Auto-updater status listener
+  useEffect(() => {
+    if (window.electron?.updater?.onStatus) {
+      window.electron.updater.onStatus((status) => {
+        console.log('🔄 Updater status:', status);
+        switch (status.status) {
+          case 'checking':
+            // Already showing toast from menu action
+            break;
+          case 'available':
+            showToast(`Update available: v${status.version}`, 5000);
+            // Prompt user to download
+            if (window.confirm(`A new version (v${status.version}) is available. Download now?`)) {
+              window.electron.updater.download();
+            }
+            break;
+          case 'not-available':
+            showToast('You have the latest version');
+            break;
+          case 'downloading':
+            showToast(`Downloading update: ${Math.round(status.percent || 0)}%`);
+            break;
+          case 'downloaded':
+            showToast('Update downloaded. Restart to install.', 8000);
+            // Prompt user to install
+            if (window.confirm('Update downloaded. Restart now to install?')) {
+              window.electron.updater.install();
+            }
+            break;
+          case 'error':
+            showToast(`Update error: ${status.error}`, 5000);
+            break;
+        }
+      });
+    }
+  }, []);
 
   // App lifecycle event handlers - restart Spotify polling when app returns to foreground
   useEffect(() => {
