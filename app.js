@@ -3320,6 +3320,9 @@ const Parachord = () => {
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
 
+  // Media key handling mode: 'always' | 'non-spotify' | 'never'
+  const [mediaKeyMode, setMediaKeyMode] = useState('always');
+
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
   const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username, apiKey }, listenbrainz: { username, userToken } }
@@ -10685,6 +10688,24 @@ const Parachord = () => {
       saveCacheToStore();
     };
   }, []);
+
+  // Load media key mode setting on mount
+  useEffect(() => {
+    const loadMediaKeyMode = async () => {
+      if (window.electron?.mediaKeys) {
+        const mode = await window.electron.mediaKeys.getMode();
+        setMediaKeyMode(mode);
+      }
+    };
+    loadMediaKeyMode();
+  }, []);
+
+  // Notify main process when playback source changes (for 'non-spotify' media key mode)
+  useEffect(() => {
+    if (window.electron?.mediaKeys && currentTrack?.resolver) {
+      window.electron.mediaKeys.updatePlaybackSource(currentTrack.resolver);
+    }
+  }, [currentTrack?.resolver]);
 
   // Save last active view when it changes
   useEffect(() => {
@@ -31893,6 +31914,153 @@ useEffect(() => {
                       })
                     )
                   ),
+                ),
+
+                // Media Keys Section
+                React.createElement('div', {
+                  style: {
+                    backgroundColor: '#ffffff',
+                    border: '1px solid rgba(0, 0, 0, 0.06)',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+                  }
+                },
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('h3', {
+                      style: {
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#9ca3af',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em'
+                      }
+                    }, 'Media Keys'),
+                    React.createElement('p', {
+                      style: {
+                        fontSize: '12px',
+                        color: '#9ca3af',
+                        marginTop: '4px'
+                      }
+                    }, 'Control how Parachord responds to media keys')
+                  ),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '13px',
+                      color: '#6b7280',
+                      marginBottom: '20px',
+                      lineHeight: '1.6'
+                    }
+                  }, 'When using the Spotify plugin, Spotify also runs in the background and may capture media keys. Choose how Parachord should handle potential conflicts.'),
+                  // Radio options for media key mode
+                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+                    // Always option
+                    React.createElement('label', {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '12px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        backgroundColor: mediaKeyMode === 'always' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        cursor: 'pointer',
+                        border: mediaKeyMode === 'always' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
+                      }
+                    },
+                      React.createElement('input', {
+                        type: 'radio',
+                        name: 'mediaKeyMode',
+                        value: 'always',
+                        checked: mediaKeyMode === 'always',
+                        onChange: async (e) => {
+                          const mode = e.target.value;
+                          setMediaKeyMode(mode);
+                          if (window.electron?.mediaKeys) {
+                            await window.electron.mediaKeys.setMode(mode);
+                          }
+                        },
+                        style: { marginTop: '2px', accentColor: '#7c3aed' }
+                      }),
+                      React.createElement('div', null,
+                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Always capture'),
+                        React.createElement('p', { style: { fontSize: '12px', color: '#9ca3af', marginTop: '2px' } },
+                          'Parachord always handles media keys. May conflict with Spotify.'
+                        )
+                      )
+                    ),
+                    // Non-Spotify option
+                    React.createElement('label', {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '12px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        backgroundColor: mediaKeyMode === 'non-spotify' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        cursor: 'pointer',
+                        border: mediaKeyMode === 'non-spotify' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
+                      }
+                    },
+                      React.createElement('input', {
+                        type: 'radio',
+                        name: 'mediaKeyMode',
+                        value: 'non-spotify',
+                        checked: mediaKeyMode === 'non-spotify',
+                        onChange: async (e) => {
+                          const mode = e.target.value;
+                          setMediaKeyMode(mode);
+                          if (window.electron?.mediaKeys) {
+                            await window.electron.mediaKeys.setMode(mode);
+                            // Update based on current playback source
+                            if (currentTrack?.resolver) {
+                              await window.electron.mediaKeys.updatePlaybackSource(currentTrack.resolver);
+                            }
+                          }
+                        },
+                        style: { marginTop: '2px', accentColor: '#7c3aed' }
+                      }),
+                      React.createElement('div', null,
+                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Only when not using Spotify'),
+                        React.createElement('p', { style: { fontSize: '12px', color: '#9ca3af', marginTop: '2px' } },
+                          'Let Spotify handle media keys when playing via Spotify Connect. Parachord handles them for other sources.'
+                        )
+                      )
+                    ),
+                    // Never option
+                    React.createElement('label', {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '12px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        backgroundColor: mediaKeyMode === 'never' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        cursor: 'pointer',
+                        border: mediaKeyMode === 'never' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
+                      }
+                    },
+                      React.createElement('input', {
+                        type: 'radio',
+                        name: 'mediaKeyMode',
+                        value: 'never',
+                        checked: mediaKeyMode === 'never',
+                        onChange: async (e) => {
+                          const mode = e.target.value;
+                          setMediaKeyMode(mode);
+                          if (window.electron?.mediaKeys) {
+                            await window.electron.mediaKeys.setMode(mode);
+                          }
+                        },
+                        style: { marginTop: '2px', accentColor: '#7c3aed' }
+                      }),
+                      React.createElement('div', null,
+                        React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: '#374151' } }, 'Never capture'),
+                        React.createElement('p', { style: { fontSize: '12px', color: '#9ca3af', marginTop: '2px' } },
+                          'Parachord never handles media keys. Use this if you prefer Spotify or other apps to control playback.'
+                        )
+                      )
+                    )
+                  )
                 ),
 
                 // Dialogs Section - Reset "Don't show again" preferences

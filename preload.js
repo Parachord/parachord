@@ -101,6 +101,13 @@ contextBridge.exposeInMainWorld('electron', {
     });
   },
 
+  // Media key settings
+  mediaKeys: {
+    getMode: () => ipcRenderer.invoke('media-keys-get-mode'),
+    setMode: (mode) => ipcRenderer.invoke('media-keys-set-mode', mode),
+    updatePlaybackSource: (source) => ipcRenderer.invoke('media-keys-update-playback-source', source)
+  },
+
   // Plugin operations
   resolvers: {
     loadBuiltin: () => ipcRenderer.invoke('resolvers-load-builtin'),
