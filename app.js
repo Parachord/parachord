@@ -31731,6 +31731,56 @@ useEffect(() => {
                 )
               ),
 
+              // Plug-in architecture description
+              React.createElement('div', {
+                style: {
+                  background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%)',
+                  border: '1px solid rgba(124, 58, 237, 0.12)',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  marginBottom: '24px'
+                }
+              },
+                React.createElement('div', { className: 'flex gap-4' },
+                  // Icon
+                  React.createElement('div', { className: 'flex-shrink-0 w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center' },
+                    React.createElement('svg', { className: 'w-5 h-5 text-purple-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z' })
+                    )
+                  ),
+                  // Content
+                  React.createElement('div', { className: 'flex-1' },
+                    React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Extensible Plug-in Architecture'),
+                    React.createElement('p', { className: 'text-sm text-gray-600 leading-relaxed mb-3' },
+                      'Parachord\'s plug-in system lets you connect to your favorite music services and customize your listening experience. Each plug-in runs in a secure sandbox, ensuring your data stays safe while enabling powerful integrations.'
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-3' },
+                      // Feature 1
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Stream from multiple services in one unified library')
+                      ),
+                      // Feature 2
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Enrich metadata with artist bios, lyrics, and recommendations')
+                      ),
+                      // Feature 3
+                      React.createElement('div', { className: 'flex items-start gap-2' },
+                        React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' })
+                        ),
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Sandboxed execution keeps your credentials secure')
+                      )
+                    )
+                  )
+                )
+              ),
+
               // Search and filter bar
               React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
                 // Top row: Search input
