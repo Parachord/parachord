@@ -23206,29 +23206,8 @@ React.createElement('div', {
           artistPageTab === 'music' && React.createElement('div', {
             className: 'space-y-6 p-6'
           },
-            // Loading skeletons for discography
-            loadingArtist && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
-            },
-              Array.from({ length: 10 }).map((_, i) =>
-                React.createElement('div', { key: `album-skeleton-${i}` },
-                  React.createElement('div', {
-                    className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-3 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  })
-                )
-              )
-            ),
-            // Discography grid (when loaded) - refined spacing
-            !loadingArtist && React.createElement('div', {
+            // Discography grid - cards handle their own album art loading shimmer
+            React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6',
               ref: (el) => {
                 if (!el) {
