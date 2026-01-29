@@ -185,8 +185,17 @@
       font-weight: 500;
     }
 
-    .service-arrow {
+    .service-status {
       color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    .service-link.resolved .service-status {
+      color: #22c55e;
+    }
+
+    .service-link.search .service-status {
+      opacity: 0.5;
     }
 
     /* Footer */
@@ -240,9 +249,9 @@
       <!-- Spotify Embed (preview) -->
       <div class="spotify-embed">
         <iframe
-          src="https://open.spotify.com/embed/track/4u7EnebtmKWzUH433jQPtA?theme=0"
+          src="https://open.spotify.com/embed/track/4u7EnebtmKWzUH433jQPtA?utm_source=generator&theme=0"
           width="100%"
-          height="80"
+          height="152"
           frameBorder="0"
           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
           loading="lazy">
@@ -253,58 +262,58 @@
       <div class="services">
         <div class="services-header">Also available on</div>
         
-        <a href="https://open.spotify.com/track/4u7EnebtmKWzUH433jQPtA" target="_blank" rel="noopener" class="service-link" style="--service-color: #1DB954">
+        <a href="https://open.spotify.com/track/4u7EnebtmKWzUH433jQPtA" target="_blank" rel="noopener" class="service-link resolved" style="--service-color: #1DB954">
           <span class="service-icon">●</span>
           <span class="service-name">Spotify</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">✓</span>
         </a>
 
-        <a href="https://music.apple.com/search?term=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #FA243C">
+        <a href="https://music.apple.com/search?term=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #FA243C">
           <span class="service-icon">●</span>
           <span class="service-name">Apple Music</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://www.youtube.com/results?search_query=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #FF0000">
+        <a href="https://www.youtube.com/results?search_query=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #FF0000">
           <span class="service-icon">▶</span>
           <span class="service-name">YouTube</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://music.youtube.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #FF0000">
+        <a href="https://music.youtube.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #FF0000">
           <span class="service-icon">●</span>
           <span class="service-name">YouTube Music</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://soundcloud.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #FF5500">
+        <a href="https://soundcloud.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #FF5500">
           <span class="service-icon">☁</span>
           <span class="service-name">SoundCloud</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://bandcamp.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #629AA9">
+        <a href="https://bandcamp.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #629AA9">
           <span class="service-icon">■</span>
           <span class="service-name">Bandcamp</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://www.deezer.com/search/Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #FEAA2D">
+        <a href="https://www.deezer.com/search/Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #FEAA2D">
           <span class="service-icon">◆</span>
           <span class="service-name">Deezer</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://tidal.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #000000">
+        <a href="https://tidal.com/search?q=Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #000000">
           <span class="service-icon">◆</span>
           <span class="service-name">Tidal</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
 
-        <a href="https://music.amazon.com/search/Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link" style="--service-color: #00A8E1">
+        <a href="https://music.amazon.com/search/Queen%20Bohemian%20Rhapsody" target="_blank" rel="noopener" class="service-link search" style="--service-color: #00A8E1">
           <span class="service-icon">◆</span>
           <span class="service-name">Amazon Music</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">🔍</span>
         </a>
       </div>
     </div>
