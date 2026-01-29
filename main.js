@@ -1287,13 +1287,18 @@ ipcMain.handle('crypto-md5', (event, input) => {
   return crypto.createHash('md5').update(input).digest('hex');
 });
 
+// Fallback API keys for services that support shared app credentials
+const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
+const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
+
 // Scrobbler config - expose Last.fm API credentials from environment
 // This provides a dedicated API for scrobbler initialization, returning both key and secret together.
 // The secret supports a fallback to LASTFM_SHARED_SECRET for compatibility with different env var naming.
+// Falls back to app's default API keys if user hasn't configured their own.
 ipcMain.handle('get-scrobbler-config', () => {
   return {
-    lastfmApiKey: process.env.LASTFM_API_KEY,
-    lastfmApiSecret: process.env.LASTFM_API_SECRET || process.env.LASTFM_SHARED_SECRET
+    lastfmApiKey: process.env.LASTFM_API_KEY || FALLBACK_LASTFM_API_KEY,
+    lastfmApiSecret: process.env.LASTFM_API_SECRET || process.env.LASTFM_SHARED_SECRET || FALLBACK_LASTFM_API_SECRET
   };
 });
 
@@ -1350,10 +1355,15 @@ ipcMain.handle('store-delete', (event, key) => {
 
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
+// Uses fallback values for services that support shared app credentials
 const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID'];
+const CONFIG_FALLBACKS = {
+  'LASTFM_API_KEY': FALLBACK_LASTFM_API_KEY,
+  'LASTFM_API_SECRET': FALLBACK_LASTFM_API_SECRET
+};
 ipcMain.handle('config-get', (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
-    return process.env[key] || null;
+    return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }
   console.warn(`⚠️ Attempted to access non-whitelisted config key: ${key}`);
   return null;
