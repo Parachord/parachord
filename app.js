@@ -3307,6 +3307,10 @@ const Parachord = () => {
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
+  const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
+  const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
+  const [spotifyClientSecretInput, setSpotifyClientSecretInput] = useState(''); // Client Secret input
+  const [spotifyCredentialsSource, setSpotifyCredentialsSource] = useState('fallback'); // 'user' | 'env' | 'fallback'
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
@@ -19198,6 +19202,44 @@ ${tracks}
     }
   };
 
+  // Save Spotify credentials (client ID and secret)
+  const saveSpotifyCredentials = async () => {
+    if (!window.electron?.spotify?.setCredentials) {
+      console.error('Spotify setCredentials not available');
+      return;
+    }
+
+    const clientId = spotifyClientIdInput.trim();
+    const clientSecret = spotifyClientSecretInput.trim();
+
+    const result = await window.electron.spotify.setCredentials({
+      clientId,
+      clientSecret
+    });
+
+    if (result.success) {
+      setSpotifyCredentialsSource(result.source);
+      // If user had a token, they need to reconnect with new credentials
+      if (spotifyConnected && clientId && clientSecret) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Credentials Updated',
+          message: 'Your Spotify credentials have been saved. Please disconnect and reconnect to use your new credentials.'
+        });
+      } else if (!clientId && !clientSecret) {
+        showToast('Using default Spotify credentials', 'info');
+      } else {
+        showToast('Spotify credentials saved', 'success');
+      }
+    } else {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Error',
+        message: result.error || 'Failed to save Spotify credentials'
+      });
+    }
+  };
+
   // SoundCloud authentication functions
   const checkSoundcloudToken = async () => {
     console.log('Checking SoundCloud token...');
@@ -19456,6 +19498,18 @@ ${tracks}
 // Listen for Spotify auth events
 useEffect(() => {
   checkSpotifyToken();
+
+  // Load Spotify credentials info
+  if (window.electron?.spotify?.getCredentials) {
+    window.electron.spotify.getCredentials().then((creds) => {
+      if (creds) {
+        setSpotifyClientIdInput(creds.clientId || '');
+        setSpotifyClientSecretInput(creds.clientSecret || '');
+        setSpotifyCredentialsSource(creds.source || 'fallback');
+        console.log('🔑 Spotify credentials source:', creds.source);
+      }
+    });
+  }
 
   if (window.electron?.spotify) {
     window.electron.spotify.onAuthSuccess((data) => {
@@ -34662,6 +34716,141 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'Spotify Premium connected')
+            ),
+            // Advanced accordion for custom credentials
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement('span', {
+                  className: `transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
+                }, '▶'),
+                'Advanced'
+              ),
+              spotifyAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  spotifyCredentialsSource === 'user'
+                    ? 'Using your custom Spotify API credentials.'
+                    : spotifyCredentialsSource === 'env'
+                    ? 'Using credentials from environment variables.'
+                    : 'Using default app credentials. Add your own for higher rate limits.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client ID'),
+                  React.createElement('input', {
+                    type: 'text',
+                    value: spotifyClientIdInput,
+                    onChange: (e) => setSpotifyClientIdInput(e.target.value),
+                    placeholder: 'Your Spotify Client ID',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client Secret'),
+                  React.createElement('input', {
+                    type: 'password',
+                    value: spotifyClientSecretInput,
+                    onChange: (e) => setSpotifyClientSecretInput(e.target.value),
+                    placeholder: 'Your Spotify Client Secret',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('button', {
+                    onClick: saveSpotifyCredentials,
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#22c55e',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Save'),
+                  (spotifyClientIdInput || spotifyClientSecretInput) && React.createElement('button', {
+                    onClick: () => {
+                      setSpotifyClientIdInput('');
+                      setSpotifyClientSecretInput('');
+                      saveSpotifyCredentials();
+                    },
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#6b7280',
+                      backgroundColor: 'transparent',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Use Default')
+                ),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '10px',
+                    color: '#9ca3af',
+                    marginTop: '10px',
+                    lineHeight: '1.4'
+                  }
+                }, 'Get credentials from developer.spotify.com/dashboard')
+              )
             )
           ),
 
