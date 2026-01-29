@@ -9601,10 +9601,17 @@ const Parachord = () => {
       const lowerValue = value.toLowerCase();
 
       // INSTANT: Show matching search history entries (no debounce)
-      const historyMatches = searchHistory.filter(entry =>
-        entry.query.toLowerCase().includes(lowerValue) ||
-        entry.selectedResult?.name?.toLowerCase().includes(lowerValue)
-      ).slice(0, 5);
+      // Deduplicate by selectedResult name (or query if no result) to avoid showing same suggestion twice
+      const seen = new Set();
+      const historyMatches = searchHistory.filter(entry => {
+        const matches = entry.query.toLowerCase().includes(lowerValue) ||
+          entry.selectedResult?.name?.toLowerCase().includes(lowerValue);
+        if (!matches) return false;
+        const key = entry.selectedResult?.name?.toLowerCase() || entry.query.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 5);
       setFilteredHistoryMatches(historyMatches);
 
       // INSTANT: Check search cache for prefix matches
@@ -10156,12 +10163,24 @@ const Parachord = () => {
       const releaseId = track.releaseId;
       const releaseGroupId = track.releaseGroupId;
 
-      // Need at least one ID to fetch art
-      if (!releaseGroupId && !releaseId) return;
-
       // Check albumArtCache first - prefer releaseGroupId (consistent with album/artist pages)
-      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]) ||
-                        (releaseId && albumArtCache.current[releaseId]);
+      let cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]) ||
+                      (releaseId && albumArtCache.current[releaseId]);
+
+      // Also check albumToReleaseIdCache by artist+album name (in case getAlbumArt found it via search)
+      if (!cachedArt?.url && track.artist && track.album) {
+        const lookupKey = `${track.artist}-${track.album}`.toLowerCase();
+        const cachedLookup = albumToReleaseIdCache.current[lookupKey];
+        if (cachedLookup) {
+          if (typeof cachedLookup === 'object') {
+            cachedArt = (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]) ||
+                        (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]);
+          } else if (typeof cachedLookup === 'string') {
+            cachedArt = albumArtCache.current[cachedLookup];
+          }
+        }
+      }
+
       if (cachedArt?.url) {
         setSearchResults(prev => ({
           ...prev,
@@ -10169,6 +10188,9 @@ const Parachord = () => {
         }));
         return;
       }
+
+      // Need at least one ID to fetch art (if no cached art found)
+      if (!releaseGroupId && !releaseId) return;
 
       // Skip if already fetching this ID (prefer releaseGroupId)
       const requestKey = releaseGroupId ? `rg:${releaseGroupId}` : `rel:${releaseId}`;
