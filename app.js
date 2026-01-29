@@ -5794,7 +5794,7 @@ const Parachord = () => {
     if (!authStatus.authenticated) {
       // Trigger auth flow
       if (providerId === 'spotify') {
-        await window.electron.spotify.auth();
+        await window.electron.spotify.authenticate();
       }
       return;
     }
