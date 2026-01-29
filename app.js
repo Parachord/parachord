@@ -3167,6 +3167,7 @@ const Parachord = () => {
   const [searchResultsSort, setSearchResultsSort] = useState('relevance'); // Sort option for search results
   const [searchResultsSortDropdownOpen, setSearchResultsSortDropdownOpen] = useState(false); // Sort dropdown open state
   const [searchHistory, setSearchHistory] = useState([]);
+  const [filteredHistoryMatches, setFilteredHistoryMatches] = useState([]); // History entries matching current query
   const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'home'
   const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
@@ -5172,6 +5173,11 @@ const Parachord = () => {
 
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
+
+  // Cache for MusicBrainz search results (query -> { artists, albums, tracks, timestamp })
+  // TTL: 5 minutes - cached results shown instantly while fresh search runs in background
+  const searchResultsCache = useRef({});
+  const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   // Cache for track sources (trackKey -> { sources, timestamp })
   // trackKey format: "artist|title|album"
@@ -9533,6 +9539,7 @@ const Parachord = () => {
     // Clear results if search cleared
     if (!value) {
       setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
+      setFilteredHistoryMatches([]);
       setIsSearching(false);
       setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
       return;
@@ -9541,9 +9548,52 @@ const Parachord = () => {
     // Reset pagination on new search
     setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
 
-    // Instant local search (no debounce) - show results immediately
     if (value.length >= 2) {
+      const lowerValue = value.toLowerCase();
+
+      // INSTANT: Show matching search history entries (no debounce)
+      const historyMatches = searchHistory.filter(entry =>
+        entry.query.toLowerCase().includes(lowerValue) ||
+        entry.selectedResult?.name?.toLowerCase().includes(lowerValue)
+      ).slice(0, 5);
+      setFilteredHistoryMatches(historyMatches);
+
+      // INSTANT: Check search cache for prefix matches
+      // If user typed "beat" and we have "beatles" cached, show those results
+      const cacheKeys = Object.keys(searchResultsCache.current);
+      const now = Date.now();
+      let cachedResults = null;
+
+      // First try exact match
+      const exactCache = searchResultsCache.current[lowerValue];
+      if (exactCache && (now - exactCache.timestamp) < SEARCH_CACHE_TTL) {
+        cachedResults = exactCache;
+      } else {
+        // Try prefix match - find cached query that starts with current input
+        for (const key of cacheKeys) {
+          if (key.startsWith(lowerValue)) {
+            const cache = searchResultsCache.current[key];
+            if ((now - cache.timestamp) < SEARCH_CACHE_TTL) {
+              cachedResults = cache;
+              break;
+            }
+          }
+        }
+      }
+
+      if (cachedResults) {
+        // Show cached results immediately
+        setSearchResults(prev => ({
+          artists: cachedResults.artists || prev.artists,
+          albums: cachedResults.albums || prev.albums,
+          tracks: [...(prev.tracks.filter(t => t.isLocal) || []), ...(cachedResults.tracks || [])],
+          playlists: prev.playlists
+        }));
+      }
+
       setIsSearching(true);
+
+      // INSTANT: Local search (playlists and local files)
       performLocalSearch(value).then(({ playlists: matchingPlaylists, localTracks }) => {
         // Only update if query is still current
         if (value === searchQueryRef.current) {
@@ -9551,10 +9601,12 @@ const Parachord = () => {
             ...prev,
             playlists: matchingPlaylists,
             // Prepend local tracks to any existing tracks (they'll be merged with remote later)
-            tracks: localTracks
+            tracks: prev.tracks.some(t => t.isLocal) ? prev.tracks : [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
           }));
         }
       });
+    } else {
+      setFilteredHistoryMatches([]);
     }
 
     // Debounce remote search by 250ms
@@ -9809,11 +9861,31 @@ const Parachord = () => {
               return true;
             });
 
-            // Re-rank artists with fuzzy matching + popularity
-            artists = reRankResults(artists, query, 'name');
-
-            // Progressive update - show artists immediately
+            // Show raw results immediately (MusicBrainz already sorts by relevance)
             setSearchResults(prev => ({ ...prev, artists }));
+
+            // Cache raw results
+            const cacheKey = query.toLowerCase();
+            searchResultsCache.current[cacheKey] = {
+              ...searchResultsCache.current[cacheKey],
+              artists,
+              timestamp: Date.now()
+            };
+
+            // Defer Fuse.js re-ranking to idle time for smoother UI
+            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
+            scheduleRerank(() => {
+              if (query === searchQueryRef.current) {
+                const rerankedArtists = reRankResults(artists, query, 'name');
+                setSearchResults(prev => ({ ...prev, artists: rerankedArtists }));
+                // Update cache with re-ranked results
+                searchResultsCache.current[cacheKey] = {
+                  ...searchResultsCache.current[cacheKey],
+                  artists: rerankedArtists,
+                  timestamp: Date.now()
+                };
+              }
+            });
           }
         } catch (error) {
           if (error.name !== 'AbortError') {
@@ -9847,14 +9919,33 @@ const Parachord = () => {
               return true;
             });
 
-            // Re-rank albums with fuzzy matching + popularity
-            albums = reRankResults(albums, query, 'title');
-
-            // Progressive update - show albums immediately
+            // Show raw results immediately (MusicBrainz already sorts by relevance)
             setSearchResults(prev => {
-              // Fetch album art in background for newly added albums
               fetchSearchAlbumArt(albums, prev.tracks);
               return { ...prev, albums };
+            });
+
+            // Cache raw results
+            const cacheKey = query.toLowerCase();
+            searchResultsCache.current[cacheKey] = {
+              ...searchResultsCache.current[cacheKey],
+              albums,
+              timestamp: Date.now()
+            };
+
+            // Defer Fuse.js re-ranking to idle time for smoother UI
+            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
+            scheduleRerank(() => {
+              if (query === searchQueryRef.current) {
+                const rerankedAlbums = reRankResults(albums, query, 'title');
+                setSearchResults(prev => ({ ...prev, albums: rerankedAlbums }));
+                // Update cache with re-ranked results
+                searchResultsCache.current[cacheKey] = {
+                  ...searchResultsCache.current[cacheKey],
+                  albums: rerankedAlbums,
+                  timestamp: Date.now()
+                };
+              }
             });
           }
         } catch (error) {
@@ -9891,17 +9982,39 @@ const Parachord = () => {
               _needsResolution: true
             }));
 
-            // Re-rank tracks with fuzzy matching + popularity
-            tracks = reRankResults(tracks, query, 'title');
-
-            // Progressive update - show tracks immediately (unresolved)
+            // Show raw results immediately (MusicBrainz already sorts by relevance)
             // Merge with any local tracks that were found instantly
             setSearchResults(prev => {
               const localTracks = prev.tracks.filter(t => t.isLocal);
               const mergedTracks = [...localTracks, ...tracks];
-              // Fetch album art in background
               fetchSearchAlbumArt(prev.albums, tracks);
               return { ...prev, tracks: mergedTracks };
+            });
+
+            // Cache raw results
+            const cacheKey = query.toLowerCase();
+            searchResultsCache.current[cacheKey] = {
+              ...searchResultsCache.current[cacheKey],
+              tracks,
+              timestamp: Date.now()
+            };
+
+            // Defer Fuse.js re-ranking to idle time for smoother UI
+            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
+            scheduleRerank(() => {
+              if (query === searchQueryRef.current) {
+                const rerankedTracks = reRankResults(tracks, query, 'title');
+                setSearchResults(prev => {
+                  const localTracks = prev.tracks.filter(t => t.isLocal);
+                  return { ...prev, tracks: [...localTracks, ...rerankedTracks] };
+                });
+                // Update cache with re-ranked results
+                searchResultsCache.current[cacheKey] = {
+                  ...searchResultsCache.current[cacheKey],
+                  tracks: rerankedTracks,
+                  timestamp: Date.now()
+                };
+              }
             });
           }
         } catch (error) {
@@ -21560,17 +21673,50 @@ useEffect(() => {
             )
           )
         :
-        // No results state
+        // No results state (only show if no history matches either)
         searchResults.artists.length === 0 &&
         searchResults.albums.length === 0 &&
         searchResults.tracks.length === 0 &&
-        searchResults.playlists.length === 0 ?
+        searchResults.playlists.length === 0 &&
+        filteredHistoryMatches.length === 0 ?
           React.createElement('div', { className: 'text-center py-12 text-gray-400' },
             `No results found for "${searchQuery}"`
           )
         :
         // Results
         React.createElement('div', { className: 'space-y-10' },
+          // Quick suggestions from search history (shown instantly while loading)
+          filteredHistoryMatches.length > 0 && React.createElement('div', { className: 'mb-6' },
+            React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3' }, 'SUGGESTIONS'),
+            React.createElement('div', { className: 'flex flex-wrap gap-2' },
+              ...filteredHistoryMatches.map((entry, i) =>
+                React.createElement('button', {
+                  key: `suggestion-${i}-${entry.query}`,
+                  className: 'flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-full text-sm text-gray-700 transition-colors',
+                  onClick: () => {
+                    if (entry.selectedResult) {
+                      // Navigate directly to the result
+                      if (entry.selectedResult.type === 'artist') {
+                        fetchArtistData(entry.selectedResult.name);
+                      } else if (entry.selectedResult.type === 'album') {
+                        handleAlbumClick({ id: entry.selectedResult.id, title: entry.selectedResult.name, 'artist-credit': [{ name: entry.selectedResult.artist }] });
+                      } else if (entry.selectedResult.type === 'track') {
+                        handlePlay({ id: entry.selectedResult.id, title: entry.selectedResult.name, artist: entry.selectedResult.artist, sources: {} });
+                      }
+                    } else {
+                      handleSearchInput(entry.query);
+                    }
+                  }
+                },
+                  entry.selectedResult?.imageUrl && React.createElement('img', {
+                    src: entry.selectedResult.imageUrl,
+                    className: 'w-5 h-5 rounded-full object-cover'
+                  }),
+                  React.createElement('span', null, entry.selectedResult?.name || entry.query)
+                )
+              )
+            )
+          ),
           // Artists section with image cards - responsive grid
           searchResults.artists.length > 0 && React.createElement('div', null,
             React.createElement('div', { className: 'flex items-center justify-between mb-4' },
