@@ -11649,6 +11649,10 @@ const Parachord = () => {
       // Mark that we're opening a release so header stays collapsed when artist changes
       openingReleaseRef.current = true;
 
+      // Clear artist history and releases so back button returns to previous view, not stale artist data
+      setArtistHistory([]);
+      setArtistReleases([]);
+
       // Set artist context
       setCurrentArtist(artist);
 
@@ -32451,16 +32455,18 @@ useEffect(() => {
                 // Search for the album and open its page
                 if (currentTrack.album && currentTrack.artist) {
                   try {
-                    // Search MusicBrainz for the release
+                    // Search MusicBrainz for the release - get multiple results to prefer albums over singles
                     const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
                     const response = await fetch(
-                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=1`,
+                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
                       { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
                     );
                     if (response.ok) {
                       const data = await response.json();
-                      if (data['release-groups']?.length > 0) {
-                        const album = data['release-groups'][0];
+                      const results = data['release-groups'] || [];
+                      if (results.length > 0) {
+                        // Prefer albums over singles/EPs - find first album type, fall back to first result
+                        const album = results.find(r => r['primary-type'] === 'Album') || results[0];
                         handleAlbumClick(album);
                       }
                     }
