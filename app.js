@@ -5233,8 +5233,17 @@ const Parachord = () => {
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
 
-  // API keys loaded from environment via IPC
+  // API keys loaded from environment via IPC (fallback)
   const lastfmApiKey = useRef(null);
+
+  // Helper to get effective Last.fm API key: user-configured > environment/fallback
+  const getLastfmApiKey = () => {
+    // User-configured key takes priority
+    const userKey = metaServiceConfigs.lastfm?.apiKey;
+    if (userKey) return userKey;
+    // Fall back to environment-loaded key
+    return lastfmApiKey.current;
+  };
 
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
@@ -9557,7 +9566,7 @@ const Parachord = () => {
 
     // Try Last.fm first
     if (lastfmConfig?.username) {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
           console.log('🎵 Fetching listening context from Last.fm...');
@@ -15320,7 +15329,7 @@ ${tracks}
       }
 
       if (lastfmConfig?.username) {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (apiKey) {
           console.log(`📜 Loading history from Last.fm for ${lastfmConfig.username}...`);
           fetchPromises.push(
@@ -15397,7 +15406,7 @@ ${tracks}
       return;
     }
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       setTopTracks({ tracks: [], loading: false, error: 'Last.fm API key not configured.' });
       return;
@@ -15468,7 +15477,7 @@ ${tracks}
         return;
       }
 
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setTopArtists({ artists: [], loading: false, error: 'Last.fm API key not configured.' });
         return;
@@ -15541,7 +15550,7 @@ ${tracks}
         return;
       }
 
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setTopAlbums({ albums: [], loading: false, error: 'Last.fm API key not configured.' });
         return;
@@ -15595,7 +15604,7 @@ ${tracks}
 
   // Fetch Last.fm user info (avatar, display name)
   const fetchLastfmUserInfo = async (username) => {
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) throw new Error('Last.fm API key not configured');
 
     const url = `https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json`;
@@ -15646,7 +15655,7 @@ ${tracks}
   const fetchFriendRecentTrack = async (friend) => {
     try {
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) return null;
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
@@ -16176,7 +16185,7 @@ ${tracks}
       let tracks = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
@@ -16235,7 +16244,7 @@ ${tracks}
     setFriendHistoryLoading(true);
 
     try {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) throw new Error('Last.fm API key not configured');
 
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -16313,7 +16322,7 @@ ${tracks}
       let artists = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -16401,7 +16410,7 @@ ${tracks}
       let albums = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -17367,7 +17376,7 @@ ${tracks}
 
     // Fetch artist bio snippet from Last.fm (lightweight version, no loading state)
     const fetchArtistBioSnippet = async () => {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setSearchPreviewArtistBio(null);
         return;
@@ -17406,7 +17415,7 @@ ${tracks}
   const getLastfmBio = async (artistName) => {
     if (!artistName) return null;
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.warn('⚠️ Last.fm API key not available, cannot fetch artist bio');
       return null;
@@ -17963,7 +17972,7 @@ ${tracks}
   const getLastfmSimilarArtists = async (artistName) => {
     if (!artistName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🎸 Last.fm similar artists skipped: no API key');
       return [];
@@ -18002,7 +18011,7 @@ ${tracks}
   const getArtistTopTracks = async (artistName, limit = 10) => {
     if (!artistName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🎤 Last.fm artist top tracks skipped: no API key');
       return [];
@@ -18046,7 +18055,7 @@ ${tracks}
   const fetchSimilarTracks = async (artistName, trackName) => {
     if (!artistName || !trackName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🔀 Last.fm similar tracks skipped: no API key');
       return [];
@@ -18090,7 +18099,7 @@ ${tracks}
   const checkSpinoffAvailability = async (artistName, trackName) => {
     if (!artistName || !trackName) return false;
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🔀 Spinoff availability check skipped: no API key');
       return false;
@@ -24223,7 +24232,7 @@ useEffect(() => {
             const lastfmCount = relatedArtists.filter(a => a.source === 'lastfm').length;
             const bothCount = relatedArtists.filter(a => a.source === 'both').length;
             // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
-            const hasBothServicesConfigured = !!currentArtist?.mbid && !!lastfmApiKey.current;
+            const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
 
             // Filter artists based on source filter
             const filteredArtists = relatedArtistsSourceFilter === 'all'
