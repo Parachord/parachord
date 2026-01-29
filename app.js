@@ -36918,7 +36918,7 @@ useEffect(() => {
           React.createElement('div', null,
             React.createElement('h4', {
               style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
-            }, 'Installation'),
+            }, 'Installation (Chrome/Edge)'),
             React.createElement('div', {
               style: {
                 backgroundColor: '#f9fafb',
@@ -36927,34 +36927,40 @@ useEffect(() => {
               }
             },
               [
-                { step: '1', text: 'Visit the Chrome Web Store or Firefox Add-ons' },
-                { step: '2', text: 'Search for "Parachord"' },
-                { step: '3', text: 'Click "Add to Browser" to install' },
-                { step: '4', text: 'The extension icon will appear in your toolbar' }
+                { step: '1', text: 'Download the extension from GitHub' },
+                { step: '2', text: 'Unzip the downloaded file to a folder' },
+                { step: '3', text: 'Open Chrome and go to chrome://extensions' },
+                { step: '4', text: 'Enable "Developer mode" (toggle in top-right)' },
+                { step: '5', text: 'Click "Load unpacked" and select the extension folder' },
+                { step: '6', text: 'The Parachord icon will appear in your toolbar' }
               ].map((item, i) =>
                 React.createElement('div', {
                   key: i,
-                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 3 ? '12px' : '0' }
+                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 5 ? '10px' : '0' }
                 },
                   React.createElement('div', {
                     style: {
-                      width: '24px',
-                      height: '24px',
+                      width: '22px',
+                      height: '22px',
                       borderRadius: '50%',
                       backgroundColor: '#7c3aed',
                       color: '#ffffff',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '12px',
+                      fontSize: '11px',
                       fontWeight: '600',
                       flexShrink: 0
                     }
                   }, item.step),
-                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '24px' } }, item.text)
+                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '22px' } }, item.text)
                 )
               )
-            )
+            ),
+            // Note about developer mode
+            React.createElement('p', {
+              style: { fontSize: '12px', color: '#9ca3af', marginTop: '12px', lineHeight: '1.5' }
+            }, 'Note: Extensions loaded in developer mode will show a warning on browser startup. This is normal for extensions not yet in the Chrome Web Store.')
           )
         ),
         // Footer
@@ -36971,9 +36977,9 @@ useEffect(() => {
           React.createElement('button', {
             onClick: () => {
               if (window.electron?.shell?.openExternal) {
-                window.electron.shell.openExternal('https://chrome.google.com/webstore/search/parachord');
+                window.electron.shell.openExternal('https://github.com/Parachord/parachord-extension/releases');
               } else {
-                window.open('https://chrome.google.com/webstore/search/parachord', '_blank');
+                window.open('https://github.com/Parachord/parachord-extension/releases', '_blank');
               }
             },
             className: 'transition-colors',
@@ -36987,7 +36993,7 @@ useEffect(() => {
               borderRadius: '8px',
               cursor: 'pointer'
             }
-          }, 'Get Extension'),
+          }, 'Download from GitHub'),
           React.createElement('button', {
             onClick: () => setExtensionInfoOpen(false),
             className: 'transition-colors',
