@@ -10091,6 +10091,9 @@ const Parachord = () => {
     }
   };
 
+  // Track in-flight cover art requests to prevent duplicate fetches
+  const inFlightArtRequests = useRef(new Set());
+
   // Fetch album art for search results (albums and tracks) - leverages albumArtCache
   const fetchSearchAlbumArt = async (albums, tracks) => {
     // Fetch album art for albums - use release-group endpoint directly (faster, one less API call)
@@ -10108,6 +10111,11 @@ const Parachord = () => {
         }));
         return;
       }
+
+      // Skip if already fetching this ID
+      const requestKey = `rg:${albumId}`;
+      if (inFlightArtRequests.current.has(requestKey)) return;
+      inFlightArtRequests.current.add(requestKey);
 
       try {
         // Use release-group endpoint directly (Cover Art Archive supports it)
@@ -10135,6 +10143,8 @@ const Parachord = () => {
         }
       } catch (error) {
         // Silently fail - album art is optional
+      } finally {
+        inFlightArtRequests.current.delete(requestKey);
       }
     });
 
@@ -10157,6 +10167,11 @@ const Parachord = () => {
         }));
         return;
       }
+
+      // Skip if already fetching this ID
+      const requestKey = `rel:${releaseId}`;
+      if (inFlightArtRequests.current.has(requestKey)) return;
+      inFlightArtRequests.current.add(requestKey);
 
       try {
         // Use release endpoint for tracks
@@ -10184,6 +10199,8 @@ const Parachord = () => {
         }
       } catch (error) {
         // Silently fail - album art is optional
+      } finally {
+        inFlightArtRequests.current.delete(requestKey);
       }
     });
 
