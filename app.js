@@ -9628,8 +9628,8 @@ const Parachord = () => {
           setSearchResults(prev => ({
             ...prev,
             playlists: matchingPlaylists,
-            // Prepend local tracks to any existing tracks (they'll be merged with remote later)
-            tracks: prev.tracks.some(t => t.isLocal) ? prev.tracks : [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
+            // Replace local tracks with new search results (filtered by query)
+            tracks: [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
           }));
         }
       });
