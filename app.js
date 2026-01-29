@@ -2820,7 +2820,7 @@ const ReleasePage = ({
               fontSize: isCompact ? '0.75rem' : '0.875rem',
               transition: 'font-size 300ms ease'
             }
-          }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
+          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...')
         )
       );
     })(),
