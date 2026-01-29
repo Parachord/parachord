@@ -21,7 +21,10 @@
     "streaming",
     "electron"
   ],
-  "author": "Parachord Team",
+  "author": {
+    "name": "Parachord Team",
+    "email": "team@parachord.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "electron": "^39.2.7",
