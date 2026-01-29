@@ -10173,8 +10173,9 @@ const Parachord = () => {
     });
 
     // Fetch album art for tracks - prefer release-group ID for cache consistency
+    // Local files without embedded art should still try MusicBrainz lookup
     const trackPromises = tracks.slice(0, 10).map(async (track) => {
-      if (track.albumArt || track.isLocal) return; // Skip if already has art or is local file
+      if (track.albumArt) return; // Skip if already has art
 
       const trackId = track.id;
       const releaseId = track.releaseId;
