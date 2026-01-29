@@ -176,6 +176,52 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Embedded player operations
+  embed: {
+    respond: (requestId, data) => ipcRenderer.invoke('embed-response', { requestId, data }),
+    broadcast: (eventType, data) => ipcRenderer.invoke('embed-broadcast', { eventType, data }),
+    onGetState: (callback) => {
+      ipcRenderer.on('embed-get-state', (event, data) => {
+        callback(data);
+      });
+    },
+    onSearch: (callback) => {
+      ipcRenderer.on('embed-search', (event, data) => {
+        callback(data);
+      });
+    },
+    onPlay: (callback) => {
+      ipcRenderer.on('embed-play', (event, data) => {
+        callback(data);
+      });
+    },
+    onPause: (callback) => {
+      ipcRenderer.on('embed-pause', () => {
+        callback();
+      });
+    },
+    onResume: (callback) => {
+      ipcRenderer.on('embed-resume', () => {
+        callback();
+      });
+    },
+    onNext: (callback) => {
+      ipcRenderer.on('embed-next', () => {
+        callback();
+      });
+    },
+    onPrevious: (callback) => {
+      ipcRenderer.on('embed-previous', () => {
+        callback();
+      });
+    },
+    onSetVolume: (callback) => {
+      ipcRenderer.on('embed-set-volume', (event, data) => {
+        callback(data);
+      });
+    }
+  },
+
   // Track/playlist context menu operations
   contextMenu: {
     showTrackMenu: (data) => ipcRenderer.invoke('show-track-context-menu', data),

@@ -4125,7 +4125,12 @@ const Parachord = () => {
   // Refs to keep current values available in event handlers (avoids stale closure issues)
   const currentQueueRef = useRef([]);
   const currentTrackRef = useRef(null);
+  const volumeRef = useRef(70);
   const handleNextRef = useRef(null);
+  const handlePreviousRef = useRef(null);
+  const handlePlayPauseRef = useRef(null);
+  const handlePlayRef = useRef(null);
+  const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
@@ -4239,6 +4244,7 @@ const Parachord = () => {
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
 
   // Handle album art crossfade transitions in playbar
@@ -6165,6 +6171,134 @@ const Parachord = () => {
       });
     }
   }, []);
+
+  // Embedded player event handlers
+  useEffect(() => {
+    if (!window.electron?.embed) return;
+
+    console.log('🎮 Setting up embedded player event handlers...');
+
+    // Handle getState requests from embed
+    window.electron.embed.onGetState(async ({ requestId }) => {
+      console.log('📡 Embed requesting state');
+      const state = {
+        success: true,
+        currentTrack: currentTrackRef.current,
+        isPlaying: isPlayingRef.current,
+        currentTime: audioRef.current?.currentTime || 0,
+        duration: audioRef.current?.duration || currentTrackRef.current?.duration || 0,
+        volume: volumeRef.current,
+        queue: currentQueueRef.current?.slice(0, 10) || [], // Send first 10 queue items
+        resolvers: loadedResolversRef.current?.map(r => ({
+          id: r.id,
+          name: r.name || r.manifest?.name,
+          icon: r.icon || r.manifest?.icon,
+          color: r.color || r.manifest?.color
+        })) || []
+      };
+      window.electron.embed.respond(requestId, state);
+    });
+
+    // Handle search requests from embed
+    window.electron.embed.onSearch(async ({ requestId, query }) => {
+      console.log('🔍 Embed search request:', query);
+      try {
+        // Search each active resolver
+        const resolvers = loadedResolversRef.current || [];
+        const activeResolverIds = activeResolversRef.current || [];
+        const results = [];
+
+        for (const resolver of resolvers) {
+          if (!activeResolverIds.includes(resolver.id)) continue;
+          if (!resolver.searchFunction) continue;
+
+          try {
+            const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+            const tracks = await resolver.searchFunction(query, config);
+            if (Array.isArray(tracks)) {
+              results.push(...tracks.map(t => ({
+                ...t,
+                resolverId: resolver.id,
+                resolverName: resolver.name || resolver.manifest?.name,
+                resolverIcon: resolver.icon || resolver.manifest?.icon,
+                resolverColor: resolver.color || resolver.manifest?.color
+              })));
+            }
+          } catch (err) {
+            console.error(`Resolver ${resolver.id} search error:`, err);
+          }
+        }
+
+        window.electron.embed.respond(requestId, { success: true, results });
+      } catch (error) {
+        console.error('Embed search error:', error);
+        window.electron.embed.respond(requestId, { success: false, error: error.message });
+      }
+    });
+
+    // Handle play requests from embed
+    window.electron.embed.onPlay(({ track }) => {
+      console.log('▶️ Embed play request:', track?.title);
+      if (track && handlePlayRef.current) {
+        handlePlayRef.current(track);
+      }
+    });
+
+    // Handle pause requests from embed
+    window.electron.embed.onPause(() => {
+      console.log('⏸️ Embed pause request');
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
+      setIsPlaying(false);
+    });
+
+    // Handle resume requests from embed
+    window.electron.embed.onResume(() => {
+      console.log('▶️ Embed resume request');
+      if (handlePlayPauseRef.current) {
+        handlePlayPauseRef.current();
+      }
+    });
+
+    // Handle next requests from embed
+    window.electron.embed.onNext(() => {
+      console.log('⏭️ Embed next request');
+      if (handleNextRef.current) {
+        handleNextRef.current();
+      }
+    });
+
+    // Handle previous requests from embed
+    window.electron.embed.onPrevious(() => {
+      console.log('⏮️ Embed previous request');
+      if (handlePreviousRef.current) {
+        handlePreviousRef.current();
+      }
+    });
+
+    // Handle volume requests from embed
+    window.electron.embed.onSetVolume(({ volume: newVolume }) => {
+      console.log('🔊 Embed volume request:', newVolume);
+      if (typeof newVolume === 'number') {
+        setVolume(newVolume);
+        if (audioRef.current) {
+          audioRef.current.volume = newVolume / 100;
+        }
+      }
+    });
+  }, []);
+
+  // Broadcast playback state changes to embed players
+  useEffect(() => {
+    if (!window.electron?.embed?.broadcast) return;
+
+    window.electron.embed.broadcast('stateChange', {
+      currentTrack,
+      isPlaying,
+      volume
+    });
+  }, [currentTrack, isPlaying, volume]);
 
   // Application menu action handlers
   useEffect(() => {
@@ -9134,6 +9268,12 @@ const Parachord = () => {
       handlePlay(track);
     }
   };
+
+  // Keep handler refs in sync for embed player callbacks
+  useEffect(() => { handlePreviousRef.current = handlePrevious; });
+  useEffect(() => { handlePlayPauseRef.current = handlePlayPause; });
+  useEffect(() => { handlePlayRef.current = handlePlay; });
+  useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
   // Queue management functions
   const removeFromQueue = (trackId) => {

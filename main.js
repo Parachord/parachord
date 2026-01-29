@@ -56,6 +56,8 @@ let mainWindow;
 let authServer;
 let wss; // WebSocket server for browser extension
 let extensionSocket = null; // Current connected extension
+let embedSockets = new Set(); // Connected embed players
+let pendingEmbedRequests = new Map(); // requestId -> { ws, resolve }
 let localFilesService = null;
 let localFilesServiceReady = null; // Promise that resolves when service is ready
 
@@ -396,7 +398,12 @@ function startAuthServer() {
   if (authServer) return;
 
   const expressApp = express();
-  
+
+  // Serve embedded player
+  expressApp.get('/embed', (req, res) => {
+    res.sendFile(path.join(__dirname, 'embed.html'));
+  });
+
   expressApp.get('/callback', (req, res) => {
     const code = req.query.code;
     const error = req.query.error;
@@ -481,36 +488,192 @@ function startExtensionServer() {
   console.log(`Extension WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
 
   wss.on('connection', (ws) => {
-    console.log('Browser extension connected');
-    extensionSocket = ws;
-    mainWindow?.webContents.send('extension-connected');
+    // Track connection type - will be set on first message
+    let connectionType = null; // 'extension' or 'embed'
 
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log('Extension message:', message.type, message.event || message.action || message.url || '');
 
-        // Forward all messages to renderer
+        // Detect connection type from first message
+        if (!connectionType) {
+          if (message.type === 'embed') {
+            connectionType = 'embed';
+            embedSockets.add(ws);
+            console.log('Embed player connected');
+          } else {
+            connectionType = 'extension';
+            extensionSocket = ws;
+            console.log('Browser extension connected');
+            mainWindow?.webContents.send('extension-connected');
+          }
+        }
+
+        // Handle embed player messages
+        if (message.type === 'embed') {
+          handleEmbedMessage(ws, message);
+          return;
+        }
+
+        // Handle extension messages (existing behavior)
+        console.log('Extension message:', message.type, message.event || message.action || message.url || '');
         mainWindow?.webContents.send('extension-message', message);
         console.log('Forwarded to renderer');
       } catch (error) {
-        console.error('Failed to parse extension message:', error);
+        console.error('Failed to parse WebSocket message:', error);
       }
     });
 
     ws.on('close', () => {
-      console.log('Browser extension disconnected');
-      extensionSocket = null;
-      mainWindow?.webContents.send('extension-disconnected');
+      if (connectionType === 'embed') {
+        embedSockets.delete(ws);
+        console.log('Embed player disconnected');
+      } else if (connectionType === 'extension') {
+        console.log('Browser extension disconnected');
+        extensionSocket = null;
+        mainWindow?.webContents.send('extension-disconnected');
+      }
     });
 
     ws.on('error', (error) => {
-      console.error('Extension WebSocket error:', error);
+      console.error('WebSocket error:', error);
     });
   });
 
   wss.on('error', (error) => {
     console.error('Extension server error:', error);
+  });
+}
+
+// Handle messages from embedded players
+async function handleEmbedMessage(ws, message) {
+  const { action, requestId, payload } = message;
+  console.log('Embed message:', action, requestId || '');
+
+  const sendResponse = (data) => {
+    ws.send(JSON.stringify({
+      type: 'embed-response',
+      requestId,
+      ...data
+    }));
+  };
+
+  switch (action) {
+    case 'ping':
+      sendResponse({ success: true, parachordVersion: app.getVersion() });
+      break;
+
+    case 'getState':
+      // Request state from renderer
+      if (mainWindow) {
+        const requestPromise = new Promise((resolve) => {
+          pendingEmbedRequests.set(requestId, { ws, resolve });
+          // Timeout after 5 seconds
+          setTimeout(() => {
+            if (pendingEmbedRequests.has(requestId)) {
+              pendingEmbedRequests.delete(requestId);
+              resolve({ success: false, error: 'Timeout' });
+            }
+          }, 5000);
+        });
+        mainWindow.webContents.send('embed-get-state', { requestId });
+        const result = await requestPromise;
+        sendResponse(result);
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'search':
+      // Request search from renderer
+      if (mainWindow) {
+        const requestPromise = new Promise((resolve) => {
+          pendingEmbedRequests.set(requestId, { ws, resolve });
+          setTimeout(() => {
+            if (pendingEmbedRequests.has(requestId)) {
+              pendingEmbedRequests.delete(requestId);
+              resolve({ success: false, error: 'Timeout' });
+            }
+          }, 30000); // Longer timeout for search
+        });
+        mainWindow.webContents.send('embed-search', { requestId, query: payload?.query });
+        const result = await requestPromise;
+        sendResponse(result);
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'play':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-play', { track: payload?.track });
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'pause':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-pause');
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'resume':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-resume');
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'next':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-next');
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'previous':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-previous');
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    case 'setVolume':
+      if (mainWindow) {
+        mainWindow.webContents.send('embed-set-volume', { volume: payload?.volume });
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
+    default:
+      sendResponse({ success: false, error: `Unknown action: ${action}` });
+  }
+}
+
+// Broadcast playback state updates to all connected embed players
+function broadcastToEmbeds(event, data) {
+  const message = JSON.stringify({
+    type: 'embed-event',
+    event,
+    ...data
+  });
+  embedSockets.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(message);
+    }
   });
 }
 
@@ -2751,6 +2914,19 @@ ipcMain.handle('extension-get-status', () => {
   return {
     connected: extensionSocket !== null && extensionSocket.readyState === WebSocket.OPEN
   };
+});
+
+// Embed player IPC handlers
+ipcMain.handle('embed-response', (event, { requestId, data }) => {
+  const pending = pendingEmbedRequests.get(requestId);
+  if (pending) {
+    pendingEmbedRequests.delete(requestId);
+    pending.resolve(data);
+  }
+});
+
+ipcMain.handle('embed-broadcast', (event, { eventType, data }) => {
+  broadcastToEmbeds(eventType, data);
 });
 
 // Local Files IPC handlers
