@@ -2820,7 +2820,7 @@ const ReleasePage = ({
               fontSize: isCompact ? '0.75rem' : '0.875rem',
               transition: 'font-size 300ms ease'
             }
-          }, `${release.tracks.length.toString().padStart(2, '0')} Songs`)
+          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...')
         )
       );
     })(),
@@ -9649,8 +9649,8 @@ const Parachord = () => {
           setSearchResults(prev => ({
             ...prev,
             playlists: matchingPlaylists,
-            // Prepend local tracks to any existing tracks (they'll be merged with remote later)
-            tracks: prev.tracks.some(t => t.isLocal) ? prev.tracks : [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
+            // Replace local tracks with new search results (filtered by query)
+            tracks: [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
           }));
         }
       });
