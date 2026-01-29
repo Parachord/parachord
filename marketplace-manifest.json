@@ -63,7 +63,8 @@
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/qobuz.axe",
       "category": "streaming",
-      "tags": ["streaming", "hi-res", "audiophile", "lossless", "flac"]
+      "tags": ["streaming", "hi-res", "audiophile", "lossless", "flac"],
+      "_TODO": "Waiting for Qobuz to respond to request for access to their API"
     },
     {
       "id": "soundcloud",
