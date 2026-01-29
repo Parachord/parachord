@@ -3346,6 +3346,7 @@ const Parachord = () => {
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
+  const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -32042,6 +32043,92 @@ useEffect(() => {
                       });
                   })()
                 )
+              ),
+
+              // Extensions Section
+              !marketplaceLoading && React.createElement('div', { style: { marginTop: '40px' } },
+                React.createElement('div', { style: { marginBottom: '16px' } },
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em'
+                    }
+                  }, 'Extensions'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  },
+                    'Browser extensions and companion apps'
+                  )
+                ),
+                // Extensions grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  // Browser Extension tile
+                  React.createElement('div', {
+                    className: 'flex flex-col items-center'
+                  },
+                    React.createElement('div', {
+                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      style: {
+                        width: '120px',
+                        height: '120px',
+                        borderRadius: '16px',
+                        background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                      },
+                      onClick: () => setExtensionInfoOpen(true)
+                    },
+                      // Browser icon
+                      React.createElement('svg', {
+                        className: 'w-12 h-12 text-white',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.5
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
+                        })
+                      ),
+                      // Info badge
+                      React.createElement('div', {
+                        className: 'absolute flex items-center justify-center',
+                        style: {
+                          top: '8px',
+                          right: '8px',
+                          width: '22px',
+                          height: '22px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: '#7c3aed'
+                        }
+                      }, 'i')
+                    ),
+                    // Name below card
+                    React.createElement('span', {
+                      style: {
+                        marginTop: '10px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        textAlign: 'center',
+                        width: '120px'
+                      }
+                    }, 'Browser Extension')
+                  )
+                )
               )
             ),
 
@@ -36669,6 +36756,202 @@ useEffect(() => {
                   }, 'Done')
                 )
               )
+        )
+      )
+    ),
+
+    // Browser Extension Info Modal
+    extensionInfoOpen && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: (e) => { if (e.target === e.currentTarget) setExtensionInfoOpen(false); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        style: { width: '440px', maxHeight: '80vh' },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header with gradient
+        React.createElement('div', {
+          style: {
+            padding: '24px',
+            background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }
+        },
+          // Icon
+          React.createElement('div', {
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', {
+              className: 'w-8 h-8 text-white',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor',
+              strokeWidth: 1.5
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
+              })
+            )
+          ),
+          // Title
+          React.createElement('div', null,
+            React.createElement('h3', {
+              style: { fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '2px' }
+            }, 'Browser Extension'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+            }, 'Add music to Parachord from anywhere')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setExtensionInfoOpen(false),
+            style: {
+              marginLeft: 'auto',
+              padding: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+        // Content
+        React.createElement('div', {
+          style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
+        },
+          React.createElement('p', {
+            style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '20px' }
+          }, 'The Parachord browser extension lets you add tracks and albums to your library directly from music websites like Spotify, Bandcamp, SoundCloud, and more.'),
+
+          // Features
+          React.createElement('div', { style: { marginBottom: '24px' } },
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Features'),
+            [
+              { icon: '🎵', text: 'Add tracks to your queue with one click' },
+              { icon: '📋', text: 'Save albums and playlists to your library' },
+              { icon: '🔗', text: 'Works with Spotify, Bandcamp, SoundCloud, YouTube, and more' }
+            ].map((item, i) =>
+              React.createElement('div', {
+                key: i,
+                style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }
+              },
+                React.createElement('span', { style: { fontSize: '16px' } }, item.icon),
+                React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, item.text)
+              )
+            )
+          ),
+
+          // Installation instructions
+          React.createElement('div', null,
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Installation'),
+            React.createElement('div', {
+              style: {
+                backgroundColor: '#f9fafb',
+                borderRadius: '12px',
+                padding: '16px'
+              }
+            },
+              [
+                { step: '1', text: 'Visit the Chrome Web Store or Firefox Add-ons' },
+                { step: '2', text: 'Search for "Parachord"' },
+                { step: '3', text: 'Click "Add to Browser" to install' },
+                { step: '4', text: 'The extension icon will appear in your toolbar' }
+              ].map((item, i) =>
+                React.createElement('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 3 ? '12px' : '0' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      backgroundColor: '#7c3aed',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      flexShrink: 0
+                    }
+                  }, item.step),
+                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '24px' } }, item.text)
+                )
+              )
+            )
+          )
+        ),
+        // Footer
+        React.createElement('div', {
+          style: {
+            padding: '16px 24px',
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px'
+          }
+        },
+          React.createElement('button', {
+            onClick: () => {
+              if (window.electron?.shell?.openExternal) {
+                window.electron.shell.openExternal('https://chrome.google.com/webstore/search/parachord');
+              } else {
+                window.open('https://chrome.google.com/webstore/search/parachord', '_blank');
+              }
+            },
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#7c3aed',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Get Extension'),
+          React.createElement('button', {
+            onClick: () => setExtensionInfoOpen(false),
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#374151',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Done')
         )
       )
     ),
