@@ -32414,99 +32414,107 @@ useEffect(() => {
             isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
           }),
           currentTrack && !trackLoading ? [
-            React.createElement('div', {
-              key: 'album-art-button',
-              draggable: true,
-              onDragStart: (e) => {
-                // Set track data for playlists
-                const trackData = {
-                  type: 'track',
-                  track: {
-                    title: currentTrack.title,
-                    artist: currentTrack.artist,
-                    album: currentTrack.album,
-                    duration: currentTrack.duration,
-                    id: `${currentTrack.artist}-${currentTrack.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
-                  }
-                };
-                e.dataTransfer.effectAllowed = 'copy';
-                e.dataTransfer.setData('text/plain', JSON.stringify(trackData));
-                // Also set state for immediate access
-                setDraggingTrackForPlaylist(trackData.track);
-              },
-              onDragEnd: () => {
-                setDraggingTrackForPlaylist(null);
-                setDropTargetPlaylistId(null);
-                setDropTargetNewPlaylist(false);
-              },
-              onContextMenu: (e) => {
-                e.preventDefault();
-                if (window.electron?.contextMenu?.showTrackMenu) {
-                  window.electron.contextMenu.showTrackMenu({
-                    type: 'track',
-                    track: currentTrack,
-                    isNowPlaying: true
-                  });
-                }
-              },
-              onClick: async (e) => {
-                // Prevent click if we just finished a drag operation
-                if (e.defaultPrevented) return;
-                // Search for the album and open its page
-                if (currentTrack.album && currentTrack.artist) {
-                  try {
-                    // Search MusicBrainz for the release - get multiple results to prefer albums over singles
-                    const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
-                    const response = await fetch(
-                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
-                      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-                    );
-                    if (response.ok) {
-                      const data = await response.json();
-                      const results = data['release-groups'] || [];
-                      if (results.length > 0) {
-                        // Prefer albums over singles/EPs - find first album type, fall back to first result
-                        const album = results.find(r => r['primary-type'] === 'Album') || results[0];
-                        handleAlbumClick(album);
-                      }
-                    }
-                  } catch (error) {
-                    console.error('Error searching for album:', error);
-                  }
-                }
-              },
-              className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
-              title: currentTrack.album ? `Click to open "${currentTrack.album}" • Drag to add to playlist` : 'Drag to add to playlist'
+            React.createElement(Tooltip, {
+              key: 'album-art-tooltip',
+              content: currentTrack.album ? `Click to open "${currentTrack.album}"` : 'Drag to add to playlist',
+              position: 'top',
+              variant: 'dark'
             },
               React.createElement('div', {
-                className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
-                style: { width: '61px', height: '61px' }
-              },
-                // Previous album art (fading out)
-                playbarAlbumArt.previous && React.createElement('img', {
-                  key: 'prev-art-' + playbarAlbumArt.previous,
-                  src: playbarAlbumArt.previous,
-                  alt: '',
-                  className: 'absolute inset-0 w-full h-full object-cover',
-                  style: {
-                    opacity: playbarAlbumArt.isLoaded ? 0 : 1,
-                    transition: 'opacity 0.3s ease-out'
+                draggable: true,
+                onDragStart: (e) => {
+                  // Set track data for playlists
+                  const trackData = {
+                    type: 'track',
+                    track: {
+                      title: currentTrack.title,
+                      artist: currentTrack.artist,
+                      album: currentTrack.album,
+                      duration: currentTrack.duration,
+                      id: `${currentTrack.artist}-${currentTrack.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                    }
+                  };
+                  e.dataTransfer.effectAllowed = 'copy';
+                  e.dataTransfer.setData('text/plain', JSON.stringify(trackData));
+                  // Also set state for immediate access
+                  setDraggingTrackForPlaylist(trackData.track);
+                },
+                onDragEnd: () => {
+                  setDraggingTrackForPlaylist(null);
+                  setDropTargetPlaylistId(null);
+                  setDropTargetNewPlaylist(false);
+                },
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'track',
+                      track: currentTrack,
+                      isNowPlaying: true
+                    });
                   }
-                }),
-                // Current album art (fading in)
-                playbarAlbumArt.current && React.createElement('img', {
-                  key: 'curr-art-' + playbarAlbumArt.current,
-                  src: playbarAlbumArt.current,
-                  alt: currentTrack.album,
-                  className: 'absolute inset-0 w-full h-full object-cover',
-                  style: {
-                    opacity: playbarAlbumArt.isLoaded ? 1 : 0,
-                    transition: 'opacity 0.3s ease-in'
-                  },
-                  onLoad: () => setPlaybarAlbumArt(prev => ({ ...prev, isLoaded: true })),
-                  onError: (e) => { e.target.style.display = 'none'; }
-                }),
-                React.createElement(Music, { size: 20, className: 'text-gray-500' })
+                },
+                onClick: (e) => {
+                  // Prevent click if we just finished a drag operation
+                  if (e.defaultPrevented) return;
+                  // Search for the album and open its page
+                  if (currentTrack.album && currentTrack.artist) {
+                    // Search MusicBrainz for the release - get multiple results to prefer albums over singles
+                    const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
+                    fetch(
+                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
+                      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+                    ).then(response => {
+                      if (response.ok) {
+                        return response.json();
+                      }
+                    }).then(data => {
+                      if (data) {
+                        const results = data['release-groups'] || [];
+                        if (results.length > 0) {
+                          // Prefer albums over singles/EPs - find first album type, fall back to first result
+                          const album = results.find(r => r['primary-type'] === 'Album') || results[0];
+                          handleAlbumClick(album);
+                        }
+                      }
+                    }).catch(error => {
+                      console.error('Error searching for album:', error);
+                    });
+                  }
+                },
+                className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
+                style: { position: 'relative' }
+              },
+                React.createElement('div', {
+                  className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
+                  style: { width: '61px', height: '61px', pointerEvents: 'none' }
+                },
+                  // Previous album art (fading out)
+                  playbarAlbumArt.previous && React.createElement('img', {
+                    key: 'prev-art-' + playbarAlbumArt.previous,
+                    src: playbarAlbumArt.previous,
+                    alt: '',
+                    className: 'absolute inset-0 w-full h-full object-cover',
+                    style: {
+                      opacity: playbarAlbumArt.isLoaded ? 0 : 1,
+                      transition: 'opacity 0.3s ease-out'
+                    }
+                  }),
+                  // Current album art (fading in)
+                  playbarAlbumArt.current && React.createElement('img', {
+                    key: 'curr-art-' + playbarAlbumArt.current,
+                    src: playbarAlbumArt.current,
+                    alt: currentTrack.album,
+                    className: 'absolute inset-0 w-full h-full object-cover',
+                    style: {
+                      opacity: playbarAlbumArt.isLoaded ? 1 : 0,
+                      transition: 'opacity 0.3s ease-in'
+                    },
+                    onLoad: () => setPlaybarAlbumArt(prev => ({ ...prev, isLoaded: true })),
+                    onError: (e) => { e.target.style.display = 'none'; }
+                  }),
+                  React.createElement(Music, { size: 20, className: 'text-gray-500' })
+                )
               )
             ),
             React.createElement('div', {
