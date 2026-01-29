@@ -1368,7 +1368,7 @@ ipcMain.handle('spotify-auth', async () => {
   // Validate client ID exists
   if (!clientId) {
     console.error('❌ Missing SPOTIFY_CLIENT_ID in .env file!');
-    return { success: false, error: 'Missing Spotify Client ID' };
+    return { success: false, error: 'Missing Spotify Client ID. Please create a Spotify Developer app at developer.spotify.com/dashboard and add SPOTIFY_CLIENT_ID to your .env file. See docs/setup/API_CREDENTIALS_SETUP.md for details.' };
   }
   
   const scopes = [

@@ -19160,6 +19160,13 @@ ${tracks}
         console.log('Calling authenticate...');
         const result = await window.electron.spotify.authenticate();
         console.log('Authenticate result:', result);
+        if (!result.success) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Authentication Failed',
+            message: result.error || 'Spotify authentication failed. Please check your configuration.'
+          });
+        }
       } catch (error) {
         console.error('Spotify auth error:', error);
         showConfirmDialog({
