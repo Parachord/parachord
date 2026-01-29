@@ -1191,9 +1191,7 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   return { success: true };
 });
 
-// Tidal PKCE helpers
-const crypto = require('crypto');
-
+// Tidal PKCE helpers (uses crypto already required above)
 function generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
 }
