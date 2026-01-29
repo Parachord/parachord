@@ -32455,6 +32455,7 @@ useEffect(() => {
                   }
                 },
                 onClick: (e) => {
+                  console.log('Album art clicked!', { defaultPrevented: e.defaultPrevented, album: currentTrack.album, artist: currentTrack.artist });
                   // Prevent click if we just finished a drag operation
                   if (e.defaultPrevented) return;
                   // Search for the album and open its page
@@ -32487,7 +32488,7 @@ useEffect(() => {
               },
                 React.createElement('div', {
                   className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
-                  style: { width: '61px', height: '61px', pointerEvents: 'none' }
+                  style: { width: '61px', height: '61px' }
                 },
                   // Previous album art (fading out)
                   playbarAlbumArt.previous && React.createElement('img', {
