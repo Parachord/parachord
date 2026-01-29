@@ -662,10 +662,15 @@ async function exchangeSoundCloudCodeForToken(code) {
   }
 }
 
-// Tidal token exchange
+// Tidal PKCE code verifier - stored here so token exchange can access it
+// (set by tidal-auth handler, used by exchangeTidalCodeForToken)
+var tidalPkceVerifier = null;
+
+// Tidal token exchange with PKCE
 async function exchangeTidalCodeForToken(code) {
   console.log('=== Tidal Exchange Code for Token ===');
   console.log('Code received:', code ? 'Yes' : 'No');
+  console.log('PKCE verifier exists:', !!tidalPkceVerifier);
 
   // Get credentials from environment variables
   const clientId = process.env.TIDAL_CLIENT_ID;
@@ -673,28 +678,45 @@ async function exchangeTidalCodeForToken(code) {
   const redirectUri = 'http://127.0.0.1:8888/callback/tidal';
 
   // Validate credentials exist
-  if (!clientId || !clientSecret) {
-    console.error('❌ Missing Tidal credentials in .env file!');
-    console.error('Please add TIDAL_CLIENT_ID and TIDAL_CLIENT_SECRET to your .env file');
-    mainWindow?.webContents.send('tidal-auth-error', 'Missing Tidal credentials');
+  if (!clientId) {
+    console.error('❌ Missing TIDAL_CLIENT_ID in .env file!');
+    mainWindow?.webContents.send('tidal-auth-error', 'Missing Tidal Client ID');
+    return;
+  }
+
+  // Validate PKCE verifier exists
+  if (!tidalPkceVerifier) {
+    console.error('❌ Missing PKCE code verifier - auth flow may have been interrupted');
+    mainWindow?.webContents.send('tidal-auth-error', 'Auth flow interrupted. Please try again.');
     return;
   }
 
   try {
-    // Tidal uses standard OAuth2 token endpoint
+    // Build token request params - PKCE flow uses code_verifier instead of client_secret
+    const tokenParams = {
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      code_verifier: tidalPkceVerifier
+    };
+
+    // If client_secret is provided, include it (some Tidal apps require it)
+    if (clientSecret) {
+      tokenParams.client_secret = clientSecret;
+    }
+
+    // Tidal OAuth2 token endpoint
     const response = await fetch('https://auth.tidal.com/v1/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: redirectUri,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
+      body: new URLSearchParams(tokenParams),
     });
+
+    // Clear the verifier after use
+    tidalPkceVerifier = null;
 
     const data = await response.json();
     console.log('Tidal API response:', data.access_token ? 'Token received' : 'No token', data.error || '');
@@ -1169,7 +1191,18 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   return { success: true };
 });
 
-// Tidal OAuth handler
+// Tidal PKCE helpers
+const crypto = require('crypto');
+
+function generateCodeVerifier() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier) {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+// Tidal OAuth handler with PKCE (required by Tidal OAuth 2.1)
 ipcMain.handle('tidal-auth', async () => {
   // Get credentials from environment variables
   const clientId = process.env.TIDAL_CLIENT_ID;
@@ -1181,16 +1214,29 @@ ipcMain.handle('tidal-auth', async () => {
     return { success: false, error: 'Missing Tidal Client ID' };
   }
 
-  // Tidal OAuth scopes - we need user read and playback
+  // Generate PKCE code verifier and challenge (stored globally for token exchange)
+  tidalPkceVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(tidalPkceVerifier);
+
+  // Tidal OAuth 2.1 scopes (new format)
   const scopes = [
-    'r_usr',           // Read user info
-    'w_usr',           // Write user info (for playlists)
-    'w_sub'            // Subscription access (for playback)
+    'user.read',        // Read user info
+    'collection.read',  // Read user's collection
+    'collection.write', // Write to collection
+    'playlists.read',   // Read playlists
+    'playlists.write'   // Write playlists
   ].join(' ');
 
-  const authUrl = `https://login.tidal.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+  const authUrl = `https://login.tidal.com/authorize?` + new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    redirect_uri: redirectUri,
+    scope: scopes,
+    code_challenge_method: 'S256',
+    code_challenge: codeChallenge
+  }).toString();
 
-  console.log('Opening Tidal auth URL');
+  console.log('Opening Tidal auth URL with PKCE');
 
   // Open in system browser
   shell.openExternal(authUrl);
