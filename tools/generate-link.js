@@ -21,7 +21,7 @@ const SERVICES = {
     icon: '●',
     color: '#1DB954',
     searchUrl: (artist, track) => `https://open.spotify.com/search/${encodeURIComponent(`${artist} ${track}`)}`,
-    embedUrl: (id) => `https://open.spotify.com/embed/track/${id}?theme=0`
+    embedUrl: (id) => `https://open.spotify.com/embed/track/${id}?utm_source=generator&theme=0`
   },
   apple: {
     name: 'Apple Music',
@@ -374,7 +374,7 @@ function generateHtml(track, options = {}) {
         <iframe
           src="${SERVICES.spotify.embedUrl(track.id)}"
           width="100%"
-          height="80"
+          height="152"
           frameBorder="0"
           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
           loading="lazy">
