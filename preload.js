@@ -81,6 +81,27 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Tidal operations
+  tidal: {
+    authenticate: () => ipcRenderer.invoke('tidal-auth'),
+    checkToken: () => ipcRenderer.invoke('tidal-check-token'),
+    disconnect: () => ipcRenderer.invoke('tidal-disconnect'),
+
+    // Listen for auth success events from main process
+    onAuthSuccess: (callback) => {
+      ipcRenderer.on('tidal-auth-success', (event, data) => {
+        callback(data);
+      });
+    },
+
+    // Listen for auth error events from main process
+    onAuthError: (callback) => {
+      ipcRenderer.on('tidal-auth-error', (event, error) => {
+        callback(error);
+      });
+    }
+  },
+
   // Shell operations - use IPC for better security
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell-open-external', url)

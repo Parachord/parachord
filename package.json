@@ -29,6 +29,8 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.18",
+    "@tidal-music/auth": "^1.4.0",
+    "@tidal-music/player": "^0.12.0",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^3.5.0",
     "dotenv": "^16.3.1",

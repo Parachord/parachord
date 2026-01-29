@@ -19,6 +19,8 @@ console.log('SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? '✅ L
 console.log('SPOTIFY_REDIRECT_URI:', process.env.SPOTIFY_REDIRECT_URI || 'Using default');
 console.log('SOUNDCLOUD_CLIENT_ID:', process.env.SOUNDCLOUD_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
 console.log('SOUNDCLOUD_CLIENT_SECRET:', process.env.SOUNDCLOUD_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
+console.log('TIDAL_CLIENT_ID:', process.env.TIDAL_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
+console.log('TIDAL_CLIENT_SECRET:', process.env.TIDAL_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
 if (!process.env.SPOTIFY_CLIENT_ID) {
   console.error('');
   console.error('⚠️  WARNING: .env file not found or SPOTIFY_CLIENT_ID not set!');
@@ -452,6 +454,41 @@ function startAuthServer() {
     }
   });
 
+  // Tidal OAuth callback
+  expressApp.get('/callback/tidal', (req, res) => {
+    const code = req.query.code;
+    const error = req.query.error;
+
+    if (error) {
+      res.send(`
+        <html>
+          <body style="background: #000000; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>❌ Authentication Failed</h1>
+            <p>${error}</p>
+            <p>You can close this window.</p>
+          </body>
+        </html>
+      `);
+      mainWindow?.webContents.send('tidal-auth-error', error);
+      return;
+    }
+
+    if (code) {
+      res.send(`
+        <html>
+          <body style="background: #000000; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>✅ Success!</h1>
+            <p>Tidal authentication successful. You can close this window.</p>
+            <script>setTimeout(() => window.close(), 2000);</script>
+          </body>
+        </html>
+      `);
+
+      // Exchange code for token
+      exchangeTidalCodeForToken(code);
+    }
+  });
+
   authServer = expressApp.listen(8888, '127.0.0.1', () => {
     console.log('Auth server running on http://127.0.0.1:8888');
   });
@@ -622,6 +659,77 @@ async function exchangeSoundCloudCodeForToken(code) {
   } catch (error) {
     console.error('SoundCloud token exchange error:', error);
     mainWindow?.webContents.send('soundcloud-auth-error', error.message);
+  }
+}
+
+// Tidal token exchange
+async function exchangeTidalCodeForToken(code) {
+  console.log('=== Tidal Exchange Code for Token ===');
+  console.log('Code received:', code ? 'Yes' : 'No');
+
+  // Get credentials from environment variables
+  const clientId = process.env.TIDAL_CLIENT_ID;
+  const clientSecret = process.env.TIDAL_CLIENT_SECRET;
+  const redirectUri = 'http://127.0.0.1:8888/callback/tidal';
+
+  // Validate credentials exist
+  if (!clientId || !clientSecret) {
+    console.error('❌ Missing Tidal credentials in .env file!');
+    console.error('Please add TIDAL_CLIENT_ID and TIDAL_CLIENT_SECRET to your .env file');
+    mainWindow?.webContents.send('tidal-auth-error', 'Missing Tidal credentials');
+    return;
+  }
+
+  try {
+    // Tidal uses standard OAuth2 token endpoint
+    const response = await fetch('https://auth.tidal.com/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirectUri,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+
+    const data = await response.json();
+    console.log('Tidal API response:', data.access_token ? 'Token received' : 'No token', data.error || '');
+
+    if (data.access_token) {
+      const expiryTime = Date.now() + (data.expires_in * 1000);
+
+      console.log('Saving Tidal token to store...');
+      store.set('tidal_token', data.access_token);
+      store.set('tidal_refresh_token', data.refresh_token);
+      store.set('tidal_token_expiry', expiryTime);
+      if (data.user) {
+        store.set('tidal_user_id', data.user.userId);
+        store.set('tidal_country_code', data.user.countryCode);
+      }
+      console.log('Tidal token saved. Expiry:', new Date(expiryTime).toISOString());
+
+      // Verify it was saved
+      const savedToken = store.get('tidal_token');
+      console.log('Verification - Tidal token saved:', !!savedToken);
+
+      mainWindow?.webContents.send('tidal-auth-success', {
+        token: data.access_token,
+        expiresIn: data.expires_in,
+        userId: data.user?.userId,
+        countryCode: data.user?.countryCode
+      });
+      console.log('Tidal auth success event sent to renderer');
+    } else {
+      console.error('No access token in Tidal response:', data);
+      mainWindow?.webContents.send('tidal-auth-error', data.error_description || data.error || 'Failed to get access token');
+    }
+  } catch (error) {
+    console.error('Tidal token exchange error:', error);
+    mainWindow?.webContents.send('tidal-auth-error', error.message);
   }
 }
 
@@ -1058,6 +1166,124 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   store.delete('soundcloud_refresh_token');
   store.delete('soundcloud_token_expiry');
   console.log('SoundCloud tokens cleared');
+  return { success: true };
+});
+
+// Tidal OAuth handler
+ipcMain.handle('tidal-auth', async () => {
+  // Get credentials from environment variables
+  const clientId = process.env.TIDAL_CLIENT_ID;
+  const redirectUri = 'http://127.0.0.1:8888/callback/tidal';
+
+  // Validate client ID exists
+  if (!clientId) {
+    console.error('❌ Missing TIDAL_CLIENT_ID in .env file!');
+    return { success: false, error: 'Missing Tidal Client ID' };
+  }
+
+  // Tidal OAuth scopes - we need user read and playback
+  const scopes = [
+    'r_usr',           // Read user info
+    'w_usr',           // Write user info (for playlists)
+    'w_sub'            // Subscription access (for playback)
+  ].join(' ');
+
+  const authUrl = `https://login.tidal.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+
+  console.log('Opening Tidal auth URL');
+
+  // Open in system browser
+  shell.openExternal(authUrl);
+
+  return { success: true };
+});
+
+// Check if Tidal token exists and auto-refresh if expired
+ipcMain.handle('tidal-check-token', async () => {
+  console.log('=== Tidal Check Token Handler Called ===');
+  const token = store.get('tidal_token');
+  const expiry = store.get('tidal_token_expiry');
+  const refreshToken = store.get('tidal_refresh_token');
+  const userId = store.get('tidal_user_id');
+  const countryCode = store.get('tidal_country_code');
+
+  console.log('Tidal token exists:', !!token);
+  console.log('Expiry:', expiry);
+  console.log('Refresh token exists:', !!refreshToken);
+  console.log('Current time:', Date.now());
+  console.log('Is expired:', expiry && Date.now() >= expiry);
+
+  // If token is valid, return it
+  if (token && expiry && Date.now() < expiry) {
+    console.log('✓ Returning valid Tidal token');
+    return { token, expiresAt: expiry, userId, countryCode };
+  }
+
+  // Get credentials from environment
+  const clientId = process.env.TIDAL_CLIENT_ID;
+  const clientSecret = process.env.TIDAL_CLIENT_SECRET;
+
+  // If token is expired but we have a refresh token, try to refresh
+  if (refreshToken && clientId && clientSecret) {
+    console.log('🔄 Tidal token expired, attempting automatic refresh...');
+
+    try {
+      const response = await fetch('https://auth.tidal.com/v1/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret
+        })
+      });
+
+      if (!response.ok) {
+        console.error('❌ Tidal token refresh failed:', response.status, response.statusText);
+        throw new Error(`Token refresh failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Tidal token refreshed successfully');
+
+      // Calculate expiry time
+      const expiresIn = data.expires_in || 86400; // Default to 24 hours
+      const newExpiry = Date.now() + (expiresIn * 1000);
+
+      // Save new token
+      store.set('tidal_token', data.access_token);
+      store.set('tidal_token_expiry', newExpiry);
+
+      // Update refresh token if a new one was provided
+      if (data.refresh_token) {
+        store.set('tidal_refresh_token', data.refresh_token);
+      }
+
+      console.log('New Tidal token expiry:', new Date(newExpiry).toISOString());
+
+      return { token: data.access_token, expiresAt: newExpiry, userId, countryCode };
+    } catch (error) {
+      console.error('Failed to refresh Tidal token:', error);
+      // Fall through to return null
+    }
+  }
+
+  console.log('✗ No valid Tidal token found and refresh failed or not available');
+  return null;
+});
+
+// Disconnect Tidal (clear tokens)
+ipcMain.handle('tidal-disconnect', async () => {
+  console.log('=== Tidal Disconnect ===');
+  store.delete('tidal_token');
+  store.delete('tidal_refresh_token');
+  store.delete('tidal_token_expiry');
+  store.delete('tidal_user_id');
+  store.delete('tidal_country_code');
+  console.log('Tidal tokens cleared');
   return { success: true };
 });
 

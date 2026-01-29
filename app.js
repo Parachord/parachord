@@ -690,6 +690,7 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
+  {"manifest":{"id":"tidal","name":"Tidal","version":"1.0.0","author":"Parachord Team","description":"High-fidelity streaming from Tidal. Requires Tidal subscription for full playback.","icon":"🌊","color":"#000000","homepage":"https://tidal.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["tidal.com/browse/track/*","listen.tidal.com/track/*","tidal.com/track/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('Tidal: No token, skipping search'); return []; } try { console.log('Searching Tidal for:', query); const countryCode = config.countryCode || 'US'; const response = await fetch(`https://api.tidal.com/v1/search/tracks?query=${encodeURIComponent(query)}&limit=20&countryCode=${countryCode}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) { console.error('Tidal search failed:', response.status); if (response.status === 401) { console.log('Tidal token expired or invalid'); } return []; } const data = await response.json(); if (!data.items || !Array.isArray(data.items)) { console.log('No Tidal results found'); return []; } const results = data.items.map(track => ({ id: `tidal-${track.id}`, title: track.title, artist: track.artists?.map(a => a.name).join(', ') || track.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['tidal'], tidalId: track.id, tidalUrl: `https://listen.tidal.com/track/${track.id}`, albumArt: track.album?.cover ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg` : null, quality: track.audioQuality || 'LOSSLESS', explicit: track.explicit || false })); console.log(`Found ${results.length} Tidal results`); return results; } catch (error) { console.error('Tidal search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const trackIdMatch = url.match(/track\\/([0-9]+)/); if (!trackIdMatch) return null; const trackId = trackIdMatch[1]; const countryCode = config.countryCode || 'US'; const response = await fetch(`https://api.tidal.com/v1/tracks/${trackId}?countryCode=${countryCode}`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) return null; const track = await response.json(); return { id: `tidal-${track.id}`, title: track.title, artist: track.artists?.map(a => a.name).join(', ') || track.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['tidal'], tidalId: track.id, tidalUrl: `https://listen.tidal.com/track/${track.id}`, albumArt: track.album?.cover ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg` : null, quality: track.audioQuality || 'LOSSLESS' }; } catch (error) { console.error('Tidal URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.tidalUrl && !track.tidalId) { console.error('No Tidal URL or ID found'); return false; } const url = track.tidalUrl || `https://listen.tidal.com/track/${track.tidalId}`; try { if (window.electron?.playbackWindow?.open) { await window.electron.playbackWindow.open(url, { title: `${track.title} - ${track.artist}`, width: 1200, height: 800 }); return true; } else if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(url); return result && result.success; } else { const newWindow = window.open(url, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Tidal:', error); return false; } }","init":"async function(config) { console.log('Tidal resolver initialized'); }","cleanup":"async function() { console.log('Tidal resolver cleanup'); }"}},
 ];
 
 
@@ -726,7 +727,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     youtube: { label: 'YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
     bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
     qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' },
-    soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' }
+    soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' },
+    tidal: { label: 'Tidal', bgColor: 'bg-gray-800/20', textColor: 'text-gray-300' }
   };
 
   // Determine which resolver will be used (based on priority)
@@ -3278,6 +3280,10 @@ const Parachord = () => {
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
+  const [tidalToken, setTidalToken] = useState(null);
+  const tidalTokenRef = useRef(null); // Ref for token access in callbacks
+  const [tidalConnected, setTidalConnected] = useState(false);
+  const [tidalCountryCode, setTidalCountryCode] = useState('US');
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
@@ -4203,6 +4209,7 @@ const Parachord = () => {
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
+  useEffect(() => { tidalTokenRef.current = tidalToken; }, [tidalToken]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
@@ -6292,6 +6299,38 @@ const Parachord = () => {
       });
 
       return { token };
+    }
+
+    // For Tidal, always get a fresh token from the IPC handler
+    if (resolverId === 'tidal') {
+      let token = tidalToken;
+      let countryCode = tidalCountryCode;
+
+      // Try to get a fresh/refreshed token from the IPC handler
+      if (window.electron?.tidal) {
+        const tokenData = await window.electron.tidal.checkToken();
+        if (tokenData && tokenData.token) {
+          token = tokenData.token;
+          // Update React state if token changed
+          if (token !== tidalToken) {
+            console.log('🔄 Tidal token was refreshed, updating state');
+            setTidalToken(token);
+          }
+          if (tokenData.countryCode && tokenData.countryCode !== tidalCountryCode) {
+            setTidalCountryCode(tokenData.countryCode);
+            countryCode = tokenData.countryCode;
+          }
+        }
+      }
+
+      console.log('🔑 Tidal token status:', {
+        hasToken: !!token,
+        tokenLength: token?.length,
+        tokenPreview: token ? token.substring(0, 20) + '...' : 'null',
+        countryCode
+      });
+
+      return { token, countryCode };
     }
 
     const configs = {
@@ -18581,6 +18620,88 @@ ${tracks}
     }
   };
 
+  // Tidal authentication functions
+  const checkTidalToken = async () => {
+    console.log('Checking Tidal token...');
+    if (window.electron?.tidal) {
+      const tokenData = await window.electron.tidal.checkToken();
+      console.log('Tidal token data received:', {
+        hasData: !!tokenData,
+        hasToken: !!tokenData?.token,
+        tokenLength: tokenData?.token?.length,
+        tokenPreview: tokenData?.token ? tokenData.token.substring(0, 20) + '...' : 'null',
+        expiry: tokenData?.expiresAt,
+        countryCode: tokenData?.countryCode
+      });
+      if (tokenData && tokenData.token) {
+        console.log('Valid Tidal token found, setting connected state');
+        setTidalToken(tokenData.token);
+        setTidalConnected(true);
+        if (tokenData.countryCode) {
+          setTidalCountryCode(tokenData.countryCode);
+        }
+        // Enable Tidal resolver if authenticated
+        setActiveResolvers(prev => {
+          if (!prev.includes('tidal')) {
+            console.log('Adding Tidal to active resolvers');
+            return [...prev, 'tidal'];
+          }
+          return prev;
+        });
+      } else {
+        console.log('No valid Tidal token found');
+      }
+    } else {
+      console.log('window.electron.tidal not available');
+    }
+  };
+
+  const connectTidal = async () => {
+    console.log('=== Connect Tidal Clicked ===');
+    console.log('window.electron:', !!window.electron);
+    console.log('window.electron.tidal:', !!window.electron?.tidal);
+
+    if (window.electron?.tidal) {
+      try {
+        console.log('Calling Tidal authenticate...');
+        const result = await window.electron.tidal.authenticate();
+        console.log('Tidal authenticate result:', result);
+        if (!result.success && result.error) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Authentication Failed',
+            message: result.error
+          });
+        }
+      } catch (error) {
+        console.error('Tidal auth error:', error);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Authentication Failed',
+          message: 'Tidal authentication failed. Check console for details.'
+        });
+      }
+    } else {
+      console.error('window.electron.tidal not available!');
+      showConfirmDialog({
+        type: 'error',
+        title: 'API Not Available',
+        message: 'Tidal API not available. Make sure preload.js is loaded correctly.'
+      });
+    }
+  };
+
+  const disconnectTidal = async () => {
+    if (window.electron?.tidal) {
+      await window.electron.tidal.disconnect();
+      setTidalToken(null);
+      setTidalConnected(false);
+      // Remove Tidal sources from all tracks and remove from active resolvers
+      removeResolverSources('tidal');
+      setActiveResolvers(prev => prev.filter(id => id !== 'tidal'));
+    }
+  };
+
   // Meta Service config helpers
   const saveMetaServiceConfig = async (serviceId, config) => {
     const newConfigs = { ...metaServiceConfigs, [serviceId]: config };
@@ -18835,6 +18956,51 @@ useEffect(() => {
   const tokenRefreshInterval = setInterval(() => {
     console.log('⏰ Periodic SoundCloud token refresh check...');
     checkSoundcloudToken();
+  }, 30 * 60 * 1000); // 30 minutes
+
+  return () => clearInterval(tokenRefreshInterval);
+}, []);
+
+// Listen for Tidal auth events
+useEffect(() => {
+  checkTidalToken();
+
+  if (window.electron?.tidal) {
+    window.electron.tidal.onAuthSuccess((data) => {
+      console.log('Tidal auth success!', {
+        hasToken: !!data.token,
+        tokenLength: data.token?.length,
+        tokenPreview: data.token ? data.token.substring(0, 20) + '...' : 'null',
+        countryCode: data.countryCode
+      });
+      setTidalToken(data.token);
+      setTidalConnected(true);
+      if (data.countryCode) {
+        setTidalCountryCode(data.countryCode);
+      }
+      // Automatically enable Tidal resolver after successful auth
+      setActiveResolvers(prev => {
+        if (!prev.includes('tidal')) {
+          return [...prev, 'tidal'];
+        }
+        return prev;
+      });
+      console.log('Tidal connected and enabled!');
+    });
+    window.electron.tidal.onAuthError((error) => {
+      console.error('Tidal auth failed:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Tidal Authentication Failed',
+        message: error
+      });
+    });
+  }
+
+  // Periodically check and refresh Tidal token every 30 minutes
+  const tokenRefreshInterval = setInterval(() => {
+    console.log('⏰ Periodic Tidal token refresh check...');
+    checkTidalToken();
   }, 30 * 60 * 1000); // 30 minutes
 
   return () => clearInterval(tokenRefreshInterval);
@@ -34257,6 +34423,85 @@ React.createElement('div', {
               }
             },
               'Note: Streaming availability depends on individual track permissions set by uploaders.'
+            )
+          ),
+
+          // Tidal authentication section
+          selectedResolver.id === 'tidal' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#1f2937'
+                  }
+                }, 'Tidal Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginTop: '2px'
+                  }
+                },
+                  tidalConnected ? 'Connected and ready' : 'Sign in to enable search and streaming'
+                )
+              ),
+              tidalConnected
+                ? React.createElement('button', {
+                    onClick: disconnectTidal,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#dc2626',
+                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Disconnect')
+                : React.createElement('button', {
+                    onClick: connectTidal,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#000000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Connect')
+            ),
+            tidalConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: '#000000'
+              }
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'Tidal connected')
+            ),
+            React.createElement('p', {
+              style: {
+                fontSize: '11px',
+                color: '#9ca3af',
+                marginTop: '12px',
+                lineHeight: '1.5'
+              }
+            },
+              'Tidal subscription required for full playback. Tracks play through the Tidal web player.'
             )
           ),
 
