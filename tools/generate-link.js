@@ -6,6 +6,9 @@
  * 1. Connect to Parachord for full playback (when installed)
  * 2. Fall back to multi-service links (when not installed)
  *
+ * If Parachord is running, resolves actual track links via resolvers.
+ * Otherwise, falls back to search URLs.
+ *
  * Usage:
  *   node generate-link.js <spotify-url> [output-file]
  *   node generate-link.js "https://open.spotify.com/track/..." my-track.html
@@ -13,6 +16,14 @@
 
 const fs = require('fs');
 const path = require('path');
+
+// WebSocket is optional - only needed if Parachord is running
+let WebSocket;
+try {
+  WebSocket = require('ws');
+} catch (e) {
+  // ws module not available - will skip Parachord resolution
+}
 
 // Service configurations
 const SERVICES = {
@@ -73,6 +84,98 @@ const SERVICES = {
   }
 };
 
+// Connect to Parachord and search for track
+const PARACHORD_WS_URL = 'ws://127.0.0.1:9876';
+
+async function searchParachord(query) {
+  return new Promise((resolve) => {
+    // Skip if WebSocket not available
+    if (!WebSocket) {
+      resolve(null);
+      return;
+    }
+
+    let resolved = false;
+
+    try {
+      const ws = new WebSocket(PARACHORD_WS_URL);
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          ws.close();
+          resolve(null);
+        }
+      }, 10000);
+
+      ws.on('open', () => {
+        console.log('  Connected to Parachord, searching resolvers...');
+        ws.send(JSON.stringify({
+          type: 'embed',
+          action: 'search',
+          requestId: 'link-gen-' + Date.now(),
+          payload: { query }
+        }));
+      });
+
+      ws.on('message', (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'embed-response' && !resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            ws.close();
+            resolve(msg.results || []);
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+      });
+
+      ws.on('error', () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve(null);
+        }
+      });
+
+      ws.on('close', () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve(null);
+        }
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+// Map resolver results to service URLs
+function mapResolverResults(results) {
+  const serviceUrls = {};
+
+  for (const track of results) {
+    const resolverId = track.resolverId;
+
+    // Map resolver IDs to services with direct URLs
+    if (resolverId === 'spotify' && track.spotifyId) {
+      serviceUrls.spotify = `https://open.spotify.com/track/${track.spotifyId}`;
+    } else if (resolverId === 'youtube' && track.youtubeId) {
+      serviceUrls.youtube = `https://www.youtube.com/watch?v=${track.youtubeId}`;
+    } else if (resolverId === 'soundcloud' && track.soundcloudUrl) {
+      serviceUrls.soundcloud = track.soundcloudUrl;
+    } else if (resolverId === 'bandcamp' && track.bandcampUrl) {
+      serviceUrls.bandcamp = track.bandcampUrl;
+    } else if (resolverId === 'qobuz' && track.qobuzId) {
+      serviceUrls.qobuz = `https://www.qobuz.com/track/${track.qobuzId}`;
+    }
+  }
+
+  return serviceUrls;
+}
+
 // Parse Spotify URL to get track ID
 function parseSpotifyUrl(url) {
   const match = url.match(/spotify\.com\/track\/([a-zA-Z0-9]+)/);
@@ -110,24 +213,33 @@ async function fetchSpotifyTrackInfo(trackId) {
 
 // Generate the HTML page
 function generateHtml(track, options = {}) {
-  const { enabledServices = Object.keys(SERVICES) } = options;
+  const { enabledServices = Object.keys(SERVICES), resolvedUrls = {} } = options;
 
   const serviceLinks = enabledServices
     .map(id => {
       const service = SERVICES[id];
       if (!service) return '';
 
-      const url = id === 'spotify'
-        ? track.spotifyUrl
-        : service.searchUrl(track.artist, track.title);
+      // Use resolved URL if available, otherwise fall back to search URL
+      let url;
+      if (id === 'spotify') {
+        url = track.spotifyUrl;
+      } else if (resolvedUrls[id]) {
+        url = resolvedUrls[id];
+      } else {
+        url = service.searchUrl(track.artist, track.title);
+      }
+
+      const isResolved = resolvedUrls[id] || id === 'spotify';
 
       return `
-        <a href="${url}" target="_blank" rel="noopener" class="service-link" style="--service-color: ${service.color}">
+        <a href="${url}" target="_blank" rel="noopener" class="service-link ${isResolved ? 'resolved' : 'search'}" style="--service-color: ${service.color}">
           <span class="service-icon">${service.icon}</span>
           <span class="service-name">${service.name}</span>
-          <span class="service-arrow">→</span>
+          <span class="service-status">${isResolved ? '✓' : '🔍'}</span>
         </a>`;
     })
+    .filter(link => link) // Remove empty entries
     .join('\n');
 
   return `<!DOCTYPE html>
@@ -317,8 +429,17 @@ function generateHtml(track, options = {}) {
       font-weight: 500;
     }
 
-    .service-arrow {
+    .service-status {
       color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    .service-link.resolved .service-status {
+      color: #22c55e;
+    }
+
+    .service-link.search .service-status {
+      opacity: 0.5;
     }
 
     /* Footer */
@@ -535,8 +656,25 @@ Examples:
     console.log(`Found: "${track.title}" by ${track.artist}`);
   }
 
+  // Try to resolve actual service URLs via Parachord
+  let resolvedUrls = {};
+  console.log('\nSearching for track on streaming services...');
+
+  const searchResults = await searchParachord(`${track.artist} ${track.title}`);
+  if (searchResults && searchResults.length > 0) {
+    console.log(`  Found ${searchResults.length} results from Parachord resolvers`);
+    resolvedUrls = mapResolverResults(searchResults);
+
+    const resolvedCount = Object.keys(resolvedUrls).length;
+    if (resolvedCount > 0) {
+      console.log(`  Resolved direct links for: ${Object.keys(resolvedUrls).join(', ')}`);
+    }
+  } else {
+    console.log('  Parachord not running or no results - using search URLs as fallback');
+  }
+
   // Generate HTML
-  const html = generateHtml(track);
+  const html = generateHtml(track, { resolvedUrls });
 
   // Write file
   const outputPath = path.resolve(outputFile);
