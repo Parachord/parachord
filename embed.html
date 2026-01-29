@@ -421,8 +421,8 @@
 
     <!-- Fallback Notice (shown when not connected) -->
     <div class="fallback-notice hidden" id="fallbackNotice">
-      <h3>Parachord Not Detected</h3>
-      <p>Install Parachord for the full experience, or search for music on these services:</p>
+      <h3 id="fallbackTitle">Parachord Not Detected</h3>
+      <p id="fallbackText">Install Parachord for the full experience, or search for music on these services:</p>
       <div class="service-links">
         <a href="https://open.spotify.com/search/" target="_blank" class="service-link spotify" id="spotifyLink">
           <div class="icon">S</div>
@@ -508,6 +508,79 @@
       volume: 70
     };
 
+    // Cache for resolved service URLs (persists after disconnect)
+    let resolvedServiceUrls = {
+      spotify: null,
+      youtube: null,
+      soundcloud: null,
+      bandcamp: null
+    };
+
+    // Extract service URL from a track based on resolver ID
+    function getServiceUrl(track) {
+      if (!track) return null;
+
+      // Try to get URL from track properties
+      const url = track.url || track.externalUrl || track.streamUrl;
+      if (!url) return null;
+
+      return url;
+    }
+
+    // Map resolver ID to service name
+    function resolverToService(resolverId) {
+      if (!resolverId) return null;
+      const id = resolverId.toLowerCase();
+      if (id.includes('spotify')) return 'spotify';
+      if (id.includes('youtube') || id.includes('yt')) return 'youtube';
+      if (id.includes('soundcloud') || id.includes('sc')) return 'soundcloud';
+      if (id.includes('bandcamp') || id.includes('bc')) return 'bandcamp';
+      return null;
+    }
+
+    // Cache URLs from search results
+    function cacheResolvedUrls(tracks) {
+      if (!tracks || !tracks.length) return;
+
+      tracks.forEach(track => {
+        const service = resolverToService(track.resolverId);
+        const url = getServiceUrl(track);
+
+        if (service && url && !resolvedServiceUrls[service]) {
+          resolvedServiceUrls[service] = url;
+          console.log(`[Embed] Cached ${service} URL:`, url);
+        }
+      });
+
+      // Update the service links with resolved URLs
+      updateServiceLinksFromCache();
+    }
+
+    // Update service link elements from cache
+    function updateServiceLinksFromCache() {
+      if (resolvedServiceUrls.spotify) {
+        spotifyLink.href = resolvedServiceUrls.spotify;
+        spotifyLink.querySelector('.name').textContent = 'Spotify ✓';
+      }
+      if (resolvedServiceUrls.youtube) {
+        youtubeLink.href = resolvedServiceUrls.youtube;
+        youtubeLink.querySelector('.name').textContent = 'YouTube ✓';
+      }
+      if (resolvedServiceUrls.soundcloud) {
+        soundcloudLink.href = resolvedServiceUrls.soundcloud;
+        soundcloudLink.querySelector('.name').textContent = 'SoundCloud ✓';
+      }
+      if (resolvedServiceUrls.bandcamp) {
+        bandcampLink.href = resolvedServiceUrls.bandcamp;
+        bandcampLink.querySelector('.name').textContent = 'Bandcamp ✓';
+      }
+    }
+
+    // Check if we have any cached URLs
+    function hasAnyCachedUrls() {
+      return Object.values(resolvedServiceUrls).some(url => url !== null);
+    }
+
     // DOM Elements
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
@@ -532,6 +605,10 @@
     const youtubeLink = document.getElementById('youtubeLink');
     const soundcloudLink = document.getElementById('soundcloudLink');
     const bandcampLink = document.getElementById('bandcampLink');
+
+    // Fallback notice elements
+    const fallbackTitle = document.getElementById('fallbackTitle');
+    const fallbackText = document.getElementById('fallbackText');
 
     // Connect to Parachord
     function connect() {
@@ -657,9 +734,22 @@
         nowPlaying.classList.remove('hidden');
       } else {
         statusDot.classList.remove('connected');
-        statusText.textContent = 'Not connected';
+        const hasCached = hasAnyCachedUrls();
+        statusText.textContent = hasCached ? 'Disconnected (links cached)' : 'Not connected';
         fallbackNotice.classList.remove('hidden');
         nowPlaying.classList.add('hidden');
+
+        // Update fallback notice text based on cached state
+        if (hasCached) {
+          fallbackTitle.textContent = 'Listen on Your Favorite Service';
+          fallbackText.textContent = 'Direct links resolved from Parachord (✓ = direct link):';
+        } else {
+          fallbackTitle.textContent = 'Parachord Not Detected';
+          fallbackText.textContent = 'Install Parachord for the full experience, or search for music on these services:';
+        }
+
+        // Restore cached URLs to service links (they persist after disconnect)
+        updateServiceLinksFromCache();
       }
     }
 
@@ -757,6 +847,9 @@
         results.classList.remove('hidden');
         return;
       }
+
+      // Cache resolved URLs from search results
+      cacheResolvedUrls(tracks);
 
       resultsHeader.textContent = `Results for "${query}"`;
       resultsList.innerHTML = tracks.slice(0, 20).map(track => `
