@@ -401,7 +401,14 @@ function startAuthServer() {
 
   // Serve embedded player
   expressApp.get('/embed', (req, res) => {
-    res.sendFile(path.join(__dirname, 'embed.html'));
+    const embedPath = path.join(__dirname, 'embed.html');
+    console.log('Serving embed from:', embedPath);
+    res.sendFile(embedPath, (err) => {
+      if (err) {
+        console.error('Error serving embed.html:', err);
+        res.status(404).send('Embed player not found');
+      }
+    });
   });
 
   expressApp.get('/callback', (req, res) => {
