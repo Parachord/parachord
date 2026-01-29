@@ -108,6 +108,13 @@ contextBridge.exposeInMainWorld('electron', {
     updatePlaybackSource: (source) => ipcRenderer.invoke('media-keys-update-playback-source', source)
   },
 
+  // Menu action handlers
+  onMenuAction: (callback) => {
+    ipcRenderer.on('menu-action', (event, action) => {
+      callback(action);
+    });
+  },
+
   // Plugin operations
   resolvers: {
     loadBuiltin: () => ipcRenderer.invoke('resolvers-load-builtin'),

@@ -6166,6 +6166,75 @@ const Parachord = () => {
     }
   }, []);
 
+  // Application menu action handlers
+  useEffect(() => {
+    if (window.electron?.onMenuAction) {
+      window.electron.onMenuAction((action) => {
+        console.log('📋 Menu action:', action);
+        switch (action) {
+          case 'open-settings':
+            setActiveView('settings');
+            break;
+          case 'open-url':
+            // Focus search and show URL input hint
+            searchInputRef.current?.focus();
+            break;
+          case 'add-folder':
+            window.electron.localFiles?.addWatchFolder();
+            break;
+          case 'import-playlist':
+            window.electron.playlists?.import();
+            break;
+          case 'export-playlist':
+            // Open save queue dialog
+            setQueueSaveDialogOpen(true);
+            break;
+          case 'focus-search':
+            searchInputRef.current?.focus();
+            break;
+          case 'play-pause':
+            if (isPlaying) {
+              handlePause();
+            } else if (currentTrack) {
+              handlePlay(currentTrack);
+            }
+            break;
+          case 'next-track':
+            handleNext();
+            break;
+          case 'previous-track':
+            handlePrevious();
+            break;
+          case 'toggle-shuffle':
+            setShuffleMode(prev => !prev);
+            break;
+          case 'toggle-repeat':
+            setRepeatMode(prev => prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off');
+            break;
+          case 'volume-up':
+            setVolume(prev => Math.min(1, prev + 0.1));
+            break;
+          case 'volume-down':
+            setVolume(prev => Math.max(0, prev - 0.1));
+            break;
+          case 'show-queue':
+            setQueueDrawerOpen(true);
+            break;
+          case 'show-collection':
+            setActiveView('collection');
+            break;
+          case 'show-local-files':
+            setActiveView('localFiles');
+            break;
+          case 'view-logs':
+            // Open DevTools console
+            window.electron?.invoke?.('toggle-devtools');
+            break;
+        }
+      });
+    }
+  }, [isPlaying, currentTrack]);
+
   // App lifecycle event handlers - restart Spotify polling when app returns to foreground
   useEffect(() => {
     if (window.electron?.app?.onForeground) {
