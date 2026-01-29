@@ -7290,6 +7290,13 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
+    // Stop HTML5 Audio if playing (local files, SoundCloud) - do this first to prevent overlap
+    if (audioRef.current && !audioRef.current.paused) {
+      console.log('⏹️ Stopping HTML5 audio before new track');
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
     // Stop any active browser playback before starting new track
     if (browserPlaybackActive && activeExtensionTabId) {
       console.log('⏹️ Stopping browser playback before playing new track');
@@ -8686,6 +8693,13 @@ const Parachord = () => {
         window.electron.spotify.polling.stop();
       }
 
+      // Stop HTML5 Audio if playing (local files, SoundCloud)
+      if (audioRef.current && !audioRef.current.paused) {
+        console.log('⏹️ Stopping HTML5 audio before next track');
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+
       // Notify scrobble manager that current track is ending
       if (window.scrobbleManager) {
         window.scrobbleManager.onTrackEnd();
@@ -8937,6 +8951,13 @@ const Parachord = () => {
     if (externalTrackIntervalRef.current) {
       clearInterval(externalTrackIntervalRef.current);
       externalTrackIntervalRef.current = null;
+    }
+
+    // Stop HTML5 Audio if playing (local files, SoundCloud)
+    if (audioRef.current && !audioRef.current.paused) {
+      console.log('⏹️ Stopping HTML5 audio before previous track');
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
     setIsExternalPlayback(false);
     setShowExternalPrompt(false);
