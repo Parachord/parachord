@@ -6240,10 +6240,51 @@ const Parachord = () => {
           case 'volume-down':
             setVolume(prev => Math.max(0, prev - 0.1));
             break;
+          case 'check-for-updates':
+            showToast('Checking for updates...');
+            window.electron.updater?.check();
+            break;
         }
       });
     }
   }, [isPlaying, currentTrack]);
+
+  // Auto-updater status listener
+  useEffect(() => {
+    if (window.electron?.updater?.onStatus) {
+      window.electron.updater.onStatus((status) => {
+        console.log('🔄 Updater status:', status);
+        switch (status.status) {
+          case 'checking':
+            // Already showing toast from menu action
+            break;
+          case 'available':
+            showToast(`Update available: v${status.version}`, 5000);
+            // Prompt user to download
+            if (window.confirm(`A new version (v${status.version}) is available. Download now?`)) {
+              window.electron.updater.download();
+            }
+            break;
+          case 'not-available':
+            showToast('You have the latest version');
+            break;
+          case 'downloading':
+            showToast(`Downloading update: ${Math.round(status.percent || 0)}%`);
+            break;
+          case 'downloaded':
+            showToast('Update downloaded. Restart to install.', 8000);
+            // Prompt user to install
+            if (window.confirm('Update downloaded. Restart now to install?')) {
+              window.electron.updater.install();
+            }
+            break;
+          case 'error':
+            showToast(`Update error: ${status.error}`, 5000);
+            break;
+        }
+      });
+    }
+  }, []);
 
   // App lifecycle event handlers - restart Spotify polling when app returns to foreground
   useEffect(() => {
