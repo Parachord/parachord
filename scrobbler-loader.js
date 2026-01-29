@@ -574,7 +574,7 @@ class LastFmScrobbler extends BaseScrobbler {
     };
   }
 
-  // Full auth flow - returns URL, then call completeAuth after user approves
+  // Full auth flow - returns URL, then auto-polls for completion
   async startAuth() {
     const token = await this.getAuthToken();
     const authUrl = this.getAuthUrl(token);
@@ -582,13 +582,81 @@ class LastFmScrobbler extends BaseScrobbler {
     // Store token temporarily
     await this.setConfig({
       ...await this.getConfig(),
-      pendingToken: token
+      pendingToken: token,
+      authPolling: true
     });
+
+    // Start polling for auth completion in background
+    this.startAuthPolling(token);
 
     return { authUrl, token };
   }
 
-  // Complete auth after user approves
+  // Poll for auth completion (called automatically after startAuth)
+  startAuthPolling(token) {
+    // Clear any existing polling
+    if (this.authPollInterval) {
+      clearInterval(this.authPollInterval);
+    }
+
+    let attempts = 0;
+    const maxAttempts = 60; // 5 minutes at 5-second intervals
+
+    console.log(`[${this.name}] Starting auth polling...`);
+
+    this.authPollInterval = setInterval(async () => {
+      attempts++;
+
+      try {
+        const session = await this.getSession(token);
+
+        // Success! User has authorized
+        console.log(`[${this.name}] Auth polling: authorization detected!`);
+        clearInterval(this.authPollInterval);
+        this.authPollInterval = null;
+
+        await this.setConfig({
+          enabled: true,
+          sessionKey: session.sessionKey,
+          username: session.username,
+          connectedAt: Date.now(),
+          pendingToken: null,
+          authPolling: false
+        });
+
+        // Emit event for UI to update
+        window.dispatchEvent(new CustomEvent('scrobbler-auth-complete', {
+          detail: { scrobblerId: this.id, username: session.username }
+        }));
+      } catch (error) {
+        // Token not yet authorized, keep polling
+        if (attempts >= maxAttempts) {
+          console.log(`[${this.name}] Auth polling timed out after ${maxAttempts} attempts`);
+          clearInterval(this.authPollInterval);
+          this.authPollInterval = null;
+
+          // Clear pending state
+          const config = await this.getConfig();
+          await this.setConfig({
+            ...config,
+            pendingToken: null,
+            authPolling: false
+          });
+        }
+      }
+    }, 5000); // Poll every 5 seconds
+  }
+
+  // Stop polling (if user cancels)
+  stopAuthPolling() {
+    if (this.authPollInterval) {
+      clearInterval(this.authPollInterval);
+      this.authPollInterval = null;
+      console.log(`[${this.name}] Auth polling stopped`);
+    }
+  }
+
+  // Complete auth after user approves (manual fallback)
   async completeAuth() {
     const config = await this.getConfig();
     if (!config.pendingToken) {
@@ -698,8 +766,12 @@ class LibreFmScrobbler extends LastFmScrobbler {
 
     await this.setConfig({
       ...await this.getConfig(),
-      pendingToken: data.token
+      pendingToken: data.token,
+      authPolling: true
     });
+
+    // Start polling for auth completion (inherited from parent)
+    this.startAuthPolling(data.token);
 
     return { authUrl, token: data.token };
   }
