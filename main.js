@@ -852,9 +852,7 @@ app.whenReady().then(() => {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'reload' }
       ]
     },
 
