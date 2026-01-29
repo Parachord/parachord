@@ -9494,6 +9494,33 @@ const Parachord = () => {
     }
   };
 
+  // Instant local search (no debounce) for playlists and local files
+  const performLocalSearch = async (query) => {
+    const lowerQuery = query.toLowerCase();
+
+    // Search local playlists instantly
+    const matchingPlaylists = playlists.filter(p =>
+      p.title.toLowerCase().includes(lowerQuery)
+    );
+
+    // Search local files if available
+    let localTracks = [];
+    if (window.electron?.localFiles?.search) {
+      try {
+        const results = await window.electron.localFiles.search(query);
+        localTracks = (results || []).slice(0, 20).map(track => ({
+          ...track,
+          isLocal: true,
+          sources: { localFiles: { filePath: track.filePath, confidence: 1 } }
+        }));
+      } catch (error) {
+        console.error('Local files search error:', error);
+      }
+    }
+
+    return { playlists: matchingPlaylists, localTracks };
+  };
+
   const handleSearchInput = (value) => {
     setSearchQuery(value);
     searchQueryRef.current = value;
@@ -9511,20 +9538,31 @@ const Parachord = () => {
       return;
     }
 
-    // Show loading state for responsive feel
-    if (value.length >= 2) {
-      setIsSearching(true);
-    }
-
     // Reset pagination on new search
     setDisplayLimits({ artists: 5, albums: 5, tracks: 8, playlists: 5 });
 
-    // Debounce search by 400ms
+    // Instant local search (no debounce) - show results immediately
+    if (value.length >= 2) {
+      setIsSearching(true);
+      performLocalSearch(value).then(({ playlists: matchingPlaylists, localTracks }) => {
+        // Only update if query is still current
+        if (value === searchQueryRef.current) {
+          setSearchResults(prev => ({
+            ...prev,
+            playlists: matchingPlaylists,
+            // Prepend local tracks to any existing tracks (they'll be merged with remote later)
+            tracks: localTracks
+          }));
+        }
+      });
+    }
+
+    // Debounce remote search by 250ms
     searchTimeoutRef.current = setTimeout(() => {
       if (value.length >= 2) {
         performSearch(value);
       }
-    }, 400);
+    }, 250);
   };
 
   // Load search history from electron-store
@@ -9730,123 +9768,155 @@ const Parachord = () => {
     const signal = abortControllerRef.current.signal;
 
     setIsSearching(true);
-    const results = {
-      artists: [],
-      albums: [],
-      tracks: [],
-      playlists: []
+
+    const fetchOptions = {
+      headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' },
+      signal
+    };
+
+    // Track which categories are still loading for progressive display
+    let pendingCategories = 3; // artists, albums, tracks
+
+    const decrementPending = () => {
+      pendingCategories--;
+      if (pendingCategories === 0 && query === searchQueryRef.current) {
+        setIsSearching(false);
+      }
     };
 
     try {
-      const fetchOptions = {
-        headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' },
-        signal
-      };
+      // Launch all three searches in parallel for maximum speed
+      // Each updates results progressively as it completes
 
-      // Search MusicBrainz for artists (fetch more than we initially display)
-      const artistQuery = preprocessQuery(query, 'artist');
-      const artistResponse = await fetch(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
-        fetchOptions
-      );
-      if (artistResponse.ok) {
-        const data = await artistResponse.json();
-        const rawArtists = data.artists || [];
+      // Search artists
+      const artistPromise = (async () => {
+        try {
+          const artistQuery = preprocessQuery(query, 'artist');
+          const artistResponse = await fetch(
+            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
+            fetchOptions
+          );
+          if (artistResponse.ok && query === searchQueryRef.current) {
+            const data = await artistResponse.json();
+            const rawArtists = data.artists || [];
 
-        // Deduplicate artists by name (case-insensitive)
-        const seenArtists = new Set();
-        results.artists = rawArtists.filter(artist => {
-          const name = artist.name?.toLowerCase() || '';
-          if (seenArtists.has(name)) return false;
-          seenArtists.add(name);
-          return true;
-        });
+            // Deduplicate artists by name (case-insensitive)
+            const seenArtists = new Set();
+            let artists = rawArtists.filter(artist => {
+              const name = artist.name?.toLowerCase() || '';
+              if (seenArtists.has(name)) return false;
+              seenArtists.add(name);
+              return true;
+            });
 
-        // Re-rank artists with fuzzy matching + popularity
-        results.artists = reRankResults(results.artists, query, 'name');
-      }
+            // Re-rank artists with fuzzy matching + popularity
+            artists = reRankResults(artists, query, 'name');
 
-      // Check if query is still current before continuing
-      if (query !== searchQueryRef.current) return;
+            // Progressive update - show artists immediately
+            setSearchResults(prev => ({ ...prev, artists }));
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            console.error('Artist search error:', error);
+          }
+        } finally {
+          decrementPending();
+        }
+      })();
 
-      // Search MusicBrainz for albums (release-groups)
-      const albumQuery = preprocessQuery(query, 'release-group');
-      const albumResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
-        fetchOptions
-      );
-      if (albumResponse.ok) {
-        const data = await albumResponse.json();
-        const rawAlbums = data['release-groups'] || [];
+      // Search albums
+      const albumPromise = (async () => {
+        try {
+          const albumQuery = preprocessQuery(query, 'release-group');
+          const albumResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
+            fetchOptions
+          );
+          if (albumResponse.ok && query === searchQueryRef.current) {
+            const data = await albumResponse.json();
+            const rawAlbums = data['release-groups'] || [];
 
-        // Deduplicate albums by artist + title (case-insensitive)
-        const seen = new Set();
-        results.albums = rawAlbums.filter(album => {
-          const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
-          const title = album.title?.toLowerCase() || '';
-          const key = `${artist}|${title}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
+            // Deduplicate albums by artist + title (case-insensitive)
+            const seen = new Set();
+            let albums = rawAlbums.filter(album => {
+              const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
+              const title = album.title?.toLowerCase() || '';
+              const key = `${artist}|${title}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
 
-        // Re-rank albums with fuzzy matching + popularity
-        results.albums = reRankResults(results.albums, query, 'title');
-      }
+            // Re-rank albums with fuzzy matching + popularity
+            albums = reRankResults(albums, query, 'title');
 
-      // Check if query is still current before continuing
-      if (query !== searchQueryRef.current) return;
+            // Progressive update - show albums immediately
+            setSearchResults(prev => {
+              // Fetch album art in background for newly added albums
+              fetchSearchAlbumArt(albums, prev.tracks);
+              return { ...prev, albums };
+            });
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            console.error('Album search error:', error);
+          }
+        } finally {
+          decrementPending();
+        }
+      })();
 
-      // Search MusicBrainz for tracks (recordings)
-      const trackQuery = preprocessQuery(query, 'recording');
-      const trackResponse = await fetch(
-        `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
-        fetchOptions
-      );
-      if (trackResponse.ok) {
-        const data = await trackResponse.json();
-        const recordings = data.recordings || [];
+      // Search tracks
+      const trackPromise = (async () => {
+        try {
+          const trackQuery = preprocessQuery(query, 'recording');
+          const trackResponse = await fetch(
+            `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
+            fetchOptions
+          );
+          if (trackResponse.ok && query === searchQueryRef.current) {
+            const data = await trackResponse.json();
+            const recordings = data.recordings || [];
 
-        // Only resolve the first batch of tracks for performance
-        // Rest will be resolved on-demand when "Load more" is clicked or when played
-        const initialBatchSize = 8;
-        const trackPromises = recordings.slice(0, initialBatchSize).map(recording => resolveRecording(recording));
-        const resolvedTracks = await Promise.all(trackPromises);
+            // Create all tracks as unresolved initially (resolve on-demand when played)
+            let tracks = recordings.map(recording => ({
+              id: recording.id,
+              title: recording.title,
+              artist: recording['artist-credit']?.[0]?.name || 'Unknown',
+              duration: Math.floor((recording.length || 180000) / 1000),
+              album: recording.releases?.[0]?.title || '',
+              releaseId: recording.releases?.[0]?.id || null,
+              length: recording.length,
+              sources: {},
+              _needsResolution: true
+            }));
 
-        // Check if query is still current after track resolution
-        if (query !== searchQueryRef.current) return;
+            // Re-rank tracks with fuzzy matching + popularity
+            tracks = reRankResults(tracks, query, 'title');
 
-        // Store unresolved tracks without sources (will resolve on-demand)
-        const unresolvedTracks = recordings.slice(initialBatchSize).map(recording => ({
-          id: recording.id,
-          title: recording.title,
-          artist: recording['artist-credit']?.[0]?.name || 'Unknown',
-          duration: Math.floor((recording.length || 180000) / 1000),
-          album: recording.releases?.[0]?.title || '',
-          releaseId: recording.releases?.[0]?.id || null,
-          length: recording.length,
-          sources: {}
-        }));
+            // Progressive update - show tracks immediately (unresolved)
+            // Merge with any local tracks that were found instantly
+            setSearchResults(prev => {
+              const localTracks = prev.tracks.filter(t => t.isLocal);
+              const mergedTracks = [...localTracks, ...tracks];
+              // Fetch album art in background
+              fetchSearchAlbumArt(prev.albums, tracks);
+              return { ...prev, tracks: mergedTracks };
+            });
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            console.error('Track search error:', error);
+          }
+        } finally {
+          decrementPending();
+        }
+      })();
 
-        results.tracks = [...resolvedTracks, ...unresolvedTracks];
+      // Wait for all to complete (they update progressively)
+      await Promise.all([artistPromise, albumPromise, trackPromise]);
 
-        // Re-rank tracks with fuzzy matching + popularity
-        results.tracks = reRankResults(results.tracks, query, 'title');
-      }
-
-      // Search local playlists
-      results.playlists = playlists.filter(p =>
-        p.title.toLowerCase().includes(query.toLowerCase())
-      );
-
-      // Final check: only update results if query is still current
-      if (query !== searchQueryRef.current) return;
-
-      setSearchResults(results);
-      console.log('🔍 Search results:', results);
-
-      // Fetch album art lazily in background (don't block search results)
-      fetchSearchAlbumArt(results.albums, results.tracks);
+      console.log('🔍 Search complete for:', query);
     } catch (error) {
       // Ignore abort errors - these are expected when cancelling stale requests
       if (error.name === 'AbortError') {
@@ -9854,11 +9924,7 @@ const Parachord = () => {
         return;
       }
       console.error('Search error:', error);
-    } finally {
-      // Only clear loading state if this query is still current
-      if (query === searchQueryRef.current) {
-        setIsSearching(false);
-      }
+      setIsSearching(false);
     }
   };
 
