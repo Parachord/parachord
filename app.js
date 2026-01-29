@@ -10108,9 +10108,26 @@ const Parachord = () => {
       if (album.albumArt) return; // Skip if already has art
 
       const albumId = album.id;
+      const artistName = album['artist-credit']?.[0]?.name || album.artist;
+      const albumTitle = album.title;
 
       // Check albumArtCache first (keyed by release-group ID)
-      const cachedArt = albumArtCache.current[albumId];
+      let cachedArt = albumArtCache.current[albumId];
+
+      // Also check albumToReleaseIdCache by artist+album name
+      if (!cachedArt?.url && artistName && albumTitle) {
+        const lookupKey = `${artistName}-${albumTitle}`.toLowerCase();
+        const cachedLookup = albumToReleaseIdCache.current[lookupKey];
+        if (cachedLookup) {
+          if (typeof cachedLookup === 'object') {
+            cachedArt = (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]) ||
+                        (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]);
+          } else if (typeof cachedLookup === 'string') {
+            cachedArt = albumArtCache.current[cachedLookup];
+          }
+        }
+      }
+
       if (cachedArt?.url) {
         setSearchResults(prev => ({
           ...prev,
@@ -16820,15 +16837,34 @@ ${tracks}
   };
 
   // Synchronous check for cached album art (doesn't fetch, just checks existing cache)
-  // Prioritizes our cache over resolver-provided art for consistency
-  const getCachedAlbumArt = (artist, album) => {
-    if (!artist || !album) return null;
-
-    const lookupKey = `${artist}-${album}`.toLowerCase();
-    const releaseId = albumToReleaseIdCache.current[lookupKey];
-
+  // Checks multiple cache keys: direct IDs, then albumToReleaseIdCache by artist+album name
+  // This is the canonical lookup function - use it everywhere for consistency
+  const getCachedAlbumArt = (artist, album, releaseGroupId = null, releaseId = null) => {
+    // First check direct IDs if provided (fastest path)
+    if (releaseGroupId && albumArtCache.current[releaseGroupId]?.url) {
+      return albumArtCache.current[releaseGroupId].url;
+    }
     if (releaseId && albumArtCache.current[releaseId]?.url) {
       return albumArtCache.current[releaseId].url;
+    }
+
+    // Then check albumToReleaseIdCache by artist+album name
+    if (artist && album) {
+      const lookupKey = `${artist}-${album}`.toLowerCase();
+      const cachedLookup = albumToReleaseIdCache.current[lookupKey];
+      if (cachedLookup) {
+        // Handle both old format (string) and new format ({ releaseId, releaseGroupId })
+        if (typeof cachedLookup === 'object') {
+          if (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]?.url) {
+            return albumArtCache.current[cachedLookup.releaseGroupId].url;
+          }
+          if (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]?.url) {
+            return albumArtCache.current[cachedLookup.releaseId].url;
+          }
+        } else if (typeof cachedLookup === 'string' && albumArtCache.current[cachedLookup]?.url) {
+          return albumArtCache.current[cachedLookup].url;
+        }
+      }
     }
 
     return null;
@@ -22006,8 +22042,7 @@ useEffect(() => {
                   },
                   draggable: true,
                   onClick: () => {
-                    const cachedArt = albumArtCache.current[track.releaseGroupId]?.url ||
-                                      albumArtCache.current[track.releaseId]?.url || null;
+                    const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
                     saveSearchHistory(searchQuery, {
                       type: 'track',
                       id: track.id,
@@ -22061,9 +22096,9 @@ useEffect(() => {
                       style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                     }),
                     // Image with fade-in (check cache as fallback for immediate display)
-                    // Prefer releaseGroupId for cache lookup (consistent with album/artist pages)
-                    (track.albumArt || albumArtCache.current[track.releaseGroupId]?.url || albumArtCache.current[track.releaseId]?.url) && React.createElement('img', {
-                      src: track.albumArt || albumArtCache.current[track.releaseGroupId]?.url || albumArtCache.current[track.releaseId]?.url,
+                    // Use getCachedAlbumArt for consistent lookup (checks IDs + artist/album name)
+                    (track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)) && React.createElement('img', {
+                      src: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       alt: track.album,
                       className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                       style: { opacity: 0 },
@@ -22101,8 +22136,7 @@ useEffect(() => {
                       React.createElement('button', {
                         onClick: (e) => {
                           e.stopPropagation();
-                          const cachedArt = albumArtCache.current[track.releaseGroupId]?.url ||
-                                            albumArtCache.current[track.releaseId]?.url || null;
+                          const cachedArt = getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId);
                           saveSearchHistory(searchQuery, {
                             type: 'track',
                             id: track.id,
