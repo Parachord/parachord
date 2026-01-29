@@ -6210,11 +6210,11 @@ const Parachord = () => {
 
         for (const resolver of resolvers) {
           if (!activeResolverIds.includes(resolver.id)) continue;
-          if (!resolver.searchFunction) continue;
+          if (!resolver.search) continue;
 
           try {
             const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-            const tracks = await resolver.searchFunction(query, config);
+            const tracks = await resolver.search(query, config);
             if (Array.isArray(tracks)) {
               results.push(...tracks.map(t => ({
                 ...t,
