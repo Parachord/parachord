@@ -403,6 +403,42 @@
     .hidden {
       display: none !important;
     }
+
+    /* Generate Link Button */
+    .generate-link-container {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    .generate-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, var(--accent), #ec4899);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .generate-link-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+
+    .generate-link-btn svg {
+      flex-shrink: 0;
+    }
+
+    .generate-link-hint {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
   </style>
 </head>
 <body>
@@ -486,6 +522,17 @@
       <div id="resultsList"></div>
     </div>
 
+    <!-- Generate Link Button (shown when we have cached URLs) -->
+    <div class="generate-link-container hidden" id="generateLinkContainer">
+      <button class="generate-link-btn" id="generateLinkBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+          <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
+        </svg>
+        Download Smart Link
+      </button>
+      <p class="generate-link-hint">Creates an HTML page with all resolved service links</p>
+    </div>
+
     <!-- Loading -->
     <div class="loading hidden" id="loading">
       <div class="spinner"></div>
@@ -539,8 +586,16 @@
     }
 
     // Cache URLs from search results
-    function cacheResolvedUrls(tracks) {
+    function cacheResolvedUrls(tracks, query) {
       if (!tracks || !tracks.length) return;
+
+      // Store first track for link generation
+      if (!lastSearchTrack && tracks[0]) {
+        lastSearchTrack = tracks[0];
+      }
+      if (query) {
+        lastSearchQuery = query;
+      }
 
       tracks.forEach(track => {
         const service = resolverToService(track.resolverId);
@@ -554,6 +609,11 @@
 
       // Update the service links with resolved URLs
       updateServiceLinksFromCache();
+
+      // Show generate link button if we have cached URLs
+      if (hasAnyCachedUrls()) {
+        generateLinkContainer.classList.remove('hidden');
+      }
     }
 
     // Update service link elements from cache
@@ -609,6 +669,14 @@
     // Fallback notice elements
     const fallbackTitle = document.getElementById('fallbackTitle');
     const fallbackText = document.getElementById('fallbackText');
+
+    // Generate link elements
+    const generateLinkContainer = document.getElementById('generateLinkContainer');
+    const generateLinkBtn = document.getElementById('generateLinkBtn');
+
+    // Track info for link generation
+    let lastSearchQuery = '';
+    let lastSearchTrack = null; // First result from search
 
     // Connect to Parachord
     function connect() {
@@ -849,7 +917,7 @@
       }
 
       // Cache resolved URLs from search results
-      cacheResolvedUrls(tracks);
+      cacheResolvedUrls(tracks, query);
 
       resultsHeader.textContent = `Results for "${query}"`;
       resultsList.innerHTML = tracks.slice(0, 20).map(track => `
@@ -944,6 +1012,171 @@
     playPauseBtn.addEventListener('click', togglePlayPause);
     prevBtn.addEventListener('click', previous);
     nextBtn.addEventListener('click', next);
+
+    // Generate smart link HTML
+    function generateSmartLinkHtml() {
+      const track = lastSearchTrack || {};
+      const query = lastSearchQuery || 'Unknown Track';
+      const title = track.title || query;
+      const artist = track.artist || '';
+      const albumArt = track.albumArt || '';
+
+      // Build service links HTML
+      const services = [
+        { id: 'spotify', name: 'Spotify', color: '#1DB954', icon: '●' },
+        { id: 'youtube', name: 'YouTube', color: '#FF0000', icon: '▶' },
+        { id: 'soundcloud', name: 'SoundCloud', color: '#FF5500', icon: '☁' },
+        { id: 'bandcamp', name: 'Bandcamp', color: '#629AA9', icon: '♫' }
+      ];
+
+      const serviceLinksHtml = services.map(s => {
+        const url = resolvedServiceUrls[s.id];
+        if (!url) return '';
+        return `
+        <a href="${url}" target="_blank" rel="noopener" class="service-link" style="--service-color: ${s.color}">
+          <span class="service-icon">${s.icon}</span>
+          <span class="service-name">${s.name}</span>
+        </a>`;
+      }).filter(Boolean).join('\n');
+
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)}${artist ? ' - ' + escapeHtml(artist) : ''} | Listen Now</title>
+  <meta property="og:title" content="${escapeHtml(title)}${artist ? ' - ' + escapeHtml(artist) : ''}">
+  <meta property="og:description" content="Listen on your favorite streaming service">
+  ${albumArt ? `<meta property="og:image" content="${albumArt}">` : ''}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 400px;
+      width: 100%;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .album-art {
+      width: 200px;
+      height: 200px;
+      border-radius: 12px;
+      margin: 0 auto 24px;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .album-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .track-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .track-artist {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+    }
+    .services {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .service-link {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .service-link:hover {
+      background: #252525;
+      transform: translateY(-2px);
+    }
+    .service-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--service-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    .service-name {
+      flex: 1;
+      font-weight: 500;
+      text-align: left;
+    }
+    .footer {
+      margin-top: 40px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .footer a { color: #8b5cf6; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="album-art">
+      ${albumArt ? `<img src="${albumArt}" alt="Album art">` : '♫'}
+    </div>
+    <h1 class="track-title">${escapeHtml(title)}</h1>
+    ${artist ? `<p class="track-artist">${escapeHtml(artist)}</p>` : ''}
+    <div class="services">
+      ${serviceLinksHtml}
+    </div>
+    <p class="footer">Created with <a href="https://parachord.app">Parachord</a></p>
+  </div>
+</body>
+</html>`;
+    }
+
+    // Download the generated HTML file
+    function downloadSmartLink() {
+      const html = generateSmartLinkHtml();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+
+      const filename = (lastSearchQuery || 'smart-link').toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '') + '.html';
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    generateLinkBtn.addEventListener('click', downloadSmartLink);
 
     // Start connection
     connect();

@@ -9167,6 +9167,218 @@ const Parachord = () => {
     setToast({ message, type, action });
   }, []);
 
+  // Generate smart link for a track
+  const generateSmartLink = useCallback(async (track) => {
+    const query = `${track.artist || ''} ${track.title || ''}`.trim();
+    if (!query) {
+      showToast('Cannot generate link: missing track info', 'error');
+      return;
+    }
+
+    showToast('Generating smart link...', 'info');
+
+    // Search all active resolvers
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+          const url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+          if (url) {
+            // Map resolver ID to service name
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+
+            if (service) {
+              resolvedUrls[service] = url;
+              console.log(`[SmartLink] Resolved ${service}: ${url}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    // Generate HTML
+    const services = [
+      { id: 'spotify', name: 'Spotify', color: '#1DB954', icon: '●' },
+      { id: 'youtube', name: 'YouTube', color: '#FF0000', icon: '▶' },
+      { id: 'soundcloud', name: 'SoundCloud', color: '#FF5500', icon: '☁' },
+      { id: 'bandcamp', name: 'Bandcamp', color: '#629AA9', icon: '♫' }
+    ];
+
+    const serviceLinksHtml = services.map(s => {
+      const url = resolvedUrls[s.id];
+      if (!url) return '';
+      return `
+        <a href="${url}" target="_blank" rel="noopener" class="service-link" style="--service-color: ${s.color}">
+          <span class="service-icon">${s.icon}</span>
+          <span class="service-name">${s.name}</span>
+        </a>`;
+    }).filter(Boolean).join('\n');
+
+    if (!serviceLinksHtml) {
+      showToast('No service links found for this track', 'error');
+      return;
+    }
+
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(track.title || query)}${track.artist ? ' - ' + escapeHtml(track.artist) : ''} | Listen Now</title>
+  <meta property="og:title" content="${escapeHtml(track.title || query)}${track.artist ? ' - ' + escapeHtml(track.artist) : ''}">
+  <meta property="og:description" content="Listen on your favorite streaming service">
+  ${track.albumArt ? `<meta property="og:image" content="${track.albumArt}">` : ''}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 400px;
+      width: 100%;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .album-art {
+      width: 200px;
+      height: 200px;
+      border-radius: 12px;
+      margin: 0 auto 24px;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 4rem;
+    }
+    .album-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .track-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .track-artist {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+    }
+    .services {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .service-link {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .service-link:hover {
+      background: #252525;
+      transform: translateY(-2px);
+    }
+    .service-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--service-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    .service-name {
+      flex: 1;
+      font-weight: 500;
+      text-align: left;
+    }
+    .footer {
+      margin-top: 40px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .footer a { color: #8b5cf6; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="album-art">
+      ${track.albumArt ? `<img src="${track.albumArt}" alt="Album art">` : '♫'}
+    </div>
+    <h1 class="track-title">${escapeHtml(track.title || query)}</h1>
+    ${track.artist ? `<p class="track-artist">${escapeHtml(track.artist)}</p>` : ''}
+    <div class="services">
+      ${serviceLinksHtml}
+    </div>
+    <p class="footer">Created with <a href="https://parachord.app">Parachord</a></p>
+  </div>
+</body>
+</html>`;
+
+    // Download the file
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+
+    const filename = (query || 'smart-link').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') + '.html';
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const resolvedCount = Object.keys(resolvedUrls).length;
+    showToast(`Smart link generated with ${resolvedCount} service${resolvedCount !== 1 ? 's' : ''}`);
+  }, [showToast]);
+
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
     if (window.electron?.collection?.save) {
@@ -9846,6 +10058,9 @@ const Parachord = () => {
           if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
+        } else if (data.action === 'generate-smart-link' && data.track) {
+          // Generate smart link by searching all resolvers
+          generateSmartLink(data.track);
         }
       });
     }
