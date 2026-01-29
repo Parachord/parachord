@@ -767,6 +767,10 @@ app.whenReady().then(() => {
           label: 'Add Folder to Library...',
           click: () => mainWindow?.webContents.send('menu-action', 'add-folder')
         },
+        {
+          label: 'Add Friend...',
+          click: () => mainWindow?.webContents.send('menu-action', 'add-friend')
+        },
         { type: 'separator' },
         {
           label: 'Import Playlist...',

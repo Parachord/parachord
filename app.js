@@ -6196,6 +6196,10 @@ const Parachord = () => {
               }
             });
             break;
+          case 'add-friend':
+            setAddFriendModalOpen(true);
+            setAddFriendInput('');
+            break;
           case 'import-playlist':
             handleImportPlaylist();
             break;
