@@ -31718,23 +31718,16 @@ useEffect(() => {
                     className: 'w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
                   })
                 ),
-                // Install status filter pills
-                React.createElement('div', { className: 'flex gap-2' },
-                  [
-                    { value: 'all', label: 'All' },
-                    { value: 'installed', label: 'Installed' },
-                    { value: 'available', label: 'Available' }
-                  ].map(({ value, label }) =>
-                    React.createElement('button', {
-                      key: value,
-                      onClick: () => setPluginsFilter(value),
-                      className: `px-3 py-1.5 rounded-full text-sm transition-all ${
-                        pluginsFilter === value
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`
-                    }, label)
-                  )
+                // Install status dropdown filter
+                React.createElement('select', {
+                  value: pluginsFilter,
+                  onChange: (e) => setPluginsFilter(e.target.value),
+                  className: 'px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                  style: { minWidth: '110px' }
+                },
+                  React.createElement('option', { value: 'all' }, 'All'),
+                  React.createElement('option', { value: 'installed' }, 'Installed'),
+                  React.createElement('option', { value: 'available' }, 'Available')
                 ),
                 // Category filter pills
                 React.createElement('div', { className: 'flex gap-2 flex-wrap' },
@@ -33787,7 +33780,7 @@ useEffect(() => {
         )
       ),
 
-      // Scrobbler not connected - show link to marketplace
+      // Scrobbler not connected - show link to plug-ins settings
       !hasScrobblerConnected() && React.createElement('div', {
         className: 'mt-3 flex items-center justify-between'
       },
@@ -33797,8 +33790,9 @@ useEffect(() => {
         React.createElement('button', {
           onClick: () => {
             setAiPromptOpen(false);
-            setActiveView('marketplace');
-            setMarketplaceCategory('scrobblers');
+            setSettingsTab('plugins');
+            setMarketplaceCategory('social');
+            navigateTo('settings');
           },
           className: 'transition-colors',
           style: { fontSize: '12px', color: '#a78bfa' },
@@ -36245,8 +36239,8 @@ useEffect(() => {
         },
           // Left side: Remove button (only for user-installed resolvers)
           React.createElement('div', null,
-            // Check if this is a user-installed resolver (not built-in)
-            !['spotify', 'bandcamp', 'qobuz', 'musicbrainz'].includes(selectedResolver.id) &&
+            // Check if this is a user-installed resolver (not built-in core plugins)
+            !['spotify', 'localfiles'].includes(selectedResolver.id) &&
               React.createElement('button', {
                 onClick: async () => {
                   await handleUninstallResolver(selectedResolver.id);
@@ -36540,13 +36534,13 @@ useEffect(() => {
         },
           selectedMarketplaceItem.isInstalled
             ? React.createElement(React.Fragment, null,
-                // Remove button on the left (disabled for built-in)
+                // Remove button on the left (disabled for core built-in plugins)
                 React.createElement('button', {
                   onClick: async () => {
                     await handleUninstallResolver(selectedMarketplaceItem.id);
                     setSelectedMarketplaceItem(null);
                   },
-                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id),
+                  disabled: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id),
                   className: 'transition-colors',
                   style: {
                     padding: '8px 14px',
@@ -36556,11 +36550,11 @@ useEffect(() => {
                     backgroundColor: 'transparent',
                     border: 'none',
                     borderRadius: '8px',
-                    cursor: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
-                    opacity: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
+                    cursor: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
+                    opacity: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
                   },
-                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id)
-                    ? 'Built-in plug-ins cannot be removed'
+                  title: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
+                    ? 'Core plug-ins cannot be removed'
                     : 'Remove this plug-in'
                 }, 'Remove'),
                 // Right side buttons
@@ -39003,7 +38997,7 @@ useEffect(() => {
             // Info text
             React.createElement('p', {
               style: { fontSize: '13px', color: '#6b7280', textAlign: 'center', lineHeight: '1.6' }
-            }, 'You can configure login credentials, add local music folders, and customize your experience in the Installed Plugins settings.')
+            }, 'You can configure login credentials, add local music folders, and customize your experience in the Plug-Ins settings.')
           ),
           // Footer
           React.createElement('div', {
