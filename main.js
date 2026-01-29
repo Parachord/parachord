@@ -1234,7 +1234,12 @@ ipcMain.handle('tidal-auth', async () => {
     code_challenge: codeChallenge
   }).toString();
 
-  console.log('Opening Tidal auth URL with PKCE');
+  console.log('=== Tidal OAuth Debug ===');
+  console.log('Client ID:', clientId);
+  console.log('Redirect URI:', redirectUri);
+  console.log('Scopes:', scopes);
+  console.log('Full Auth URL:', authUrl);
+  console.log('=========================');
 
   // Open in system browser
   shell.openExternal(authUrl);
