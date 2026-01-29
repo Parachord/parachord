@@ -29,8 +29,15 @@ console.log('====================================');
 console.log('');
 
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
+
+// electron-updater is optional - may not be available in development
+let autoUpdater = null;
+try {
+  autoUpdater = require('electron-updater').autoUpdater;
+} catch (err) {
+  console.log('Auto-updater not available:', err.message);
+}
 const fs = require('fs');
 const Store = require('electron-store');
 const express = require('express');
@@ -39,8 +46,10 @@ const WebSocket = require('ws');
 const LocalFilesService = require('./local-files');
 
 // Auto-updater configuration
-autoUpdater.autoDownload = false; // Don't download automatically, let user decide
-autoUpdater.autoInstallOnAppQuit = true;
+if (autoUpdater) {
+  autoUpdater.autoDownload = false; // Don't download automatically, let user decide
+  autoUpdater.autoInstallOnAppQuit = true;
+}
 
 const store = new Store();
 let mainWindow;
@@ -889,56 +898,58 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
-  // Auto-updater setup
-  autoUpdater.on('checking-for-update', () => {
-    console.log('🔄 Checking for updates...');
-    mainWindow?.webContents.send('updater-status', { status: 'checking' });
-  });
-
-  autoUpdater.on('update-available', (info) => {
-    console.log('✅ Update available:', info.version);
-    mainWindow?.webContents.send('updater-status', {
-      status: 'available',
-      version: info.version,
-      releaseNotes: info.releaseNotes
+  // Auto-updater setup (only if available)
+  if (autoUpdater) {
+    autoUpdater.on('checking-for-update', () => {
+      console.log('🔄 Checking for updates...');
+      mainWindow?.webContents.send('updater-status', { status: 'checking' });
     });
-  });
 
-  autoUpdater.on('update-not-available', () => {
-    console.log('✅ App is up to date');
-    mainWindow?.webContents.send('updater-status', { status: 'up-to-date' });
-  });
-
-  autoUpdater.on('download-progress', (progress) => {
-    console.log(`📥 Download progress: ${Math.round(progress.percent)}%`);
-    mainWindow?.webContents.send('updater-status', {
-      status: 'downloading',
-      percent: progress.percent
+    autoUpdater.on('update-available', (info) => {
+      console.log('✅ Update available:', info.version);
+      mainWindow?.webContents.send('updater-status', {
+        status: 'available',
+        version: info.version,
+        releaseNotes: info.releaseNotes
+      });
     });
-  });
 
-  autoUpdater.on('update-downloaded', (info) => {
-    console.log('✅ Update downloaded:', info.version);
-    mainWindow?.webContents.send('updater-status', {
-      status: 'downloaded',
-      version: info.version
+    autoUpdater.on('update-not-available', () => {
+      console.log('✅ App is up to date');
+      mainWindow?.webContents.send('updater-status', { status: 'up-to-date' });
     });
-  });
 
-  autoUpdater.on('error', (err) => {
-    console.error('❌ Auto-updater error:', err.message);
-    mainWindow?.webContents.send('updater-status', {
-      status: 'error',
-      message: err.message
+    autoUpdater.on('download-progress', (progress) => {
+      console.log(`📥 Download progress: ${Math.round(progress.percent)}%`);
+      mainWindow?.webContents.send('updater-status', {
+        status: 'downloading',
+        percent: progress.percent
+      });
     });
-  });
 
-  // Check for updates after a short delay (don't block startup)
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(err => {
-      console.log('Update check skipped:', err.message);
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('✅ Update downloaded:', info.version);
+      mainWindow?.webContents.send('updater-status', {
+        status: 'downloaded',
+        version: info.version
+      });
     });
-  }, 5000);
+
+    autoUpdater.on('error', (err) => {
+      console.error('❌ Auto-updater error:', err.message);
+      mainWindow?.webContents.send('updater-status', {
+        status: 'error',
+        message: err.message
+      });
+    });
+
+    // Check for updates after a short delay (don't block startup)
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(err => {
+        console.log('Update check skipped:', err.message);
+      });
+    }, 5000);
+  }
 
   // Initialize Local Files service
   localFilesService = new LocalFilesService(app.getPath('userData'));
@@ -1118,6 +1129,9 @@ ipcMain.handle('get-scrobbler-config', () => {
 
 // Auto-updater IPC handlers
 ipcMain.handle('updater-check', async () => {
+  if (!autoUpdater) {
+    return { success: false, error: 'Auto-updater not available' };
+  }
   try {
     const result = await autoUpdater.checkForUpdates();
     return { success: true, updateInfo: result?.updateInfo };
@@ -1127,6 +1141,9 @@ ipcMain.handle('updater-check', async () => {
 });
 
 ipcMain.handle('updater-download', async () => {
+  if (!autoUpdater) {
+    return { success: false, error: 'Auto-updater not available' };
+  }
   try {
     await autoUpdater.downloadUpdate();
     return { success: true };
@@ -1136,6 +1153,9 @@ ipcMain.handle('updater-download', async () => {
 });
 
 ipcMain.handle('updater-install', () => {
+  if (!autoUpdater) {
+    return;
+  }
   autoUpdater.quitAndInstall(false, true);
 });
 
