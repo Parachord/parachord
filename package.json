@@ -46,7 +46,12 @@
     },
     "files": [
       "**/*",
-      "!**/{.DS_Store,.git,.gitignore,npm-debug.log,dist,node_modules,*.md}"
+      "!.DS_Store",
+      "!.git",
+      "!.gitignore",
+      "!npm-debug.log",
+      "!dist",
+      "!**/*.md"
     ],
     "asar": false,
     "mac": {
