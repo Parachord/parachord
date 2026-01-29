@@ -51,7 +51,8 @@
       "!.gitignore",
       "!npm-debug.log",
       "!dist",
-      "!**/*.md"
+      "!**/*.md",
+      "!collection.json"
     ],
     "asar": false,
     "mac": {
