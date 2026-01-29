@@ -3307,6 +3307,10 @@ const Parachord = () => {
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
+  const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
+  const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
+  const [spotifyClientSecretInput, setSpotifyClientSecretInput] = useState(''); // Client Secret input
+  const [spotifyCredentialsSource, setSpotifyCredentialsSource] = useState('fallback'); // 'user' | 'env' | 'fallback'
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
@@ -3319,6 +3323,10 @@ const Parachord = () => {
   const [qobuzConnected, setQobuzConnected] = useState(false);
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
+  const [soundcloudAdvancedOpen, setSoundcloudAdvancedOpen] = useState(false); // Advanced settings accordion
+  const [soundcloudClientIdInput, setSoundcloudClientIdInput] = useState(''); // Client ID input
+  const [soundcloudClientSecretInput, setSoundcloudClientSecretInput] = useState(''); // Client Secret input
+  const [soundcloudCredentialsSource, setSoundcloudCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
 
   // Media key handling mode: 'always' | 'non-spotify' | 'never'
   const [mediaKeyMode, setMediaKeyMode] = useState('always');
@@ -5229,8 +5237,17 @@ const Parachord = () => {
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
 
-  // API keys loaded from environment via IPC
+  // API keys loaded from environment via IPC (fallback)
   const lastfmApiKey = useRef(null);
+
+  // Helper to get effective Last.fm API key: user-configured > environment/fallback
+  const getLastfmApiKey = () => {
+    // User-configured key takes priority
+    const userKey = metaServiceConfigs.lastfm?.apiKey;
+    if (userKey) return userKey;
+    // Fall back to environment-loaded key
+    return lastfmApiKey.current;
+  };
 
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
@@ -9553,7 +9570,7 @@ const Parachord = () => {
 
     // Try Last.fm first
     if (lastfmConfig?.username) {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
           console.log('🎵 Fetching listening context from Last.fm...');
@@ -15316,7 +15333,7 @@ ${tracks}
       }
 
       if (lastfmConfig?.username) {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (apiKey) {
           console.log(`📜 Loading history from Last.fm for ${lastfmConfig.username}...`);
           fetchPromises.push(
@@ -15393,7 +15410,7 @@ ${tracks}
       return;
     }
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       setTopTracks({ tracks: [], loading: false, error: 'Last.fm API key not configured.' });
       return;
@@ -15464,7 +15481,7 @@ ${tracks}
         return;
       }
 
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setTopArtists({ artists: [], loading: false, error: 'Last.fm API key not configured.' });
         return;
@@ -15537,7 +15554,7 @@ ${tracks}
         return;
       }
 
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setTopAlbums({ albums: [], loading: false, error: 'Last.fm API key not configured.' });
         return;
@@ -15591,7 +15608,7 @@ ${tracks}
 
   // Fetch Last.fm user info (avatar, display name)
   const fetchLastfmUserInfo = async (username) => {
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) throw new Error('Last.fm API key not configured');
 
     const url = `https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json`;
@@ -15642,7 +15659,7 @@ ${tracks}
   const fetchFriendRecentTrack = async (friend) => {
     try {
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) return null;
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
@@ -16172,7 +16189,7 @@ ${tracks}
       let tracks = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
@@ -16231,7 +16248,7 @@ ${tracks}
     setFriendHistoryLoading(true);
 
     try {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) throw new Error('Last.fm API key not configured');
 
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -16309,7 +16326,7 @@ ${tracks}
       let artists = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -16397,7 +16414,7 @@ ${tracks}
       let albums = [];
 
       if (friend.service === 'lastfm') {
-        const apiKey = lastfmApiKey.current;
+        const apiKey = getLastfmApiKey();
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
@@ -17363,7 +17380,7 @@ ${tracks}
 
     // Fetch artist bio snippet from Last.fm (lightweight version, no loading state)
     const fetchArtistBioSnippet = async () => {
-      const apiKey = lastfmApiKey.current;
+      const apiKey = getLastfmApiKey();
       if (!apiKey) {
         setSearchPreviewArtistBio(null);
         return;
@@ -17402,7 +17419,7 @@ ${tracks}
   const getLastfmBio = async (artistName) => {
     if (!artistName) return null;
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.warn('⚠️ Last.fm API key not available, cannot fetch artist bio');
       return null;
@@ -17959,7 +17976,7 @@ ${tracks}
   const getLastfmSimilarArtists = async (artistName) => {
     if (!artistName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🎸 Last.fm similar artists skipped: no API key');
       return [];
@@ -17998,7 +18015,7 @@ ${tracks}
   const getArtistTopTracks = async (artistName, limit = 10) => {
     if (!artistName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🎤 Last.fm artist top tracks skipped: no API key');
       return [];
@@ -18042,7 +18059,7 @@ ${tracks}
   const fetchSimilarTracks = async (artistName, trackName) => {
     if (!artistName || !trackName) return [];
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🔀 Last.fm similar tracks skipped: no API key');
       return [];
@@ -18086,7 +18103,7 @@ ${tracks}
   const checkSpinoffAvailability = async (artistName, trackName) => {
     if (!artistName || !trackName) return false;
 
-    const apiKey = lastfmApiKey.current;
+    const apiKey = getLastfmApiKey();
     if (!apiKey) {
       console.log('🔀 Spinoff availability check skipped: no API key');
       return false;
@@ -19160,6 +19177,13 @@ ${tracks}
         console.log('Calling authenticate...');
         const result = await window.electron.spotify.authenticate();
         console.log('Authenticate result:', result);
+        if (!result.success) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Authentication Failed',
+            message: result.error || 'Spotify authentication failed. Please check your configuration.'
+          });
+        }
       } catch (error) {
         console.error('Spotify auth error:', error);
         showConfirmDialog({
@@ -19188,6 +19212,44 @@ ${tracks}
       // Remove Spotify sources from all tracks and remove from active resolvers
       removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
+    }
+  };
+
+  // Save Spotify credentials (client ID and secret)
+  const saveSpotifyCredentials = async () => {
+    if (!window.electron?.spotify?.setCredentials) {
+      console.error('Spotify setCredentials not available');
+      return;
+    }
+
+    const clientId = spotifyClientIdInput.trim();
+    const clientSecret = spotifyClientSecretInput.trim();
+
+    const result = await window.electron.spotify.setCredentials({
+      clientId,
+      clientSecret
+    });
+
+    if (result.success) {
+      setSpotifyCredentialsSource(result.source);
+      // If user had a token, they need to reconnect with new credentials
+      if (spotifyConnected && clientId && clientSecret) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Credentials Updated',
+          message: 'Your Spotify credentials have been saved. Please disconnect and reconnect to use your new credentials.'
+        });
+      } else if (!clientId && !clientSecret) {
+        showToast('Using default Spotify credentials', 'info');
+      } else {
+        showToast('Spotify credentials saved', 'success');
+      }
+    } else {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Error',
+        message: result.error || 'Failed to save Spotify credentials'
+      });
     }
   };
 
@@ -19220,6 +19282,43 @@ ${tracks}
       }
     } else {
       console.log('window.electron.soundcloud not available');
+    }
+  };
+
+  // Save SoundCloud credentials (client ID and secret)
+  const saveSoundcloudCredentials = async () => {
+    if (!window.electron?.soundcloud?.setCredentials) {
+      console.error('SoundCloud setCredentials not available');
+      return;
+    }
+
+    const clientId = soundcloudClientIdInput.trim();
+    const clientSecret = soundcloudClientSecretInput.trim();
+
+    const result = await window.electron.soundcloud.setCredentials({
+      clientId,
+      clientSecret
+    });
+
+    if (result.success) {
+      setSoundcloudCredentialsSource(result.source);
+      if (soundcloudConnected && clientId && clientSecret) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Credentials Updated',
+          message: 'Your SoundCloud credentials have been saved. Please disconnect and reconnect to use your new credentials.'
+        });
+      } else if (!clientId && !clientSecret) {
+        showToast('SoundCloud credentials cleared', 'info');
+      } else {
+        showToast('SoundCloud credentials saved', 'success');
+      }
+    } else {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Error',
+        message: result.error || 'Failed to save SoundCloud credentials'
+      });
     }
   };
 
@@ -19450,6 +19549,18 @@ ${tracks}
 useEffect(() => {
   checkSpotifyToken();
 
+  // Load Spotify credentials info
+  if (window.electron?.spotify?.getCredentials) {
+    window.electron.spotify.getCredentials().then((creds) => {
+      if (creds) {
+        setSpotifyClientIdInput(creds.clientId || '');
+        setSpotifyClientSecretInput(creds.clientSecret || '');
+        setSpotifyCredentialsSource(creds.source || 'fallback');
+        console.log('🔑 Spotify credentials source:', creds.source);
+      }
+    });
+  }
+
   if (window.electron?.spotify) {
     window.electron.spotify.onAuthSuccess((data) => {
       console.log('Spotify auth success!', {
@@ -19490,6 +19601,18 @@ useEffect(() => {
 // Listen for SoundCloud auth events
 useEffect(() => {
   checkSoundcloudToken();
+
+  // Load SoundCloud credentials info
+  if (window.electron?.soundcloud?.getCredentials) {
+    window.electron.soundcloud.getCredentials().then((creds) => {
+      if (creds) {
+        setSoundcloudClientIdInput(creds.clientId || '');
+        setSoundcloudClientSecretInput(creds.clientSecret || '');
+        setSoundcloudCredentialsSource(creds.source || 'none');
+        console.log('🔑 SoundCloud credentials source:', creds.source);
+      }
+    });
+  }
 
   if (window.electron?.soundcloud) {
     window.electron.soundcloud.onAuthSuccess((data) => {
@@ -24162,7 +24285,7 @@ useEffect(() => {
             const lastfmCount = relatedArtists.filter(a => a.source === 'lastfm').length;
             const bothCount = relatedArtists.filter(a => a.source === 'both').length;
             // Show filter bar when both services have data OR when configured (MBID available for ListenBrainz, API key for Last.fm)
-            const hasBothServicesConfigured = !!currentArtist?.mbid && !!lastfmApiKey.current;
+            const hasBothServicesConfigured = !!currentArtist?.mbid && !!getLastfmApiKey();
 
             // Filter artists based on source filter
             const filteredArtists = relatedArtistsSourceFilter === 'all'
@@ -34655,6 +34778,141 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'Spotify Premium connected')
+            ),
+            // Advanced accordion for custom credentials
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement('span', {
+                  className: `transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
+                }, '▶'),
+                'Advanced'
+              ),
+              spotifyAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  spotifyCredentialsSource === 'user'
+                    ? 'Using your custom Spotify API credentials.'
+                    : spotifyCredentialsSource === 'env'
+                    ? 'Using credentials from environment variables.'
+                    : 'Using default app credentials. Add your own for higher rate limits.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client ID'),
+                  React.createElement('input', {
+                    type: 'text',
+                    value: spotifyClientIdInput,
+                    onChange: (e) => setSpotifyClientIdInput(e.target.value),
+                    placeholder: 'Your Spotify Client ID',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client Secret'),
+                  React.createElement('input', {
+                    type: 'password',
+                    value: spotifyClientSecretInput,
+                    onChange: (e) => setSpotifyClientSecretInput(e.target.value),
+                    placeholder: 'Your Spotify Client Secret',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('button', {
+                    onClick: saveSpotifyCredentials,
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#22c55e',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Save'),
+                  (spotifyClientIdInput || spotifyClientSecretInput) && React.createElement('button', {
+                    onClick: () => {
+                      setSpotifyClientIdInput('');
+                      setSpotifyClientSecretInput('');
+                      saveSpotifyCredentials();
+                    },
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#6b7280',
+                      backgroundColor: 'transparent',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Use Default')
+                ),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '10px',
+                    color: '#9ca3af',
+                    marginTop: '10px',
+                    lineHeight: '1.4'
+                  }
+                }, 'Get credentials from developer.spotify.com/dashboard')
+              )
             )
           ),
 
@@ -34897,6 +35155,141 @@ useEffect(() => {
               }
             },
               'Note: Streaming availability depends on individual track permissions set by uploaders.'
+            ),
+            // Advanced accordion for custom credentials
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement('span', {
+                  className: `transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
+                }, '▶'),
+                'Advanced'
+              ),
+              soundcloudAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  soundcloudCredentialsSource === 'user'
+                    ? 'Using your custom SoundCloud API credentials.'
+                    : soundcloudCredentialsSource === 'env'
+                    ? 'Using credentials from environment variables.'
+                    : 'SoundCloud API requires credentials. Register an app to get access.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client ID'),
+                  React.createElement('input', {
+                    type: 'text',
+                    value: soundcloudClientIdInput,
+                    onChange: (e) => setSoundcloudClientIdInput(e.target.value),
+                    placeholder: 'Your SoundCloud Client ID',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Client Secret'),
+                  React.createElement('input', {
+                    type: 'password',
+                    value: soundcloudClientSecretInput,
+                    onChange: (e) => setSoundcloudClientSecretInput(e.target.value),
+                    placeholder: 'Your SoundCloud Client Secret',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('button', {
+                    onClick: saveSoundcloudCredentials,
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#FF5500',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Save'),
+                  (soundcloudClientIdInput || soundcloudClientSecretInput) && React.createElement('button', {
+                    onClick: () => {
+                      setSoundcloudClientIdInput('');
+                      setSoundcloudClientSecretInput('');
+                      saveSoundcloudCredentials();
+                    },
+                    style: {
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#6b7280',
+                      backgroundColor: 'transparent',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Clear')
+                ),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '10px',
+                    color: '#9ca3af',
+                    marginTop: '10px',
+                    lineHeight: '1.4'
+                  }
+                }, 'Note: SoundCloud API is deprecated. Register at soundcloud.com/you/apps')
+              )
             )
           ),
 

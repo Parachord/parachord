@@ -687,18 +687,11 @@ function broadcastToEmbeds(event, data) {
 async function exchangeCodeForToken(code) {
   console.log('=== Exchange Code for Token ===');
   console.log('Code received:', code ? 'Yes' : 'No');
-  
-  // Get credentials from environment variables
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
 
-  // Validate credentials exist
-  if (!clientId || !clientSecret) {
-    console.error('❌ Missing Spotify credentials in .env file!');
-    console.error('Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to your .env file');
-    throw new Error('Missing Spotify credentials');
-  }
+  // Get credentials with fallback chain: user-stored > env > bundled
+  const { clientId, clientSecret, source } = getSpotifyCredentials();
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
+  console.log('Using credentials from:', source);
 
   try {
     const response = await fetch('https://accounts.spotify.com/api/token', {
@@ -750,16 +743,15 @@ async function exchangeSoundCloudCodeForToken(code) {
   console.log('=== SoundCloud Exchange Code for Token ===');
   console.log('Code received:', code ? 'Yes' : 'No');
 
-  // Get credentials from environment variables
-  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
-  const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
+  // Get credentials with fallback chain: user-stored > env
+  const { clientId, clientSecret, source } = getSoundCloudCredentials();
   const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+  console.log('Using credentials from:', source);
 
   // Validate credentials exist
   if (!clientId || !clientSecret) {
-    console.error('❌ Missing SoundCloud credentials in .env file!');
-    console.error('Please add SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET to your .env file');
-    mainWindow?.webContents.send('soundcloud-auth-error', 'Missing SoundCloud credentials');
+    console.error('❌ No SoundCloud credentials configured!');
+    mainWindow?.webContents.send('soundcloud-auth-error', 'SoundCloud requires API credentials. Configure them in Settings.');
     return;
   }
 
@@ -1287,13 +1279,89 @@ ipcMain.handle('crypto-md5', (event, input) => {
   return crypto.createHash('md5').update(input).digest('hex');
 });
 
+// Fallback API keys for services that support shared app credentials
+const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
+const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
+const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
+const FALLBACK_SPOTIFY_CLIENT_SECRET = '6290dd3f9ddd45e2be725b80b884db6e';
+
+// Helper to get Spotify credentials with priority: user-stored > env > fallback
+function getSpotifyCredentials() {
+  // First check user-configured credentials (stored via UI)
+  const userClientId = store.get('spotify_client_id');
+  const userClientSecret = store.get('spotify_client_secret');
+
+  if (userClientId && userClientSecret) {
+    console.log('🔑 Using user-configured Spotify credentials');
+    return {
+      clientId: userClientId,
+      clientSecret: userClientSecret,
+      source: 'user'
+    };
+  }
+
+  // Then check environment variables
+  if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
+    console.log('🔑 Using environment Spotify credentials');
+    return {
+      clientId: process.env.SPOTIFY_CLIENT_ID,
+      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+      source: 'env'
+    };
+  }
+
+  // Fall back to bundled credentials
+  console.log('🔑 Using fallback Spotify credentials');
+  return {
+    clientId: FALLBACK_SPOTIFY_CLIENT_ID,
+    clientSecret: FALLBACK_SPOTIFY_CLIENT_SECRET,
+    source: 'fallback'
+  };
+}
+
+// Helper to get SoundCloud credentials with priority: user-stored > env
+// Note: No fallback credentials for SoundCloud as API access is deprecated
+function getSoundCloudCredentials() {
+  // First check user-configured credentials (stored via UI)
+  const userClientId = store.get('soundcloud_client_id');
+  const userClientSecret = store.get('soundcloud_client_secret');
+
+  if (userClientId && userClientSecret) {
+    console.log('🔑 Using user-configured SoundCloud credentials');
+    return {
+      clientId: userClientId,
+      clientSecret: userClientSecret,
+      source: 'user'
+    };
+  }
+
+  // Then check environment variables
+  if (process.env.SOUNDCLOUD_CLIENT_ID && process.env.SOUNDCLOUD_CLIENT_SECRET) {
+    console.log('🔑 Using environment SoundCloud credentials');
+    return {
+      clientId: process.env.SOUNDCLOUD_CLIENT_ID,
+      clientSecret: process.env.SOUNDCLOUD_CLIENT_SECRET,
+      source: 'env'
+    };
+  }
+
+  // No fallback - SoundCloud API is deprecated
+  console.log('⚠️ No SoundCloud credentials available');
+  return {
+    clientId: null,
+    clientSecret: null,
+    source: 'none'
+  };
+}
+
 // Scrobbler config - expose Last.fm API credentials from environment
 // This provides a dedicated API for scrobbler initialization, returning both key and secret together.
 // The secret supports a fallback to LASTFM_SHARED_SECRET for compatibility with different env var naming.
+// Falls back to app's default API keys if user hasn't configured their own.
 ipcMain.handle('get-scrobbler-config', () => {
   return {
-    lastfmApiKey: process.env.LASTFM_API_KEY,
-    lastfmApiSecret: process.env.LASTFM_API_SECRET || process.env.LASTFM_SHARED_SECRET
+    lastfmApiKey: process.env.LASTFM_API_KEY || FALLBACK_LASTFM_API_KEY,
+    lastfmApiSecret: process.env.LASTFM_API_SECRET || process.env.LASTFM_SHARED_SECRET || FALLBACK_LASTFM_API_SECRET
   };
 });
 
@@ -1350,10 +1418,15 @@ ipcMain.handle('store-delete', (event, key) => {
 
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
+// Uses fallback values for services that support shared app credentials
 const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID'];
+const CONFIG_FALLBACKS = {
+  'LASTFM_API_KEY': FALLBACK_LASTFM_API_KEY,
+  'LASTFM_API_SECRET': FALLBACK_LASTFM_API_SECRET
+};
 ipcMain.handle('config-get', (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
-    return process.env[key] || null;
+    return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }
   console.warn(`⚠️ Attempted to access non-whitelisted config key: ${key}`);
   return null;
@@ -1361,16 +1434,11 @@ ipcMain.handle('config-get', (event, key) => {
 
 // Spotify OAuth handler
 ipcMain.handle('spotify-auth', async () => {
-  // Get credentials from environment variables
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  // Get credentials with fallback chain: user-stored > env > bundled
+  const { clientId, source } = getSpotifyCredentials();
   const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
-  
-  // Validate client ID exists
-  if (!clientId) {
-    console.error('❌ Missing SPOTIFY_CLIENT_ID in .env file!');
-    return { success: false, error: 'Missing Spotify Client ID' };
-  }
-  
+  console.log('🔑 Spotify auth using credentials from:', source);
+
   const scopes = [
     'user-read-private',
     'user-read-email',
@@ -1410,13 +1478,12 @@ ipcMain.handle('spotify-check-token', async () => {
     return { token, expiresAt: expiry };
   }
 
-  // Get credentials from environment
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  // Get credentials with fallback chain: user-stored > env > bundled
+  const { clientId, clientSecret, source } = getSpotifyCredentials();
 
   // If token is expired but we have a refresh token, try to refresh
-  if (refreshToken && clientId && clientSecret) {
-    console.log('🔄 Token expired, attempting automatic refresh...');
+  if (refreshToken) {
+    console.log('🔄 Token expired, attempting automatic refresh using', source, 'credentials...');
 
     try {
       const response = await fetch('https://accounts.spotify.com/api/token', {
@@ -1465,16 +1532,79 @@ ipcMain.handle('spotify-check-token', async () => {
   return null;
 });
 
+// Get Spotify credentials (for UI to show which source is being used)
+ipcMain.handle('spotify-get-credentials', () => {
+  const userClientId = store.get('spotify_client_id');
+  const userClientSecret = store.get('spotify_client_secret');
+  const { source } = getSpotifyCredentials();
+
+  return {
+    clientId: userClientId || '',
+    clientSecret: userClientSecret || '',
+    source
+  };
+});
+
+// Save user-configured Spotify credentials
+ipcMain.handle('spotify-set-credentials', (event, { clientId, clientSecret }) => {
+  if (clientId && clientSecret) {
+    store.set('spotify_client_id', clientId);
+    store.set('spotify_client_secret', clientSecret);
+    console.log('💾 Saved user Spotify credentials');
+    return { success: true, source: 'user' };
+  } else if (!clientId && !clientSecret) {
+    // Clear user credentials to use fallback
+    store.delete('spotify_client_id');
+    store.delete('spotify_client_secret');
+    console.log('🗑️ Cleared user Spotify credentials, will use fallback');
+    return { success: true, source: 'fallback' };
+  } else {
+    return { success: false, error: 'Both Client ID and Client Secret are required' };
+  }
+});
+
+// Get SoundCloud credentials (for UI to show which source is being used)
+ipcMain.handle('soundcloud-get-credentials', () => {
+  const userClientId = store.get('soundcloud_client_id');
+  const userClientSecret = store.get('soundcloud_client_secret');
+  const { source } = getSoundCloudCredentials();
+
+  return {
+    clientId: userClientId || '',
+    clientSecret: userClientSecret || '',
+    source
+  };
+});
+
+// Save user-configured SoundCloud credentials
+ipcMain.handle('soundcloud-set-credentials', (event, { clientId, clientSecret }) => {
+  if (clientId && clientSecret) {
+    store.set('soundcloud_client_id', clientId);
+    store.set('soundcloud_client_secret', clientSecret);
+    console.log('💾 Saved user SoundCloud credentials');
+    return { success: true, source: 'user' };
+  } else if (!clientId && !clientSecret) {
+    // Clear user credentials
+    store.delete('soundcloud_client_id');
+    store.delete('soundcloud_client_secret');
+    console.log('🗑️ Cleared user SoundCloud credentials');
+    return { success: true, source: 'none' };
+  } else {
+    return { success: false, error: 'Both Client ID and Client Secret are required' };
+  }
+});
+
 // SoundCloud OAuth handler
 ipcMain.handle('soundcloud-auth', async () => {
-  // Get credentials from environment variables
-  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
+  // Get credentials with fallback chain: user-stored > env
+  const { clientId, source } = getSoundCloudCredentials();
   const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+  console.log('🔑 SoundCloud auth using credentials from:', source);
 
   // Validate client ID exists
   if (!clientId) {
-    console.error('❌ Missing SOUNDCLOUD_CLIENT_ID in .env file!');
-    return { success: false, error: 'Missing SoundCloud Client ID' };
+    console.error('❌ No SoundCloud credentials configured!');
+    return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings → Installed → SoundCloud → Advanced.' };
   }
 
   // SoundCloud OAuth - no scope needed (non-expiring tokens are no longer allowed)
@@ -1507,13 +1637,12 @@ ipcMain.handle('soundcloud-check-token', async () => {
     return { token, expiresAt: expiry };
   }
 
-  // Get credentials from environment
-  const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
-  const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
+  // Get credentials with fallback chain: user-stored > env
+  const { clientId, clientSecret, source } = getSoundCloudCredentials();
 
   // If token is expired but we have a refresh token, try to refresh
   if (refreshToken && clientId && clientSecret) {
-    console.log('🔄 SoundCloud token expired, attempting automatic refresh...');
+    console.log('🔄 SoundCloud token expired, attempting automatic refresh using', source, 'credentials...');
 
     try {
       const response = await fetch('https://api.soundcloud.com/oauth2/token', {

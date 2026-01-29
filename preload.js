@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electron', {
     authenticate: () => ipcRenderer.invoke('spotify-auth'),
     checkToken: () => ipcRenderer.invoke('spotify-check-token'),
     launchInBackground: () => ipcRenderer.invoke('spotify-launch-background'),
+    getCredentials: () => ipcRenderer.invoke('spotify-get-credentials'),
+    setCredentials: (credentials) => ipcRenderer.invoke('spotify-set-credentials', credentials),
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
@@ -65,6 +67,8 @@ contextBridge.exposeInMainWorld('electron', {
     authenticate: () => ipcRenderer.invoke('soundcloud-auth'),
     checkToken: () => ipcRenderer.invoke('soundcloud-check-token'),
     disconnect: () => ipcRenderer.invoke('soundcloud-disconnect'),
+    getCredentials: () => ipcRenderer.invoke('soundcloud-get-credentials'),
+    setCredentials: (credentials) => ipcRenderer.invoke('soundcloud-set-credentials', credentials),
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
