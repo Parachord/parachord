@@ -569,9 +569,30 @@
 
       // Try to get URL from track properties
       const url = track.url || track.externalUrl || track.streamUrl;
-      if (!url) return null;
+      if (url) return url;
 
-      return url;
+      // Construct URL from resolver-specific IDs
+      if (track.spotifyId) {
+        return `https://open.spotify.com/track/${track.spotifyId}`;
+      }
+      if (track.spotifyUri) {
+        const match = track.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+        if (match) return `https://open.spotify.com/track/${match[1]}`;
+      }
+      if (track.youtubeId) {
+        return `https://www.youtube.com/watch?v=${track.youtubeId}`;
+      }
+      if (track.youtubeUrl) {
+        return track.youtubeUrl;
+      }
+      if (track.soundcloudUrl) {
+        return track.soundcloudUrl;
+      }
+      if (track.bandcampUrl) {
+        return track.bandcampUrl;
+      }
+
+      return null;
     }
 
     // Map resolver ID to service name

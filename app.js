@@ -9191,7 +9191,28 @@ const Parachord = () => {
         const results = await resolver.search(query, config);
         if (Array.isArray(results) && results.length > 0) {
           const firstResult = results[0];
-          const url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          // Extract URL from various properties
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          // Construct URL from resolver-specific IDs if no direct URL
+          if (!url) {
+            if (firstResult.spotifyId) {
+              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            } else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            } else if (firstResult.youtubeId) {
+              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            } else if (firstResult.youtubeUrl) {
+              url = firstResult.youtubeUrl;
+            } else if (firstResult.soundcloudUrl) {
+              url = firstResult.soundcloudUrl;
+            } else if (firstResult.bandcampUrl) {
+              url = firstResult.bandcampUrl;
+            }
+          }
+
           if (url) {
             // Map resolver ID to service name
             const id = resolver.id.toLowerCase();
