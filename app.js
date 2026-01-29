@@ -9998,6 +9998,7 @@ const Parachord = () => {
               duration: Math.floor((recording.length || 180000) / 1000),
               album: recording.releases?.[0]?.title || '',
               releaseId: recording.releases?.[0]?.id || null,
+              releaseGroupId: recording.releases?.[0]?.['release-group']?.id || null, // For cache lookup
               length: recording.length,
               sources: {},
               _needsResolution: true
@@ -10135,15 +10136,20 @@ const Parachord = () => {
       }
     }
 
-    // Fetch album art for tracks (from their releases) - check cache first
+    // Fetch album art for tracks - prefer release-group ID for consistency with album/artist pages
     for (const track of tracks.slice(0, 10)) { // Limit to first 10 for performance
-      if (track.albumArt || !track.releaseId) continue; // Skip if already has art or no release ID
+      if (track.albumArt) continue; // Skip if already has art
 
       const trackId = track.id;
       const releaseId = track.releaseId;
+      const releaseGroupId = track.releaseGroupId;
 
-      // Check albumArtCache first
-      const cachedArt = albumArtCache.current[releaseId];
+      // Need at least one ID to fetch art
+      if (!releaseGroupId && !releaseId) continue;
+
+      // Check albumArtCache first - prefer releaseGroupId (standard key used by album/artist pages)
+      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]) ||
+                        (releaseId && albumArtCache.current[releaseId]);
       if (cachedArt?.url) {
         setSearchResults(prev => ({
           ...prev,
@@ -10153,10 +10159,15 @@ const Parachord = () => {
       }
 
       try {
-        const artResponse = await fetch(
-          `https://coverartarchive.org/release/${releaseId}`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
+        // Prefer release-group endpoint (consistent with album/artist pages)
+        // Fall back to release endpoint if no release-group ID
+        const endpoint = releaseGroupId
+          ? `https://coverartarchive.org/release-group/${releaseGroupId}`
+          : `https://coverartarchive.org/release/${releaseId}`;
+
+        const artResponse = await fetch(endpoint, {
+          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+        });
 
         if (artResponse.ok) {
           const artData = await artResponse.json();
@@ -10164,10 +10175,17 @@ const Parachord = () => {
           if (frontCover) {
             const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
 
-            // Also cache it for future use
-            albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
+            // Cache under releaseGroupId as primary key (consistent with album/artist pages)
+            // Also cache under releaseId for fallback lookups
+            const cacheEntry = { url: artUrl, timestamp: Date.now() };
+            if (releaseGroupId) {
+              albumArtCache.current[releaseGroupId] = cacheEntry;
+            }
+            if (releaseId) {
+              albumArtCache.current[releaseId] = cacheEntry;
+            }
 
-            // Update search results with new album art - create new object reference
+            // Update search results with new album art
             setSearchResults(prev => ({
               ...prev,
               tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: artUrl } : t)
@@ -21845,13 +21863,14 @@ useEffect(() => {
                   },
                   draggable: true,
                   onClick: () => {
-                    const cachedArt = track.releaseId ? albumArtCache.current[track.releaseId]?.url : null;
+                    const cachedArt = albumArtCache.current[track.releaseGroupId]?.url ||
+                                      albumArtCache.current[track.releaseId]?.url || null;
                     saveSearchHistory(searchQuery, {
                       type: 'track',
                       id: track.id,
                       name: track.title,
                       artist: track.artist,
-                      imageUrl: track.albumArt || cachedArt || null
+                      imageUrl: track.albumArt || cachedArt
                     });
                     handlePlay(track);
                   },
@@ -21898,9 +21917,10 @@ useEffect(() => {
                       className: 'absolute inset-0',
                       style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                     }),
-                    // Image with fade-in
-                    track.albumArt && React.createElement('img', {
-                      src: track.albumArt,
+                    // Image with fade-in (check cache as fallback for immediate display)
+                    // Prefer releaseGroupId for cache lookup (consistent with album/artist pages)
+                    (track.albumArt || albumArtCache.current[track.releaseGroupId]?.url || albumArtCache.current[track.releaseId]?.url) && React.createElement('img', {
+                      src: track.albumArt || albumArtCache.current[track.releaseGroupId]?.url || albumArtCache.current[track.releaseId]?.url,
                       alt: track.album,
                       className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                       style: { opacity: 0 },
@@ -21938,13 +21958,14 @@ useEffect(() => {
                       React.createElement('button', {
                         onClick: (e) => {
                           e.stopPropagation();
-                          const cachedArt = track.releaseId ? albumArtCache.current[track.releaseId]?.url : null;
+                          const cachedArt = albumArtCache.current[track.releaseGroupId]?.url ||
+                                            albumArtCache.current[track.releaseId]?.url || null;
                           saveSearchHistory(searchQuery, {
                             type: 'track',
                             id: track.id,
                             name: track.title,
                             artist: track.artist,
-                            imageUrl: track.albumArt || cachedArt || null
+                            imageUrl: track.albumArt || cachedArt
                           });
                           handlePlay(track);
                         },
