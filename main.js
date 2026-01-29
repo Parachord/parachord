@@ -751,6 +751,15 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send('media-key', 'previous');
   });
 
+  // Apply saved media key setting on startup
+  const savedMediaKeySetting = store.get('media-key-handling') || 'always';
+  if (savedMediaKeySetting === 'never') {
+    globalShortcut.unregister('MediaPlayPause');
+    globalShortcut.unregister('MediaNextTrack');
+    globalShortcut.unregister('MediaPreviousTrack');
+    mediaKeysRegistered = false;
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -802,6 +811,62 @@ app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Media key handling IPC handlers
+// Allows renderer to update media key capture settings dynamically
+let mediaKeysRegistered = true; // Track current state
+
+const registerMediaKeys = () => {
+  if (mediaKeysRegistered) return;
+  globalShortcut.register('MediaPlayPause', () => {
+    mainWindow?.webContents.send('media-key', 'playpause');
+  });
+  globalShortcut.register('MediaNextTrack', () => {
+    mainWindow?.webContents.send('media-key', 'next');
+  });
+  globalShortcut.register('MediaPreviousTrack', () => {
+    mainWindow?.webContents.send('media-key', 'previous');
+  });
+  mediaKeysRegistered = true;
+};
+
+const unregisterMediaKeys = () => {
+  if (!mediaKeysRegistered) return;
+  globalShortcut.unregister('MediaPlayPause');
+  globalShortcut.unregister('MediaNextTrack');
+  globalShortcut.unregister('MediaPreviousTrack');
+  mediaKeysRegistered = false;
+};
+
+ipcMain.handle('media-keys-set-mode', (event, mode) => {
+  // mode: 'always' | 'non-spotify' | 'never'
+  store.set('media-key-handling', mode);
+
+  if (mode === 'never') {
+    unregisterMediaKeys();
+  } else if (mode === 'always') {
+    registerMediaKeys();
+  }
+  // 'non-spotify' mode is handled dynamically based on playback source
+  return { success: true };
+});
+
+ipcMain.handle('media-keys-get-mode', () => {
+  return store.get('media-key-handling') || 'always';
+});
+
+// Called by renderer when playback source changes (for 'non-spotify' mode)
+ipcMain.handle('media-keys-update-playback-source', (event, source) => {
+  const mode = store.get('media-key-handling') || 'always';
+  if (mode === 'non-spotify') {
+    if (source === 'spotify') {
+      unregisterMediaKeys();
+    } else {
+      registerMediaKeys();
+    }
+  }
+  return { success: true };
 });
 
 // Crypto utilities for scrobbling (Last.fm requires MD5 signatures)
