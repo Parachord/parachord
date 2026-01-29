@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parachord Embed Player</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #252525;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --spotify: #1DB954;
+      --youtube: #FF0000;
+      --soundcloud: #FF5500;
+      --bandcamp: #629AA9;
+      --qobuz: #0E7EBF;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      width: 100%;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent), #ec4899);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+
+    .status-dot.connected {
+      background: #22c55e;
+    }
+
+    /* Search */
+    .search-container {
+      margin-bottom: 20px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .search-input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    /* Now Playing */
+    .now-playing {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .now-playing-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .track-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .album-art {
+      width: 64px;
+      height: 64px;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .album-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .track-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .track-title {
+      font-weight: 600;
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .control-btn {
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 50%;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-btn:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .control-btn.play-pause {
+      background: var(--accent);
+      width: 48px;
+      height: 48px;
+    }
+
+    .control-btn.play-pause:hover {
+      background: var(--accent-hover);
+    }
+
+    .control-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    /* Results */
+    .results {
+      margin-top: 20px;
+    }
+
+    .results-header {
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .result-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .result-art {
+      width: 48px;
+      height: 48px;
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .result-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .result-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .result-title {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .result-artist {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .result-source {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .result-source.spotify { background: rgba(29, 185, 84, 0.2); color: var(--spotify); }
+    .result-source.youtube { background: rgba(255, 0, 0, 0.2); color: var(--youtube); }
+    .result-source.soundcloud { background: rgba(255, 85, 0, 0.2); color: var(--soundcloud); }
+    .result-source.bandcamp { background: rgba(98, 154, 169, 0.2); color: var(--bandcamp); }
+    .result-source.qobuz { background: rgba(14, 126, 191, 0.2); color: var(--qobuz); }
+
+    /* Fallback Mode */
+    .fallback-notice {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(236, 72, 153, 0.1));
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .fallback-notice h3 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .fallback-notice p {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 16px;
+    }
+
+    .fallback-notice a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .fallback-notice a:hover {
+      text-decoration: underline;
+    }
+
+    /* Service Links */
+    .service-links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .service-link {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .service-link:hover {
+      background: var(--bg-tertiary);
+      transform: translateY(-2px);
+    }
+
+    .service-link .icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .service-link.spotify .icon { background: var(--spotify); }
+    .service-link.youtube .icon { background: var(--youtube); }
+    .service-link.soundcloud .icon { background: var(--soundcloud); }
+    .service-link.bandcamp .icon { background: var(--bandcamp); }
+
+    .service-link .name {
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    /* Loading */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--bg-tertiary);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+
+    /* Hidden */
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">P</div>
+        <span>Parachord</span>
+      </div>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Fallback Notice (shown when not connected) -->
+    <div class="fallback-notice hidden" id="fallbackNotice">
+      <h3>Parachord Not Detected</h3>
+      <p>Install Parachord for the full experience, or search for music on these services:</p>
+      <div class="service-links">
+        <a href="https://open.spotify.com/search/" target="_blank" class="service-link spotify" id="spotifyLink">
+          <div class="icon">S</div>
+          <span class="name">Spotify</span>
+        </a>
+        <a href="https://www.youtube.com/results?search_query=" target="_blank" class="service-link youtube" id="youtubeLink">
+          <div class="icon">Y</div>
+          <span class="name">YouTube</span>
+        </a>
+        <a href="https://soundcloud.com/search?q=" target="_blank" class="service-link soundcloud" id="soundcloudLink">
+          <div class="icon">S</div>
+          <span class="name">SoundCloud</span>
+        </a>
+        <a href="https://bandcamp.com/search?q=" target="_blank" class="service-link bandcamp" id="bandcampLink">
+          <div class="icon">B</div>
+          <span class="name">Bandcamp</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-container">
+      <input type="text" class="search-input" id="searchInput" placeholder="Search for music..." />
+    </div>
+
+    <!-- Now Playing (shown when connected) -->
+    <div class="now-playing hidden" id="nowPlaying">
+      <div class="now-playing-header">Now Playing</div>
+      <div class="track-info">
+        <div class="album-art" id="albumArt">-</div>
+        <div class="track-details">
+          <div class="track-title" id="trackTitle">Not playing</div>
+          <div class="track-artist" id="trackArtist">-</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="control-btn" id="prevBtn" title="Previous">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+          </svg>
+        </button>
+        <button class="control-btn play-pause" id="playPauseBtn" title="Play/Pause">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="playIcon">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <svg viewBox="0 0 24 24" fill="currentColor" id="pauseIcon" class="hidden">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        </button>
+        <button class="control-btn" id="nextBtn" title="Next">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="results hidden" id="results">
+      <div class="results-header" id="resultsHeader">Results</div>
+      <div id="resultsList"></div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading hidden" id="loading">
+      <div class="spinner"></div>
+      <span>Searching...</span>
+    </div>
+  </div>
+
+  <script>
+    // Parachord Embed Player
+    const PARACHORD_WS_URL = 'ws://127.0.0.1:9876';
+
+    let socket = null;
+    let isConnected = false;
+    let reconnectTimer = null;
+    let pendingRequests = new Map();
+    let requestIdCounter = 0;
+    let currentState = {
+      currentTrack: null,
+      isPlaying: false,
+      volume: 70
+    };
+
+    // DOM Elements
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const fallbackNotice = document.getElementById('fallbackNotice');
+    const searchInput = document.getElementById('searchInput');
+    const nowPlaying = document.getElementById('nowPlaying');
+    const albumArt = document.getElementById('albumArt');
+    const trackTitle = document.getElementById('trackTitle');
+    const trackArtist = document.getElementById('trackArtist');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const playIcon = document.getElementById('playIcon');
+    const pauseIcon = document.getElementById('pauseIcon');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const results = document.getElementById('results');
+    const resultsHeader = document.getElementById('resultsHeader');
+    const resultsList = document.getElementById('resultsList');
+    const loading = document.getElementById('loading');
+
+    // Service link elements for fallback mode
+    const spotifyLink = document.getElementById('spotifyLink');
+    const youtubeLink = document.getElementById('youtubeLink');
+    const soundcloudLink = document.getElementById('soundcloudLink');
+    const bandcampLink = document.getElementById('bandcampLink');
+
+    // Connect to Parachord
+    function connect() {
+      if (socket && socket.readyState === WebSocket.OPEN) return;
+
+      try {
+        socket = new WebSocket(PARACHORD_WS_URL);
+
+        socket.onopen = () => {
+          console.log('[Embed] Connected to Parachord');
+          isConnected = true;
+          updateStatus(true);
+          clearReconnectTimer();
+
+          // Send initial ping
+          sendMessage({ type: 'embed', action: 'ping' }).then(response => {
+            console.log('[Embed] Parachord version:', response.parachordVersion);
+          });
+
+          // Get initial state
+          getState();
+        };
+
+        socket.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            handleMessage(message);
+          } catch (error) {
+            console.error('[Embed] Failed to parse message:', error);
+          }
+        };
+
+        socket.onclose = () => {
+          console.log('[Embed] Disconnected from Parachord');
+          isConnected = false;
+          updateStatus(false);
+          scheduleReconnect();
+        };
+
+        socket.onerror = (error) => {
+          console.error('[Embed] WebSocket error:', error);
+        };
+      } catch (error) {
+        console.error('[Embed] Failed to connect:', error);
+        scheduleReconnect();
+      }
+    }
+
+    function scheduleReconnect() {
+      clearReconnectTimer();
+      reconnectTimer = setTimeout(connect, 3000);
+    }
+
+    function clearReconnectTimer() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    // Send message with response handling
+    function sendMessage(message) {
+      return new Promise((resolve, reject) => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          reject(new Error('Not connected'));
+          return;
+        }
+
+        const requestId = `req-${++requestIdCounter}`;
+        message.requestId = requestId;
+
+        pendingRequests.set(requestId, { resolve, reject });
+
+        // Timeout after 30 seconds
+        setTimeout(() => {
+          if (pendingRequests.has(requestId)) {
+            pendingRequests.delete(requestId);
+            reject(new Error('Request timeout'));
+          }
+        }, 30000);
+
+        socket.send(JSON.stringify(message));
+      });
+    }
+
+    // Handle incoming messages
+    function handleMessage(message) {
+      if (message.type === 'embed-response') {
+        const pending = pendingRequests.get(message.requestId);
+        if (pending) {
+          pendingRequests.delete(message.requestId);
+          pending.resolve(message);
+        }
+      } else if (message.type === 'embed-event') {
+        handleEvent(message);
+      }
+    }
+
+    // Handle events from Parachord
+    function handleEvent(event) {
+      console.log('[Embed] Event:', event.event, event);
+
+      if (event.event === 'stateChange') {
+        if (event.currentTrack !== undefined) {
+          currentState.currentTrack = event.currentTrack;
+        }
+        if (event.isPlaying !== undefined) {
+          currentState.isPlaying = event.isPlaying;
+        }
+        if (event.volume !== undefined) {
+          currentState.volume = event.volume;
+        }
+        updateNowPlaying();
+      }
+    }
+
+    // Update UI based on connection status
+    function updateStatus(connected) {
+      if (connected) {
+        statusDot.classList.add('connected');
+        statusText.textContent = 'Connected';
+        fallbackNotice.classList.add('hidden');
+        nowPlaying.classList.remove('hidden');
+      } else {
+        statusDot.classList.remove('connected');
+        statusText.textContent = 'Not connected';
+        fallbackNotice.classList.remove('hidden');
+        nowPlaying.classList.add('hidden');
+      }
+    }
+
+    // Get current state from Parachord
+    async function getState() {
+      try {
+        const response = await sendMessage({ type: 'embed', action: 'getState' });
+        if (response.success) {
+          currentState.currentTrack = response.currentTrack;
+          currentState.isPlaying = response.isPlaying;
+          currentState.volume = response.volume;
+          updateNowPlaying();
+        }
+      } catch (error) {
+        console.error('[Embed] Failed to get state:', error);
+      }
+    }
+
+    // Update Now Playing display
+    function updateNowPlaying() {
+      const track = currentState.currentTrack;
+
+      if (track) {
+        trackTitle.textContent = track.title || 'Unknown';
+        trackArtist.textContent = track.artist || 'Unknown Artist';
+
+        if (track.albumArt) {
+          albumArt.innerHTML = `<img src="${track.albumArt}" alt="Album art" />`;
+        } else {
+          albumArt.innerHTML = '-';
+        }
+      } else {
+        trackTitle.textContent = 'Not playing';
+        trackArtist.textContent = '-';
+        albumArt.innerHTML = '-';
+      }
+
+      // Update play/pause button
+      if (currentState.isPlaying) {
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+      } else {
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+      }
+    }
+
+    // Search
+    let searchTimeout = null;
+
+    async function search(query) {
+      if (!query.trim()) {
+        results.classList.add('hidden');
+        return;
+      }
+
+      // Update fallback links
+      const encodedQuery = encodeURIComponent(query);
+      spotifyLink.href = `https://open.spotify.com/search/${encodedQuery}`;
+      youtubeLink.href = `https://www.youtube.com/results?search_query=${encodedQuery}`;
+      soundcloudLink.href = `https://soundcloud.com/search?q=${encodedQuery}`;
+      bandcampLink.href = `https://bandcamp.com/search?q=${encodedQuery}`;
+
+      if (!isConnected) {
+        // In fallback mode, just update the links
+        return;
+      }
+
+      loading.classList.remove('hidden');
+      results.classList.add('hidden');
+
+      try {
+        const response = await sendMessage({
+          type: 'embed',
+          action: 'search',
+          payload: { query }
+        });
+
+        loading.classList.add('hidden');
+
+        if (response.success && response.results) {
+          displayResults(response.results, query);
+        } else {
+          console.error('[Embed] Search failed:', response.error);
+        }
+      } catch (error) {
+        loading.classList.add('hidden');
+        console.error('[Embed] Search error:', error);
+      }
+    }
+
+    function displayResults(tracks, query) {
+      if (!tracks || tracks.length === 0) {
+        resultsList.innerHTML = '<div class="empty-state">No results found</div>';
+        results.classList.remove('hidden');
+        return;
+      }
+
+      resultsHeader.textContent = `Results for "${query}"`;
+      resultsList.innerHTML = tracks.slice(0, 20).map(track => `
+        <div class="result-item" data-track='${JSON.stringify(track).replace(/'/g, "\\'")}'>
+          <div class="result-art">
+            ${track.albumArt ? `<img src="${track.albumArt}" alt="" />` : '-'}
+          </div>
+          <div class="result-info">
+            <div class="result-title">${escapeHtml(track.title || 'Unknown')}</div>
+            <div class="result-artist">${escapeHtml(track.artist || 'Unknown Artist')}</div>
+          </div>
+          <span class="result-source ${track.resolverId || ''}">${track.resolverName || track.resolverId || 'Unknown'}</span>
+        </div>
+      `).join('');
+
+      // Add click handlers
+      resultsList.querySelectorAll('.result-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const track = JSON.parse(item.dataset.track);
+          playTrack(track);
+        });
+      });
+
+      results.classList.remove('hidden');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Playback controls
+    async function playTrack(track) {
+      try {
+        await sendMessage({
+          type: 'embed',
+          action: 'play',
+          payload: { track }
+        });
+      } catch (error) {
+        console.error('[Embed] Play failed:', error);
+      }
+    }
+
+    async function togglePlayPause() {
+      if (!isConnected) return;
+
+      try {
+        await sendMessage({
+          type: 'embed',
+          action: currentState.isPlaying ? 'pause' : 'resume'
+        });
+      } catch (error) {
+        console.error('[Embed] Play/pause failed:', error);
+      }
+    }
+
+    async function previous() {
+      if (!isConnected) return;
+
+      try {
+        await sendMessage({ type: 'embed', action: 'previous' });
+      } catch (error) {
+        console.error('[Embed] Previous failed:', error);
+      }
+    }
+
+    async function next() {
+      if (!isConnected) return;
+
+      try {
+        await sendMessage({ type: 'embed', action: 'next' });
+      } catch (error) {
+        console.error('[Embed] Next failed:', error);
+      }
+    }
+
+    // Event listeners
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => search(e.target.value), 300);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        clearTimeout(searchTimeout);
+        search(e.target.value);
+      }
+    });
+
+    playPauseBtn.addEventListener('click', togglePlayPause);
+    prevBtn.addEventListener('click', previous);
+    nextBtn.addEventListener('click', next);
+
+    // Start connection
+    connect();
+
+    // Periodic state refresh
+    setInterval(() => {
+      if (isConnected) {
+        getState();
+      }
+    }, 5000);
+  </script>
+</body>
+</html>
