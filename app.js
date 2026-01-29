@@ -16613,27 +16613,56 @@ ${tracks}
 
     // Check if we've already looked up this artist+album combo
     if (albumToReleaseIdCache.current[lookupKey] !== undefined) {
-      const releaseId = albumToReleaseIdCache.current[lookupKey];
-      if (releaseId === null) return null; // Previously failed lookup
+      const cached = albumToReleaseIdCache.current[lookupKey];
+      if (cached === null) return null; // Previously failed lookup
 
-      // If we have cached art, return it
-      if (albumArtCache.current[releaseId]?.url) {
-        return albumArtCache.current[releaseId].url;
+      // Support both old format (string) and new format ({ releaseId, releaseGroupId })
+      const releaseId = typeof cached === 'string' ? cached : cached.releaseId;
+      const releaseGroupId = typeof cached === 'object' ? cached.releaseGroupId : null;
+
+      // Check albumArtCache - prefer releaseGroupId for consistency
+      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]?.url) ||
+                        (releaseId && albumArtCache.current[releaseId]?.url);
+      if (cachedArt) {
+        return cachedArt;
       }
 
-      // We have a release ID but no cached art - try to fetch cover art
-      try {
-        const caaResponse = await fetch(
-          `https://coverartarchive.org/release/${releaseId}/front-250`,
-          { redirect: 'follow' }
-        );
-        if (caaResponse.ok) {
-          const artUrl = caaResponse.url;
-          albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
-          return artUrl;
+      // We have IDs but no cached art - try to fetch cover art
+      // Prefer release-group endpoint
+      if (releaseGroupId) {
+        try {
+          const rgResponse = await fetch(
+            `https://coverartarchive.org/release-group/${releaseGroupId}/front-250`,
+            { redirect: 'follow' }
+          );
+          if (rgResponse.ok) {
+            const artUrl = rgResponse.url;
+            const cacheEntry = { url: artUrl, timestamp: Date.now() };
+            albumArtCache.current[releaseGroupId] = cacheEntry;
+            if (releaseId) albumArtCache.current[releaseId] = cacheEntry;
+            return artUrl;
+          }
+        } catch (error) {
+          // Fall through to release endpoint
         }
-      } catch (error) {
-        console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
+      }
+
+      if (releaseId) {
+        try {
+          const caaResponse = await fetch(
+            `https://coverartarchive.org/release/${releaseId}/front-250`,
+            { redirect: 'follow' }
+          );
+          if (caaResponse.ok) {
+            const artUrl = caaResponse.url;
+            const cacheEntry = { url: artUrl, timestamp: Date.now() };
+            albumArtCache.current[releaseId] = cacheEntry;
+            if (releaseGroupId) albumArtCache.current[releaseGroupId] = cacheEntry;
+            return artUrl;
+          }
+        } catch (error) {
+          console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
+        }
       }
       return null; // No art available for this release
     }
@@ -16648,23 +16677,51 @@ ${tracks}
       }
 
       const releaseId = releases[0].id;
-      albumToReleaseIdCache.current[lookupKey] = releaseId;
+      const releaseGroupId = releases[0]['release-group']?.id;
+      // Store both IDs for cache lookups
+      albumToReleaseIdCache.current[lookupKey] = { releaseId, releaseGroupId };
 
-      // Check if we already have art for this release in the shared cache
-      if (albumArtCache.current[releaseId]?.url) {
-        return albumArtCache.current[releaseId].url;
+      // Check if we already have art for this release or release-group in the shared cache
+      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]?.url) ||
+                        albumArtCache.current[releaseId]?.url;
+      if (cachedArt) {
+        return cachedArt;
       }
 
       // Fetch cover art from Cover Art Archive
-      const caaResponse = await fetch(
-        `https://coverartarchive.org/release/${releaseId}/front-250`,
-        { redirect: 'follow' }
-      );
+      // Prefer release-group endpoint for consistency, fall back to release
+      let artUrl = null;
+      if (releaseGroupId) {
+        try {
+          const rgResponse = await fetch(
+            `https://coverartarchive.org/release-group/${releaseGroupId}/front-250`,
+            { redirect: 'follow' }
+          );
+          if (rgResponse.ok) {
+            artUrl = rgResponse.url;
+          }
+        } catch (e) {
+          // Fall through to release endpoint
+        }
+      }
 
-      if (caaResponse.ok) {
-        const artUrl = caaResponse.url;
-        // Store in the shared albumArtCache with timestamp
-        albumArtCache.current[releaseId] = { url: artUrl, timestamp: Date.now() };
+      if (!artUrl) {
+        const caaResponse = await fetch(
+          `https://coverartarchive.org/release/${releaseId}/front-250`,
+          { redirect: 'follow' }
+        );
+        if (caaResponse.ok) {
+          artUrl = caaResponse.url;
+        }
+      }
+
+      if (artUrl) {
+        // Store in the shared albumArtCache under both IDs for cross-lookup
+        const cacheEntry = { url: artUrl, timestamp: Date.now() };
+        if (releaseGroupId) {
+          albumArtCache.current[releaseGroupId] = cacheEntry;
+        }
+        albumArtCache.current[releaseId] = cacheEntry;
         return artUrl;
       }
 
