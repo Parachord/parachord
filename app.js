@@ -1510,6 +1510,20 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
   const [tokenInput, setTokenInput] = useState('');
 
   const isConnected = config?.enabled && (config?.sessionKey || config?.userToken);
+  const isPolling = config?.authPolling && config?.pendingToken;
+
+  // Listen for auth completion events from polling
+  useEffect(() => {
+    const handleAuthComplete = async (event) => {
+      if (event.detail.scrobblerId === scrobbler.id) {
+        console.log(`[ScrobblerSettingsCard] Auth completed for ${scrobbler.id}`);
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+      }
+    };
+
+    window.addEventListener('scrobbler-auth-complete', handleAuthComplete);
+    return () => window.removeEventListener('scrobbler-auth-complete', handleAuthComplete);
+  }, [scrobbler, onConfigChange]);
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -1649,8 +1663,43 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
       }, connecting ? 'Connecting...' : 'Connect'),
 
-      // Complete Authorization button (for OAuth services with pending token)
-      config?.pendingToken && React.createElement('button', {
+      // Waiting for authorization (auto-polling active)
+      isPolling && React.createElement('div', {
+        className: 'text-center py-3'
+      },
+        React.createElement('div', { className: 'flex items-center justify-center gap-2 text-gray-600 mb-2' },
+          // Spinning indicator
+          React.createElement('svg', {
+            className: 'animate-spin h-4 w-4',
+            viewBox: '0 0 24 24',
+            fill: 'none'
+          },
+            React.createElement('circle', {
+              className: 'opacity-25',
+              cx: '12', cy: '12', r: '10',
+              stroke: 'currentColor',
+              strokeWidth: '4'
+            }),
+            React.createElement('path', {
+              className: 'opacity-75',
+              fill: 'currentColor',
+              d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+            })
+          ),
+          React.createElement('span', { className: 'text-sm' }, 'Waiting for authorization...')
+        ),
+        React.createElement('p', { className: 'text-xs text-gray-500 mb-2' },
+          'Complete authorization in your browser. This will auto-detect when done.'
+        ),
+        React.createElement('button', {
+          onClick: handleCompleteAuth,
+          disabled: connecting,
+          className: 'text-xs text-purple-600 hover:underline'
+        }, 'Complete manually')
+      ),
+
+      // Complete Authorization button (fallback for pending token without polling)
+      config?.pendingToken && !isPolling && React.createElement('button', {
         onClick: handleCompleteAuth,
         disabled: connecting,
         className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
