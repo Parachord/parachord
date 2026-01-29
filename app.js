@@ -11070,13 +11070,29 @@ const Parachord = () => {
   const fetchReleaseData = async (release, artist) => {
     // Show partial data immediately (from ReleaseCard) while fetching full track list
     // This avoids showing a skeleton for info we already have
+
+    // Check albumToReleaseIdCache in case getAlbumArt already found art for this album
+    // (e.g., from playbar playing a track from this album)
+    const artistNameForPartial = artist?.name || artist || 'Unknown Artist';
+    const partialLookupKey = `${artistNameForPartial}-${release.title}`.toLowerCase();
+    const partialCachedLookup = albumToReleaseIdCache.current[partialLookupKey];
+    let partialCachedArt = null;
+    if (partialCachedLookup) {
+      if (typeof partialCachedLookup === 'object') {
+        partialCachedArt = (partialCachedLookup.releaseGroupId && albumArtCache.current[partialCachedLookup.releaseGroupId]?.url) ||
+                           (partialCachedLookup.releaseId && albumArtCache.current[partialCachedLookup.releaseId]?.url);
+      } else if (typeof partialCachedLookup === 'string') {
+        partialCachedArt = albumArtCache.current[partialCachedLookup]?.url;
+      }
+    }
+
     const partialRelease = {
       id: release.id,
       title: release.title,
       artist: artist,
       date: release.date,
       releaseType: release.releaseType,
-      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
+      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || partialCachedArt || null,
       tracks: null, // null indicates tracks are loading
       _isPartial: true
     };
@@ -11173,6 +11189,20 @@ const Parachord = () => {
 
       // Create release info and show tracks immediately (don't wait for album art)
       // Use existing album art from release object if available (from artist page cache)
+      // Also check albumToReleaseIdCache in case getAlbumArt already found art for this album
+      const artistNameForLookup = artist?.name || artist || 'Unknown Artist';
+      const lookupKey = `${artistNameForLookup}-${releaseData.title}`.toLowerCase();
+      const cachedLookup = albumToReleaseIdCache.current[lookupKey];
+      let cachedLookupArt = null;
+      if (cachedLookup) {
+        if (typeof cachedLookup === 'object') {
+          cachedLookupArt = (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]?.url) ||
+                            (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]?.url);
+        } else if (typeof cachedLookup === 'string') {
+          cachedLookupArt = albumArtCache.current[cachedLookup]?.url;
+        }
+      }
+
       const releaseInfo = {
         id: releaseData.id,
         title: releaseData.title,
@@ -11180,7 +11210,7 @@ const Parachord = () => {
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
-        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
+        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || cachedLookupArt || null,
         barcode: releaseData.barcode,
         country: releaseData.country,
         label: releaseData['label-info']?.[0]?.label?.name
