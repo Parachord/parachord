@@ -10093,9 +10093,9 @@ const Parachord = () => {
 
   // Fetch album art for search results (albums and tracks) - leverages albumArtCache
   const fetchSearchAlbumArt = async (albums, tracks) => {
-    // Fetch album art for albums (release-groups need to be converted to releases first)
-    for (const album of albums.slice(0, 10)) { // Limit to first 10 for performance
-      if (album.albumArt) continue; // Skip if already has art
+    // Fetch album art for albums - use release-group endpoint directly (faster, one less API call)
+    const albumPromises = albums.slice(0, 10).map(async (album) => {
+      if (album.albumArt) return; // Skip if already has art
 
       const albumId = album.id;
 
@@ -10106,96 +10106,15 @@ const Parachord = () => {
           ...prev,
           albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: cachedArt.url } : a)
         }));
-        continue;
+        return;
       }
 
       try {
-        // Get first release for this release-group
-        const releaseResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${albumId}&status=official&fmt=json&limit=1`,
+        // Use release-group endpoint directly (Cover Art Archive supports it)
+        const artResponse = await fetch(
+          `https://coverartarchive.org/release-group/${albumId}`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
-
-        if (releaseResponse.ok) {
-          const releaseData = await releaseResponse.json();
-          if (releaseData.releases && releaseData.releases.length > 0) {
-            const releaseId = releaseData.releases[0].id;
-
-            // Check cache for release ID as well
-            const cachedReleaseArt = albumArtCache.current[releaseId];
-            if (cachedReleaseArt?.url) {
-              // Also cache under release-group ID for future lookups
-              albumArtCache.current[albumId] = cachedReleaseArt;
-              setSearchResults(prev => ({
-                ...prev,
-                albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: cachedReleaseArt.url } : a)
-              }));
-              continue;
-            }
-
-            // Fetch album art for this release
-            const artResponse = await fetch(
-              `https://coverartarchive.org/release/${releaseId}`,
-              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-            );
-
-            if (artResponse.ok) {
-              const artData = await artResponse.json();
-              const frontCover = artData.images.find(img => img.front);
-              if (frontCover) {
-                const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
-
-                // Cache under both release-group ID and release ID
-                const cacheEntry = { url: artUrl, timestamp: Date.now() };
-                albumArtCache.current[albumId] = cacheEntry;
-                albumArtCache.current[releaseId] = cacheEntry;
-
-                // Update search results with new album art - create new object reference
-                setSearchResults(prev => ({
-                  ...prev,
-                  albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: artUrl } : a)
-                }));
-              }
-            }
-          }
-        }
-      } catch (error) {
-        // Silently fail - album art is optional
-      }
-    }
-
-    // Fetch album art for tracks - prefer release-group ID for consistency with album/artist pages
-    for (const track of tracks.slice(0, 10)) { // Limit to first 10 for performance
-      if (track.albumArt) continue; // Skip if already has art
-
-      const trackId = track.id;
-      const releaseId = track.releaseId;
-      const releaseGroupId = track.releaseGroupId;
-
-      // Need at least one ID to fetch art
-      if (!releaseGroupId && !releaseId) continue;
-
-      // Check albumArtCache first - prefer releaseGroupId (standard key used by album/artist pages)
-      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]) ||
-                        (releaseId && albumArtCache.current[releaseId]);
-      if (cachedArt?.url) {
-        setSearchResults(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: cachedArt.url } : t)
-        }));
-        continue;
-      }
-
-      try {
-        // Prefer release-group endpoint (consistent with album/artist pages)
-        // Fall back to release endpoint if no release-group ID
-        const endpoint = releaseGroupId
-          ? `https://coverartarchive.org/release-group/${releaseGroupId}`
-          : `https://coverartarchive.org/release/${releaseId}`;
-
-        const artResponse = await fetch(endpoint, {
-          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-        });
 
         if (artResponse.ok) {
           const artData = await artResponse.json();
@@ -10203,15 +10122,58 @@ const Parachord = () => {
           if (frontCover) {
             const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
 
-            // Cache under releaseGroupId as primary key (consistent with album/artist pages)
-            // Also cache under releaseId for fallback lookups
+            // Cache under release-group ID
             const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            if (releaseGroupId) {
-              albumArtCache.current[releaseGroupId] = cacheEntry;
-            }
-            if (releaseId) {
-              albumArtCache.current[releaseId] = cacheEntry;
-            }
+            albumArtCache.current[albumId] = cacheEntry;
+
+            // Update search results with new album art
+            setSearchResults(prev => ({
+              ...prev,
+              albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: artUrl } : a)
+            }));
+          }
+        }
+      } catch (error) {
+        // Silently fail - album art is optional
+      }
+    });
+
+    // Fetch album art for tracks - use release ID (MusicBrainz search doesn't include release-group)
+    const trackPromises = tracks.slice(0, 10).map(async (track) => {
+      if (track.albumArt || track.isLocal) return; // Skip if already has art or is local file
+
+      const trackId = track.id;
+      const releaseId = track.releaseId;
+
+      // Need release ID to fetch art (MusicBrainz search doesn't include release-group)
+      if (!releaseId) return;
+
+      // Check albumArtCache first
+      const cachedArt = albumArtCache.current[releaseId];
+      if (cachedArt?.url) {
+        setSearchResults(prev => ({
+          ...prev,
+          tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: cachedArt.url } : t)
+        }));
+        return;
+      }
+
+      try {
+        // Use release endpoint for tracks
+        const artResponse = await fetch(
+          `https://coverartarchive.org/release/${releaseId}`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
+        );
+
+        if (artResponse.ok) {
+          const artData = await artResponse.json();
+          const frontCover = artData.images.find(img => img.front);
+          if (frontCover) {
+            const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
+
+            // Cache under releaseId
+            const cacheEntry = { url: artUrl, timestamp: Date.now() };
+            albumArtCache.current[releaseId] = cacheEntry;
 
             // Update search results with new album art
             setSearchResults(prev => ({
@@ -10223,7 +10185,10 @@ const Parachord = () => {
       } catch (error) {
         // Silently fail - album art is optional
       }
-    }
+    });
+
+    // Run all fetches in parallel
+    await Promise.all([...albumPromises, ...trackPromises]);
   };
 
   // Cache utility functions
@@ -11070,13 +11035,23 @@ const Parachord = () => {
   const fetchReleaseData = async (release, artist) => {
     // Show partial data immediately (from ReleaseCard) while fetching full track list
     // This avoids showing a skeleton for info we already have
+    // Check albumToReleaseIdCache in case getAlbumArt already found art for this album
+    const artistNameForLookup = artist?.name || artist || 'Unknown Artist';
+    const partialLookupKey = `${artistNameForLookup}-${release.title}`.toLowerCase();
+    const partialCachedLookup = albumToReleaseIdCache.current[partialLookupKey];
+    const partialCachedArt = partialCachedLookup && (
+      (typeof partialCachedLookup === 'object' && partialCachedLookup.releaseGroupId && albumArtCache.current[partialCachedLookup.releaseGroupId]?.url) ||
+      (typeof partialCachedLookup === 'object' && partialCachedLookup.releaseId && albumArtCache.current[partialCachedLookup.releaseId]?.url) ||
+      (typeof partialCachedLookup === 'string' && albumArtCache.current[partialCachedLookup]?.url)
+    );
+
     const partialRelease = {
       id: release.id,
       title: release.title,
       artist: artist,
       date: release.date,
       releaseType: release.releaseType,
-      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
+      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || partialCachedArt || null,
       tracks: null, // null indicates tracks are loading
       _isPartial: true
     };
@@ -11173,6 +11148,16 @@ const Parachord = () => {
 
       // Create release info and show tracks immediately (don't wait for album art)
       // Use existing album art from release object if available (from artist page cache)
+      // Also check albumToReleaseIdCache in case getAlbumArt already found art for this album
+      const artistName = artist?.name || artist || 'Unknown Artist';
+      const lookupKey = `${artistName}-${releaseData.title}`.toLowerCase();
+      const cachedLookup = albumToReleaseIdCache.current[lookupKey];
+      const cachedLookupArt = cachedLookup && (
+        (typeof cachedLookup === 'object' && cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]?.url) ||
+        (typeof cachedLookup === 'object' && cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]?.url) ||
+        (typeof cachedLookup === 'string' && albumArtCache.current[cachedLookup]?.url)
+      );
+
       const releaseInfo = {
         id: releaseData.id,
         title: releaseData.title,
@@ -11180,7 +11165,7 @@ const Parachord = () => {
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
-        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || null,
+        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || cachedLookupArt || null,
         barcode: releaseData.barcode,
         country: releaseData.country,
         label: releaseData['label-info']?.[0]?.label?.name
