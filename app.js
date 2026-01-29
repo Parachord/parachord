@@ -6186,14 +6186,30 @@ const Parachord = () => {
             searchInputRef.current?.focus();
             break;
           case 'add-folder':
-            window.electron.localFiles?.addWatchFolder();
+            window.electron.localFiles?.addWatchFolder().then(result => {
+              if (result?.success) {
+                showToast(`Added folder: ${result.folderPath.split('/').pop()}`);
+                // Navigate to local files to see the new folder
+                setActiveView('localFiles');
+              } else if (result?.error) {
+                showToast(`Failed to add folder: ${result.error}`);
+              }
+            });
             break;
           case 'import-playlist':
-            window.electron.playlists?.import();
+            handleImportPlaylist();
             break;
           case 'export-playlist':
-            // Open save queue dialog
-            setQueueSaveDialogOpen(true);
+            // Open save queue dialog with a default name
+            const tracksToExport = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+            if (tracksToExport.length === 0) {
+              showToast('Queue is empty');
+            } else {
+              const firstTrack = tracksToExport[0];
+              const defaultName = firstTrack?.artist ? `${firstTrack.artist} Mix` : 'My Queue';
+              setQueueSavePlaylistName(defaultName);
+              setQueueSaveDialogOpen(true);
+            }
             break;
           case 'focus-search':
             searchInputRef.current?.focus();
