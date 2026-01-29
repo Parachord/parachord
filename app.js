@@ -9245,7 +9245,7 @@ const Parachord = () => {
       const url = resolvedUrls[s.id];
       if (!url) return '';
       return `
-        <a href="${url}" target="_blank" rel="noopener" class="service-link" style="--service-color: ${s.color}">
+        <a href="${url}" onclick="window.open(this.href, '${s.id}', 'width=1024,height=768,menubar=no,toolbar=no,location=yes,status=no'); return false;" class="service-link" style="--service-color: ${s.color}">
           <span class="service-icon">${s.icon}</span>
           <span class="service-name">${s.name}</span>
         </a>`;
