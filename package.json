@@ -48,6 +48,11 @@
       "**/*",
       "!**/{.DS_Store,.git,.gitignore,npm-debug.log,dist,node_modules,*.md}"
     ],
+    "asarUnpack": [
+      "node_modules/conf/**/*",
+      "node_modules/electron-store/**/*",
+      "node_modules/better-sqlite3/**/*"
+    ],
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",
