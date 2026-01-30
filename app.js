@@ -4310,6 +4310,12 @@ const Parachord = () => {
     const prevArt = playbarAlbumArtRef.current;
 
     if (newArt !== prevArt) {
+      // If new art is null but we had previous art, keep showing the previous art
+      // This prevents flashing placeholder when transitioning between tracks
+      if (!newArt && prevArt) {
+        return;
+      }
+
       // Album art changed - trigger crossfade
       setPlaybarAlbumArt({
         current: newArt,
@@ -33207,9 +33213,9 @@ useEffect(() => {
                   className: 'bg-gray-700 rounded flex items-center justify-center overflow-hidden relative',
                   style: { width: '61px', height: '61px' }
                 },
-                  // Previous album art (fading out)
+                  // Previous album art (fading out) - use stable key to prevent DOM remounting flash
                   playbarAlbumArt.previous && React.createElement('img', {
-                    key: 'prev-art-' + playbarAlbumArt.previous,
+                    key: 'playbar-prev-art',
                     src: playbarAlbumArt.previous,
                     alt: '',
                     draggable: false,
@@ -33219,9 +33225,9 @@ useEffect(() => {
                       transition: 'opacity 0.3s ease-out'
                     }
                   }),
-                  // Current album art (fading in)
+                  // Current album art (fading in) - use stable key to prevent DOM remounting flash
                   playbarAlbumArt.current && React.createElement('img', {
-                    key: 'curr-art-' + playbarAlbumArt.current,
+                    key: 'playbar-curr-art',
                     src: playbarAlbumArt.current,
                     alt: currentTrack.album,
                     draggable: false,
