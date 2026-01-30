@@ -862,8 +862,13 @@ const SERVICE_LOGOS = {
   youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
   ),
-  soundcloud: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('path', { d: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z' })
+  soundcloud: React.createElement('svg', { viewBox: '0 0 64 64', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
+    React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
+    React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
+    React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
+    React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
+    React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
   ),
   applemusic: React.createElement('svg', { viewBox: '0 0 361 361', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M263.54,234.26c0,4.56-0.04,8.7-1,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.66-12.5,4.55c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.4-12.99-6.6c-5.17-4.74-8.39-11.14-9.09-17.82c-0.82-7.84,1.79-16.21,7.67-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.13-2.61,2.17-5.78,2.17-8.92l0-79.29c0-6.07-2.72-7.72-8.52-6.61c-4.14,0.81-93.09,18.75-93.09,18.75c-5.02,1.21-6.78,2.85-6.78,9.08l0,116.15c0,4.56-0.24,8.7-1.19,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.72-12.5,4.61c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.47-12.99-6.66c-5.17-4.74-8.17-11.14-8.88-17.82c-0.82-7.84,1.57-16.21,7.46-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.12-2.59,2.37-5.64,2.37-8.76c0-24.6,0-133.92,0-133.92c0-1.8,0.15-3.02,0.24-3.62c0.43-2.82,1.56-5.24,3.6-6.95c1.7-1.42,3.88-2.41,6.67-3l0.04-0.01l107-21.59c0.93-0.19,8.66-1.56,9.53-1.64c5.78-0.5,9.03,3.3,9.03,9.46V234.26z' })
@@ -1329,6 +1334,7 @@ const ResolverCard = React.memo(({
   resolver,
   isActive,
   isInstalled,
+  isMarketplaceOnly,
   hasUpdate,
   isInstalling,
   needsConfiguration,
@@ -1347,6 +1353,13 @@ const ResolverCard = React.memo(({
 }) => {
   // Get the logo SVG or fall back to emoji icon
   const logo = SERVICE_LOGOS[resolver.id];
+
+  // Determine visual state:
+  // - isMarketplaceOnly: not installed, show faded with download arrow
+  // - isActive === false: installed but disabled, show grayscale
+  // - isInstalled or normal: full color with checkmark
+  const isNotInstalled = isMarketplaceOnly === true;
+  const isDisabled = isActive === false && !isNotInstalled;
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -1368,23 +1381,24 @@ const ResolverCard = React.memo(({
         zIndex: 10
       }
     }),
-    // Card with colored background - refined styling
+    // Card with colored background
     React.createElement('div', {
       className: `relative flex items-center justify-center cursor-pointer transition-all ${
-        isActive === false ? 'opacity-50 grayscale' : ''
+        isDisabled ? 'grayscale' : ''
       }`,
       style: {
         width: '120px',
         height: '120px',
         borderRadius: '16px',
         backgroundColor: resolver.color || '#6B7280',
+        opacity: isNotInstalled ? 0.5 : (isDisabled ? 0.5 : 1),
         boxShadow: isDragOver
           ? '0 0 0 3px #7c3aed, 0 4px 12px rgba(0, 0, 0, 0.15)'
           : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
       },
       onClick: onClick
     },
-      // Priority number badge (top-left) - refined
+      // Priority number badge (top-left) - only for installed resolvers
       priorityNumber && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
@@ -1404,51 +1418,26 @@ const ResolverCard = React.memo(({
       logo ? logo : React.createElement('span', {
         className: 'text-5xl text-white drop-shadow-md'
       }, resolver.icon),
-      // Status overlay for installed/update (marketplace view)
-      isInstalled && React.createElement('div', {
+      // Status badge (top-right): download arrow for not installed, update arrow, or checkmark
+      !isInstalling && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
           top: '8px',
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)',
+          backgroundColor: isNotInstalled
+            ? 'rgba(255, 255, 255, 0.95)'
+            : (hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)'),
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: hasUpdate ? '#ffffff' : '#22c55e'
-        }
-      }, hasUpdate ? '↑' : '✓'),
-      // Active checkmark for installed tab (when not in marketplace view and no update)
-      !isInstalled && !hasUpdate && React.createElement('div', {
-        className: 'absolute flex items-center justify-center',
-        style: {
-          top: '8px',
-          right: '8px',
-          width: '22px',
-          height: '22px',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          borderRadius: '6px',
-          fontSize: '11px',
-          fontWeight: '600',
-          color: '#22c55e'
-        }
-      }, '✓'),
-      // Update badge for installed tab (top-right, only when not showing installed badge)
-      !isInstalled && hasUpdate && React.createElement('div', {
-        className: 'absolute flex items-center justify-center',
-        style: {
-          top: '8px',
-          right: '8px',
-          width: '22px',
-          height: '22px',
-          backgroundColor: '#f97316',
-          borderRadius: '6px',
-          fontSize: '11px',
-          fontWeight: '600',
-          color: '#ffffff'
-        }
-      }, '↑'),
+          color: isNotInstalled
+            ? '#6b7280'
+            : (hasUpdate ? '#ffffff' : '#22c55e')
+        },
+        title: isNotInstalled ? 'Click to install' : (hasUpdate ? 'Update available' : 'Installed')
+      }, isNotInstalled ? '↓' : (hasUpdate ? '↑' : '✓')),
       // Installing spinner
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
@@ -1460,7 +1449,7 @@ const ResolverCard = React.memo(({
         React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
       ),
       // Needs configuration warning badge (bottom-right)
-      needsConfiguration && !isInstalling && React.createElement('div', {
+      needsConfiguration && !isInstalling && !isNotInstalled && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
           bottom: '8px',
@@ -1477,13 +1466,13 @@ const ResolverCard = React.memo(({
         title: 'Needs configuration'
       }, '!')
     ),
-    // Name below card - refined typography
+    // Name below card
     React.createElement('span', {
       style: {
         marginTop: '10px',
         fontSize: '13px',
         fontWeight: '500',
-        color: '#1f2937',
+        color: isNotInstalled ? '#9ca3af' : '#1f2937',
         textAlign: 'center',
         width: '120px',
         overflow: 'hidden',
@@ -1491,15 +1480,24 @@ const ResolverCard = React.memo(({
         whiteSpace: 'nowrap'
       }
     }, resolver.name),
-    // Needs setup label below name
-    needsConfiguration && React.createElement('span', {
+    // Status label below name
+    needsConfiguration && !isNotInstalled && React.createElement('span', {
       style: {
         fontSize: '10px',
         fontWeight: '500',
         color: '#d97706',
         marginTop: '2px'
       }
-    }, 'Setup required')
+    }, 'Setup required'),
+    // "Available" label for not installed
+    isNotInstalled && !isInstalling && React.createElement('span', {
+      style: {
+        fontSize: '10px',
+        fontWeight: '500',
+        color: '#9ca3af',
+        marginTop: '2px'
+      }
+    }, 'Available')
   );
 });
 
@@ -3345,13 +3343,15 @@ const Parachord = () => {
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
-  const [settingsTab, setSettingsTab] = useState('marketplace'); // 'marketplace' | 'installed' | 'general' | 'about'
+  const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
+  const [pluginsFilter, setPluginsFilter] = useState('all'); // 'all' | 'installed' | 'available'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [marketplaceCategory, setMarketplaceCategory] = useState('all');
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
+  const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -5394,6 +5394,9 @@ const Parachord = () => {
         
         let resolversToLoad = builtinAxeFiles;
 
+        // Get list of user-uninstalled resolvers to exclude
+        const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+
         if (builtinAxeFiles.length === 0) {
           console.warn('⚠️  No .axe files found in resolvers/builtin/');
           console.log('💾 Using embedded fallback resolvers');
@@ -5408,6 +5411,16 @@ const Parachord = () => {
           if (missingBuiltins.length > 0) {
             console.log(`📦 Adding ${missingBuiltins.length} builtin resolver(s) not in cache:`, missingBuiltins.map(r => r.manifest.id).join(', '));
             resolversToLoad = [...builtinAxeFiles, ...missingBuiltins];
+          }
+        }
+
+        // Filter out user-uninstalled resolvers (they can reinstall from marketplace)
+        if (uninstalledResolvers.length > 0) {
+          const beforeCount = resolversToLoad.length;
+          resolversToLoad = resolversToLoad.filter(axe => !uninstalledResolvers.includes(axe.manifest?.id));
+          const removedCount = beforeCount - resolversToLoad.length;
+          if (removedCount > 0) {
+            console.log(`🚫 Excluded ${removedCount} user-uninstalled resolver(s)`);
           }
         }
 
@@ -13990,7 +14003,7 @@ const Parachord = () => {
     }
   };
 
-  // Uninstall resolver (permanently delete from disk)
+  // Uninstall resolver (remove from state and optionally delete from disk)
   const handleUninstallResolver = async (resolverId) => {
     console.log('=== handleUninstallResolver called ===');
     console.log('  Resolver ID:', resolverId);
@@ -14003,15 +14016,21 @@ const Parachord = () => {
       console.error('❌ Resolver not found:', resolverId);
       showConfirmDialog({
         type: 'error',
-        title: 'Resolver Not Found',
-        message: `Resolver "${resolverId}" not found. This might be a bug.`
+        title: 'Uninstall Failed',
+        message: 'Plugin not found'
       });
       return;
     }
 
     console.log('  Found resolver:', resolver.name);
 
-    const confirmMessage = `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
+    // Check if this plugin is available in the marketplace (can be reinstalled easily)
+    const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
+
+    // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
+    const confirmMessage = isInMarketplace
+      ? `Remove "${resolver.name}"?`
+      : `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
 
     const shouldUninstall = confirm(confirmMessage);
 
@@ -14022,10 +14041,11 @@ const Parachord = () => {
     console.log(`🗑️ Uninstalling resolver: ${resolver.name}`);
 
     try {
-      // Delete the resolver file from disk
+      // Try to delete the resolver file from disk
       const result = await window.electron.resolvers.uninstall(resolverId);
 
-      if (!result.success) {
+      // Even if the file doesn't exist (built-in resolver), we still remove from state
+      if (!result.success && result.error !== 'Plugin not found') {
         showConfirmDialog({
           type: 'error',
           title: 'Uninstall Failed',
@@ -14044,9 +14064,15 @@ const Parachord = () => {
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
 
+      // Save the uninstalled resolver ID so it doesn't reappear on restart
+      const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+      if (!uninstalledResolvers.includes(resolverId)) {
+        await window.electron.store.set('uninstalled_resolvers', [...uninstalledResolvers, resolverId]);
+      }
+
       showConfirmDialog({
         type: 'success',
-        title: 'Resolver Uninstalled',
+        title: 'Removed',
         message: resolver.name
       });
     } catch (error) {
@@ -14177,6 +14203,12 @@ const Parachord = () => {
             axe._filename = filename;
       const newResolverInstance = await resolverLoader.current.loadResolver(axe);
 
+      // Remove from uninstalled list if it was previously uninstalled
+      const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+      if (uninstalledResolvers.includes(resolverId)) {
+        await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
+      }
+
       if (existing) {
         setLoadedResolvers(prev => prev.map(r =>
           r.id === resolverId ? newResolverInstance : r
@@ -14192,7 +14224,7 @@ const Parachord = () => {
         setActiveResolvers(prev => [...prev, resolverId]);
         showConfirmDialog({
           type: 'success',
-          title: 'Resolver Installed',
+          title: 'Installed',
           message: resolverName
         });
       }
@@ -14212,9 +14244,9 @@ const Parachord = () => {
     }
   };
 
-  // Load marketplace when settings page opens to marketplace tab
+  // Load marketplace manifest when settings page opens to plugins tab
   useEffect(() => {
-    if (activeView === 'settings' && settingsTab === 'marketplace' && !marketplaceManifest) {
+    if (activeView === 'settings' && settingsTab === 'plugins' && !marketplaceManifest) {
       loadMarketplaceManifest();
     }
   }, [activeView, settingsTab, marketplaceManifest]);
@@ -18674,7 +18706,7 @@ ${tracks}
       setForwardHistory([]); // Clear forward history when navigating to a new view
       setActiveView(view);
       if (view === 'settings') {
-        setSettingsTab('marketplace');
+        setSettingsTab('plugins');
       }
     }
   };
@@ -26379,7 +26411,7 @@ useEffect(() => {
                     icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
                     title: 'Add More Music Sources',
                     description: `Install ${uninstalledPopular.length} more resolver${uninstalledPopular.length > 1 ? 's' : ''} to expand your library`,
-                    action: () => { navigateTo('settings'); setSettingsTab('marketplace'); },
+                    action: () => { navigateTo('settings'); setSettingsTab('plugins'); },
                     actionLabel: 'Browse Plugins',
                     color: '#8b5cf6'
                   });
@@ -29526,7 +29558,7 @@ useEffect(() => {
                   React.createElement('button', {
                     onClick: () => {
                       setActiveView('settings');
-                      setSettingsTab('installed');
+                      setSettingsTab('plugins');
                       // Find and select the ListenBrainz service
                       const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
                       if (listenbrainzService) {
@@ -29538,7 +29570,7 @@ useEffect(() => {
                   React.createElement('button', {
                     onClick: () => {
                       setActiveView('settings');
-                      setSettingsTab('installed');
+                      setSettingsTab('plugins');
                       // Find and select the Last.fm service
                       const lastfmService = metaServices.find(s => s.id === 'lastfm');
                       if (lastfmService) {
@@ -31598,40 +31630,23 @@ useEffect(() => {
               }
             },
               React.createElement('nav', { style: { padding: '0 12px' } },
-              // Marketplace tab
+              // Plug-Ins tab (unified marketplace and installed)
               React.createElement('button', {
-                onClick: () => setSettingsTab('marketplace'),
+                onClick: () => setSettingsTab('plugins'),
                 className: 'w-full text-left transition-all',
                 style: {
                   padding: '12px 16px',
                   marginBottom: '4px',
                   fontSize: '13px',
-                  fontWeight: settingsTab === 'marketplace' ? '500' : '400',
-                  color: settingsTab === 'marketplace' ? '#1f2937' : '#6b7280',
-                  backgroundColor: settingsTab === 'marketplace' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                  fontWeight: settingsTab === 'plugins' ? '500' : '400',
+                  color: settingsTab === 'plugins' ? '#1f2937' : '#6b7280',
+                  backgroundColor: settingsTab === 'plugins' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
                   borderRadius: '8px',
                   border: 'none',
                   cursor: 'pointer',
-                  borderLeft: settingsTab === 'marketplace' ? '3px solid #7c3aed' : '3px solid transparent'
+                  borderLeft: settingsTab === 'plugins' ? '3px solid #7c3aed' : '3px solid transparent'
                 }
-              }, 'Marketplace'),
-              // Installed Plug-Ins tab
-              React.createElement('button', {
-                onClick: () => setSettingsTab('installed'),
-                className: 'w-full text-left transition-all',
-                style: {
-                  padding: '12px 16px',
-                  marginBottom: '4px',
-                  fontSize: '13px',
-                  fontWeight: settingsTab === 'installed' ? '500' : '400',
-                  color: settingsTab === 'installed' ? '#1f2937' : '#6b7280',
-                  backgroundColor: settingsTab === 'installed' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
-                  borderRadius: '8px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderLeft: settingsTab === 'installed' ? '3px solid #7c3aed' : '3px solid transparent'
-                }
-              }, 'Installed Plug-Ins'),
+              }, 'Plug-Ins'),
               // General tab
               React.createElement('button', {
                 onClick: () => setSettingsTab('general'),
@@ -31673,12 +31688,12 @@ useEffect(() => {
             className: 'flex-1 overflow-y-auto scrollable-content',
             style: { padding: '32px 40px' }
           },
-            // Installed Plug-Ins Tab
-            settingsTab === 'installed' && React.createElement('div', null,
-              // Page Header with Add button - refined styling
+            // Unified Plug-Ins Tab
+            settingsTab === 'plugins' && React.createElement('div', null,
+              // Page Header with Add button
               React.createElement('div', {
                 className: 'flex items-center justify-between',
-                style: { marginBottom: '32px' }
+                style: { marginBottom: '24px' }
               },
                 React.createElement('div', null,
                   React.createElement('h2', {
@@ -31688,17 +31703,17 @@ useEffect(() => {
                       color: '#1f2937',
                       marginBottom: '6px'
                     }
-                  }, 'Installed Plug-Ins'),
+                  }, 'Plug-Ins'),
                   React.createElement('p', {
                     style: {
                       fontSize: '13px',
                       color: '#6b7280'
                     }
                   },
-                    'Manage your installed plug-ins for playback and services.'
+                    'Discover, install, and manage plug-ins for playback and services.'
                   )
                 ),
-                // Add from file button - refined styling
+                // Add from file button
                 React.createElement('button', {
                   onClick: handleInstallResolver,
                   className: 'flex items-center gap-2 transition-all',
@@ -31721,202 +31736,14 @@ useEffect(() => {
                 )
               ),
 
-              // Content Resolvers Section - refined styling
-              React.createElement('div', { style: { marginBottom: '40px' } },
-                React.createElement('div', { style: { marginBottom: '16px' } },
-                  React.createElement('h3', {
-                    style: {
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#9ca3af',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em'
-                    }
-                  }, 'Content Resolvers'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: '#9ca3af',
-                      marginTop: '4px'
-                    }
-                  },
-                    'Drag to reorder playback priority'
-                  )
-                ),
-                // Resolver grid
-                React.createElement('div', {
-                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
-                },
-                  resolverOrder
-                    .filter(resolverId => allResolvers.some(r => r.id === resolverId))
-                    .map((resolverId, index) => {
-                    const resolver = allResolvers.find(r => r.id === resolverId);
-
-                    const isActive = activeResolvers.includes(resolver.id);
-
-                    // Check if marketplace has a newer version
-                    const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === resolver.id);
-                    const hasUpdate = marketplaceResolver &&
-                      marketplaceResolver.version !== resolver.version &&
-                      marketplaceResolver.version > resolver.version;
-
-                    // Determine if resolver needs configuration
-                    let needsConfiguration = false;
-                    if (resolver.id === 'spotify' && !spotifyConnected) {
-                      needsConfiguration = true;
-                    } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
-                      needsConfiguration = true;
-                    } else if (resolver.id === 'qobuz' && !qobuzConnected) {
-                      // Qobuz works with previews but full playback needs login
-                      needsConfiguration = false; // Optional, so don't mark as needed
-                    }
-
-                    return React.createElement(ResolverCard, {
-                      key: resolver.id,
-                      resolver: resolver,
-                      isActive: isActive,
-                      hasUpdate: hasUpdate,
-                      needsConfiguration: needsConfiguration,
-                      priorityNumber: index + 1,
-                      draggable: true,
-                      isDragging: draggedResolver === resolver.id,
-                      isDragOver: dragOverResolver === resolver.id,
-                      onClick: () => setSelectedResolver(resolver),
-                      onDragStart: (e) => handleResolverDragStart(e, resolver.id),
-                      onDragOver: handleResolverDragOver,
-                      onDragEnter: (e) => handleResolverDragEnter(e, resolver.id),
-                      onDragLeave: handleResolverDragLeave,
-                      onDrop: (e) => handleResolverDrop(e, resolver.id),
-                      onDragEnd: handleResolverDragEnd,
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.resolvers?.showContextMenu) {
-                          window.electron.resolvers.showContextMenu(resolver.id);
-                        }
-                      }
-                    });
-                  })
-                )
-              ),
-
-              // Meta Services Section - refined styling
-              metaServices.length > 0 && React.createElement('div', null,
-                React.createElement('div', { style: { marginBottom: '16px' } },
-                  React.createElement('h3', {
-                    style: {
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#9ca3af',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em'
-                    }
-                  }, 'Meta Services'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: '#9ca3af',
-                      marginTop: '4px'
-                    }
-                  },
-                    'Connected services for recommendations and metadata'
-                  )
-                ),
-                // Meta services grid - refined card layout
-                React.createElement('div', {
-                  className: 'flex flex-wrap gap-6'
-                },
-                  metaServices.map(service => {
-                    const config = metaServiceConfigs[service.id];
-                    const requiresAuth = service.settings?.requiresAuth !== false;
-                    // All installed meta services show a checkmark
-                    const isConnected = true;
-
-                    return React.createElement('div', {
-                      key: service.id,
-                      className: 'flex flex-col items-center'
-                    },
-                      // Card with colored background - refined styling
-                      React.createElement('div', {
-                        className: 'relative flex items-center justify-center cursor-pointer transition-all',
-                        style: {
-                          width: '120px',
-                          height: '120px',
-                          borderRadius: '16px',
-                          backgroundColor: service.color || '#6B7280',
-                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
-                        },
-                        onClick: () => setSelectedResolver(service)
-                      },
-                        // Centered logo or emoji fallback
-                        SERVICE_LOGOS[service.id] ? SERVICE_LOGOS[service.id] : React.createElement('span', {
-                          className: 'text-5xl text-white drop-shadow-md'
-                        }, service.icon),
-                        // Connected indicator (top-right checkmark) - refined
-                        isConnected && React.createElement('div', {
-                          className: 'absolute flex items-center justify-center',
-                          style: {
-                            top: '8px',
-                            right: '8px',
-                            width: '22px',
-                            height: '22px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            color: '#22c55e'
-                          }
-                        }, '✓')
-                      ),
-                      // Name below card - refined typography
-                      React.createElement('span', {
-                        style: {
-                          marginTop: '10px',
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: '#1f2937',
-                          textAlign: 'center',
-                          width: '120px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }
-                      }, service.name)
-                    );
-                  })
-                )
-              )
-            ),
-
-            // Marketplace Tab
-            settingsTab === 'marketplace' && React.createElement('div', null,
-              // Header - refined styling
-              React.createElement('div', { style: { marginBottom: '24px' } },
-                React.createElement('h2', {
-                  style: {
-                    fontSize: '20px',
-                    fontWeight: '600',
-                    color: '#1f2937',
-                    marginBottom: '6px'
-                  }
-                }, 'Marketplace'),
-                React.createElement('p', {
-                  style: {
-                    fontSize: '13px',
-                    color: '#6b7280'
-                  }
-                },
-                  'Discover and install plug-ins to extend Parachord.'
-                )
-              ),
-
-              // Plug-in architecture description - refined styling
+              // Plug-in architecture description
               React.createElement('div', {
                 style: {
                   background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%)',
                   border: '1px solid rgba(124, 58, 237, 0.12)',
                   borderRadius: '12px',
                   padding: '20px',
-                  marginBottom: '32px'
+                  marginBottom: '24px'
                 }
               },
                 React.createElement('div', { className: 'flex gap-4' },
@@ -31960,9 +31787,9 @@ useEffect(() => {
               ),
 
               // Search and filter bar
-              React.createElement('div', { className: 'flex items-center gap-4 mb-8' },
-                // Search input
-                React.createElement('div', { className: 'relative' },
+              React.createElement('div', { className: 'flex flex-col gap-3 mb-6' },
+                // Top row: Search input
+                React.createElement('div', { className: 'relative', style: { width: 'fit-content' } },
                   React.createElement('svg', {
                     className: 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400',
                     fill: 'none',
@@ -31979,12 +31806,22 @@ useEffect(() => {
                     className: 'w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
                   })
                 ),
-                // Category filter pills
-                React.createElement('div', { className: 'flex gap-2 flex-wrap' },
+                // Bottom row: Dropdown + Category pills together
+                React.createElement('div', { className: 'flex items-center gap-3 flex-wrap' },
+                  // Install status dropdown filter
+                  React.createElement('select', {
+                    value: pluginsFilter,
+                    onChange: (e) => setPluginsFilter(e.target.value),
+                    className: 'px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent',
+                    style: { minWidth: '100px' }
+                  },
+                    React.createElement('option', { value: 'all' }, 'All'),
+                    React.createElement('option', { value: 'installed' }, 'Installed'),
+                    React.createElement('option', { value: 'available' }, 'Available')
+                  ),
+                  // Category filter pills
                   [
-                    { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
-                    { value: 'purchase', label: 'Purchase' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
                     { value: 'ai', label: 'AI' },
@@ -31995,57 +31832,359 @@ useEffect(() => {
                       onClick: () => setMarketplaceCategory(value),
                       className: `px-3 py-1.5 rounded-full text-sm transition-all ${
                         marketplaceCategory === value
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                          : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'
                       }`
                     }, label)
                   )
                 )
               ),
+
               // Loading state
               marketplaceLoading && React.createElement('div', {
                 className: 'text-center py-12 text-gray-500'
-              }, 'Loading marketplace...'),
-              // Empty state
-              !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length === 0 &&
-                React.createElement('div', {
-                  className: 'text-center py-12 text-gray-400'
-                }, 'No plug-ins available in marketplace yet.'),
-              // Resolver grid
-              !marketplaceLoading && marketplaceManifest && marketplaceManifest.resolvers && marketplaceManifest.resolvers.length > 0 &&
+              }, 'Loading plug-ins...'),
+
+              // Content Resolvers Section
+              !marketplaceLoading && React.createElement('div', { style: { marginBottom: '40px' } },
+                React.createElement('div', { style: { marginBottom: '16px' } },
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em'
+                    }
+                  }, 'Content Resolvers'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  },
+                    'Drag installed plug-ins to reorder playback priority'
+                  )
+                ),
+                // Resolver grid - combines installed and marketplace
                 React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
                 },
-                  marketplaceManifest.resolvers
-                    .filter(resolver => {
-                      if (marketplaceSearchQuery) {
-                        const query = marketplaceSearchQuery.toLowerCase();
-                        const matchesName = resolver.name.toLowerCase().includes(query);
-                        const matchesDesc = resolver.description.toLowerCase().includes(query);
-                        const matchesAuthor = resolver.author.toLowerCase().includes(query);
-                        if (!matchesName && !matchesDesc && !matchesAuthor) return false;
-                      }
-                      if (marketplaceCategory !== 'all') {
-                        const matchesCategory = resolver.category === marketplaceCategory;
-                        const matchesTag = resolver.tags && resolver.tags.includes(marketplaceCategory);
-                        if (!matchesCategory && !matchesTag) return false;
-                      }
-                      return true;
-                    })
-                    .map(resolver => {
-                      const installedResolver = allResolvers.find(r => r.id === resolver.id);
-                      const isInstalled = !!installedResolver;
-                      const isInstalling = installingResolvers.has(resolver.id);
+                  (() => {
+                    // Get all content resolvers from marketplace (non-meta-service)
+                    const marketplaceContentResolvers = (marketplaceManifest?.resolvers || [])
+                      .filter(r => r.type !== 'meta-service');
 
-                      return React.createElement(ResolverCard, {
-                        key: resolver.id,
-                        resolver: resolver,
-                        isInstalled: isInstalled,
-                        isInstalling: isInstalling,
-                        onClick: () => setSelectedMarketplaceItem({ ...resolver, isInstalled, installedResolver })
+                    // Build unified list: installed resolvers + marketplace-only resolvers
+                    const unifiedResolvers = [];
+
+                    // First, add installed resolvers in order
+                    resolverOrder
+                      .filter(resolverId => allResolvers.some(r => r.id === resolverId))
+                      .forEach((resolverId, index) => {
+                        const resolver = allResolvers.find(r => r.id === resolverId);
+                        const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
+                        unifiedResolvers.push({
+                          ...resolver,
+                          isInstalled: true,
+                          priorityNumber: index + 1,
+                          marketplaceData: marketplaceResolver,
+                          hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
+                        });
                       });
-                    })
+
+                    // Then, add marketplace-only resolvers (not installed)
+                    marketplaceContentResolvers.forEach(resolver => {
+                      const isInstalled = allResolvers.some(r => r.id === resolver.id);
+                      if (!isInstalled) {
+                        unifiedResolvers.push({
+                          ...resolver,
+                          isInstalled: false,
+                          priorityNumber: null,
+                          marketplaceData: resolver,
+                          hasUpdate: false
+                        });
+                      }
+                    });
+
+                    // Apply filters
+                    return unifiedResolvers
+                      .filter(resolver => {
+                        // Search filter
+                        if (marketplaceSearchQuery) {
+                          const query = marketplaceSearchQuery.toLowerCase();
+                          const matchesName = resolver.name.toLowerCase().includes(query);
+                          const matchesDesc = (resolver.description || '').toLowerCase().includes(query);
+                          if (!matchesName && !matchesDesc) return false;
+                        }
+                        // Install status filter
+                        if (pluginsFilter === 'installed' && !resolver.isInstalled) return false;
+                        if (pluginsFilter === 'available' && resolver.isInstalled) return false;
+                        // Category filter
+                        if (marketplaceCategory !== 'all') {
+                          const category = resolver.category || resolver.marketplaceData?.category;
+                          const tags = resolver.tags || resolver.marketplaceData?.tags || [];
+                          const matchesCategory = category === marketplaceCategory;
+                          const matchesTag = tags.includes(marketplaceCategory);
+                          if (!matchesCategory && !matchesTag) return false;
+                        }
+                        return true;
+                      })
+                      .map(resolver => {
+                        const isActive = resolver.isInstalled ? activeResolvers.includes(resolver.id) : null;
+                        const isInstalling = installingResolvers.has(resolver.id);
+
+                        // Determine if resolver needs configuration
+                        let needsConfiguration = false;
+                        if (resolver.isInstalled) {
+                          if (resolver.id === 'spotify' && !spotifyConnected) {
+                            needsConfiguration = true;
+                          } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
+                            needsConfiguration = true;
+                          }
+                        }
+
+                        return React.createElement(ResolverCard, {
+                          key: resolver.id,
+                          resolver: resolver,
+                          isActive: isActive,
+                          isInstalled: resolver.isInstalled,
+                          isMarketplaceOnly: !resolver.isInstalled,
+                          hasUpdate: resolver.hasUpdate,
+                          needsConfiguration: needsConfiguration,
+                          priorityNumber: resolver.priorityNumber,
+                          isInstalling: isInstalling,
+                          draggable: resolver.isInstalled,
+                          isDragging: draggedResolver === resolver.id,
+                          isDragOver: dragOverResolver === resolver.id,
+                          onClick: () => {
+                            if (resolver.isInstalled) {
+                              // Installed: open config modal
+                              setSelectedResolver(allResolvers.find(r => r.id === resolver.id) || resolver);
+                            } else {
+                              // Not installed: open marketplace info modal
+                              setSelectedMarketplaceItem({ ...resolver, isInstalled: false, installedResolver: null });
+                            }
+                          },
+                          onDragStart: resolver.isInstalled ? (e) => handleResolverDragStart(e, resolver.id) : undefined,
+                          onDragOver: resolver.isInstalled ? handleResolverDragOver : undefined,
+                          onDragEnter: resolver.isInstalled ? (e) => handleResolverDragEnter(e, resolver.id) : undefined,
+                          onDragLeave: resolver.isInstalled ? handleResolverDragLeave : undefined,
+                          onDrop: resolver.isInstalled ? (e) => handleResolverDrop(e, resolver.id) : undefined,
+                          onDragEnd: resolver.isInstalled ? handleResolverDragEnd : undefined,
+                          onContextMenu: resolver.isInstalled ? (e) => {
+                            e.preventDefault();
+                            if (window.electron?.resolvers?.showContextMenu) {
+                              window.electron.resolvers.showContextMenu(resolver.id);
+                            }
+                          } : undefined
+                        });
+                      });
+                  })()
                 )
+              ),
+
+              // Meta Services Section
+              !marketplaceLoading && React.createElement('div', null,
+                React.createElement('div', { style: { marginBottom: '16px' } },
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em'
+                    }
+                  }, 'Meta Services'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  },
+                    'Services for recommendations, metadata, and AI features'
+                  )
+                ),
+                // Meta services grid - combines installed and marketplace
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  (() => {
+                    // Get all meta services from marketplace
+                    const marketplaceMetaServices = (marketplaceManifest?.resolvers || [])
+                      .filter(r => r.type === 'meta-service');
+
+                    // Build unified list
+                    const unifiedServices = [];
+
+                    // First, add installed meta services
+                    metaServices.forEach(service => {
+                      const marketplaceService = marketplaceMetaServices.find(r => r.id === service.id);
+                      unifiedServices.push({
+                        ...service,
+                        isInstalled: true,
+                        marketplaceData: marketplaceService,
+                        hasUpdate: marketplaceService && marketplaceService.version > service.version
+                      });
+                    });
+
+                    // Then, add marketplace-only meta services (not installed)
+                    marketplaceMetaServices.forEach(service => {
+                      const isInstalled = metaServices.some(s => s.id === service.id);
+                      if (!isInstalled) {
+                        unifiedServices.push({
+                          ...service,
+                          isInstalled: false,
+                          marketplaceData: service,
+                          hasUpdate: false
+                        });
+                      }
+                    });
+
+                    // Apply filters
+                    return unifiedServices
+                      .filter(service => {
+                        // Search filter
+                        if (marketplaceSearchQuery) {
+                          const query = marketplaceSearchQuery.toLowerCase();
+                          const matchesName = service.name.toLowerCase().includes(query);
+                          const matchesDesc = (service.description || '').toLowerCase().includes(query);
+                          if (!matchesName && !matchesDesc) return false;
+                        }
+                        // Install status filter
+                        if (pluginsFilter === 'installed' && !service.isInstalled) return false;
+                        if (pluginsFilter === 'available' && service.isInstalled) return false;
+                        // Category filter
+                        if (marketplaceCategory !== 'all') {
+                          const category = service.category || service.marketplaceData?.category;
+                          const tags = service.tags || service.marketplaceData?.tags || [];
+                          const matchesCategory = category === marketplaceCategory;
+                          const matchesTag = tags.includes(marketplaceCategory);
+                          if (!matchesCategory && !matchesTag) return false;
+                        }
+                        return true;
+                      })
+                      .map(service => {
+                        const isInstalling = installingResolvers.has(service.id);
+                        const config = metaServiceConfigs[service.id];
+
+                        // Check if needs configuration (for AI services - need API key)
+                        let needsConfiguration = false;
+                        if (service.isInstalled && service.capabilities?.generate) {
+                          needsConfiguration = !config?.apiKey;
+                        }
+
+                        return React.createElement(ResolverCard, {
+                          key: service.id,
+                          resolver: service,
+                          isActive: service.isInstalled ? true : null,
+                          isInstalled: service.isInstalled,
+                          isMarketplaceOnly: !service.isInstalled,
+                          hasUpdate: service.hasUpdate,
+                          needsConfiguration: needsConfiguration,
+                          isInstalling: isInstalling,
+                          onClick: () => {
+                            if (service.isInstalled) {
+                              // Installed: open config modal
+                              setSelectedResolver(metaServices.find(s => s.id === service.id) || service);
+                            } else {
+                              // Not installed: open marketplace info modal
+                              setSelectedMarketplaceItem({ ...service, isInstalled: false, installedResolver: null });
+                            }
+                          }
+                        });
+                      });
+                  })()
+                )
+              ),
+
+              // Extensions Section
+              !marketplaceLoading && React.createElement('div', { style: { marginTop: '40px' } },
+                React.createElement('div', { style: { marginBottom: '16px' } },
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em'
+                    }
+                  }, 'Extensions'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  },
+                    'Browser extensions and companion apps'
+                  )
+                ),
+                // Extensions grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  // Browser Extension tile
+                  React.createElement('div', {
+                    className: 'flex flex-col items-center'
+                  },
+                    React.createElement('div', {
+                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      style: {
+                        width: '120px',
+                        height: '120px',
+                        borderRadius: '16px',
+                        background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                      },
+                      onClick: () => setExtensionInfoOpen(true)
+                    },
+                      // Browser icon
+                      React.createElement('svg', {
+                        className: 'w-12 h-12 text-white',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.5
+                      },
+                        React.createElement('path', {
+                          strokeLinecap: 'round',
+                          strokeLinejoin: 'round',
+                          d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
+                        })
+                      ),
+                      // Info badge
+                      React.createElement('div', {
+                        className: 'absolute flex items-center justify-center',
+                        style: {
+                          top: '8px',
+                          right: '8px',
+                          width: '22px',
+                          height: '22px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: '#7c3aed'
+                        }
+                      }, 'i')
+                    ),
+                    // Name below card
+                    React.createElement('span', {
+                      style: {
+                        marginTop: '10px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        textAlign: 'center',
+                        width: '120px'
+                      }
+                    }, 'Browser Extension')
+                  )
+                )
+              )
             ),
 
             // General Tab - refined styling
@@ -33815,7 +33954,7 @@ useEffect(() => {
         )
       ),
 
-      // Scrobbler not connected - show link to marketplace
+      // Scrobbler not connected - show link to plug-ins settings
       !hasScrobblerConnected() && React.createElement('div', {
         className: 'mt-3 flex items-center justify-between'
       },
@@ -33825,8 +33964,9 @@ useEffect(() => {
         React.createElement('button', {
           onClick: () => {
             setAiPromptOpen(false);
-            setActiveView('marketplace');
-            setMarketplaceCategory('scrobblers');
+            setSettingsTab('plugins');
+            setMarketplaceCategory('social');
+            navigateTo('settings');
           },
           className: 'transition-colors',
           style: { fontSize: '12px', color: '#a78bfa' },
@@ -36273,8 +36413,8 @@ useEffect(() => {
         },
           // Left side: Remove button (only for user-installed resolvers)
           React.createElement('div', null,
-            // Check if this is a user-installed resolver (not built-in)
-            !['spotify', 'bandcamp', 'qobuz', 'musicbrainz'].includes(selectedResolver.id) &&
+            // Check if this is a user-installed resolver (not built-in core plugins)
+            !['spotify', 'localfiles'].includes(selectedResolver.id) &&
               React.createElement('button', {
                 onClick: async () => {
                   await handleUninstallResolver(selectedResolver.id);
@@ -36568,13 +36708,13 @@ useEffect(() => {
         },
           selectedMarketplaceItem.isInstalled
             ? React.createElement(React.Fragment, null,
-                // Remove button on the left (disabled for built-in)
+                // Remove button on the left (disabled for core built-in plugins)
                 React.createElement('button', {
                   onClick: async () => {
                     await handleUninstallResolver(selectedMarketplaceItem.id);
                     setSelectedMarketplaceItem(null);
                   },
-                  disabled: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id),
+                  disabled: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id),
                   className: 'transition-colors',
                   style: {
                     padding: '8px 14px',
@@ -36584,11 +36724,11 @@ useEffect(() => {
                     backgroundColor: 'transparent',
                     border: 'none',
                     borderRadius: '8px',
-                    cursor: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
-                    opacity: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
+                    cursor: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 'not-allowed' : 'pointer',
+                    opacity: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id) ? 0.5 : 1
                   },
-                  title: ['spotify', 'bandcamp', 'qobuz', 'youtube', 'localfiles', 'applemusic', 'chatgpt', 'gemini'].includes(selectedMarketplaceItem.id)
-                    ? 'Built-in plug-ins cannot be removed'
+                  title: ['spotify', 'localfiles'].includes(selectedMarketplaceItem.id)
+                    ? 'Core plug-ins cannot be removed'
                     : 'Remove this plug-in'
                 }, 'Remove'),
                 // Right side buttons
@@ -36671,6 +36811,208 @@ useEffect(() => {
                   }, 'Done')
                 )
               )
+        )
+      )
+    ),
+
+    // Browser Extension Info Modal
+    extensionInfoOpen && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: (e) => { if (e.target === e.currentTarget) setExtensionInfoOpen(false); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        style: { width: '440px', maxHeight: '80vh' },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header with gradient
+        React.createElement('div', {
+          style: {
+            padding: '24px',
+            background: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }
+        },
+          // Icon
+          React.createElement('div', {
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', {
+              className: 'w-8 h-8 text-white',
+              fill: 'none',
+              viewBox: '0 0 24 24',
+              stroke: 'currentColor',
+              strokeWidth: 1.5
+            },
+              React.createElement('path', {
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+                d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
+              })
+            )
+          ),
+          // Title
+          React.createElement('div', null,
+            React.createElement('h3', {
+              style: { fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '2px' }
+            }, 'Browser Extension'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+            }, 'Add music to Parachord from anywhere')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setExtensionInfoOpen(false),
+            style: {
+              marginLeft: 'auto',
+              padding: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+        // Content
+        React.createElement('div', {
+          style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
+        },
+          React.createElement('p', {
+            style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '20px' }
+          }, 'The Parachord browser extension lets you add tracks and albums to your library directly from music websites like Spotify, Bandcamp, SoundCloud, and more.'),
+
+          // Features
+          React.createElement('div', { style: { marginBottom: '24px' } },
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Features'),
+            [
+              { icon: '🎵', text: 'Add tracks to your queue with one click' },
+              { icon: '📋', text: 'Save albums and playlists to your library' },
+              { icon: '🔗', text: 'Works with Spotify, Bandcamp, SoundCloud, YouTube, and more' }
+            ].map((item, i) =>
+              React.createElement('div', {
+                key: i,
+                style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }
+              },
+                React.createElement('span', { style: { fontSize: '16px' } }, item.icon),
+                React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, item.text)
+              )
+            )
+          ),
+
+          // Installation instructions
+          React.createElement('div', null,
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Installation (Chrome/Edge)'),
+            React.createElement('div', {
+              style: {
+                backgroundColor: '#f9fafb',
+                borderRadius: '12px',
+                padding: '16px'
+              }
+            },
+              [
+                { step: '1', text: 'Download the extension from GitHub' },
+                { step: '2', text: 'Unzip the downloaded file to a folder' },
+                { step: '3', text: 'Open Chrome and go to chrome://extensions' },
+                { step: '4', text: 'Enable "Developer mode" (toggle in top-right)' },
+                { step: '5', text: 'Click "Load unpacked" and select the extension folder' },
+                { step: '6', text: 'The Parachord icon will appear in your toolbar' }
+              ].map((item, i) =>
+                React.createElement('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 5 ? '10px' : '0' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      backgroundColor: '#7c3aed',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      flexShrink: 0
+                    }
+                  }, item.step),
+                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '22px' } }, item.text)
+                )
+              )
+            ),
+            // Note about developer mode
+            React.createElement('p', {
+              style: { fontSize: '12px', color: '#9ca3af', marginTop: '12px', lineHeight: '1.5' }
+            }, 'Note: Extensions loaded in developer mode will show a warning on browser startup. This is normal for extensions not yet in the Chrome Web Store.')
+          )
+        ),
+        // Footer
+        React.createElement('div', {
+          style: {
+            padding: '16px 24px',
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px'
+          }
+        },
+          React.createElement('button', {
+            onClick: () => {
+              if (window.electron?.shell?.openExternal) {
+                window.electron.shell.openExternal('https://github.com/Parachord/parachord-browser-extension/releases');
+              } else {
+                window.open('https://github.com/Parachord/parachord-browser-extension/releases', '_blank');
+              }
+            },
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#7c3aed',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Download from GitHub'),
+          React.createElement('button', {
+            onClick: () => setExtensionInfoOpen(false),
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#374151',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Done')
         )
       )
     ),
@@ -39031,7 +39373,7 @@ useEffect(() => {
             // Info text
             React.createElement('p', {
               style: { fontSize: '13px', color: '#6b7280', textAlign: 'center', lineHeight: '1.6' }
-            }, 'You can configure login credentials, add local music folders, and customize your experience in the Installed Plugins settings.')
+            }, 'You can configure login credentials, add local music folders, and customize your experience in the Plug-Ins settings.')
           ),
           // Footer
           React.createElement('div', {
@@ -39067,8 +39409,8 @@ useEffect(() => {
                 await window.electron.store.set('active_resolvers', activeResolvers);
                 // Close tutorial
                 setFirstRunTutorial(prev => ({ ...prev, open: false }));
-                // Always navigate to Settings > Installed Plugins
-                setSettingsTab('installed');
+                // Always navigate to Settings > Plug-Ins
+                setSettingsTab('plugins');
                 navigateTo('settings');
               },
               style: {

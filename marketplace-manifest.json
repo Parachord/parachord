@@ -110,6 +110,7 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
+      "type": "meta-service",
       "version": "1.0.0",
       "author": "Parachord Team",
       "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
