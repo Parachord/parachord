@@ -433,6 +433,21 @@
 - ✅ Browser extension repo - Created dedicated repo with README at Parachord/parachord-browser-extension
 - ✅ Browser extension releases link - Settings page links to GitHub releases
 
+### 2026-01-29 Completed
+- ✅ Embedded web player - Dual-mode player (standalone + Parachord-connected)
+- ✅ Smart link generator tool - Generate shareable links for tracks/albums
+- ✅ Spotify embed improvements - Correct format and height for embedded player
+- ✅ Parachord URL resolution in embed - Resolve actual service URLs when connected
+- ✅ Embed URL caching - Cache resolved URLs after Parachord disconnects
+- ✅ Spotify auth error dialog - Show error when Spotify authentication fails
+- ✅ Fallback Last.fm API keys - Default keys for fresh installs
+- ✅ Spotify bring-your-own-key - Fallback credentials and user API key support
+- ✅ Last.fm user API key support - Use user-configured API key when available
+- ✅ SoundCloud bring-your-own-key - User API key configuration
+- ✅ Last.fm/Libre.fm auth polling - Auto-detect authentication completion
+- ✅ electron-updater optional - Make module optional for development builds
+- ✅ Album art click fix - Prevent images from intercepting click events
+
 ### 2026-01-27 Completed
 - ✅ Shuffle mode - Randomize queue order with restore functionality
 - ✅ Collection Station shuffle - Shuffle entire collection from one button
