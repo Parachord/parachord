@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-27
+> Last updated: 2026-01-30
 
 ---
 
@@ -421,6 +421,32 @@
 - ✅ Release page card treatment - Matches artist page styling
 - ✅ Three-state pattern for artist image loading - Proper loading states
 - ✅ Browser extension Add to Friends - Add Last.fm/ListenBrainz friends from user profile pages
+
+### 2026-01-30 Completed
+- ✅ Unified Plug-Ins page - Combined Installed and Marketplace tabs into single page
+- ✅ Plugin filter dropdown - Filter by All/Installed/Available
+- ✅ Plugin visual states - Installed (checkmark), available (faded with download arrow), needs config (! badge)
+- ✅ Extensions section - New category on Plug-Ins page for browser extension
+- ✅ Browser extension info modal - Installation instructions for developer mode
+- ✅ Plugin architecture description - Restored explanatory text from old Marketplace tab
+- ✅ SoundCloud logo fix - Replaced complex SVG path with simple rect elements
+- ✅ Browser extension repo - Created dedicated repo with README at Parachord/parachord-browser-extension
+- ✅ Browser extension releases link - Settings page links to GitHub releases
+
+### 2026-01-29 Completed
+- ✅ Embedded web player - Dual-mode player (standalone + Parachord-connected)
+- ✅ Smart link generator tool - Generate shareable links for tracks/albums
+- ✅ Spotify embed improvements - Correct format and height for embedded player
+- ✅ Parachord URL resolution in embed - Resolve actual service URLs when connected
+- ✅ Embed URL caching - Cache resolved URLs after Parachord disconnects
+- ✅ Spotify auth error dialog - Show error when Spotify authentication fails
+- ✅ Fallback Last.fm API keys - Default keys for fresh installs
+- ✅ Spotify bring-your-own-key - Fallback credentials and user API key support
+- ✅ Last.fm user API key support - Use user-configured API key when available
+- ✅ SoundCloud bring-your-own-key - User API key configuration
+- ✅ Last.fm/Libre.fm auth polling - Auto-detect authentication completion
+- ✅ electron-updater optional - Make module optional for development builds
+- ✅ Album art click fix - Prevent images from intercepting click events
 
 ### 2026-01-27 Completed
 - ✅ Shuffle mode - Randomize queue order with restore functionality
