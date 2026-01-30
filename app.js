@@ -20043,6 +20043,14 @@ const getCurrentPlaybackState = async () => {
             sources: ['spotify']
             // Note: _playbackContext is intentionally not set here since this is an external track change
           });
+
+          // If exiting Collection Station, turn off shuffle
+          if (playbackContext?.name === 'Collection Station') {
+            console.log('📻 Exiting Collection Station - turning off shuffle');
+            setShuffleMode(false);
+            originalQueueRef.current = null;
+            setPlaybackContext(null);
+          }
         } else {
           // Same track - update metadata while preserving original ID and playback context
           setCurrentTrack(prev => ({
