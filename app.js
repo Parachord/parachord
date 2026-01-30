@@ -219,6 +219,32 @@ const CONTEXT_PRIORITY = {
   sidebar: 5
 };
 
+// Charts country options (ISO code for iTunes, full name for Last.fm)
+const CHARTS_COUNTRIES = [
+  { code: 'us', name: 'United States' },
+  { code: 'gb', name: 'United Kingdom' },
+  { code: 'ca', name: 'Canada' },
+  { code: 'au', name: 'Australia' },
+  { code: 'de', name: 'Germany' },
+  { code: 'fr', name: 'France' },
+  { code: 'jp', name: 'Japan' },
+  { code: 'kr', name: 'South Korea' },
+  { code: 'br', name: 'Brazil' },
+  { code: 'mx', name: 'Mexico' },
+  { code: 'es', name: 'Spain' },
+  { code: 'it', name: 'Italy' },
+  { code: 'nl', name: 'Netherlands' },
+  { code: 'se', name: 'Sweden' },
+  { code: 'pl', name: 'Poland' },
+];
+
+// Last.fm genre/tag options for charts
+const LASTFM_GENRES = [
+  'rock', 'pop', 'electronic', 'hip-hop', 'indie', 'metal',
+  'jazz', 'classical', 'r&b', 'country', 'folk', 'punk',
+  'alternative', 'soul', 'blues', 'reggae', 'latin', 'dance'
+];
+
 /**
  * ResolutionScheduler - Manages track resolution across visibility contexts
  *
@@ -3554,6 +3580,16 @@ const Parachord = () => {
   const [chartsSearch, setChartsSearch] = useState('');
   const [chartsSortDropdownOpen, setChartsSortDropdownOpen] = useState(false);
   const [chartsSort, setChartsSort] = useState('rank');
+  const [chartsTab, setChartsTab] = useState('albums'); // 'albums' | 'songs'
+  const [chartsSource, setChartsSource] = useState('itunes'); // 'itunes' | 'lastfm'
+  const [chartsCountry, setChartsCountry] = useState('us'); // ISO code
+  const [chartsGenre, setChartsGenre] = useState(''); // For Last.fm tag-based charts
+  const [chartsSongs, setChartsSongs] = useState([]);
+  const [chartsSongsLoading, setChartsSongsLoading] = useState(false);
+  const [chartsSongsLoaded, setChartsSongsLoaded] = useState(false);
+  const [chartsSourceDropdownOpen, setChartsSourceDropdownOpen] = useState(false);
+  const [chartsCountryDropdownOpen, setChartsCountryDropdownOpen] = useState(false);
+  const [chartsGenreDropdownOpen, setChartsGenreDropdownOpen] = useState(false);
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -14538,6 +14574,29 @@ ${tracks}
     }
   };
 
+  // Parse Apple Music Songs Charts JSON feed
+  const parseChartsSongsJSON = (data) => {
+    try {
+      const results = data?.feed?.results || [];
+      return results.map((item, index) => ({
+        id: `charts-song-${index}-${item.artistName}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        title: item.name || '',
+        artist: item.artistName || '',
+        album: item.collectionName || '',
+        albumArt: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : null,
+        rank: index + 1,
+        genres: (item.genres || []).map(g => g.name).filter(g => g !== 'Music'),
+        releaseDate: item.releaseDate ? new Date(item.releaseDate) : null,
+        url: item.url || '',
+        duration: item.durationInMillis ? Math.floor(item.durationInMillis / 1000) : null,
+        source: 'itunes'
+      })).filter(s => s.title && s.artist);
+    } catch (error) {
+      console.error('Error parsing Charts Songs JSON:', error);
+      return [];
+    }
+  };
+
   // Parse Apple Music Charts RSS feed (legacy fallback)
   const parseChartsRSS = (rssString) => {
     try {
@@ -14641,21 +14700,21 @@ ${tracks}
   };
 
   // Load Charts from Apple Music JSON feed
-  const loadCharts = async () => {
-    if (chartsLoading || chartsLoaded) return;
+  const loadCharts = async (country = 'us', forceReload = false) => {
+    if (chartsLoading || (chartsLoaded && !forceReload)) return;
 
     setChartsLoading(true);
-    console.log('📊 Loading Charts...');
+    console.log(`📊 Loading Charts for ${country}...`);
 
     try {
       // Use JSON endpoint instead of RSS (RSS returns 500 intermittently)
-      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json');
+      const response = await fetch(`https://rss.applemarketingtools.com/api/v2/${country}/music/most-played/50/albums.json`);
       if (!response.ok) {
         throw new Error(`Failed to fetch charts: ${response.status}`);
       }
 
       const data = await response.json();
-      const albums = parseChartsJSON(data);
+      const albums = parseChartsJSON(data).map(a => ({ ...a, source: 'itunes' }));
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
 
@@ -14682,6 +14741,190 @@ ${tracks}
         title: 'Load Failed',
         message: 'Failed to load Charts. Please try again.'
       });
+    } finally {
+      setChartsLoading(false);
+    }
+  };
+
+  // Load Songs Charts from Apple Music JSON feed
+  const loadChartsSongs = async (country = 'us', forceReload = false) => {
+    if (chartsSongsLoading || (chartsSongsLoaded && !forceReload)) return;
+
+    setChartsSongsLoading(true);
+    console.log(`🎵 Loading Songs Charts for ${country}...`);
+
+    try {
+      const response = await fetch(`https://rss.applemarketingtools.com/api/v2/${country}/music/most-played/50/songs.json`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch songs charts: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const songs = parseChartsSongsJSON(data);
+
+      console.log(`🎵 Parsed ${songs.length} songs from Charts`);
+
+      setChartsSongs(songs);
+      setChartsSongsLoaded(true);
+
+    } catch (error) {
+      console.error('Failed to load Songs Charts:', error);
+      showNotification('Failed to load Songs Charts', 'error');
+    } finally {
+      setChartsSongsLoading(false);
+    }
+  };
+
+  // Load Last.fm top tracks by country
+  const loadLastfmChartsSongs = async (country = 'United States') => {
+    setChartsSongsLoading(true);
+    console.log(`📻 Loading Last.fm Charts for ${country}...`);
+
+    try {
+      const apiKey = getLastfmApiKey();
+      if (!apiKey) {
+        showNotification('Last.fm API key not configured', 'error');
+        setChartsSongsLoading(false);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        method: 'geo.gettoptracks',
+        country: country,
+        api_key: apiKey,
+        format: 'json',
+        limit: '50'
+      });
+
+      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.message || 'Last.fm API error');
+      }
+
+      if (data.tracks?.track) {
+        const songs = data.tracks.track.map((track, index) => ({
+          id: `lastfm-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          title: track.name,
+          artist: track.artist.name,
+          album: '',
+          rank: index + 1,
+          listeners: parseInt(track.listeners) || 0,
+          url: track.url,
+          duration: parseInt(track.duration) || null,
+          source: 'lastfm',
+          mbid: track.mbid
+        }));
+        setChartsSongs(songs);
+        setChartsSongsLoaded(true);
+        console.log(`📻 Loaded ${songs.length} songs from Last.fm`);
+      }
+    } catch (error) {
+      console.error('Error fetching Last.fm charts:', error);
+      showNotification('Failed to load Last.fm charts', 'error');
+    } finally {
+      setChartsSongsLoading(false);
+    }
+  };
+
+  // Load Last.fm top tracks by tag/genre
+  const loadLastfmChartsTagSongs = async (tag) => {
+    setChartsSongsLoading(true);
+    console.log(`📻 Loading Last.fm ${tag} Charts...`);
+
+    try {
+      const apiKey = getLastfmApiKey();
+      if (!apiKey) {
+        showNotification('Last.fm API key not configured', 'error');
+        setChartsSongsLoading(false);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        method: 'tag.gettoptracks',
+        tag: tag,
+        api_key: apiKey,
+        format: 'json',
+        limit: '50'
+      });
+
+      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.message || 'Last.fm API error');
+      }
+
+      if (data.tracks?.track) {
+        const songs = data.tracks.track.map((track, index) => ({
+          id: `lastfm-tag-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          title: track.name,
+          artist: track.artist.name,
+          album: '',
+          rank: index + 1,
+          duration: parseInt(track.duration) || null,
+          source: 'lastfm',
+          mbid: track.mbid
+        }));
+        setChartsSongs(songs);
+        setChartsSongsLoaded(true);
+        console.log(`📻 Loaded ${songs.length} ${tag} songs from Last.fm`);
+      }
+    } catch (error) {
+      console.error('Error fetching Last.fm tag charts:', error);
+      showNotification('Failed to load Last.fm genre charts', 'error');
+    } finally {
+      setChartsSongsLoading(false);
+    }
+  };
+
+  // Load Last.fm top albums by tag (for Albums tab with Last.fm source)
+  const loadLastfmChartsAlbums = async (tag = 'rock') => {
+    setChartsLoading(true);
+    console.log(`📻 Loading Last.fm ${tag} Albums...`);
+
+    try {
+      const apiKey = getLastfmApiKey();
+      if (!apiKey) {
+        showNotification('Last.fm API key not configured', 'error');
+        setChartsLoading(false);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        method: 'tag.gettopalbums',
+        tag: tag,
+        api_key: apiKey,
+        format: 'json',
+        limit: '50'
+      });
+
+      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.message || 'Last.fm API error');
+      }
+
+      if (data.albums?.album) {
+        const albums = data.albums.album.map((album, index) => ({
+          id: album.mbid || `lastfm-album-${index}-${album.artist.name}-${album.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          title: album.name,
+          artist: album.artist.name,
+          rank: index + 1,
+          url: album.url,
+          source: 'lastfm',
+          mbid: album.mbid,
+          albumArt: album.image?.find(img => img.size === 'extralarge')?.['#text'] || null
+        }));
+        setCharts(albums);
+        setChartsLoaded(true);
+        console.log(`📻 Loaded ${albums.length} ${tag} albums from Last.fm`);
+      }
+    } catch (error) {
+      console.error('Error fetching Last.fm album charts:', error);
+      showNotification('Failed to load Last.fm album charts', 'error');
     } finally {
       setChartsLoading(false);
     }
@@ -15283,9 +15526,58 @@ ${tracks}
   useEffect(() => {
     // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
     if (activeView === 'discover' && cacheLoaded && !chartsLoaded) {
-      loadCharts();
+      if (chartsSource === 'itunes') {
+        loadCharts(chartsCountry);
+      } else {
+        loadLastfmChartsAlbums(chartsGenre || 'rock');
+      }
     }
   }, [activeView, cacheLoaded, chartsLoaded]);
+
+  // Reload charts when source, country, or genre changes
+  useEffect(() => {
+    // Only reload if we're on the discover page AND cache is loaded
+    if (activeView !== 'discover' || !cacheLoaded) return;
+
+    // Reset loaded state to trigger reload
+    if (chartsTab === 'albums') {
+      if (chartsSource === 'itunes') {
+        loadCharts(chartsCountry, true);
+      } else {
+        loadLastfmChartsAlbums(chartsGenre || 'rock');
+      }
+    } else {
+      // Songs tab
+      if (chartsSource === 'itunes') {
+        loadChartsSongs(chartsCountry, true);
+      } else if (chartsGenre) {
+        loadLastfmChartsTagSongs(chartsGenre);
+      } else {
+        const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
+        loadLastfmChartsSongs(countryName);
+      }
+    }
+  }, [chartsSource, chartsCountry, chartsGenre]);
+
+  // Close charts dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (chartsSourceDropdownOpen) setChartsSourceDropdownOpen(false);
+      if (chartsCountryDropdownOpen) setChartsCountryDropdownOpen(false);
+      if (chartsGenreDropdownOpen) setChartsGenreDropdownOpen(false);
+    };
+
+    if (chartsSourceDropdownOpen || chartsCountryDropdownOpen || chartsGenreDropdownOpen) {
+      // Use setTimeout to avoid closing on the same click that opened the dropdown
+      const timer = setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [chartsSourceDropdownOpen, chartsCountryDropdownOpen, chartsGenreDropdownOpen]);
 
   // Load critics picks when navigating to critics-picks page
   useEffect(() => {
@@ -15313,7 +15605,7 @@ ${tracks}
       }
       // Load charts if not already loaded
       if (!chartsLoaded && !chartsLoading) {
-        loadCharts();
+        loadCharts(chartsCountry);
       }
       // Load critics picks if not already loaded
       if (!criticsPicksLoaded && !criticsPicksLoading) {
@@ -20348,7 +20640,6 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => {
                 navigateTo('discover');
-                loadCharts();
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
@@ -27247,7 +27538,7 @@ useEffect(() => {
                     // Header section - clickable to discover page
                     React.createElement('button', {
                       className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => { navigateTo('discover'); loadCharts(); }
+                      onClick: () => { navigateTo('discover'); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
@@ -28465,17 +28756,44 @@ useEffect(() => {
                     textTransform: 'uppercase'
                   }
                 }, 'POP OF THE TOPS'),
+                // Header tabs (Albums | Songs)
                 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  React.createElement('span', {
-                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                  }, `${charts.length} Albums`)
+                  ['albums', 'songs'].map((tab, index) => [
+                    index > 0 && React.createElement('span', {
+                      key: `sep-${tab}`,
+                      className: 'text-white/50 mx-3'
+                    }, '|'),
+                    React.createElement('button', {
+                      key: tab,
+                      onClick: () => {
+                        setChartsTab(tab);
+                        if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
+                          if (chartsSource === 'itunes') {
+                            loadChartsSongs(chartsCountry, true);
+                          } else if (chartsGenre) {
+                            loadLastfmChartsTagSongs(chartsGenre);
+                          } else {
+                            const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
+                            loadLastfmChartsSongs(countryName);
+                          }
+                        }
+                      },
+                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                        chartsTab === tab
+                          ? 'text-white'
+                          : 'text-white/60 hover:text-white'
+                      }`
+                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
+                  ]).flat().filter(Boolean)
                 ),
                 React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, 'Top 50 most played albums on Apple Music')
+                }, chartsSource === 'itunes'
+                  ? `Top 50 most played ${chartsTab} on Apple Music`
+                  : `Top 50 ${chartsGenre || ''} ${chartsTab} on Last.fm`.trim())
               ),
               // COLLAPSED STATE - Inline layout
               chartsHeaderCollapsed && React.createElement('div', {
@@ -28493,90 +28811,284 @@ useEffect(() => {
                     textTransform: 'uppercase'
                   }
                 }, 'POP OF THE TOPS'),
+                // Header tabs (Albums | Songs) - collapsed inline
+                React.createElement('div', {
+                  className: 'flex items-center gap-1 ml-6',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                },
+                  ['albums', 'songs'].map((tab, index) => [
+                    index > 0 && React.createElement('span', {
+                      key: `sep-${tab}`,
+                      className: 'text-white/50 mx-2'
+                    }, '|'),
+                    React.createElement('button', {
+                      key: tab,
+                      onClick: () => {
+                        setChartsTab(tab);
+                        if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
+                          if (chartsSource === 'itunes') {
+                            loadChartsSongs(chartsCountry, true);
+                          } else if (chartsGenre) {
+                            loadLastfmChartsTagSongs(chartsGenre);
+                          } else {
+                            const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
+                            loadLastfmChartsSongs(countryName);
+                          }
+                        }
+                      },
+                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
+                        chartsTab === tab ? 'text-white' : 'text-white/60 hover:text-white'
+                      }`
+                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
+                  ]).flat().filter(Boolean)
+                ),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, `${charts.length} Albums`)
+                }, `${chartsTab === 'albums' ? charts.length : chartsSongs.length} ${chartsTab.charAt(0).toUpperCase() + chartsTab.slice(1)}`)
               )
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center gap-4 px-6 py-3 bg-white border-b border-gray-200',
             style: { flexShrink: 0 }
           },
-            // Sort dropdown
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setChartsSortDropdownOpen(!chartsSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-                },
-                  React.createElement('span', null, chartsSortOptions.find(o => o.value === chartsSort)?.label || 'Sort'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                chartsSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  chartsSortOptions.map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setChartsSort(option.value);
-                        setChartsSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        chartsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
+            // Source dropdown
+            React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setChartsSourceDropdownOpen(!chartsSourceDropdownOpen); },
+                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
+              },
+                React.createElement('span', { className: 'text-gray-400' }, 'Source:'),
+                React.createElement('span', { className: 'font-medium' }, chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              chartsSourceDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
+              },
+                [
+                  { value: 'itunes', label: 'iTunes' },
+                  { value: 'lastfm', label: 'Last.fm' }
+                ].map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setChartsSource(option.value);
+                      setChartsSourceDropdownOpen(false);
+                      setChartsLoaded(false);
+                      setChartsSongsLoaded(false);
+                      // Reset genre when switching to iTunes
+                      if (option.value === 'itunes') {
+                        setChartsGenre('');
+                      } else if (!chartsGenre) {
+                        // Set default genre for Last.fm
+                        setChartsGenre('rock');
+                      }
                     },
-                      option.label,
-                      chartsSort === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      chartsSource === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    chartsSource === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
                     )
                   )
                 )
-              ),
-              React.createElement('div', { className: 'flex-1' }),
-              // Search
-              React.createElement('div', { className: 'flex items-center' },
-                chartsSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: chartsSearch,
-                      onChange: (e) => setChartsSearch(e.target.value),
-                      onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
-                      autoFocus: true,
-                      placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
-                      style: { width: '150px' }
-                    }),
-                    chartsSearch && React.createElement('button', {
-                      onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600'
-                    },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
-                    )
-                  )
-                :
-                  React.createElement('button', {
-                    onClick: () => setChartsSearchOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
-                  },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
-                  )
               )
+            ),
+
+            // Country dropdown (shown for iTunes, or for Last.fm songs without genre)
+            (chartsSource === 'itunes' || (chartsSource === 'lastfm' && chartsTab === 'songs' && !chartsGenre)) && React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
+                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
+              },
+                React.createElement('span', { className: 'text-gray-400' }, 'Country:'),
+                React.createElement('span', { className: 'font-medium' }, CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              chartsCountryDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[180px] max-h-[300px] overflow-y-auto z-30 border border-gray-200'
+              },
+                CHARTS_COUNTRIES.map(country =>
+                  React.createElement('button', {
+                    key: country.code,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setChartsCountry(country.code);
+                      setChartsCountryDropdownOpen(false);
+                      setChartsLoaded(false);
+                      setChartsSongsLoaded(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      chartsCountry === country.code ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    country.name,
+                    chartsCountry === country.code && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+
+            // Genre dropdown (shown only for Last.fm)
+            chartsSource === 'lastfm' && React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setChartsGenreDropdownOpen(!chartsGenreDropdownOpen); },
+                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
+              },
+                React.createElement('span', { className: 'text-gray-400' }, 'Genre:'),
+                React.createElement('span', { className: 'font-medium' }, chartsGenre ? chartsGenre.charAt(0).toUpperCase() + chartsGenre.slice(1) : 'All'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              chartsGenreDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] max-h-[300px] overflow-y-auto z-30 border border-gray-200'
+              },
+                // "All" option for songs (uses country-based charts)
+                chartsTab === 'songs' && React.createElement('button', {
+                  key: 'all',
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    setChartsGenre('');
+                    setChartsGenreDropdownOpen(false);
+                    setChartsSongsLoaded(false);
+                  },
+                  className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                    !chartsGenre ? 'text-gray-900 font-medium' : 'text-gray-600'
+                  }`
+                },
+                  'All (by Country)',
+                  !chartsGenre && React.createElement('svg', {
+                    className: 'w-4 h-4',
+                    fill: 'none',
+                    viewBox: '0 0 24 24',
+                    stroke: 'currentColor'
+                  },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                  )
+                ),
+                LASTFM_GENRES.map(genre =>
+                  React.createElement('button', {
+                    key: genre,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setChartsGenre(genre);
+                      setChartsGenreDropdownOpen(false);
+                      setChartsLoaded(false);
+                      setChartsSongsLoaded(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      chartsGenre === genre ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    genre.charAt(0).toUpperCase() + genre.slice(1),
+                    chartsGenre === genre && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+
+            // Sort dropdown (only for albums tab)
+            chartsTab === 'albums' && React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setChartsSortDropdownOpen(!chartsSortDropdownOpen); },
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              },
+                React.createElement('span', null, chartsSortOptions.find(o => o.value === chartsSort)?.label || 'Sort'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              chartsSortDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+              },
+                chartsSortOptions.map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setChartsSort(option.value);
+                      setChartsSortDropdownOpen(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      chartsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    chartsSort === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+
+            React.createElement('div', { className: 'flex-1' }),
+            // Search
+            React.createElement('div', { className: 'flex items-center' },
+              chartsSearchOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: chartsSearch,
+                    onChange: (e) => setChartsSearch(e.target.value),
+                    onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '150px' }
+                  }),
+                  chartsSearch && React.createElement('button', {
+                    onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
+                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setChartsSearchOpen(true),
+                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
+            )
           ),
           // Content area (scrollable)
           React.createElement('div', {
@@ -28589,34 +29101,37 @@ useEffect(() => {
             },
             onScroll: handleChartsScroll
           },
-            // Skeleton loading state - show when loading OR when charts haven't been loaded yet
-            (chartsLoading || !chartsLoaded) && React.createElement('div', {
-              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
-            },
-              Array.from({ length: 15 }).map((_, i) =>
-                React.createElement('div', { key: `skeleton-${i}` },
-                  // Skeleton album art
-                  React.createElement('div', {
-                    className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                  }),
-                  // Skeleton title
-                  React.createElement('div', { className: 'space-y-2' },
+            // ALBUMS TAB
+            chartsTab === 'albums' && [
+              // Skeleton loading state for albums
+              (chartsLoading || !chartsLoaded) && React.createElement('div', {
+                key: 'albums-skeleton',
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+              },
+                Array.from({ length: 15 }).map((_, i) =>
+                  React.createElement('div', { key: `skeleton-${i}` },
+                    // Skeleton album art
                     React.createElement('div', {
-                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                     }),
-                    React.createElement('div', {
-                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                    })
+                    // Skeleton title
+                    React.createElement('div', { className: 'space-y-2' },
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                      })
+                    )
                   )
                 )
-              )
-            ),
+              ),
 
-            // Albums grid with filter/sort - only show when loaded and not loading
-            chartsLoaded && !chartsLoading && (() => {
+              // Albums grid with filter/sort - only show when loaded and not loading
+              chartsLoaded && !chartsLoading && (() => {
               const filtered = filterCharts(charts);
               const sorted = sortCharts(filtered);
 
@@ -28838,6 +29353,192 @@ useEffect(() => {
               )
               );
             })()
+            ], // End of albums tab array
+
+            // SONGS TAB
+            chartsTab === 'songs' && [
+              // Skeleton loading state for songs
+              (chartsSongsLoading || !chartsSongsLoaded) && React.createElement('div', {
+                key: 'songs-skeleton',
+                className: 'space-y-0'
+              },
+                Array.from({ length: 15 }).map((_, i) =>
+                  React.createElement('div', {
+                    key: `song-skeleton-${i}`,
+                    className: 'flex items-center gap-4 py-3 px-4',
+                    style: { borderRadius: '8px', marginBottom: '2px' }
+                  },
+                    // Rank skeleton
+                    React.createElement('div', {
+                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { width: '32px', height: '16px', backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
+                    }),
+                    // Album art skeleton
+                    React.createElement('div', {
+                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { width: '40px', height: '40px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 10}ms` }
+                    }),
+                    // Title skeleton
+                    React.createElement('div', {
+                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { width: '200px', height: '14px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 20}ms` }
+                    }),
+                    // Artist skeleton
+                    React.createElement('div', {
+                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { width: '150px', height: '12px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
+                    })
+                  )
+                )
+              ),
+
+              // Songs list - only show when loaded and not loading
+              chartsSongsLoaded && !chartsSongsLoading && (() => {
+                // Filter songs by search
+                const filteredSongs = chartsSearch.trim()
+                  ? chartsSongs.filter(s =>
+                      s.title.toLowerCase().includes(chartsSearch.toLowerCase()) ||
+                      s.artist.toLowerCase().includes(chartsSearch.toLowerCase())
+                    )
+                  : chartsSongs;
+
+                if (filteredSongs.length === 0 && chartsSearch) {
+                  return React.createElement('div', {
+                    key: 'songs-empty-search',
+                    className: 'text-center py-12 text-gray-400'
+                  },
+                    React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                    ),
+                    React.createElement('div', { className: 'text-sm' }, 'No songs match your search')
+                  );
+                }
+
+                if (filteredSongs.length === 0) {
+                  return React.createElement('div', {
+                    key: 'songs-empty',
+                    className: 'text-center py-12 text-gray-400'
+                  },
+                    React.createElement('div', { className: 'text-sm' }, 'No songs chart data available')
+                  );
+                }
+
+                return React.createElement('div', {
+                  key: 'songs-list',
+                  className: 'space-y-0'
+                },
+                  filteredSongs.map((song, index) =>
+                    React.createElement('div', {
+                      key: song.id,
+                      className: 'flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group hover:bg-gray-50/80',
+                      style: { borderRadius: '8px', marginBottom: '2px' },
+                      draggable: true,
+                      onDragStart: (e) => {
+                        setDraggingTrackForPlaylist(song);
+                        e.dataTransfer.effectAllowed = 'copy';
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                          type: 'track',
+                          track: {
+                            id: song.id,
+                            title: song.title,
+                            artist: song.artist,
+                            album: song.album || '',
+                            duration: song.duration,
+                            sources: {}
+                          }
+                        }));
+                      },
+                      onDragEnd: () => {
+                        setDraggingTrackForPlaylist(null);
+                        setDropTargetPlaylistId(null);
+                        setDropTargetNewPlaylist(false);
+                      },
+                      onClick: () => {
+                        // Set remaining songs as queue and play this song
+                        const songsAfter = filteredSongs.slice(index + 1);
+                        const context = { type: 'charts', name: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}` };
+                        setQueueWithContext(songsAfter, context);
+                        handlePlay(song);
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'track',
+                            track: song,
+                            sourceType: 'charts',
+                            sourceName: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}`
+                          });
+                        }
+                      }
+                    },
+                      // Rank number
+                      React.createElement('span', {
+                        className: 'flex-shrink-0 text-right font-medium',
+                        style: { pointerEvents: 'none', width: '32px', fontSize: '12px', color: '#9ca3af' }
+                      }, String(song.rank).padStart(2, '0')),
+
+                      // Album art (small, for songs)
+                      song.albumArt ? React.createElement('img', {
+                        src: song.albumArt,
+                        alt: song.title,
+                        className: 'rounded',
+                        style: { width: '40px', height: '40px', objectFit: 'cover', flexShrink: 0 }
+                      }) : React.createElement('div', {
+                        className: 'rounded bg-gray-200 flex items-center justify-center',
+                        style: { width: '40px', height: '40px', flexShrink: 0 }
+                      },
+                        React.createElement('svg', {
+                          className: 'w-5 h-5 text-gray-400',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor'
+                        },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                        )
+                      ),
+
+                      // Song title
+                      React.createElement('span', {
+                        className: 'truncate transition-colors',
+                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0, fontSize: '13px', fontWeight: '500', color: '#374151' }
+                      }, song.title),
+
+                      // Artist name (clickable)
+                      React.createElement('span', {
+                        className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                        style: { width: '200px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          fetchArtistData(song.artist);
+                        }
+                      }, song.artist),
+
+                      // Album name
+                      React.createElement('span', {
+                        className: 'truncate',
+                        style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                      }, song.album || ''),
+
+                      // Duration
+                      song.duration && React.createElement('span', {
+                        className: 'text-right tabular-nums',
+                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                      }, formatTime(song.duration)),
+
+                      // Source badge
+                      React.createElement('span', {
+                        className: 'px-2 py-0.5 rounded text-xs',
+                        style: {
+                          backgroundColor: song.source === 'lastfm' ? '#dc262615' : '#7c3aed15',
+                          color: song.source === 'lastfm' ? '#dc2626' : '#7c3aed'
+                        }
+                      }, song.source === 'lastfm' ? 'Last.fm' : 'iTunes')
+                    )
+                  )
+                );
+              })()
+            ] // End of songs tab array
           )
         ),
 
