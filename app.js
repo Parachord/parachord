@@ -5241,6 +5241,7 @@ const Parachord = () => {
     if (track._activeResolver) return track._activeResolver;
     // Fall back to checking resolver-specific properties at top level OR nested in sources
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
+    if (track.soundcloudId || track.sources?.soundcloud) return 'soundcloud';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
@@ -20430,7 +20431,7 @@ const playOnSpotifyConnect = async (track) => {
 const getCurrentPlaybackState = async () => {
   if (!spotifyToken) return;
 
-  // Don't update track info from Spotify when browser playback is active
+  // Don't update track info when browser playback is active
   // This prevents overwriting the current track with whatever Spotify last played
   if (browserPlaybackActive || isExternalPlayback) {
     return;
@@ -20438,8 +20439,16 @@ const getCurrentPlaybackState = async () => {
 
   // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
   // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
+  // Use both the ref check AND the audio element state for extra safety against race conditions
   const currentResolver = currentTrackRef.current?._activeResolver;
   if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
+    return;
+  }
+
+  // Additional safety: if HTML5 audio is actively playing, don't let Spotify polling overwrite
+  // This catches race conditions where the ref hasn't updated yet but audio has started
+  if (audioRef.current && !audioRef.current.paused && audioRef.current.src) {
+    console.log('⚠️ Skipping Spotify polling - HTML5 audio is actively playing');
     return;
   }
 
