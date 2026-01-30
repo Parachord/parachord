@@ -13100,7 +13100,7 @@ const Parachord = () => {
 
   // Register page context for chart songs resolution
   useEffect(() => {
-    if (activeView === 'charts' && chartsTab === 'songs' && chartsSongs.length > 0) {
+    if (activeView === 'discover' && chartsTab === 'songs' && chartsSongs.length > 0) {
       const cleanup = registerPageContext('chart-songs');
       return () => {
         abortSchedulerContext('chart-songs', { afterCurrentBatch: true });
@@ -13116,7 +13116,7 @@ const Parachord = () => {
 
   // IntersectionObserver for chart songs visibility
   useEffect(() => {
-    if (activeView !== 'charts' || chartsTab !== 'songs') {
+    if (activeView !== 'discover' || chartsTab !== 'songs') {
       chartSongsObserverRef.current?.disconnect();
       visibleChartSongIds.current.clear();
       setChartSongsScrollContainerReady(false);
