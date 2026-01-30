@@ -80,7 +80,7 @@ const spotifyPoller = {
   POLL_INTERVAL: 20000, // 20 seconds - more reliable for background execution
   RECOVERY_INTERVAL: 30000, // 30 seconds for recovery
   MAX_ERRORS: 3,
-  MAX_STUCK_AT_ZERO: 3,
+  MAX_STUCK_AT_ZERO: 2, // Reduced from 3 for faster track transitions
 
   async start(token, trackUri, trackTitle, trackArtist) {
     console.log('🔄 [Main] Starting Spotify polling...');
