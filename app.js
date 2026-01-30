@@ -35041,7 +35041,7 @@ useEffect(() => {
                     }
                   })
                 ),
-                React.createElement('div', { style: { marginBottom: '12px' } },
+                React.createElement('div', { style: { marginBottom: '10px' } },
                   React.createElement('label', {
                     style: {
                       fontSize: '11px',
@@ -35066,6 +35066,60 @@ useEffect(() => {
                       outline: 'none'
                     }
                   })
+                ),
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Redirect URI'),
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      gap: '6px'
+                    }
+                  },
+                    React.createElement('input', {
+                      type: 'text',
+                      value: 'http://127.0.0.1:8888/callback',
+                      readOnly: true,
+                      style: {
+                        flex: 1,
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '6px',
+                        outline: 'none'
+                      }
+                    }),
+                    React.createElement('button', {
+                      onClick: () => {
+                        navigator.clipboard.writeText('http://127.0.0.1:8888/callback');
+                      },
+                      title: 'Copy to clipboard',
+                      style: {
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }
+                    }, '📋')
+                  ),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '10px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  }, 'Add this to your Spotify app\'s Redirect URIs')
                 ),
                 React.createElement('div', { className: 'flex gap-2' },
                   React.createElement('button', {
@@ -35418,7 +35472,7 @@ useEffect(() => {
                     }
                   })
                 ),
-                React.createElement('div', { style: { marginBottom: '12px' } },
+                React.createElement('div', { style: { marginBottom: '10px' } },
                   React.createElement('label', {
                     style: {
                       fontSize: '11px',
@@ -35443,6 +35497,60 @@ useEffect(() => {
                       outline: 'none'
                     }
                   })
+                ),
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Redirect URI'),
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      gap: '6px'
+                    }
+                  },
+                    React.createElement('input', {
+                      type: 'text',
+                      value: 'http://127.0.0.1:8888/callback/soundcloud',
+                      readOnly: true,
+                      style: {
+                        flex: 1,
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '6px',
+                        outline: 'none'
+                      }
+                    }),
+                    React.createElement('button', {
+                      onClick: () => {
+                        navigator.clipboard.writeText('http://127.0.0.1:8888/callback/soundcloud');
+                      },
+                      title: 'Copy to clipboard',
+                      style: {
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }
+                    }, '📋')
+                  ),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '10px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  }, 'Add this to your SoundCloud app\'s Redirect URI')
                 ),
                 React.createElement('div', { className: 'flex gap-2' },
                   React.createElement('button', {
