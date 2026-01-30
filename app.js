@@ -5356,7 +5356,8 @@ const Parachord = () => {
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
-    recommendations: 60 * 60 * 1000         // 1 hour (recommendations change based on listening)
+    recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
+    charts: 24 * 60 * 60 * 1000             // 24 hours (charts update weekly)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -5367,6 +5368,10 @@ const Parachord = () => {
 
   // Cache for top tracks data (keyed by period)
   const topTracksCache = useRef({});
+
+  // Cache for charts data (keyed by source and country)
+  const chartsAlbumsCache = useRef({}); // { 'itunes-us': { albums: [...], timestamp: ... } }
+  const chartsSongsCache = useRef({});  // { 'itunes-us': { songs: [...], timestamp: ... }, 'lastfm': { songs: [...], timestamp: ... } }
 
   // Get meta services with AI generation capability
   const getAiServices = () => {
@@ -14820,6 +14825,23 @@ ${tracks}
   const loadCharts = async (country = 'us', forceReload = false) => {
     if (chartsLoading || (chartsLoaded && !forceReload)) return;
 
+    const cacheKey = `itunes-${country}`;
+    const now = Date.now();
+    const cached = chartsAlbumsCache.current[cacheKey];
+    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
+
+    // Use cache if valid and not forcing reload
+    if (cacheValid && !forceReload) {
+      console.log(`📊 Using cached Charts for ${country} (${Math.round((now - cached.timestamp) / 60000)}m old)`);
+      setCharts(cached.albums);
+      setChartsLoaded(true);
+      // Still fetch album art in case some were missing
+      if (cacheLoaded) {
+        fetchChartsAlbumArt(cached.albums);
+      }
+      return;
+    }
+
     setChartsLoading(true);
     console.log(`📊 Loading Charts for ${country}...`);
 
@@ -14834,6 +14856,9 @@ ${tracks}
       const albums = parseChartsJSON(data).map(a => ({ ...a, source: 'itunes' }));
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
+
+      // Cache the results
+      chartsAlbumsCache.current[cacheKey] = { albums, timestamp: now };
 
       setCharts(albums);
       setChartsLoaded(true);
@@ -14867,6 +14892,19 @@ ${tracks}
   const loadChartsSongs = async (country = 'us', forceReload = false) => {
     if (chartsSongsLoading || (chartsSongsLoaded && !forceReload)) return;
 
+    const cacheKey = `itunes-${country}`;
+    const now = Date.now();
+    const cached = chartsSongsCache.current[cacheKey];
+    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
+
+    // Use cache if valid and not forcing reload
+    if (cacheValid && !forceReload) {
+      console.log(`🎵 Using cached Songs Charts for ${country} (${Math.round((now - cached.timestamp) / 60000)}m old)`);
+      setChartsSongs(cached.songs);
+      setChartsSongsLoaded(true);
+      return;
+    }
+
     setChartsSongsLoading(true);
     console.log(`🎵 Loading Songs Charts for ${country}...`);
 
@@ -14881,6 +14919,9 @@ ${tracks}
 
       console.log(`🎵 Parsed ${songs.length} songs from Charts`);
 
+      // Cache the results
+      chartsSongsCache.current[cacheKey] = { songs, timestamp: now };
+
       setChartsSongs(songs);
       setChartsSongsLoaded(true);
 
@@ -14893,7 +14934,20 @@ ${tracks}
   };
 
   // Load Last.fm weekly top tracks chart (global)
-  const loadLastfmChartsSongs = async () => {
+  const loadLastfmChartsSongs = async (forceReload = false) => {
+    const cacheKey = 'lastfm';
+    const now = Date.now();
+    const cached = chartsSongsCache.current[cacheKey];
+    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
+
+    // Use cache if valid and not forcing reload
+    if (cacheValid && !forceReload) {
+      console.log(`📻 Using cached Last.fm Weekly Charts (${Math.round((now - cached.timestamp) / 60000)}m old)`);
+      setChartsSongs(cached.songs);
+      setChartsSongsLoaded(true);
+      return;
+    }
+
     setChartsSongsLoading(true);
     console.log(`📻 Loading Last.fm Weekly Charts...`);
 
@@ -14934,6 +14988,10 @@ ${tracks}
           mbid: track.mbid,
           sources: {} // Will be populated by resolver pipeline
         }));
+
+        // Cache the results
+        chartsSongsCache.current[cacheKey] = { songs, timestamp: now };
+
         setChartsSongs(songs);
         setChartsSongsLoaded(true);
         console.log(`📻 Loaded ${songs.length} songs from Last.fm Weekly Chart`);
