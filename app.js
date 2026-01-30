@@ -4272,6 +4272,14 @@ const Parachord = () => {
   const historyTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [historyScrollContainerReady, setHistoryScrollContainerReady] = useState(false);
 
+  // Refs for chart songs visibility tracking
+  const chartSongsTrackRowRefs = useRef(new Map());
+  const chartSongsObserverRef = useRef(null);
+  const visibleChartSongIds = useRef(new Set());
+  const chartSongsRef = useRef([]); // Ref to access current songs in observer callback
+  const chartSongsScrollContainerRef = useRef(null);
+  const [chartSongsScrollContainerReady, setChartSongsScrollContainerReady] = useState(false);
+
   // Refs for top tracks visibility tracking
   const topTracksRowRefs = useRef(new Map());
   const topTracksObserverRef = useRef(null);
@@ -13090,6 +13098,114 @@ const Parachord = () => {
     return () => topTracksObserverRef.current?.disconnect();
   }, [activeView, historyTab, topTracks.tracks, updateSchedulerVisibility, topTracksScrollContainerReady]);
 
+  // Register page context for chart songs resolution
+  useEffect(() => {
+    if (activeView === 'charts' && chartsTab === 'songs' && chartsSongs.length > 0) {
+      const cleanup = registerPageContext('chart-songs');
+      return () => {
+        abortSchedulerContext('chart-songs', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, chartsTab, chartsSongs.length, registerPageContext, abortSchedulerContext]);
+
+  // Keep ref in sync with chart songs for observer callback
+  useEffect(() => {
+    chartSongsRef.current = chartsSongs;
+  }, [chartsSongs]);
+
+  // IntersectionObserver for chart songs visibility
+  useEffect(() => {
+    if (activeView !== 'charts' || chartsTab !== 'songs') {
+      chartSongsObserverRef.current?.disconnect();
+      visibleChartSongIds.current.clear();
+      setChartSongsScrollContainerReady(false);
+      return;
+    }
+
+    const songs = chartsSongs;
+    if (songs.length === 0) return;
+
+    // Clear stale visible track IDs when source/country changes
+    visibleChartSongIds.current.clear();
+    updateSchedulerVisibility('chart-songs', []);
+
+    // Wait for scroll container to be available
+    const scrollContainer = chartSongsScrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    chartSongsObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleChartSongIds.current.has(trackId)) {
+              visibleChartSongIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleChartSongIds.current.has(trackId)) {
+              visibleChartSongIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const currentSongs = chartSongsRef.current;
+          const visibleTracks = [];
+          visibleChartSongIds.current.forEach(trackId => {
+            const song = currentSongs.find(s => s.id === trackId);
+            if (song) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track: song, artistName: song.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('chart-songs', visibleTracks);
+        }
+      },
+      { root: scrollContainer, rootMargin: '200px' }
+    );
+
+    chartSongsTrackRowRefs.current.forEach((element) => {
+      if (element) chartSongsObserverRef.current.observe(element);
+    });
+
+    // Manually check initial visibility after a short delay
+    setTimeout(() => {
+      if (!chartSongsObserverRef.current) return;
+      const currentSongs = chartSongsRef.current;
+      const visibleTracks = [];
+
+      chartSongsTrackRowRefs.current.forEach((element, trackId) => {
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const isVisible = rect.bottom >= containerRect.top - 200 &&
+                         rect.top <= containerRect.bottom + 200;
+        if (isVisible) {
+          visibleChartSongIds.current.add(trackId);
+          const song = currentSongs.find(s => s.id === trackId);
+          if (song) {
+            visibleTracks.push({
+              key: trackId,
+              data: { track: song, artistName: song.artist || 'Unknown Artist' }
+            });
+          }
+        }
+      });
+
+      if (visibleTracks.length > 0) {
+        updateSchedulerVisibility('chart-songs', visibleTracks);
+      }
+    }, 50);
+
+    return () => chartSongsObserverRef.current?.disconnect();
+  }, [activeView, chartsTab, chartsSongs, updateSchedulerVisibility, chartSongsScrollContainerReady, chartsSource, chartsCountry]);
+
   // Register page context for friend history tracks resolution
   useEffect(() => {
     if (activeView === 'friendHistory' && currentFriend) {
@@ -14775,10 +14891,10 @@ ${tracks}
     }
   };
 
-  // Load Last.fm top tracks by country
-  const loadLastfmChartsSongs = async (country = 'United States') => {
+  // Load Last.fm weekly top tracks chart (global)
+  const loadLastfmChartsSongs = async () => {
     setChartsSongsLoading(true);
-    console.log(`📻 Loading Last.fm Charts for ${country}...`);
+    console.log(`📻 Loading Last.fm Weekly Charts...`);
 
     try {
       const apiKey = getLastfmApiKey();
@@ -14789,8 +14905,7 @@ ${tracks}
       }
 
       const params = new URLSearchParams({
-        method: 'geo.gettoptracks',
-        country: country,
+        method: 'chart.gettoptracks',
         api_key: apiKey,
         format: 'json',
         limit: '50'
@@ -14805,11 +14920,12 @@ ${tracks}
 
       if (data.tracks?.track) {
         const songs = data.tracks.track.map((track, index) => ({
-          id: `lastfm-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+          id: `lastfm-chart-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
           title: track.name,
           artist: track.artist.name,
           album: '',
           rank: index + 1,
+          playcount: parseInt(track.playcount) || 0,
           listeners: parseInt(track.listeners) || 0,
           url: track.url,
           duration: parseInt(track.duration) || null,
@@ -14818,7 +14934,7 @@ ${tracks}
         }));
         setChartsSongs(songs);
         setChartsSongsLoaded(true);
-        console.log(`📻 Loaded ${songs.length} songs from Last.fm`);
+        console.log(`📻 Loaded ${songs.length} songs from Last.fm Weekly Chart`);
       }
     } catch (error) {
       console.error('Error fetching Last.fm charts:', error);
@@ -15534,40 +15650,32 @@ ${tracks}
     }
   }, [activeView, cacheLoaded, chartsLoaded]);
 
-  // Reload charts when source, country, or genre changes
+  // Reload charts when source or country changes
   useEffect(() => {
     // Only reload if we're on the discover page AND cache is loaded
     if (activeView !== 'discover' || !cacheLoaded) return;
 
-    // Reset loaded state to trigger reload
+    // Albums are always iTunes
     if (chartsTab === 'albums') {
-      if (chartsSource === 'itunes') {
-        loadCharts(chartsCountry, true);
-      } else {
-        loadLastfmChartsAlbums(chartsGenre || 'rock');
-      }
+      loadCharts(chartsCountry, true);
     } else {
       // Songs tab
       if (chartsSource === 'itunes') {
         loadChartsSongs(chartsCountry, true);
-      } else if (chartsGenre) {
-        loadLastfmChartsTagSongs(chartsGenre);
       } else {
-        const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
-        loadLastfmChartsSongs(countryName);
+        loadLastfmChartsSongs();
       }
     }
-  }, [chartsSource, chartsCountry, chartsGenre]);
+  }, [chartsSource, chartsCountry]);
 
   // Close charts dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = () => {
       if (chartsSourceDropdownOpen) setChartsSourceDropdownOpen(false);
       if (chartsCountryDropdownOpen) setChartsCountryDropdownOpen(false);
-      if (chartsGenreDropdownOpen) setChartsGenreDropdownOpen(false);
     };
 
-    if (chartsSourceDropdownOpen || chartsCountryDropdownOpen || chartsGenreDropdownOpen) {
+    if (chartsSourceDropdownOpen || chartsCountryDropdownOpen) {
       // Use setTimeout to avoid closing on the same click that opened the dropdown
       const timer = setTimeout(() => {
         document.addEventListener('click', handleClickOutside);
@@ -28773,11 +28881,8 @@ useEffect(() => {
                         if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
                           if (chartsSource === 'itunes') {
                             loadChartsSongs(chartsCountry, true);
-                          } else if (chartsGenre) {
-                            loadLastfmChartsTagSongs(chartsGenre);
                           } else {
-                            const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
-                            loadLastfmChartsSongs(countryName);
+                            loadLastfmChartsSongs();
                           }
                         }
                       },
@@ -28791,9 +28896,11 @@ useEffect(() => {
                 ),
                 React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, chartsSource === 'itunes'
-                  ? `Top 50 most played ${chartsTab} on Apple Music`
-                  : `Top 50 ${chartsGenre || ''} ${chartsTab} on Last.fm`.trim())
+                }, chartsTab === 'albums'
+                  ? 'Top 50 most played albums on Apple Music'
+                  : chartsSource === 'itunes'
+                    ? 'Top 50 most played songs on Apple Music'
+                    : 'Last.fm Weekly Chart')
               ),
               // COLLAPSED STATE - Inline layout
               chartsHeaderCollapsed && React.createElement('div', {
@@ -28828,11 +28935,8 @@ useEffect(() => {
                         if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
                           if (chartsSource === 'itunes') {
                             loadChartsSongs(chartsCountry, true);
-                          } else if (chartsGenre) {
-                            loadLastfmChartsTagSongs(chartsGenre);
                           } else {
-                            const countryName = CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States';
-                            loadLastfmChartsSongs(countryName);
+                            loadLastfmChartsSongs();
                           }
                         }
                       },
@@ -28853,8 +28957,8 @@ useEffect(() => {
             className: 'flex items-center gap-4 px-6 py-3 bg-white border-b border-gray-200',
             style: { flexShrink: 0 }
           },
-            // Source dropdown
-            React.createElement('div', { className: 'relative' },
+            // Source dropdown (only show on Songs tab - Albums is iTunes only)
+            chartsTab === 'songs' && React.createElement('div', { className: 'relative' },
               React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setChartsSourceDropdownOpen(!chartsSourceDropdownOpen); },
                 className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
@@ -28878,15 +28982,7 @@ useEffect(() => {
                       e.stopPropagation();
                       setChartsSource(option.value);
                       setChartsSourceDropdownOpen(false);
-                      setChartsLoaded(false);
                       setChartsSongsLoaded(false);
-                      // Reset genre when switching to iTunes
-                      if (option.value === 'itunes') {
-                        setChartsGenre('');
-                      } else if (!chartsGenre) {
-                        // Set default genre for Last.fm
-                        setChartsGenre('rock');
-                      }
                     },
                     className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
                       chartsSource === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
@@ -28906,8 +29002,8 @@ useEffect(() => {
               )
             ),
 
-            // Country dropdown (shown for iTunes, or for Last.fm songs without genre)
-            (chartsSource === 'itunes' || (chartsSource === 'lastfm' && chartsTab === 'songs' && !chartsGenre)) && React.createElement('div', { className: 'relative' },
+            // Country dropdown (shown for iTunes only)
+            chartsSource === 'itunes' && React.createElement('div', { className: 'relative' },
               React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
                 className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
@@ -28949,71 +29045,10 @@ useEffect(() => {
               )
             ),
 
-            // Genre dropdown (shown only for Last.fm)
-            chartsSource === 'lastfm' && React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setChartsGenreDropdownOpen(!chartsGenreDropdownOpen); },
-                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
-              },
-                React.createElement('span', { className: 'text-gray-400' }, 'Genre:'),
-                React.createElement('span', { className: 'font-medium' }, chartsGenre ? chartsGenre.charAt(0).toUpperCase() + chartsGenre.slice(1) : 'All'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              chartsGenreDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] max-h-[300px] overflow-y-auto z-30 border border-gray-200'
-              },
-                // "All" option for songs (uses country-based charts)
-                chartsTab === 'songs' && React.createElement('button', {
-                  key: 'all',
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    setChartsGenre('');
-                    setChartsGenreDropdownOpen(false);
-                    setChartsSongsLoaded(false);
-                  },
-                  className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                    !chartsGenre ? 'text-gray-900 font-medium' : 'text-gray-600'
-                  }`
-                },
-                  'All (by Country)',
-                  !chartsGenre && React.createElement('svg', {
-                    className: 'w-4 h-4',
-                    fill: 'none',
-                    viewBox: '0 0 24 24',
-                    stroke: 'currentColor'
-                  },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                  )
-                ),
-                LASTFM_GENRES.map(genre =>
-                  React.createElement('button', {
-                    key: genre,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsGenre(genre);
-                      setChartsGenreDropdownOpen(false);
-                      setChartsLoaded(false);
-                      setChartsSongsLoaded(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsGenre === genre ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    genre.charAt(0).toUpperCase() + genre.slice(1),
-                    chartsGenre === genre && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
+            // Last.fm weekly chart label (no filters needed - it's a global weekly chart)
+            chartsTab === 'songs' && chartsSource === 'lastfm' && React.createElement('span', {
+              className: 'text-sm text-gray-500'
+            }, 'Weekly Global Chart'),
 
             // Sort dropdown (only for albums tab)
             chartsTab === 'albums' && React.createElement('div', { className: 'relative' },
@@ -29099,7 +29134,13 @@ useEffect(() => {
               pointerEvents: 'auto',
               padding: '24px'
             },
-            onScroll: handleChartsScroll
+            onScroll: handleChartsScroll,
+            ref: (el) => {
+              if (el && chartsTab === 'songs') {
+                chartSongsScrollContainerRef.current = el;
+                setChartSongsScrollContainerReady(true);
+              }
+            }
           },
             // ALBUMS TAB
             chartsTab === 'albums' && [
@@ -29427,10 +29468,28 @@ useEffect(() => {
                   key: 'songs-list',
                   className: 'space-y-0'
                 },
-                  filteredSongs.map((song, index) =>
-                    React.createElement('div', {
+                  filteredSongs.map((song, index) => {
+                    // Use song.id to look up resolved sources from trackSources state
+                    const resolvedSources = trackSources[song.id] || song.sources || {};
+                    const hasResolved = Object.keys(resolvedSources).length > 0;
+                    const isResolving = Object.keys(resolvedSources).length === 0;
+
+                    return React.createElement('div', {
                       key: song.id,
-                      className: 'flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group hover:bg-gray-50/80',
+                      'data-track-id': song.id,
+                      ref: (el) => {
+                        if (el) {
+                          chartSongsTrackRowRefs.current.set(song.id, el);
+                          if (chartSongsObserverRef.current) {
+                            chartSongsObserverRef.current.observe(el);
+                          }
+                        } else {
+                          chartSongsTrackRowRefs.current.delete(song.id);
+                        }
+                      },
+                      className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
+                        isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
+                      }`,
                       style: { borderRadius: '8px', marginBottom: '2px' },
                       draggable: true,
                       onDragStart: (e) => {
@@ -29444,7 +29503,7 @@ useEffect(() => {
                             artist: song.artist,
                             album: song.album || '',
                             duration: song.duration,
-                            sources: {}
+                            sources: song.sources || {}
                           }
                         }));
                       },
@@ -29452,6 +29511,9 @@ useEffect(() => {
                         setDraggingTrackForPlaylist(null);
                         setDropTargetPlaylistId(null);
                         setDropTargetNewPlaylist(false);
+                        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
+                          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+                        }
                       },
                       onClick: () => {
                         // Set remaining songs as queue and play this song
@@ -29474,68 +29536,112 @@ useEffect(() => {
                     },
                       // Rank number
                       React.createElement('span', {
-                        className: 'flex-shrink-0 text-right font-medium',
-                        style: { pointerEvents: 'none', width: '32px', fontSize: '12px', color: '#9ca3af' }
+                        className: 'flex-shrink-0 text-right',
+                        style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: '#9ca3af' }
                       }, String(song.rank).padStart(2, '0')),
 
-                      // Album art (small, for songs)
-                      song.albumArt ? React.createElement('img', {
-                        src: song.albumArt,
-                        alt: song.title,
-                        className: 'rounded',
-                        style: { width: '40px', height: '40px', objectFit: 'cover', flexShrink: 0 }
-                      }) : React.createElement('div', {
-                        className: 'rounded bg-gray-200 flex items-center justify-center',
-                        style: { width: '40px', height: '40px', flexShrink: 0 }
-                      },
-                        React.createElement('svg', {
-                          className: 'w-5 h-5 text-gray-400',
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor'
-                        },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                        )
-                      ),
-
-                      // Song title
+                      // Song title - fixed width column (matching Recommendations)
                       React.createElement('span', {
                         className: 'truncate transition-colors',
-                        style: { pointerEvents: 'none', width: '280px', flexShrink: 0, fontSize: '13px', fontWeight: '500', color: '#374151' }
+                        style: { pointerEvents: 'none', width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
                       }, song.title),
 
-                      // Artist name (clickable)
+                      // Artist name - fixed width column, clickable (matching Recommendations)
                       React.createElement('span', {
                         className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: { width: '200px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                        style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
                         onClick: (e) => {
                           e.stopPropagation();
                           fetchArtistData(song.artist);
                         }
                       }, song.artist),
 
-                      // Album name
+                      // Album name - fixed width column
                       React.createElement('span', {
                         className: 'truncate',
                         style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
                       }, song.album || ''),
 
-                      // Duration
-                      song.duration && React.createElement('span', {
+                      // Duration - fixed width column
+                      React.createElement('span', {
                         className: 'text-right tabular-nums',
                         style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
                       }, formatTime(song.duration)),
 
-                      // Source badge
-                      React.createElement('span', {
-                        className: 'px-2 py-0.5 rounded text-xs',
-                        style: {
-                          backgroundColor: song.source === 'lastfm' ? '#dc262615' : '#7c3aed15',
-                          color: song.source === 'lastfm' ? '#dc2626' : '#7c3aed'
-                        }
-                      }, song.source === 'lastfm' ? 'Last.fm' : 'iTunes')
-                    )
-                  )
+                      // Resolver icons - fixed width column (matching Recommendations)
+                      React.createElement('div', {
+                        className: 'flex items-center gap-1 justify-end',
+                        style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                      },
+                        isResolving ?
+                          React.createElement('div', {
+                            className: 'flex items-center gap-1'
+                          },
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              title: 'Resolving track...'
+                            }),
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              style: { animationDelay: '0.1s' }
+                            })
+                          )
+                        : hasResolved ?
+                          Object.entries(resolvedSources)
+                            .sort(([aId], [bId]) => {
+                              const aIndex = resolverOrder.indexOf(aId);
+                              const bIndex = resolverOrder.indexOf(bId);
+                              return aIndex - bIndex;
+                            })
+                            .map(([resolverId, source]) => {
+                              const resolver = allResolvers.find(r => r.id === resolverId);
+                              if (!resolver || !resolver.play) return null;
+                              return React.createElement('button', {
+                                key: resolverId,
+                                className: 'no-drag',
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  const songsAfter = filteredSongs.slice(index + 1);
+                                  const context = { type: 'charts', name: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}` };
+                                  setQueueWithContext(songsAfter, context);
+                                  handlePlay({ ...song, preferredResolver: resolverId });
+                                },
+                                style: {
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '4px',
+                                  backgroundColor: resolver.color,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  pointerEvents: 'auto',
+                                  opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                                  transition: 'transform 0.1s'
+                                },
+                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                            })
+                        :
+                          // Show shimmer skeletons while resolving
+                          React.createElement('div', {
+                            className: 'flex items-center gap-1'
+                          },
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              title: 'Resolving track...'
+                            }),
+                            React.createElement('div', {
+                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                              style: { animationDelay: '0.1s' }
+                            })
+                          )
+                      )
+                    );
+                  })
                 );
               })()
             ] // End of songs tab array
