@@ -113,7 +113,7 @@
       "type": "meta-service",
       "version": "1.0.0",
       "author": "Parachord Team",
-      "description": "Search and identify tracks via iTunes/Apple Music catalog. No direct playback - use other resolvers like Spotify.",
+      "description": "Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.",
       "icon": "🍎",
       "color": "#FA243C",
       "homepage": "https://music.apple.com",
@@ -125,9 +125,9 @@
         "urlLookup": true
       },
       "requiresAuth": false,
-      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/applemusic.axe",
+      "builtin": true,
       "category": "metadata",
-      "tags": ["metadata", "free", "itunes", "apple", "url-lookup"]
+      "tags": ["metadata", "free", "itunes", "apple", "url-lookup", "musickit"]
     },
     {
       "id": "localfiles",
