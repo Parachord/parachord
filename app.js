@@ -6873,14 +6873,16 @@ const Parachord = () => {
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
+    // Skip for SoundCloud - also uses HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
     const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
     const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
+    const isSoundCloud = currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -9229,6 +9231,8 @@ const Parachord = () => {
 
       if (queue.length === 0) {
         console.log('No queue set, cannot go to next track');
+        // Set isPlaying to false since playback has ended
+        setIsPlaying(false);
         return;
       }
 
@@ -9240,6 +9244,8 @@ const Parachord = () => {
 
       if (nextTrackIndex === -1) {
         console.log('⚠️ No playable tracks in queue');
+        // Set isPlaying to false since playback has ended
+        setIsPlaying(false);
         return;
       }
 
