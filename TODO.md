@@ -1,7 +1,7 @@
 # 🎯 Harmonix Desktop - Future Enhancements TODO
 
 > **Comprehensive TODO list compiled from all documentation**
-> Last updated: 2026-01-27
+> Last updated: 2026-01-30
 
 ---
 
@@ -421,6 +421,17 @@
 - ✅ Release page card treatment - Matches artist page styling
 - ✅ Three-state pattern for artist image loading - Proper loading states
 - ✅ Browser extension Add to Friends - Add Last.fm/ListenBrainz friends from user profile pages
+
+### 2026-01-30 Completed
+- ✅ Unified Plug-Ins page - Combined Installed and Marketplace tabs into single page
+- ✅ Plugin filter dropdown - Filter by All/Installed/Available
+- ✅ Plugin visual states - Installed (checkmark), available (faded with download arrow), needs config (! badge)
+- ✅ Extensions section - New category on Plug-Ins page for browser extension
+- ✅ Browser extension info modal - Installation instructions for developer mode
+- ✅ Plugin architecture description - Restored explanatory text from old Marketplace tab
+- ✅ SoundCloud logo fix - Replaced complex SVG path with simple rect elements
+- ✅ Browser extension repo - Created dedicated repo with README at Parachord/parachord-browser-extension
+- ✅ Browser extension releases link - Settings page links to GitHub releases
 
 ### 2026-01-27 Completed
 - ✅ Shuffle mode - Randomize queue order with restore functionality
