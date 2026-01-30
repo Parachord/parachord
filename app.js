@@ -13100,7 +13100,7 @@ const Parachord = () => {
 
   // Register page context for chart songs resolution
   useEffect(() => {
-    if (activeView === 'charts' && chartsTab === 'songs' && chartsSongs.length > 0) {
+    if (activeView === 'discover' && chartsTab === 'songs' && chartsSongs.length > 0) {
       const cleanup = registerPageContext('chart-songs');
       return () => {
         abortSchedulerContext('chart-songs', { afterCurrentBatch: true });
@@ -13116,7 +13116,7 @@ const Parachord = () => {
 
   // IntersectionObserver for chart songs visibility
   useEffect(() => {
-    if (activeView !== 'charts' || chartsTab !== 'songs') {
+    if (activeView !== 'discover' || chartsTab !== 'songs') {
       chartSongsObserverRef.current?.disconnect();
       visibleChartSongIds.current.clear();
       setChartSongsScrollContainerReady(false);
@@ -14705,7 +14705,8 @@ ${tracks}
         releaseDate: item.releaseDate ? new Date(item.releaseDate) : null,
         url: item.url || '',
         duration: item.durationInMillis ? Math.floor(item.durationInMillis / 1000) : null,
-        source: 'itunes'
+        source: 'itunes',
+        sources: {} // Will be populated by resolver pipeline
       })).filter(s => s.title && s.artist);
     } catch (error) {
       console.error('Error parsing Charts Songs JSON:', error);
@@ -14930,7 +14931,8 @@ ${tracks}
           url: track.url,
           duration: parseInt(track.duration) || null,
           source: 'lastfm',
-          mbid: track.mbid
+          mbid: track.mbid,
+          sources: {} // Will be populated by resolver pipeline
         }));
         setChartsSongs(songs);
         setChartsSongsLoaded(true);
@@ -29398,7 +29400,7 @@ useEffect(() => {
 
             // SONGS TAB
             chartsTab === 'songs' && [
-              // Skeleton loading state for songs
+              // Skeleton loading state for songs (matching actual song row layout)
               (chartsSongsLoading || !chartsSongsLoaded) && React.createElement('div', {
                 key: 'songs-skeleton',
                 className: 'space-y-0'
@@ -29409,26 +29411,45 @@ useEffect(() => {
                     className: 'flex items-center gap-4 py-3 px-4',
                     style: { borderRadius: '8px', marginBottom: '2px' }
                   },
-                    // Rank skeleton
+                    // Rank skeleton (width: 32px)
                     React.createElement('div', {
                       className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '32px', height: '16px', backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
+                      style: { width: '32px', height: '14px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
                     }),
-                    // Album art skeleton
+                    // Title skeleton (width: 360px)
                     React.createElement('div', {
                       className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '40px', height: '40px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 10}ms` }
+                      style: { width: '360px', height: '14px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
                     }),
-                    // Title skeleton
+                    // Artist skeleton (width: 240px)
                     React.createElement('div', {
                       className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '200px', height: '14px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 20}ms` }
+                      style: { width: '240px', height: '12px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
                     }),
-                    // Artist skeleton
+                    // Album skeleton (width: 150px)
                     React.createElement('div', {
                       className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '150px', height: '12px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
-                    })
+                      style: { width: '150px', height: '12px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms` }
+                    }),
+                    // Duration skeleton (width: 50px, pushed right)
+                    React.createElement('div', {
+                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                      style: { width: '50px', height: '12px', flexShrink: 0, marginLeft: 'auto', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 60}ms` }
+                    }),
+                    // Resolver icons skeleton (width: 100px)
+                    React.createElement('div', {
+                      className: 'flex items-center gap-1 justify-end',
+                      style: { width: '100px', flexShrink: 0 }
+                    },
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { animationDelay: `${i * 30 + 75}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                        style: { animationDelay: `${i * 30 + 90}ms` }
+                      })
+                    )
                   )
                 )
               ),
