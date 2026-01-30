@@ -29052,46 +29052,6 @@ useEffect(() => {
               className: 'text-sm text-gray-500'
             }, 'Weekly Global Chart'),
 
-            // Sort dropdown (only for albums tab)
-            chartsTab === 'albums' && React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setChartsSortDropdownOpen(!chartsSortDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-              },
-                React.createElement('span', null, chartsSortOptions.find(o => o.value === chartsSort)?.label || 'Sort'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              chartsSortDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-              },
-                chartsSortOptions.map(option =>
-                  React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsSort(option.value);
-                      setChartsSortDropdownOpen(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    option.label,
-                    chartsSort === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
-
             React.createElement('div', { className: 'flex-1' }),
             // Search
             React.createElement('div', { className: 'flex items-center' },
