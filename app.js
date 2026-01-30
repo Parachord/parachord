@@ -29136,8 +29136,8 @@ useEffect(() => {
             },
             onScroll: handleChartsScroll,
             ref: (el) => {
-              if (el && chartsTab === 'songs') {
-                chartSongsScrollContainerRef.current = el;
+              chartSongsScrollContainerRef.current = el;
+              if (el && !chartSongsScrollContainerReady) {
                 setChartSongsScrollContainerReady(true);
               }
             }
