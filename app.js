@@ -36982,9 +36982,9 @@ useEffect(() => {
           React.createElement('button', {
             onClick: () => {
               if (window.electron?.shell?.openExternal) {
-                window.electron.shell.openExternal('https://github.com/Parachord/parachord-browser-extension');
+                window.electron.shell.openExternal('https://github.com/Parachord/parachord-browser-extension/releases');
               } else {
-                window.open('https://github.com/Parachord/parachord-browser-extension', '_blank');
+                window.open('https://github.com/Parachord/parachord-browser-extension/releases', '_blank');
               }
             },
             className: 'transition-colors',
