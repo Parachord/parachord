@@ -7,36 +7,23 @@
 
 ## 🔥 High Priority
 
-### Playback
-- [ ] **Repeat modes** - Repeat one, repeat all, no repeat
-- [ ] **Gapless playback** - Seamless track transitions
-- [ ] **Crossfade** - Configurable fade between tracks
-
-### Accessibility & UX
-- [ ] **Keyboard shortcuts** - Full keyboard navigation
-- [ ] **Themes** - Light/dark mode toggle
-
-### Playlists
-- [ ] **Import from Spotify/Apple Music** - Convert external playlists
-- [ ] **Smart playlists** - Auto-generate from listening history
-
----
-
-## 🎯 Medium Priority
-
-### Playback Features
-- [ ] **Lyrics display** - Synced lyrics from LRC files
-- [ ] **Equalizer** - Adjustable EQ bands
-- [ ] **Sleep timer** - Auto-stop after duration
-
 ### Resolvers
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Additional streaming source
 - [ ] **Local files resolver** - Scan user's music folder
 - [ ] **Qobuz full streaming** - User authentication
 
+
+### Playlists
+- [x] **Import from Spotify/Apple Music** - Convert external playlists
+- [ ] **Smart playlists** - Auto-generate from listening history
+
+---
+
+## 🎯 Medium Priority
+
 ### Library
-- [ ] **Persist library to disk** - Save user's library
+- [x] **Persist library to disk** - Save user's library
 - [ ] **Import/export library** - Backup and restore
 - [ ] **Listening history stats** - Charts, most played
 
@@ -44,21 +31,33 @@
 - [ ] **Collaborative playlists** - Multi-user editing
 - [ ] **Listening parties** - Synchronized group listening
 
+### Accessibility & UX
+- [x] **Keyboard shortcuts** - Full keyboard navigation
+- [ ] **Themes** - Light/dark mode toggle
+
 ---
 
 ## 💡 Future Considerations
 
 ### Platform & Distribution
-- [ ] **macOS build** - Apple Silicon support
-- [ ] **Linux builds** - .deb, .rpm, AppImage
+- [x] **macOS build** - Apple Silicon support
+- [x] **Linux builds** - .deb, .rpm, AppImage
 - [ ] **Mobile apps** - iOS/Android
-- [ ] **Auto-updates** - Electron auto-updater
+- [x] **Auto-updates** - Electron auto-updater
+
+### Playback
+- [ ] **Repeat modes** - Repeat one, repeat all, no repeat
+- [ ] **Gapless playback** - Seamless track transitions
+- [ ] **Crossfade** - Configurable fade between tracks
+- [ ] **Lyrics display** - Synced lyrics from LRC files
+- [ ] **Equalizer** - Adjustable EQ bands
+- [ ] **Sleep timer** - Auto-stop after duration
 
 ### Advanced Features
 - [ ] **Offline mode** - Work without internet
 - [ ] **Backend server** - Optional server for advanced features
 - [ ] **Discord Rich Presence** - Show now playing
-- [ ] **AI recommendations** - ML-based playlist generation
+- [x] **AI recommendations** - ML-based playlist generation
 
 ### Developer
 - [ ] **TypeScript migration** - Type safety
