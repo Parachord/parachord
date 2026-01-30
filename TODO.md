@@ -128,16 +128,16 @@
 - Shuffle mode with Collection Station
 - Personal charts (over varying time frames), listening history
 
-### UI/UX
-- Cinematic Light design system
-- First-run tutorial
-- In-app drag/drop of objects to playbar, queue and playlists
-
 ### Discovery
 - Charts tabs (Albums/Songs) with iTunes and Last.fm sources
 - Recommendations (Artists/Albums) with Last.fm and Listenbrainz sources
 - Weekly Jam playlists (this week & last) via ListenBrainz
 - Critically acclaimed albums (aggregated and filtered editorial reviews from across the web)
+
+### UI/UX
+- Cinematic Light design system
+- First-run tutorial
+- In-app drag/drop of objects to playbar, queue and playlists
 
 ## Web
 - Embedded web player with smart links
