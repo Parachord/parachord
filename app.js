@@ -3190,6 +3190,7 @@ const Parachord = () => {
   const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
+  const pausedByUserRef = useRef(false); // Track when user explicitly paused (prevents auto-resume on wake from sleep)
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
@@ -6155,6 +6156,15 @@ const Parachord = () => {
               console.log('▶️ Browser playback playing (ignored - local file playing)');
               break;
             }
+            // If user had explicitly paused, prevent auto-resume (e.g., after wake from sleep)
+            if (pausedByUserRef.current) {
+              console.log('🛑 Browser playback auto-resumed but user had paused - pausing back');
+              window.electron.extension.sendCommand({
+                type: 'command',
+                action: 'pause'
+              });
+              break;
+            }
             console.log('▶️ Browser playback playing');
             setIsPlaying(true);
             // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
@@ -6259,7 +6269,7 @@ const Parachord = () => {
 
     // Playback window event handlers (for Bandcamp embedded player, etc.)
     if (window.electron?.playbackWindow?.onEvent) {
-      window.electron.playbackWindow.onEvent((eventType) => {
+      window.electron.playbackWindow.onEvent(async (eventType) => {
         // Ignore playback window events when local file is playing
         if (audioRef.current && !audioRef.current.paused) {
           console.log(`🎵 Playback window event: ${eventType} (ignored - local file playing)`);
@@ -6268,6 +6278,15 @@ const Parachord = () => {
         console.log(`🎵 Playback window event: ${eventType}`);
         switch (eventType) {
           case 'playing':
+            // If user had explicitly paused, prevent auto-resume (e.g., after wake from sleep)
+            if (pausedByUserRef.current) {
+              console.log('🛑 Playback window auto-resumed but user had paused - pausing back');
+              // Pause the playback window back
+              if (window.electron?.playbackWindow?.toggle) {
+                await window.electron.playbackWindow.toggle();
+              }
+              return; // Don't update isPlaying state
+            }
             setIsPlaying(true);
             setBrowserPlaybackActive(true);
             setIsExternalPlayback(true);
@@ -7698,6 +7717,9 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
+    // Clear the pausedByUser flag since user is explicitly starting new playback
+    pausedByUserRef.current = false;
+
     // Stop HTML5 Audio if playing (local files, SoundCloud) - do this first to prevent overlap
     if (audioRef.current && !audioRef.current.paused) {
       console.log('⏹️ Stopping HTML5 audio before new track');
@@ -8917,6 +8939,12 @@ const Parachord = () => {
     // Check if browser extension is controlling playback
     if (browserPlaybackActive && extensionConnected) {
       console.log('🌐 Sending play/pause to browser extension');
+      // Track user's intent to pause/resume (prevents auto-resume on wake from sleep)
+      if (isPlaying) {
+        pausedByUserRef.current = true;
+      } else {
+        pausedByUserRef.current = false;
+      }
       window.electron.extension.sendCommand({
         type: 'command',
         action: isPlaying ? 'pause' : 'play'
@@ -8928,6 +8956,12 @@ const Parachord = () => {
     // Handle external playback window (Bandcamp embed)
     if (isExternalPlayback && window.electron?.playbackWindow?.toggle) {
       console.log('🎸 Toggling playback window play/pause');
+      // Track user's intent to pause/resume (prevents auto-resume on wake from sleep)
+      if (isPlaying) {
+        pausedByUserRef.current = true;
+      } else {
+        pausedByUserRef.current = false;
+      }
       const result = await window.electron.playbackWindow.toggle();
       if (result.success) {
         if (result.state === 'playing') {
@@ -9060,6 +9094,9 @@ const Parachord = () => {
       console.log('⏳ handleNext() blocked - waiting for browser playback to connect');
       return;
     }
+
+    // Clear the pausedByUser flag since we're advancing to next track
+    pausedByUserRef.current = false;
 
     // RE-ENTRANCY GUARD: Prevent multiple simultaneous handleNext() calls
     // This can happen when events fire in rapid succession (e.g., tab close + ended event)
