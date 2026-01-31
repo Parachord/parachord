@@ -27442,8 +27442,7 @@ useEffect(() => {
                               animationDelay: `${index * 50}ms`
                             },
                             onClick: () => {
-                              setSelectedPlaylist(playlist);
-                              navigateTo('playlist-view');
+                              loadPlaylist(playlist);
                             }
                           },
                             // 2x2 album art grid or placeholder with hover play button
