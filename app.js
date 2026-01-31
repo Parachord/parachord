@@ -863,6 +863,23 @@ const SERVICE_LOGO_PATHS = {
 
 // Helper to create resolver icon at any size
 const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
+  // SoundCloud uses multi-element SVG matching assets/icons/soundcloud.svg
+  if (resolverId === 'soundcloud') {
+    return React.createElement('svg', {
+      viewBox: '0 0 64 64',
+      width: size,
+      height: size,
+      fill: fill,
+      style: { flexShrink: 0 }
+    },
+      React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
+      React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
+      React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
+      React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
+      React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
+      React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
+    );
+  }
   const path = SERVICE_LOGO_PATHS[resolverId];
   if (!path) return null;
   return React.createElement('svg', {
