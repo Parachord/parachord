@@ -985,7 +985,7 @@ app.whenReady().then(() => {
       submenu: [
         {
           label: 'Play/Pause',
-          accelerator: 'Space',
+          // Space accelerator removed - handled in renderer to avoid triggering during text input
           click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
         },
         {
