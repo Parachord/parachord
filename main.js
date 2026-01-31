@@ -1158,10 +1158,60 @@ app.whenReady().then(() => {
   });
 });
 
+// Helper function to get a valid Spotify token, refreshing if needed
+const getValidSpotifyToken = async () => {
+  let token = store.get('spotify_token');
+  const expiry = store.get('spotify_token_expiry');
+  const refreshToken = store.get('spotify_refresh_token');
+
+  // Check if token is still valid (with 60 second buffer)
+  if (token && expiry && Date.now() < expiry - 60000) {
+    return token;
+  }
+
+  // Try to refresh the token
+  if (refreshToken) {
+    console.log('🔄 Token expired on quit, attempting refresh...');
+    try {
+      const { clientId, clientSecret } = getSpotifyCredentials();
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        store.set('spotify_token', data.access_token);
+        store.set('spotify_token_expiry', Date.now() + (data.expires_in * 1000));
+        if (data.refresh_token) {
+          store.set('spotify_refresh_token', data.refresh_token);
+        }
+        console.log('✅ Token refreshed on quit');
+        return data.access_token;
+      }
+    } catch (err) {
+      console.error('Failed to refresh token on quit:', err.message);
+    }
+  }
+
+  // Return the existing token even if expired - might still work
+  return token;
+};
+
 // Helper function to pause Spotify playback
 const pauseSpotifyPlayback = async () => {
-  const token = store.get('spotify_token');
-  if (!token) return;
+  const token = await getValidSpotifyToken();
+  if (!token) {
+    console.log('ℹ️ No Spotify token available to pause playback');
+    return;
+  }
 
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
@@ -1173,6 +1223,8 @@ const pauseSpotifyPlayback = async () => {
     } else if (response.status === 403) {
       // 403 often means no active device or already paused - that's fine
       console.log('ℹ️ Spotify: no active playback to pause');
+    } else if (response.status === 401) {
+      console.log('⚠️ Spotify token invalid on quit (401)');
     } else {
       console.log('⚠️ Spotify pause response:', response.status);
     }
@@ -1191,8 +1243,15 @@ app.on('before-quit', async (event) => {
   event.preventDefault();
   isQuitting = true;
 
-  // Pause Spotify before quitting
-  await pauseSpotifyPlayback();
+  // Pause Spotify before quitting (with timeout to avoid hanging)
+  try {
+    await Promise.race([
+      pauseSpotifyPlayback(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+    ]);
+  } catch (err) {
+    console.log('⚠️ Spotify pause on quit timed out or failed:', err.message);
+  }
 
   // Now actually quit
   app.exit(0);
