@@ -9,7 +9,13 @@
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:playback": "jest tests/playback/",
+    "test:resolver": "jest tests/resolver/",
+    "test:legacy": "node tests/resolution-scheduler.test.js && node tests/youtube-resolver.test.js && node tests/browser-extension.test.js"
   },
   "keywords": [
     "music",
@@ -28,7 +34,8 @@
   "license": "MIT",
   "devDependencies": {
     "electron": "^39.2.7",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "jest": "^30.2.0"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.18",
