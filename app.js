@@ -6496,11 +6496,7 @@ const Parachord = () => {
             searchInputRef.current?.focus();
             break;
           case 'play-pause':
-            if (isPlaying) {
-              handlePause();
-            } else if (currentTrack) {
-              handlePlay(currentTrack);
-            }
+            handlePlayPause();
             break;
           case 'next-track':
             handleNext(true);
@@ -7684,11 +7680,26 @@ const Parachord = () => {
     fetchMissingCovers();
   }, [activeView, playlists]);
 
-  // Keyboard shortcuts - Escape navigates back from search view
+  // Keyboard shortcuts - Escape navigates back from search view, Space for play/pause
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
+      }
+
+      // Space for play/pause - only when not typing in a text input
+      if (e.key === ' ' || e.code === 'Space') {
+        const activeElement = document.activeElement;
+        const isTyping = activeElement && (
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.isContentEditable
+        );
+
+        if (!isTyping) {
+          e.preventDefault(); // Prevent page scroll
+          handlePlayPauseRef.current?.();
+        }
       }
     };
 
