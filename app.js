@@ -863,22 +863,14 @@ const SERVICE_LOGO_PATHS = {
 
 // Helper to create resolver icon at any size
 const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
-  // SoundCloud uses multi-element SVG matching assets/icons/soundcloud.svg
+  // SoundCloud uses PNG image from assets/icons/soundcloud-icon-white.png
   if (resolverId === 'soundcloud') {
-    return React.createElement('svg', {
-      viewBox: '0 0 64 64',
+    return React.createElement('img', {
+      src: 'assets/icons/soundcloud-icon-white.png',
       width: size,
       height: size,
-      fill: fill,
       style: { flexShrink: 0 }
-    },
-      React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
-      React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
-      React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
-      React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
-      React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
-      React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
-    );
+    });
   }
   const path = SERVICE_LOGO_PATHS[resolverId];
   if (!path) return null;
@@ -905,14 +897,7 @@ const SERVICE_LOGOS = {
   youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
   ),
-  soundcloud: React.createElement('svg', { viewBox: '0 0 64 64', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
-    React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
-    React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
-    React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
-    React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
-    React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
-  ),
+  soundcloud: React.createElement('img', { src: 'assets/icons/soundcloud-icon-white.png', className: 'w-16 h-16' }),
   applemusic: React.createElement('svg', { viewBox: '0 0 361 361', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M263.54,234.26c0,4.56-0.04,8.7-1,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.66-12.5,4.55c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.4-12.99-6.6c-5.17-4.74-8.39-11.14-9.09-17.82c-0.82-7.84,1.79-16.21,7.67-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.13-2.61,2.17-5.78,2.17-8.92l0-79.29c0-6.07-2.72-7.72-8.52-6.61c-4.14,0.81-93.09,18.75-93.09,18.75c-5.02,1.21-6.78,2.85-6.78,9.08l0,116.15c0,4.56-0.24,8.7-1.19,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.72-12.5,4.61c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.47-12.99-6.66c-5.17-4.74-8.17-11.14-8.88-17.82c-0.82-7.84,1.57-16.21,7.46-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.12-2.59,2.37-5.64,2.37-8.76c0-24.6,0-133.92,0-133.92c0-1.8,0.15-3.02,0.24-3.62c0.43-2.82,1.56-5.24,3.6-6.95c1.7-1.42,3.88-2.41,6.67-3l0.04-0.01l107-21.59c0.93-0.19,8.66-1.56,9.53-1.64c5.78-0.5,9.03,3.3,9.03,9.46V234.26z' })
   ),
