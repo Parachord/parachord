@@ -219,32 +219,6 @@ const CONTEXT_PRIORITY = {
   sidebar: 5
 };
 
-// Charts country options (ISO code for iTunes, full name for Last.fm)
-const CHARTS_COUNTRIES = [
-  { code: 'us', name: 'United States' },
-  { code: 'gb', name: 'United Kingdom' },
-  { code: 'ca', name: 'Canada' },
-  { code: 'au', name: 'Australia' },
-  { code: 'de', name: 'Germany' },
-  { code: 'fr', name: 'France' },
-  { code: 'jp', name: 'Japan' },
-  { code: 'kr', name: 'South Korea' },
-  { code: 'br', name: 'Brazil' },
-  { code: 'mx', name: 'Mexico' },
-  { code: 'es', name: 'Spain' },
-  { code: 'it', name: 'Italy' },
-  { code: 'nl', name: 'Netherlands' },
-  { code: 'se', name: 'Sweden' },
-  { code: 'pl', name: 'Poland' },
-];
-
-// Last.fm genre/tag options for charts
-const LASTFM_GENRES = [
-  'rock', 'pop', 'electronic', 'hip-hop', 'indie', 'metal',
-  'jazz', 'classical', 'r&b', 'country', 'folk', 'punk',
-  'alternative', 'soul', 'blues', 'reggae', 'latin', 'dance'
-];
-
 /**
  * ResolutionScheduler - Manages track resolution across visibility contexts
  *
@@ -714,8 +688,9 @@ const loadBuiltinResolvers = async () => {
 const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"spotify","name":"Spotify","version":"1.0.0","author":"Parachord Team","description":"Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.","icon":"♫","color":"#1DB954","homepage":"https://spotify.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":true,"authType":"oauth","scopes":["user-read-playback-state","user-modify-playback-state","user-read-currently-playing"],"configurable":{"clientId":{"type":"text","label":"Client ID","default":"c040c0ee133344b282e6342198bcbeea","readonly":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) return []; try { const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=20`, { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!response.ok) { console.error('Spotify search failed:', response.status); return []; } const data = await response.json(); return data.tracks.items.map(track => ({ id: `spotify-${track.id}`, title: track.name, artist: track.artists.map(a => a.name).join(', '), album: track.album.name, duration: Math.floor(track.duration_ms / 1000), sources: ['spotify'], spotifyUri: track.uri, spotifyId: track.id, albumArt: track.album.images[0]?.url })); } catch (error) { console.error('Spotify search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `artist:${artist} track:${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!config.token) { console.error('Spotify not connected'); return false; } try { const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', { headers: { 'Authorization': `Bearer ${config.token}` } }); if (!devicesResponse.ok) return false; const devicesData = await devicesResponse.json(); const devices = devicesData.devices || []; if (devices.length === 0) { console.error('No Spotify devices found'); return false; } const controllable = devices.filter(d => !d.is_restricted); const available = controllable.length > 0 ? controllable : devices; const computer = available.find(d => d.type === 'Computer'); const phone = available.find(d => d.type === 'Smartphone'); const speaker = available.find(d => d.type === 'Speaker'); const nonWebActive = available.find(d => d.is_active && !d.name.toLowerCase().includes('web')); const nonWeb = available.find(d => !d.name.toLowerCase().includes('web')); let activeDevice = computer || phone || speaker || nonWebActive || nonWeb || available[0]; console.log('Selected device:', activeDevice.name, activeDevice.type); if (!activeDevice.is_active) { const transferResponse = await fetch('https://api.spotify.com/v1/me/player', { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ device_ids: [activeDevice.id], play: true }) }); if (!transferResponse.ok && transferResponse.status !== 204) { console.error('Failed to transfer playback'); } await new Promise(resolve => setTimeout(resolve, 1000)); } const playResponse = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, { method: 'PUT', headers: { 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ uris: [track.spotifyUri] }) }); return playResponse.ok || playResponse.status === 204; } catch (error) { console.error('Spotify play error:', error); return false; } }","init":"async function(config) { console.log('Spotify resolver initialized'); }","cleanup":"async function() { console.log('Spotify resolver cleanup'); }"}},
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
-  {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.1.0","author":"Parachord Team","description":"High-quality audio streaming from Qobuz. Login for full tracks, or use 30-second previews.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"credentials","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, qobuzTrackId: track.id, albumArt: track.album?.image?.large || track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, hires: track.hires, hiresStreamable: track.hires_streamable, maximumBitDepth: track.maximum_bit_depth, maximumSamplingRate: track.maximum_sampling_rate, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { let streamUrl = null; let isPreview = true; const trackId = track.qobuzTrackId || track.qobuzId; if (config.token && trackId && window.electron?.qobuz?.getStreamUrl) { try { console.log('Getting Qobuz full stream URL for track:', trackId); const formatId = track.hires && config.hasSubscription ? 27 : 6; const result = await window.electron.qobuz.getStreamUrl(trackId, formatId); if (result.success && result.url) { console.log('Got Qobuz stream URL, quality:', result.bitDepth + 'bit/' + result.samplingRate + 'kHz'); streamUrl = result.url; isPreview = false; } } catch (error) { console.error('Failed to get Qobuz stream URL:', error); } } if (!streamUrl && track.previewUrl) { console.log('Using Qobuz preview URL'); streamUrl = track.previewUrl; isPreview = true; } if (!streamUrl) { console.error('No Qobuz stream URL available'); return false; } try { if (window.qobuzAudio) { window.qobuzAudio.pause(); window.qobuzAudio.src = ''; } window.qobuzAudio = new Audio(streamUrl); window.qobuzAudio.volume = config.volume || 0.7; await window.qobuzAudio.play(); console.log(isPreview ? 'Playing Qobuz 30-second preview' : 'Playing full Qobuz track'); return true; } catch (error) { console.error('Failed to play Qobuz track:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized, authenticated:', !!config.token); }","cleanup":"async function() { if (window.qobuzAudio) { window.qobuzAudio.pause(); window.qobuzAudio.src = ''; window.qobuzAudio = null; } console.log('Qobuz resolver cleanup'); }"}},
+  {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
+  {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.0","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"🍎","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*","music.apple.com/*/song/*","music.apple.com/*/playlist/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Apple Music/iTunes for:', query); if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; const response = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var response = await fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var response = await fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL. Note: iTunes API does not support playlist lookup directly. MusicKit required for full playlist support.'); return null; } var playlistId = playlistIdMatch[1]; console.log('Playlist ID extracted:', playlistId); console.log('Note: Full playlist lookup requires MusicKit API with Apple Developer account.'); console.log('For now, open the playlist URL in browser or use the content script scraper.'); return { id: 'applemusic-playlist-' + playlistId, name: 'Apple Music Playlist', description: 'Playlist lookup requires MusicKit API. Configure your Apple Developer token in resolver settings.', tracks: [], url: url, requiresMusicKit: true }; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { console.log('[AppleMusic] Play called, track:', { id: track.id, appleMusicId: track.appleMusicId, hasUrl: !!track.appleMusicUrl, hasPreview: !!track.previewUrl }); var nativeMusicKitAuthorized = false; if (window.electron && window.electron.musicKit && track.appleMusicId) { try { var authStatus = await window.electron.musicKit.checkAuth(); console.log('[AppleMusic] Native auth status:', authStatus); if (authStatus.success && authStatus.authorized) { nativeMusicKitAuthorized = true; console.log('[AppleMusic] Playing via native MusicKit:', track.appleMusicId); var playResult = await window.electron.musicKit.play(track.appleMusicId); console.log('[AppleMusic] Native play result:', JSON.stringify(playResult)); if (playResult.success) { return true; } console.log('[AppleMusic] Native MusicKit play failed, falling back to preview'); } } catch (e) { console.log('[AppleMusic] Native MusicKit error:', e); } } if (!nativeMusicKitAuthorized) { var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb && track.appleMusicId) { var status = musicKitWeb.getAuthStatus(); console.log('[AppleMusic] MusicKit JS status:', status); if (status.configured && status.authorized) { try { console.log('[AppleMusic] Playing via MusicKit JS:', track.appleMusicId); await musicKitWeb.play(track.appleMusicId); console.log('[AppleMusic] MusicKit JS playback started'); return true; } catch (mkError) { console.log('[AppleMusic] MusicKit JS play failed:', mkError.message); } } } } if (track.previewUrl) { console.log('[AppleMusic] Trying 30-second preview in-app playback'); try { if (!window._appleMusicPreviewAudio) { window._appleMusicPreviewAudio = new Audio(); window._appleMusicPreviewAudio.addEventListener('ended', function() { console.log('[AppleMusic] Preview ended'); if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('applemusic-preview-ended')); } }); } window._appleMusicPreviewAudio.src = track.previewUrl; window._appleMusicPreviewAudio.volume = 1.0; await window._appleMusicPreviewAudio.play(); console.log('[AppleMusic] Playing 30-second preview in-app'); return true; } catch (audioError) { console.log('[AppleMusic] Preview playback failed:', audioError); } } var urlToOpen = track.appleMusicUrl; if (!urlToOpen) { console.error('[AppleMusic] No Apple Music URL found'); return false; } console.log('[AppleMusic] Opening URL externally:', urlToOpen); try { if (window.electron && window.electron.shell && window.electron.shell.openExternal) { var result = await window.electron.shell.openExternal(urlToOpen); return result && result.success; } else { var newWindow = window.open(urlToOpen, '_blank'); return !!newWindow; } } catch (error) { console.error('[AppleMusic] Failed to open Apple Music link:', error); return false; } }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (config.developerToken && window.getMusicKitWeb) { console.log('[AppleMusic] Configuring MusicKit JS with developer token'); try { var musicKitWeb = window.getMusicKitWeb(); await musicKitWeb.configure(config.developerToken, 'Parachord', '1.0.0'); console.log('[AppleMusic] MusicKit JS configured successfully'); var status = musicKitWeb.getAuthStatus(); if (!status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized yet - will prompt on first play'); } } catch (configError) { console.error('[AppleMusic] Failed to configure MusicKit JS:', configError); } } if (window.electron && window.electron.musicKit) { window.electron.musicKit.isAvailable().then(function(avail) { if (avail) { console.log('Native MusicKit available for Apple Music playback'); } }); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb) { try { await musicKitWeb.stop(); } catch (e) {} } }"}},
 ];
 
 
@@ -863,15 +838,6 @@ const SERVICE_LOGO_PATHS = {
 
 // Helper to create resolver icon at any size
 const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
-  // SoundCloud uses PNG image from assets/icons/soundcloud-icon-white.png
-  if (resolverId === 'soundcloud') {
-    return React.createElement('img', {
-      src: 'assets/icons/soundcloud-icon-white.png',
-      width: size,
-      height: size,
-      style: { flexShrink: 0 }
-    });
-  }
   const path = SERVICE_LOGO_PATHS[resolverId];
   if (!path) return null;
   return React.createElement('svg', {
@@ -897,7 +863,14 @@ const SERVICE_LOGOS = {
   youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
   ),
-  soundcloud: React.createElement('img', { src: 'assets/icons/soundcloud-icon-white.png', className: 'w-16 h-16' }),
+  soundcloud: React.createElement('svg', { viewBox: '0 0 64 64', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
+    React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
+    React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
+    React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
+    React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
+    React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
+  ),
   applemusic: React.createElement('svg', { viewBox: '0 0 361 361', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M263.54,234.26c0,4.56-0.04,8.7-1,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.66-12.5,4.55c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.4-12.99-6.6c-5.17-4.74-8.39-11.14-9.09-17.82c-0.82-7.84,1.79-16.21,7.67-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.13-2.61,2.17-5.78,2.17-8.92l0-79.29c0-6.07-2.72-7.72-8.52-6.61c-4.14,0.81-93.09,18.75-93.09,18.75c-5.02,1.21-6.78,2.85-6.78,9.08l0,116.15c0,4.56-0.24,8.7-1.19,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.72-12.5,4.61c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.47-12.99-6.66c-5.17-4.74-8.17-11.14-8.88-17.82c-0.82-7.84,1.57-16.21,7.46-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.12-2.59,2.37-5.64,2.37-8.76c0-24.6,0-133.92,0-133.92c0-1.8,0.15-3.02,0.24-3.62c0.43-2.82,1.56-5.24,3.6-6.95c1.7-1.42,3.88-2.41,6.67-3l0.04-0.01l107-21.59c0.93-0.19,8.66-1.56,9.53-1.64c5.78-0.5,9.03,3.3,9.03,9.46V234.26z' })
   ),
@@ -3190,7 +3163,6 @@ const Parachord = () => {
   const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
-  const pausedByUserRef = useRef(false); // Track when user explicitly paused (prevents auto-resume on wake from sleep)
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
@@ -3342,8 +3314,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'youtube']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'youtube', 'soundcloud', 'qobuz']); // Qobuz at end - disabled pending API access
+  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
+  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
@@ -3399,18 +3371,20 @@ const Parachord = () => {
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
   const [qobuzToken, setQobuzToken] = useState(null);
   const [qobuzConnected, setQobuzConnected] = useState(false);
-  const [qobuzUsername, setQobuzUsername] = useState(null);
-  const [qobuzHasSubscription, setQobuzHasSubscription] = useState(false);
-  const [qobuzUsernameInput, setQobuzUsernameInput] = useState('');
-  const [qobuzPasswordInput, setQobuzPasswordInput] = useState('');
-  const [qobuzConnecting, setQobuzConnecting] = useState(false);
-  const [qobuzError, setQobuzError] = useState(null);
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
   const [soundcloudAdvancedOpen, setSoundcloudAdvancedOpen] = useState(false); // Advanced settings accordion
   const [soundcloudClientIdInput, setSoundcloudClientIdInput] = useState(''); // Client ID input
   const [soundcloudClientSecretInput, setSoundcloudClientSecretInput] = useState(''); // Client Secret input
   const [soundcloudCredentialsSource, setSoundcloudCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
+
+  // Apple Music / MusicKit state
+  const [appleMusicConnected, setAppleMusicConnected] = useState(false);
+  const [appleMusicUserToken, setAppleMusicUserToken] = useState(null);
+  const [appleMusicDeveloperToken, setAppleMusicDeveloperToken] = useState('');
+  const [appleMusicAdvancedOpen, setAppleMusicAdvancedOpen] = useState(false);
+  const [appleMusicTokenSaved, setAppleMusicTokenSaved] = useState(false);
+  const musicKitInstanceRef = useRef(null);
 
   // Media key handling mode: 'always' | 'non-spotify' | 'never'
   const [mediaKeyMode, setMediaKeyMode] = useState('always');
@@ -3589,16 +3563,6 @@ const Parachord = () => {
   const [chartsSearch, setChartsSearch] = useState('');
   const [chartsSortDropdownOpen, setChartsSortDropdownOpen] = useState(false);
   const [chartsSort, setChartsSort] = useState('rank');
-  const [chartsTab, setChartsTab] = useState('albums'); // 'albums' | 'songs'
-  const [chartsSource, setChartsSource] = useState('itunes'); // 'itunes' | 'lastfm'
-  const [chartsCountry, setChartsCountry] = useState('us'); // ISO code
-  const [chartsGenre, setChartsGenre] = useState(''); // For Last.fm tag-based charts
-  const [chartsSongs, setChartsSongs] = useState([]);
-  const [chartsSongsLoading, setChartsSongsLoading] = useState(false);
-  const [chartsSongsLoaded, setChartsSongsLoaded] = useState(false);
-  const [chartsSourceDropdownOpen, setChartsSourceDropdownOpen] = useState(false);
-  const [chartsCountryDropdownOpen, setChartsCountryDropdownOpen] = useState(false);
-  const [chartsGenreDropdownOpen, setChartsGenreDropdownOpen] = useState(false);
 
   // Critics Picks page state
   const [criticsHeaderCollapsed, setCriticsHeaderCollapsed] = useState(false);
@@ -4243,7 +4207,6 @@ const Parachord = () => {
   const removeFriendFromCollectionRef = useRef(null);
   const activateListenAlongRef = useRef(null);
   const deactivateListenAlongRef = useRef(null);
-  const loadPlaylistRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
@@ -4281,14 +4244,6 @@ const Parachord = () => {
   const historyScrollContainerRef = useRef(null);
   const historyTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [historyScrollContainerReady, setHistoryScrollContainerReady] = useState(false);
-
-  // Refs for chart songs visibility tracking
-  const chartSongsTrackRowRefs = useRef(new Map());
-  const chartSongsObserverRef = useRef(null);
-  const visibleChartSongIds = useRef(new Set());
-  const chartSongsRef = useRef([]); // Ref to access current songs in observer callback
-  const chartSongsScrollContainerRef = useRef(null);
-  const [chartSongsScrollContainerReady, setChartSongsScrollContainerReady] = useState(false);
 
   // Refs for top tracks visibility tracking
   const topTracksRowRefs = useRef(new Map());
@@ -5251,7 +5206,6 @@ const Parachord = () => {
     if (track._activeResolver) return track._activeResolver;
     // Fall back to checking resolver-specific properties at top level OR nested in sources
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
-    if (track.soundcloudId || track.sources?.soundcloud) return 'soundcloud';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
@@ -5367,8 +5321,7 @@ const Parachord = () => {
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
-    recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
-    charts: 24 * 60 * 60 * 1000             // 24 hours (charts update weekly)
+    recommendations: 60 * 60 * 1000         // 1 hour (recommendations change based on listening)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -5379,10 +5332,6 @@ const Parachord = () => {
 
   // Cache for top tracks data (keyed by period)
   const topTracksCache = useRef({});
-
-  // Cache for charts data (keyed by source and country)
-  const chartsAlbumsCache = useRef({}); // { 'itunes-us': { albums: [...], timestamp: ... } }
-  const chartsSongsCache = useRef({});  // { 'itunes-us': { songs: [...], timestamp: ... }, 'lastfm': { songs: [...], timestamp: ... } }
 
   // Get meta services with AI generation capability
   const getAiServices = () => {
@@ -6163,15 +6112,6 @@ const Parachord = () => {
               console.log('▶️ Browser playback playing (ignored - local file playing)');
               break;
             }
-            // If user had explicitly paused, prevent auto-resume (e.g., after wake from sleep)
-            if (pausedByUserRef.current) {
-              console.log('🛑 Browser playback auto-resumed but user had paused - pausing back');
-              window.electron.extension.sendCommand({
-                type: 'command',
-                action: 'pause'
-              });
-              break;
-            }
             console.log('▶️ Browser playback playing');
             setIsPlaying(true);
             // Also ensure browser playback state is set (handles race condition where playing arrives before connected)
@@ -6276,7 +6216,7 @@ const Parachord = () => {
 
     // Playback window event handlers (for Bandcamp embedded player, etc.)
     if (window.electron?.playbackWindow?.onEvent) {
-      window.electron.playbackWindow.onEvent(async (eventType) => {
+      window.electron.playbackWindow.onEvent((eventType) => {
         // Ignore playback window events when local file is playing
         if (audioRef.current && !audioRef.current.paused) {
           console.log(`🎵 Playback window event: ${eventType} (ignored - local file playing)`);
@@ -6285,15 +6225,6 @@ const Parachord = () => {
         console.log(`🎵 Playback window event: ${eventType}`);
         switch (eventType) {
           case 'playing':
-            // If user had explicitly paused, prevent auto-resume (e.g., after wake from sleep)
-            if (pausedByUserRef.current) {
-              console.log('🛑 Playback window auto-resumed but user had paused - pausing back');
-              // Pause the playback window back
-              if (window.electron?.playbackWindow?.toggle) {
-                await window.electron.playbackWindow.toggle();
-              }
-              return; // Don't update isPlaying state
-            }
             setIsPlaying(true);
             setBrowserPlaybackActive(true);
             setIsExternalPlayback(true);
@@ -6503,7 +6434,11 @@ const Parachord = () => {
             searchInputRef.current?.focus();
             break;
           case 'play-pause':
-            handlePlayPause();
+            if (isPlaying) {
+              handlePause();
+            } else if (currentTrack) {
+              handlePlay(currentTrack);
+            }
             break;
           case 'next-track':
             handleNext(true);
@@ -6621,6 +6556,25 @@ const Parachord = () => {
     }
   }, []);
 
+  // Main process Apple Music polling event handlers
+  // This polling runs in main process and is not affected by OS timer throttling
+  useEffect(() => {
+    if (window.electron?.musicKit?.polling) {
+      // Handle advance signal from main process polling
+      window.electron.musicKit.polling.onAdvance((data) => {
+        console.log('🎵 [Main→Renderer] Apple Music advance signal received:', data.reason);
+        if (handleNextRef.current) {
+          handleNextRef.current();
+        }
+      });
+
+      // Handle progress updates (for potential UI sync)
+      window.electron.musicKit.polling.onProgress((data) => {
+        console.log(`▶️ [Main→Renderer] Apple Music progress: ${data.percentComplete?.toFixed(1)}%`);
+      });
+    }
+  }, []);
+
   // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {
@@ -6722,48 +6676,30 @@ const Parachord = () => {
       return { token };
     }
 
-    // For Qobuz, check for auth token
-    if (resolverId === 'qobuz') {
-      let token = qobuzToken;
-      let hasSubscription = false;
-      let username = null;
+    // For Apple Music, load developer token from env or localStorage
+    if (resolverId === 'applemusic') {
+      let developerToken = localStorage.getItem('musickit_developer_token') || '';
 
-      // Try to get a fresh/validated token from the IPC handler
-      if (window.electron?.qobuz) {
-        const tokenData = await window.electron.qobuz.checkToken();
-        if (tokenData && tokenData.token) {
-          token = tokenData.token;
-          hasSubscription = tokenData.hasSubscription || false;
-          username = tokenData.username;
-          // Update React state if token changed
-          if (token !== qobuzToken) {
-            console.log('🔄 Qobuz token updated');
-            setQobuzToken(token);
-            setQobuzConnected(true);
+      // Try to load from environment variable if not in localStorage
+      if (!developerToken && window.electron?.config?.get) {
+        try {
+          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+          if (developerToken) {
+            console.log('🍎 Loaded MusicKit developer token from environment');
           }
-        } else if (qobuzToken) {
-          // Token validation failed, clear state
-          setQobuzToken(null);
-          setQobuzConnected(false);
+        } catch (e) {
+          // Ignore errors
         }
       }
 
-      console.log('🔑 Qobuz config:', {
-        hasToken: !!token,
-        hasSubscription,
-        username
-      });
-
       return {
-        appId: '285473059',
-        volume: volume / 100,
-        token,
-        hasSubscription,
-        username
+        developerToken,
+        storefront: 'us'
       };
     }
 
     const configs = {
+      qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
     };
     return configs[resolverId] || {};
@@ -6938,16 +6874,14 @@ const Parachord = () => {
   useEffect(() => {
     // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
-    // Skip for SoundCloud - also uses HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
     const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
     const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
-    const isSoundCloud = currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -7046,7 +6980,6 @@ const Parachord = () => {
         duration: track.duration,
         albumArt: track.albumArt,
         sources: track.sources || {},
-        spotifyId: track.spotifyId || track.sources?.spotify?.spotifyId,
         addedAt: Date.now()
       };
 
@@ -7055,15 +6988,6 @@ const Parachord = () => {
       saveCollection(newData);
       showToast(`Added ${track.title} to Collection`);
       showSidebarBadge('collection');
-
-      // Also save to Spotify Liked Songs if track has Spotify ID
-      const spotifyId = track.spotifyId || track.sources?.spotify?.spotifyId;
-      if (spotifyId) {
-        window.electron.sync.saveTracks?.('spotify', [spotifyId]).catch(err => {
-          console.log('Could not sync to Spotify:', err.message);
-        });
-      }
-
       return newData;
     });
   }, [saveCollection, showToast, showSidebarBadge]);
@@ -7074,8 +6998,8 @@ const Parachord = () => {
     const trackId = generateTrackId(track.artist, track.title, track.album);
 
     setCollectionData(prev => {
-      const existingTrack = prev.tracks.find(t => t.id === trackId);
-      if (!existingTrack) {
+      const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
+      if (existingIndex === -1) {
         showToast(`${track.title} is not in your collection`);
         return prev;
       }
@@ -7085,15 +7009,6 @@ const Parachord = () => {
       // Save async (don't block state update)
       saveCollection(newData);
       showToast(`Removed ${track.title} from Collection`);
-
-      // Also remove from Spotify Liked Songs if track has Spotify ID
-      const spotifyId = existingTrack.spotifyId || track.spotifyId || track.sources?.spotify?.spotifyId;
-      if (spotifyId) {
-        window.electron.sync.removeTracks?.('spotify', [spotifyId]).catch(err => {
-          console.log('Could not sync removal to Spotify:', err.message);
-        });
-      }
-
       return newData;
     });
   }, [saveCollection, showToast]);
@@ -7286,7 +7201,7 @@ const Parachord = () => {
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
-      const cleanup = window.electron.contextMenu.onAction(async (data) => {
+      window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
@@ -7376,13 +7291,6 @@ const Parachord = () => {
               lastModified: Date.now()
             }));
           }
-        } else if (data.action === 'edit-playlist' && data.playlistId) {
-          // Navigate to playlist and enter edit mode
-          const playlist = playlists.find(p => p.id === data.playlistId);
-          if (playlist && loadPlaylistRef.current) {
-            await loadPlaylistRef.current(playlist);
-            setPlaylistEditMode(true);
-          }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
           // Show confirmation alert
           const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
@@ -7454,45 +7362,10 @@ const Parachord = () => {
           if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
-        } else if (data.action === 'follow-on-spotify' && data.artist) {
-          // Follow artist on Spotify
-          const spotifyId = data.artist.spotifyId || data.artist.sources?.spotify?.spotifyId;
-          if (spotifyId) {
-            try {
-              const result = await window.electron.sync.followArtists('spotify', [spotifyId]);
-              if (result.success) {
-                showToast(`Now following "${data.artist.name}" on Spotify`);
-              } else {
-                showToast(`Failed to follow on Spotify: ${result.error}`);
-              }
-            } catch (err) {
-              showToast(`Error following on Spotify: ${err.message}`);
-            }
-          } else {
-            showToast('Artist does not have a Spotify ID');
-          }
-        } else if (data.action === 'unfollow-on-spotify' && data.artist) {
-          // Unfollow artist on Spotify
-          const spotifyId = data.artist.spotifyId || data.artist.sources?.spotify?.spotifyId;
-          if (spotifyId) {
-            try {
-              const result = await window.electron.sync.unfollowArtists('spotify', [spotifyId]);
-              if (result.success) {
-                showToast(`Unfollowed "${data.artist.name}" on Spotify`);
-              } else {
-                showToast(`Failed to unfollow on Spotify: ${result.error}`);
-              }
-            } catch (err) {
-              showToast(`Error unfollowing on Spotify: ${err.message}`);
-            }
-          } else {
-            showToast('Artist does not have a Spotify ID');
-          }
         }
       });
-      return cleanup;
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, setPlaylistEditMode]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -7788,26 +7661,11 @@ const Parachord = () => {
     fetchMissingCovers();
   }, [activeView, playlists]);
 
-  // Keyboard shortcuts - Escape navigates back from search view, Space for play/pause
+  // Keyboard shortcuts - Escape navigates back from search view
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
-      }
-
-      // Space for play/pause - only when not typing in a text input
-      if (e.key === ' ' || e.code === 'Space') {
-        const activeElement = document.activeElement;
-        const isTyping = activeElement && (
-          activeElement.tagName === 'INPUT' ||
-          activeElement.tagName === 'TEXTAREA' ||
-          activeElement.isContentEditable
-        );
-
-        if (!isTyping) {
-          e.preventDefault(); // Prevent page scroll
-          handlePlayPauseRef.current?.();
-        }
       }
     };
 
@@ -7835,9 +7693,6 @@ const Parachord = () => {
   const handlePlay = async (trackOrSource) => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
-
-    // Clear the pausedByUser flag since user is explicitly starting new playback
-    pausedByUserRef.current = false;
 
     // Stop HTML5 Audio if playing (local files, SoundCloud) - do this first to prevent overlap
     if (audioRef.current && !audioRef.current.paused) {
@@ -8740,15 +8595,43 @@ const Parachord = () => {
       } else {
         console.warn('⚠️ Main process polling not available');
       }
+    } else if (resolverId === 'apple-music' && track.appleMusicId) {
+      // Apple Music native playback via MusicKit
+      console.log(`🔄 Starting Apple Music playback polling via main process...`);
+      console.log(`   Track: ${track.title} by ${track.artist}`);
+      console.log(`   Song ID: ${track.appleMusicId}`);
+
+      // Use main process polling (background-safe, not affected by OS timer throttling)
+      if (window.electron?.musicKit?.polling) {
+        window.electron.musicKit.polling.start({
+          songId: track.appleMusicId,
+          trackTitle: track.title,
+          trackArtist: track.artist,
+          duration: track.duration || 0
+        }).then(() => {
+          console.log('✅ Apple Music main process polling started');
+        }).catch((err) => {
+          console.error('❌ Failed to start Apple Music polling:', err);
+        });
+      } else {
+        console.warn('⚠️ Apple Music main process polling not available');
+      }
     }
     // For future HTML5 audio resolvers, add event listener logic here
   };
 
-  // Stop main process Spotify polling (helper function)
+  // Stop main process polling (helper function)
   const stopMainProcessPolling = () => {
+    // Stop Spotify polling
     if (window.electron?.spotify?.polling) {
       window.electron.spotify.polling.stop().catch((err) => {
-        console.error('Error stopping main process polling:', err);
+        console.error('Error stopping Spotify main process polling:', err);
+      });
+    }
+    // Stop Apple Music polling
+    if (window.electron?.musicKit?.polling) {
+      window.electron.musicKit.polling.stop().catch((err) => {
+        console.error('Error stopping Apple Music main process polling:', err);
       });
     }
   };
@@ -9058,12 +8941,6 @@ const Parachord = () => {
     // Check if browser extension is controlling playback
     if (browserPlaybackActive && extensionConnected) {
       console.log('🌐 Sending play/pause to browser extension');
-      // Track user's intent to pause/resume (prevents auto-resume on wake from sleep)
-      if (isPlaying) {
-        pausedByUserRef.current = true;
-      } else {
-        pausedByUserRef.current = false;
-      }
       window.electron.extension.sendCommand({
         type: 'command',
         action: isPlaying ? 'pause' : 'play'
@@ -9075,12 +8952,6 @@ const Parachord = () => {
     // Handle external playback window (Bandcamp embed)
     if (isExternalPlayback && window.electron?.playbackWindow?.toggle) {
       console.log('🎸 Toggling playback window play/pause');
-      // Track user's intent to pause/resume (prevents auto-resume on wake from sleep)
-      if (isPlaying) {
-        pausedByUserRef.current = true;
-      } else {
-        pausedByUserRef.current = false;
-      }
       const result = await window.electron.playbackWindow.toggle();
       if (result.success) {
         if (result.state === 'playing') {
@@ -9213,9 +9084,6 @@ const Parachord = () => {
       console.log('⏳ handleNext() blocked - waiting for browser playback to connect');
       return;
     }
-
-    // Clear the pausedByUser flag since we're advancing to next track
-    pausedByUserRef.current = false;
 
     // RE-ENTRANCY GUARD: Prevent multiple simultaneous handleNext() calls
     // This can happen when events fire in rapid succession (e.g., tab close + ended event)
@@ -9390,8 +9258,6 @@ const Parachord = () => {
 
       if (queue.length === 0) {
         console.log('No queue set, cannot go to next track');
-        // Set isPlaying to false since playback has ended
-        setIsPlaying(false);
         return;
       }
 
@@ -9403,8 +9269,6 @@ const Parachord = () => {
 
       if (nextTrackIndex === -1) {
         console.log('⚠️ No playable tracks in queue');
-        // Set isPlaying to false since playback has ended
-        setIsPlaying(false);
         return;
       }
 
@@ -9811,56 +9675,6 @@ const Parachord = () => {
     setCurrentQueue(prev => [...prev, ...taggedTracks]);
   };
 
-  // Helper to play a collection of tracks, respecting shuffle mode
-  // If shuffle is on, picks a random first track and shuffles the rest
-  const playTrackCollection = (tracks, context = null) => {
-    if (!tracks || tracks.length === 0) return;
-
-    let tracksToPlay = [...tracks];
-
-    // Tag tracks with context if provided
-    if (context) {
-      tracksToPlay = tracksToPlay.map(track => ({
-        ...track,
-        _playbackContext: context
-      }));
-    }
-
-    let firstTrack;
-    let remainingTracks;
-
-    if (shuffleMode && tracksToPlay.length > 1) {
-      // Shuffle mode: pick random first track, shuffle the rest
-      const randomIndex = Math.floor(Math.random() * tracksToPlay.length);
-      firstTrack = tracksToPlay[randomIndex];
-
-      // Get remaining tracks (excluding the randomly picked one)
-      const remaining = [...tracksToPlay.slice(0, randomIndex), ...tracksToPlay.slice(randomIndex + 1)];
-
-      // Fisher-Yates shuffle the remaining tracks
-      for (let i = remaining.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-      }
-      remainingTracks = remaining;
-
-      // Store original order for unshuffle
-      originalQueueRef.current = tracksToPlay.slice(1); // Original order minus first
-      console.log('🔀 Shuffle ON - playing random track first, queue shuffled');
-    } else {
-      // Normal mode: play first track, queue rest in order
-      firstTrack = tracksToPlay[0];
-      remainingTracks = tracksToPlay.slice(1);
-    }
-
-    // Set queue and play
-    setCurrentQueue(remainingTracks);
-    if (context) {
-      setPlaybackContext(context);
-    }
-    handlePlay(firstTrack);
-  };
-
   // Open save dialog for queue as playlist
   const handleSaveQueueAsPlaylist = () => {
     // Build track list: currently playing + queue
@@ -10082,26 +9896,6 @@ const Parachord = () => {
     addToQueue(resultsSidebar.tracks, context);
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
-  };
-
-  // Handle playing AI results now (replace queue)
-  const handleAiPlay = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
-    playTrackCollection(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
-  };
-
-  // Handle adding AI results to existing/new playlist
-  const handleAiAddToPlaylist = () => {
-    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
-    setAddToPlaylistPanel({
-      open: true,
-      tracks: resultsSidebar.tracks,
-      sourceName: resultsSidebar.prompt || 'AI Playlist',
-      sourceType: 'playlist'
-    });
-    setResultsSidebar(null);
   };
   const addToQueue = (tracks, context = null) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
@@ -11006,6 +10800,15 @@ const Parachord = () => {
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
         console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
+      }
+
+      // Load Apple Music developer token
+      const savedAppleMusicDevToken = await window.electron.store.get('applemusic_developer_token');
+      if (savedAppleMusicDevToken) {
+        setAppleMusicDeveloperToken(savedAppleMusicDevToken);
+        // Also save to localStorage for MusicKit JS to use
+        localStorage.setItem('musickit_developer_token', savedAppleMusicDevToken);
+        console.log('🍎 Loaded Apple Music developer token');
       }
 
       // Load friends from storage
@@ -13338,114 +13141,6 @@ const Parachord = () => {
     return () => topTracksObserverRef.current?.disconnect();
   }, [activeView, historyTab, topTracks.tracks, updateSchedulerVisibility, topTracksScrollContainerReady]);
 
-  // Register page context for chart songs resolution
-  useEffect(() => {
-    if (activeView === 'discover' && chartsTab === 'songs' && chartsSongs.length > 0) {
-      const cleanup = registerPageContext('chart-songs');
-      return () => {
-        abortSchedulerContext('chart-songs', { afterCurrentBatch: true });
-        cleanup();
-      };
-    }
-  }, [activeView, chartsTab, chartsSongs.length, registerPageContext, abortSchedulerContext]);
-
-  // Keep ref in sync with chart songs for observer callback
-  useEffect(() => {
-    chartSongsRef.current = chartsSongs;
-  }, [chartsSongs]);
-
-  // IntersectionObserver for chart songs visibility
-  useEffect(() => {
-    if (activeView !== 'discover' || chartsTab !== 'songs') {
-      chartSongsObserverRef.current?.disconnect();
-      visibleChartSongIds.current.clear();
-      setChartSongsScrollContainerReady(false);
-      return;
-    }
-
-    const songs = chartsSongs;
-    if (songs.length === 0) return;
-
-    // Clear stale visible track IDs when source/country changes
-    visibleChartSongIds.current.clear();
-    updateSchedulerVisibility('chart-songs', []);
-
-    // Wait for scroll container to be available
-    const scrollContainer = chartSongsScrollContainerRef.current;
-    if (!scrollContainer) return;
-
-    chartSongsObserverRef.current = new IntersectionObserver(
-      (entries) => {
-        let changed = false;
-        entries.forEach(entry => {
-          const trackId = entry.target.dataset.trackId;
-          if (entry.isIntersecting) {
-            if (!visibleChartSongIds.current.has(trackId)) {
-              visibleChartSongIds.current.add(trackId);
-              changed = true;
-            }
-          } else {
-            if (visibleChartSongIds.current.has(trackId)) {
-              visibleChartSongIds.current.delete(trackId);
-              changed = true;
-            }
-          }
-        });
-
-        if (changed) {
-          const currentSongs = chartSongsRef.current;
-          const visibleTracks = [];
-          visibleChartSongIds.current.forEach(trackId => {
-            const song = currentSongs.find(s => s.id === trackId);
-            if (song) {
-              visibleTracks.push({
-                key: trackId,
-                data: { track: song, artistName: song.artist || 'Unknown Artist' }
-              });
-            }
-          });
-          updateSchedulerVisibility('chart-songs', visibleTracks);
-        }
-      },
-      { root: scrollContainer, rootMargin: '200px' }
-    );
-
-    chartSongsTrackRowRefs.current.forEach((element) => {
-      if (element) chartSongsObserverRef.current.observe(element);
-    });
-
-    // Manually check initial visibility after a short delay
-    setTimeout(() => {
-      if (!chartSongsObserverRef.current) return;
-      const currentSongs = chartSongsRef.current;
-      const visibleTracks = [];
-
-      chartSongsTrackRowRefs.current.forEach((element, trackId) => {
-        if (!element) return;
-        const rect = element.getBoundingClientRect();
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const isVisible = rect.bottom >= containerRect.top - 200 &&
-                         rect.top <= containerRect.bottom + 200;
-        if (isVisible) {
-          visibleChartSongIds.current.add(trackId);
-          const song = currentSongs.find(s => s.id === trackId);
-          if (song) {
-            visibleTracks.push({
-              key: trackId,
-              data: { track: song, artistName: song.artist || 'Unknown Artist' }
-            });
-          }
-        }
-      });
-
-      if (visibleTracks.length > 0) {
-        updateSchedulerVisibility('chart-songs', visibleTracks);
-      }
-    }, 50);
-
-    return () => chartSongsObserverRef.current?.disconnect();
-  }, [activeView, chartsTab, chartsSongs, updateSchedulerVisibility, chartSongsScrollContainerReady, chartsSource, chartsCountry]);
-
   // Register page context for friend history tracks resolution
   useEffect(() => {
     if (activeView === 'friendHistory' && currentFriend) {
@@ -14818,12 +14513,7 @@ ${tracks}
         createdAt: playlist.createdAt || Date.now(),
         addedAt: playlist.addedAt || Date.now(),
         lastModified: Date.now(),
-        isAiPlaylist: playlist.isAiPlaylist || false,
-        // Preserve sync-related properties
-        syncedFrom: playlist.syncedFrom,
-        syncSources: playlist.syncSources,
-        hasUpdates: playlist.hasUpdates,
-        locallyModified: playlist.locallyModified
+        isAiPlaylist: playlist.isAiPlaylist || false
       };
 
       const result = await window.electron.playlists.save(playlistData);
@@ -14935,30 +14625,6 @@ ${tracks}
     }
   };
 
-  // Parse Apple Music Songs Charts JSON feed
-  const parseChartsSongsJSON = (data) => {
-    try {
-      const results = data?.feed?.results || [];
-      return results.map((item, index) => ({
-        id: `charts-song-${index}-${item.artistName}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        title: item.name || '',
-        artist: item.artistName || '',
-        album: item.collectionName || '',
-        albumArt: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : null,
-        rank: index + 1,
-        genres: (item.genres || []).map(g => g.name).filter(g => g !== 'Music'),
-        releaseDate: item.releaseDate ? new Date(item.releaseDate) : null,
-        url: item.url || '',
-        duration: item.durationInMillis ? Math.floor(item.durationInMillis / 1000) : null,
-        source: 'itunes',
-        sources: {} // Will be populated by resolver pipeline
-      })).filter(s => s.title && s.artist);
-    } catch (error) {
-      console.error('Error parsing Charts Songs JSON:', error);
-      return [];
-    }
-  };
-
   // Parse Apple Music Charts RSS feed (legacy fallback)
   const parseChartsRSS = (rssString) => {
     try {
@@ -15062,43 +14728,23 @@ ${tracks}
   };
 
   // Load Charts from Apple Music JSON feed
-  const loadCharts = async (country = 'us', forceReload = false) => {
-    if (chartsLoading || (chartsLoaded && !forceReload)) return;
-
-    const cacheKey = `itunes-${country}`;
-    const now = Date.now();
-    const cached = chartsAlbumsCache.current[cacheKey];
-    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
-
-    // Use cache if valid and not forcing reload
-    if (cacheValid && !forceReload) {
-      console.log(`📊 Using cached Charts for ${country} (${Math.round((now - cached.timestamp) / 60000)}m old)`);
-      setCharts(cached.albums);
-      setChartsLoaded(true);
-      // Still fetch album art in case some were missing
-      if (cacheLoaded) {
-        fetchChartsAlbumArt(cached.albums);
-      }
-      return;
-    }
+  const loadCharts = async () => {
+    if (chartsLoading || chartsLoaded) return;
 
     setChartsLoading(true);
-    console.log(`📊 Loading Charts for ${country}...`);
+    console.log('📊 Loading Charts...');
 
     try {
       // Use JSON endpoint instead of RSS (RSS returns 500 intermittently)
-      const response = await fetch(`https://rss.applemarketingtools.com/api/v2/${country}/music/most-played/50/albums.json`);
+      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/albums.json');
       if (!response.ok) {
         throw new Error(`Failed to fetch charts: ${response.status}`);
       }
 
       const data = await response.json();
-      const albums = parseChartsJSON(data).map(a => ({ ...a, source: 'itunes' }));
+      const albums = parseChartsJSON(data);
 
       console.log(`📊 Parsed ${albums.length} albums from Charts`);
-
-      // Cache the results
-      chartsAlbumsCache.current[cacheKey] = { albums, timestamp: now };
 
       setCharts(albums);
       setChartsLoaded(true);
@@ -15123,224 +14769,6 @@ ${tracks}
         title: 'Load Failed',
         message: 'Failed to load Charts. Please try again.'
       });
-    } finally {
-      setChartsLoading(false);
-    }
-  };
-
-  // Load Songs Charts from Apple Music JSON feed
-  const loadChartsSongs = async (country = 'us', forceReload = false) => {
-    if (chartsSongsLoading || (chartsSongsLoaded && !forceReload)) return;
-
-    const cacheKey = `itunes-${country}`;
-    const now = Date.now();
-    const cached = chartsSongsCache.current[cacheKey];
-    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
-
-    // Use cache if valid and not forcing reload
-    if (cacheValid && !forceReload) {
-      console.log(`🎵 Using cached Songs Charts for ${country} (${Math.round((now - cached.timestamp) / 60000)}m old)`);
-      setChartsSongs(cached.songs);
-      setChartsSongsLoaded(true);
-      return;
-    }
-
-    setChartsSongsLoading(true);
-    console.log(`🎵 Loading Songs Charts for ${country}...`);
-
-    try {
-      const response = await fetch(`https://rss.applemarketingtools.com/api/v2/${country}/music/most-played/50/songs.json`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch songs charts: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const songs = parseChartsSongsJSON(data);
-
-      console.log(`🎵 Parsed ${songs.length} songs from Charts`);
-
-      // Cache the results
-      chartsSongsCache.current[cacheKey] = { songs, timestamp: now };
-
-      setChartsSongs(songs);
-      setChartsSongsLoaded(true);
-
-    } catch (error) {
-      console.error('Failed to load Songs Charts:', error);
-      showNotification('Failed to load Songs Charts', 'error');
-    } finally {
-      setChartsSongsLoading(false);
-    }
-  };
-
-  // Load Last.fm weekly top tracks chart (global)
-  const loadLastfmChartsSongs = async (forceReload = false) => {
-    const cacheKey = 'lastfm';
-    const now = Date.now();
-    const cached = chartsSongsCache.current[cacheKey];
-    const cacheValid = cached && (now - cached.timestamp) < CACHE_TTL.charts;
-
-    // Use cache if valid and not forcing reload
-    if (cacheValid && !forceReload) {
-      console.log(`📻 Using cached Last.fm Weekly Charts (${Math.round((now - cached.timestamp) / 60000)}m old)`);
-      setChartsSongs(cached.songs);
-      setChartsSongsLoaded(true);
-      return;
-    }
-
-    setChartsSongsLoading(true);
-    console.log(`📻 Loading Last.fm Weekly Charts...`);
-
-    try {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        showNotification('Last.fm API key not configured', 'error');
-        setChartsSongsLoading(false);
-        return;
-      }
-
-      const params = new URLSearchParams({
-        method: 'chart.gettoptracks',
-        api_key: apiKey,
-        format: 'json',
-        limit: '50'
-      });
-
-      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.message || 'Last.fm API error');
-      }
-
-      if (data.tracks?.track) {
-        const songs = data.tracks.track.map((track, index) => ({
-          id: `lastfm-chart-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-          title: track.name,
-          artist: track.artist.name,
-          album: '',
-          rank: index + 1,
-          playcount: parseInt(track.playcount) || 0,
-          listeners: parseInt(track.listeners) || 0,
-          url: track.url,
-          duration: parseInt(track.duration) || null,
-          source: 'lastfm',
-          mbid: track.mbid,
-          sources: {} // Will be populated by resolver pipeline
-        }));
-
-        // Cache the results
-        chartsSongsCache.current[cacheKey] = { songs, timestamp: now };
-
-        setChartsSongs(songs);
-        setChartsSongsLoaded(true);
-        console.log(`📻 Loaded ${songs.length} songs from Last.fm Weekly Chart`);
-      }
-    } catch (error) {
-      console.error('Error fetching Last.fm charts:', error);
-      showNotification('Failed to load Last.fm charts', 'error');
-    } finally {
-      setChartsSongsLoading(false);
-    }
-  };
-
-  // Load Last.fm top tracks by tag/genre
-  const loadLastfmChartsTagSongs = async (tag) => {
-    setChartsSongsLoading(true);
-    console.log(`📻 Loading Last.fm ${tag} Charts...`);
-
-    try {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        showNotification('Last.fm API key not configured', 'error');
-        setChartsSongsLoading(false);
-        return;
-      }
-
-      const params = new URLSearchParams({
-        method: 'tag.gettoptracks',
-        tag: tag,
-        api_key: apiKey,
-        format: 'json',
-        limit: '50'
-      });
-
-      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.message || 'Last.fm API error');
-      }
-
-      if (data.tracks?.track) {
-        const songs = data.tracks.track.map((track, index) => ({
-          id: `lastfm-tag-${track.mbid || `${index}-${track.artist.name}-${track.name}`}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-          title: track.name,
-          artist: track.artist.name,
-          album: '',
-          rank: index + 1,
-          duration: parseInt(track.duration) || null,
-          source: 'lastfm',
-          mbid: track.mbid
-        }));
-        setChartsSongs(songs);
-        setChartsSongsLoaded(true);
-        console.log(`📻 Loaded ${songs.length} ${tag} songs from Last.fm`);
-      }
-    } catch (error) {
-      console.error('Error fetching Last.fm tag charts:', error);
-      showNotification('Failed to load Last.fm genre charts', 'error');
-    } finally {
-      setChartsSongsLoading(false);
-    }
-  };
-
-  // Load Last.fm top albums by tag (for Albums tab with Last.fm source)
-  const loadLastfmChartsAlbums = async (tag = 'rock') => {
-    setChartsLoading(true);
-    console.log(`📻 Loading Last.fm ${tag} Albums...`);
-
-    try {
-      const apiKey = getLastfmApiKey();
-      if (!apiKey) {
-        showNotification('Last.fm API key not configured', 'error');
-        setChartsLoading(false);
-        return;
-      }
-
-      const params = new URLSearchParams({
-        method: 'tag.gettopalbums',
-        tag: tag,
-        api_key: apiKey,
-        format: 'json',
-        limit: '50'
-      });
-
-      const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params}`);
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.message || 'Last.fm API error');
-      }
-
-      if (data.albums?.album) {
-        const albums = data.albums.album.map((album, index) => ({
-          id: album.mbid || `lastfm-album-${index}-${album.artist.name}-${album.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-          title: album.name,
-          artist: album.artist.name,
-          rank: index + 1,
-          url: album.url,
-          source: 'lastfm',
-          mbid: album.mbid,
-          albumArt: album.image?.find(img => img.size === 'extralarge')?.['#text'] || null
-        }));
-        setCharts(albums);
-        setChartsLoaded(true);
-        console.log(`📻 Loaded ${albums.length} ${tag} albums from Last.fm`);
-      }
-    } catch (error) {
-      console.error('Error fetching Last.fm album charts:', error);
-      showNotification('Failed to load Last.fm album charts', 'error');
     } finally {
       setChartsLoading(false);
     }
@@ -15837,9 +15265,9 @@ ${tracks}
 
       if (weeklyPlaylists.length === 0) return null;
 
-      // Get recent weekly playlists (enough to fill the row on home page)
+      // Get this week's and last week's playlists (first two most recent)
       const results = [];
-      for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
+      for (let i = 0; i < Math.min(2, weeklyPlaylists.length); i++) {
         const weeklyJam = weeklyPlaylists[i];
         const playlistId = weeklyJam.playlist?.identifier?.split('/').pop();
         if (!playlistId) continue;
@@ -15847,8 +15275,7 @@ ${tracks}
         // Parse the date from the title to create a friendly label
         const title = weeklyJam.playlist?.title || 'Weekly Jam';
         const dateMatch = title.match(/(\d{4}-\d{2}-\d{2})/);
-        // Generate week labels: This Week, Last Week, 2 Weeks Ago, 3 Weeks Ago
-        let weekLabel = i === 0 ? 'This Week' : i === 1 ? 'Last Week' : `${i} Weeks Ago`;
+        let weekLabel = i === 0 ? 'This Week' : 'Last Week';
 
         results.push({
           id: playlistId,
@@ -15943,50 +15370,9 @@ ${tracks}
   useEffect(() => {
     // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
     if (activeView === 'discover' && cacheLoaded && !chartsLoaded) {
-      if (chartsSource === 'itunes') {
-        loadCharts(chartsCountry);
-      } else {
-        loadLastfmChartsAlbums(chartsGenre || 'rock');
-      }
+      loadCharts();
     }
   }, [activeView, cacheLoaded, chartsLoaded]);
-
-  // Reload charts when source or country changes
-  useEffect(() => {
-    // Only reload if we're on the discover page AND cache is loaded
-    if (activeView !== 'discover' || !cacheLoaded) return;
-
-    // Albums are always iTunes
-    if (chartsTab === 'albums') {
-      loadCharts(chartsCountry, true);
-    } else {
-      // Songs tab
-      if (chartsSource === 'itunes') {
-        loadChartsSongs(chartsCountry, true);
-      } else {
-        loadLastfmChartsSongs();
-      }
-    }
-  }, [chartsSource, chartsCountry]);
-
-  // Close charts dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (chartsSourceDropdownOpen) setChartsSourceDropdownOpen(false);
-      if (chartsCountryDropdownOpen) setChartsCountryDropdownOpen(false);
-    };
-
-    if (chartsSourceDropdownOpen || chartsCountryDropdownOpen) {
-      // Use setTimeout to avoid closing on the same click that opened the dropdown
-      const timer = setTimeout(() => {
-        document.addEventListener('click', handleClickOutside);
-      }, 0);
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
-  }, [chartsSourceDropdownOpen, chartsCountryDropdownOpen, chartsGenreDropdownOpen]);
 
   // Load critics picks when navigating to critics-picks page
   useEffect(() => {
@@ -16014,7 +15400,7 @@ ${tracks}
       }
       // Load charts if not already loaded
       if (!chartsLoaded && !chartsLoading) {
-        loadCharts(chartsCountry);
+        loadCharts();
       }
       // Load critics picks if not already loaded
       if (!criticsPicksLoaded && !criticsPicksLoading) {
@@ -19343,9 +18729,6 @@ ${tracks}
     }
   };
 
-  // Assign loadPlaylist to ref for context menu access
-  loadPlaylistRef.current = loadPlaylist;
-
   // Keep queue in sync with playlistTracks as they get resolved
   // This ensures queue items get their sources updated without re-setting the entire queue
   useEffect(() => {
@@ -20169,82 +19552,234 @@ ${tracks}
     }
   };
 
-  const connectQobuz = async (username, password) => {
-    console.log('=== Connect Qobuz Clicked ===');
-    setQobuzError(null);
-    setQobuzConnecting(true);
+  // Apple Music / MusicKit functions (Native bridge for macOS)
+  const [appleMusicNativeAvailable, setAppleMusicNativeAvailable] = useState(false);
 
-    if (!window.electron?.qobuz) {
-      console.error('window.electron.qobuz not available!');
-      setQobuzError('Qobuz API not available');
-      setQobuzConnecting(false);
+  // Check if native MusicKit is available on startup
+  useEffect(() => {
+    const checkMusicKitAvailable = async () => {
+      // Check for MusicKit JS first (cross-platform)
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      const developerToken = localStorage.getItem('musickit_developer_token') || '';
+      const userToken = localStorage.getItem('musickit_user_token') || '';
+
+      if (musicKitWeb && developerToken) {
+        try {
+          console.log('🍎 Initializing MusicKit JS...');
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+
+          const status = musicKitWeb.getAuthStatus();
+          console.log('🍎 MusicKit JS status:', status);
+
+          // If MusicKit JS is already authorized (from previous session), mark as connected
+          if (status.authorized) {
+            console.log('🍎 MusicKit JS already authorized');
+            setAppleMusicConnected(true);
+          } else if (userToken) {
+            // We have a stored user token but MusicKit JS isn't authorized
+            // The user token will be used automatically by MusicKit JS for API calls
+            console.log('🍎 Stored user token available, attempting session restore...');
+          }
+        } catch (error) {
+          console.log('🍎 MusicKit JS init failed:', error.message);
+        }
+      }
+
+      // Also check native MusicKit availability (macOS)
+      if (window.electron?.musicKit) {
+        const available = await window.electron.musicKit.isAvailable();
+        setAppleMusicNativeAvailable(available);
+        console.log('🍎 Native MusicKit available:', available);
+
+        // If available and we have a saved auth state, check if still authorized
+        if (available) {
+          const authStatus = await window.electron.musicKit.checkAuth();
+          if (authStatus.success && authStatus.authorized) {
+            console.log('🍎 Native MusicKit already authorized');
+            setAppleMusicConnected(true);
+          }
+        }
+      }
+    };
+    checkMusicKitAvailable();
+  }, []);
+
+  const connectAppleMusic = async () => {
+    console.log('=== Connect Apple Music Clicked ===');
+
+    // Try MusicKit JS first (works cross-platform, requires developer token)
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    const developerToken = localStorage.getItem('musickit_developer_token') || '';
+
+    if (musicKitWeb && developerToken) {
+      try {
+        console.log('[AppleMusic] Trying MusicKit JS authorization...');
+
+        // Configure MusicKit JS if not already configured
+        const status = musicKitWeb.getAuthStatus();
+        if (!status.configured) {
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+        }
+
+        // Request authorization (Apple ID sign-in)
+        const authResult = await musicKitWeb.authorize();
+        console.log('[AppleMusic] MusicKit JS auth result:', authResult);
+
+        if (authResult.authorized) {
+          console.log('🍎 MusicKit JS authorized successfully');
+          setAppleMusicConnected(true);
+
+          // Store the music user token for session persistence
+          if (authResult.userToken) {
+            localStorage.setItem('musickit_user_token', authResult.userToken);
+            console.log('🍎 Music user token stored');
+          }
+
+          // Save auth state
+          if (window.electron?.store) {
+            await window.electron.store.set('applemusic_authorized', true);
+          }
+
+          showToast('Apple Music connected successfully', 'success');
+          return;
+        }
+      } catch (error) {
+        console.log('[AppleMusic] MusicKit JS auth failed:', error.message);
+        // Fall through to native MusicKit
+      }
+    }
+
+    // Fall back to native MusicKit (macOS only)
+    if (!window.electron?.musicKit) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'MusicKit Not Available',
+        message: developerToken
+          ? 'MusicKit JS authorization failed. Please check your developer token.'
+          : 'MusicKit requires either a developer token (Settings → Resolvers → Apple Music) or macOS native integration.'
+      });
+      return;
+    }
+
+    const isAvailable = await window.electron.musicKit.isAvailable();
+    if (!isAvailable) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'MusicKit Not Available',
+        message: 'Native MusicKit is only available on macOS. For cross-platform support, add your MusicKit developer token in Settings → Resolvers → Apple Music.'
+      });
       return;
     }
 
     try {
-      console.log('Calling Qobuz login...');
-      const result = await window.electron.qobuz.login(username, password);
-      console.log('Qobuz login result:', result);
+      // Start the MusicKit helper if needed
+      console.log('Starting MusicKit helper...');
+      const startResult = await window.electron.musicKit.start();
+      if (!startResult.success) {
+        throw new Error('Failed to start MusicKit helper');
+      }
 
-      if (result.success) {
-        setQobuzToken(result.token || true);
-        setQobuzConnected(true);
-        setQobuzUsername(result.username);
-        setQobuzHasSubscription(result.hasSubscription || false);
-        setQobuzUsernameInput('');
-        setQobuzPasswordInput('');
+      // Request authorization (will show system dialog for Apple ID sign-in)
+      console.log('Requesting MusicKit authorization...');
+      const authResult = await window.electron.musicKit.authorize();
 
-        if (!result.hasSubscription) {
-          setQobuzError('Account connected but no active subscription found. Streaming may be limited.');
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Authorization failed');
+      }
+
+      if (authResult.authorized) {
+        console.log('🍎 MusicKit authorized successfully');
+        setAppleMusicConnected(true);
+
+        // Save auth state
+        if (window.electron?.store) {
+          await window.electron.store.set('applemusic_authorized', true);
         }
+
+        showToast('Apple Music connected successfully', 'success');
       } else {
-        setQobuzError(result.error || 'Login failed');
+        // User denied or other status
+        showConfirmDialog({
+          type: 'info',
+          title: 'Authorization Required',
+          message: 'Apple Music access was not granted. Status: ' + authResult.status
+        });
       }
     } catch (error) {
-      console.error('Qobuz login error:', error);
-      setQobuzError(error.message || 'Login failed');
-    } finally {
-      setQobuzConnecting(false);
-    }
-  };
-
-  const disconnectQobuz = async () => {
-    if (window.electron?.qobuz) {
-      await window.electron.qobuz.disconnect();
-      setQobuzToken(null);
-      setQobuzConnected(false);
-      setQobuzUsername(null);
-      setQobuzHasSubscription(false);
-      setQobuzError(null);
-    }
-  };
-
-  // Qobuz authentication check
-  const checkQobuzToken = async () => {
-    console.log('Checking Qobuz token...');
-    if (window.electron?.qobuz) {
-      const tokenData = await window.electron.qobuz.checkToken();
-      console.log('Qobuz token data received:', {
-        hasData: !!tokenData,
-        hasToken: !!tokenData?.token,
-        username: tokenData?.username,
-        hasSubscription: tokenData?.hasSubscription
+      console.error('Apple Music auth error:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Authentication Failed',
+        message: error.message || 'Apple Music authentication failed. Please try again.'
       });
-      if (tokenData && tokenData.token) {
-        console.log('Valid Qobuz token found, setting connected state');
-        setQobuzToken(tokenData.token);
-        setQobuzConnected(true);
-        setQobuzUsername(tokenData.username);
-        setQobuzHasSubscription(tokenData.hasSubscription || false);
-      } else {
-        console.log('No valid Qobuz token found');
-        setQobuzToken(null);
-        setQobuzConnected(false);
-        setQobuzUsername(null);
-        setQobuzHasSubscription(false);
+    }
+  };
+
+  const disconnectAppleMusic = async () => {
+    setAppleMusicConnected(false);
+
+    // Clear MusicKit JS user token
+    localStorage.removeItem('musickit_user_token');
+
+    // Sign out of MusicKit JS
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb) {
+      try {
+        await musicKitWeb.unauthorize();
+      } catch (e) {
+        console.log('[AppleMusic] MusicKit JS sign out error:', e);
+      }
+    }
+
+    // Clear from persistent storage
+    if (window.electron?.store) {
+      await window.electron.store.delete('applemusic_authorized');
+    }
+
+    // Remove Apple Music sources from all tracks
+    removeResolverSources('applemusic');
+    setActiveResolvers(prev => prev.filter(id => id !== 'applemusic'));
+
+    showToast('Apple Music disconnected', 'info');
+  };
+
+  const saveAppleMusicDeveloperToken = async () => {
+    console.log('=== Save Apple Music Developer Token ===');
+    const token = appleMusicDeveloperToken.trim();
+    console.log('Token length:', token.length);
+
+    // Save to localStorage for MusicKit JS
+    localStorage.setItem('musickit_developer_token', token);
+    console.log('Token saved to localStorage');
+
+    // Also save to electron store for persistence
+    if (window.electron?.store) {
+      try {
+        await window.electron.store.set('applemusic_developer_token', token);
+        console.log('Token saved to electron store');
+      } catch (error) {
+        console.error('Failed to save token to electron store:', error);
+      }
+    }
+
+    setAppleMusicTokenSaved(true);
+    // Reset the saved state after 3 seconds
+    setTimeout(() => setAppleMusicTokenSaved(false), 3000);
+
+    // Try to configure MusicKit JS immediately with the new token
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb && token) {
+      try {
+        console.log('🍎 Configuring MusicKit JS with new token...');
+        await musicKitWeb.configure(token, 'Parachord', '1.0.0');
+        console.log('🍎 MusicKit JS configured');
+        showToast('MusicKit token saved. Click "Connect" to sign in with Apple ID.', 'success');
+      } catch (error) {
+        console.error('🍎 Failed to configure MusicKit JS:', error);
+        showToast('Token saved but MusicKit configuration failed: ' + error.message, 'warning');
       }
     } else {
-      console.log('window.electron.qobuz not available');
+      showToast('Token saved', 'success');
     }
   };
 
@@ -20531,11 +20066,6 @@ useEffect(() => {
   return () => clearInterval(tokenRefreshInterval);
 }, []);
 
-// Check Qobuz auth on mount
-useEffect(() => {
-  checkQobuzToken();
-}, []);
-
 // Spotify Connect - Get available devices
 const getSpotifyDevices = async () => {
   if (!spotifyToken) return [];
@@ -20752,7 +20282,7 @@ const playOnSpotifyConnect = async (track) => {
 const getCurrentPlaybackState = async () => {
   if (!spotifyToken) return;
 
-  // Don't update track info when browser playback is active
+  // Don't update track info from Spotify when browser playback is active
   // This prevents overwriting the current track with whatever Spotify last played
   if (browserPlaybackActive || isExternalPlayback) {
     return;
@@ -20760,16 +20290,8 @@ const getCurrentPlaybackState = async () => {
 
   // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
   // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
-  // Use both the ref check AND the audio element state for extra safety against race conditions
   const currentResolver = currentTrackRef.current?._activeResolver;
   if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
-    return;
-  }
-
-  // Additional safety: if HTML5 audio is actively playing, don't let Spotify polling overwrite
-  // This catches race conditions where the ref hasn't updated yet but audio has started
-  if (audioRef.current && !audioRef.current.paused && audioRef.current.src) {
-    console.log('⚠️ Skipping Spotify polling - HTML5 audio is actively playing');
     return;
   }
 
@@ -21144,6 +20666,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => {
                 navigateTo('discover');
+                loadCharts();
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
@@ -25731,210 +25254,118 @@ useEffect(() => {
             )
           ),
 
-          // Playlist sync banner (shown when playlist needs sync - push, pull, or conflict)
-          (() => {
-            const playlist = selectedPlaylist;
-            if (!playlist?.syncedFrom) return null;
-
-            const hasRemoteUpdates = playlist.hasUpdates;
-            const hasLocalChanges = playlist.locallyModified;
-            const provider = playlist.syncedFrom.resolver;
-            const providerName = provider === 'spotify' ? 'Spotify' : provider;
-
-            // No sync needed
-            if (!hasRemoteUpdates && !hasLocalChanges) return null;
-
-            // Determine sync state and which version is newer
-            const localModTime = playlist.lastModified || 0;
-            const lastSyncTime = playlist.syncSources?.[provider]?.syncedAt || 0;
-
-            // For conflicts, local wins if modified after last sync
-            const localIsNewer = localModTime > lastSyncTime;
-
-            // Sync state: 'push' | 'pull' | 'conflict'
-            let syncState;
-            if (hasLocalChanges && hasRemoteUpdates) {
-              syncState = 'conflict';
-            } else if (hasLocalChanges) {
-              syncState = 'push';
-            } else {
-              syncState = 'pull';
+          // Playlist update banner (shown when playlist has updates from sync source)
+          selectedPlaylist?.hasUpdates && React.createElement('div', {
+            className: 'mx-4 mb-4 overflow-hidden rounded-lg',
+            style: {
+              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%)',
+              border: '1px solid rgba(147, 51, 234, 0.25)',
+              boxShadow: '0 2px 8px rgba(147, 51, 234, 0.08)'
             }
-
-            // Colors based on state
-            const colors = {
-              push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-green-600', iconBg: 'rgba(34, 197, 94, 0.2)' },
-              pull: { bg: 'rgba(147, 51, 234, 0.12)', border: 'rgba(147, 51, 234, 0.25)', text: 'text-purple-600', iconBg: 'rgba(147, 51, 234, 0.2)' },
-              conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-yellow-600', iconBg: 'rgba(234, 179, 8, 0.2)' }
-            };
-            const c = colors[syncState];
-
-            // Push handler
-            const handlePush = async () => {
-              const externalId = playlist.syncedFrom?.externalId;
-              if (!provider || !externalId) return;
-
-              try {
-                // Push both tracks and metadata (name, description)
-                const metadata = {
-                  name: playlist.title,
-                  description: playlist.description
-                };
-                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks, metadata);
-                if (result?.success) {
-                  const updatedPlaylist = {
-                    ...playlist,
-                    locallyModified: false,
-                    hasUpdates: false,
-                    syncedFrom: {
-                      ...playlist.syncedFrom,
-                      snapshotId: result.snapshotId
-                    },
-                    syncSources: {
-                      ...playlist.syncSources,
-                      [provider]: { ...playlist.syncSources?.[provider], syncedAt: Date.now() }
-                    }
-                  };
-                  setSelectedPlaylist(updatedPlaylist);
-                  setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
-                  await savePlaylistToStore(updatedPlaylist);
-                } else {
-                  console.error('Failed to push playlist:', result?.error);
-                  alert(`Failed to push changes: ${result?.error || 'Unknown error'}`);
-                }
-              } catch (err) {
-                console.error('Failed to push playlist:', err);
-                alert(`Failed to push changes: ${err.message}`);
-              }
-            };
-
-            // Pull handler
-            const handlePull = async () => {
-              const externalId = playlist.syncedFrom?.externalId;
-              if (!provider || !externalId) return;
-
-              try {
-                const result = await window.electron.sync.fetchPlaylistTracks(provider, externalId);
-                if (result?.success && result.tracks) {
-                  const updatedPlaylist = {
-                    ...playlist,
-                    tracks: result.tracks,
-                    hasUpdates: false,
-                    locallyModified: false,
-                    syncedFrom: {
-                      ...playlist.syncedFrom,
-                      snapshotId: result.snapshotId
-                    },
-                    syncSources: {
-                      ...playlist.syncSources,
-                      [provider]: { ...playlist.syncSources?.[provider], syncedAt: Date.now() }
-                    },
-                    lastModified: Date.now()
-                  };
-                  setSelectedPlaylist(updatedPlaylist);
-                  setPlaylistTracks(result.tracks);
-                  setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
-                  await savePlaylistToStore(updatedPlaylist);
-                }
-              } catch (err) {
-                console.error('Failed to pull playlist updates:', err);
-              }
-            };
-
-            // Dismiss handler (clears sync flags without syncing)
-            const handleDismiss = async () => {
-              const updatedPlaylist = { ...playlist, hasUpdates: false, locallyModified: false };
-              setPlaylists(prev => prev.map(p => p.id === playlist.id ? { ...p, hasUpdates: false, locallyModified: false } : p));
-              setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false, locallyModified: false }));
-              await savePlaylistToStore(updatedPlaylist);
-            };
-
-            return React.createElement('div', {
-              className: 'mx-4 mb-4 overflow-hidden rounded-lg',
-              style: {
-                background: `linear-gradient(135deg, ${c.bg} 0%, ${c.bg} 100%)`,
-                border: `1px solid ${c.border}`,
-                boxShadow: `0 2px 8px ${c.bg}`
-              }
+          },
+            React.createElement('div', {
+              className: 'flex items-center justify-between px-4 py-3'
             },
-              React.createElement('div', {
-                className: 'flex items-center justify-between px-4 py-3'
-              },
-                // Left side: icon + message
-                React.createElement('div', { className: 'flex items-center gap-3' },
-                  React.createElement('div', {
-                    className: 'flex items-center justify-center w-8 h-8 rounded-full',
-                    style: { background: c.iconBg }
+              // Left side: icon + message
+              React.createElement('div', { className: 'flex items-center gap-3' },
+                // Animated sync icon
+                React.createElement('div', {
+                  className: 'flex items-center justify-center w-8 h-8 rounded-full',
+                  style: {
+                    background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%)'
+                  }
+                },
+                  React.createElement('svg', {
+                    className: 'w-4 h-4 text-purple-600',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    viewBox: '0 0 24 24',
+                    style: { animation: 'spin 3s linear infinite' }
                   },
-                    React.createElement('svg', {
-                      className: `w-4 h-4 ${c.text}`,
-                      fill: 'none',
-                      stroke: 'currentColor',
-                      viewBox: '0 0 24 24'
-                    },
-                      syncState === 'push'
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
-                        : syncState === 'pull'
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
-                    )
-                  ),
-                  React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('span', {
-                      className: `text-xs font-medium tracking-widest uppercase ${c.text}`
-                    }, syncState === 'push' ? 'Local Changes' : syncState === 'pull' ? 'Remote Changes' : 'Sync Conflict'),
-                    React.createElement('span', {
-                      className: 'text-sm text-gray-600'
-                    }, syncState === 'push'
-                      ? `Push your changes to ${providerName}`
-                      : syncState === 'pull'
-                      ? `Updated on ${providerName}`
-                      : localIsNewer
-                      ? `Your local changes are newer`
-                      : `${providerName} version is newer`)
+                    React.createElement('path', {
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round',
+                      strokeWidth: 2,
+                      d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+                    })
                   )
                 ),
-                // Right side: action buttons
-                React.createElement('div', { className: 'flex items-center gap-2' },
-                  React.createElement('button', {
-                    onClick: handleDismiss,
-                    className: 'px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors'
-                  }, 'Dismiss'),
-
-                  // For conflict state, show both options
-                  syncState === 'conflict' && React.createElement('button', {
-                    onClick: handlePull,
-                    className: 'flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-full hover:bg-gray-300 transition-colors'
+                // Text content
+                React.createElement('div', { className: 'flex flex-col' },
+                  React.createElement('span', {
+                    className: 'text-xs font-medium tracking-widest uppercase text-purple-500'
+                  }, 'Sync Available'),
+                  React.createElement('span', {
+                    className: 'text-sm text-gray-600'
+                  }, `Updated on ${selectedPlaylist.syncedFrom?.resolver || 'the source'}`)
+                )
+              ),
+              // Right side: action buttons
+              React.createElement('div', { className: 'flex items-center gap-2' },
+                React.createElement('button', {
+                  onClick: async () => {
+                    const updatedPlaylist = { ...selectedPlaylist, hasUpdates: false };
+                    setPlaylists(prev => prev.map(p =>
+                      p.id === selectedPlaylist.id ? { ...p, hasUpdates: false } : p
+                    ));
+                    setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false }));
+                    await savePlaylistToStore(updatedPlaylist);
                   },
-                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                    ),
-                    `Use ${providerName}`
+                  className: 'px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors'
+                }, 'Dismiss'),
+                React.createElement('button', {
+                  onClick: async () => {
+                    // Fetch updated tracks from sync source
+                    const provider = selectedPlaylist.syncedFrom?.resolver;
+                    const externalId = selectedPlaylist.syncedFrom?.externalId;
+                    if (provider && externalId) {
+                      try {
+                        const result = await window.electron.sync.fetchPlaylistTracks?.(provider, externalId);
+                        if (result?.success && result.tracks) {
+                          // Update playlist with new tracks and clear hasUpdates
+                          const updatedPlaylist = {
+                            ...selectedPlaylist,
+                            tracks: result.tracks,
+                            hasUpdates: false,
+                            syncedFrom: {
+                              ...selectedPlaylist.syncedFrom,
+                              snapshotId: result.snapshotId
+                            },
+                            lastModified: Date.now()
+                          };
+                          setSelectedPlaylist(updatedPlaylist);
+                          setPlaylistTracks(result.tracks);
+                          setPlaylists(prev => prev.map(p =>
+                            p.id === selectedPlaylist.id ? updatedPlaylist : p
+                          ));
+                          await savePlaylistToStore(updatedPlaylist);
+                        }
+                      } catch (err) {
+                        console.error('Failed to fetch playlist updates:', err);
+                      }
+                    }
+                  },
+                  className: 'flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-full hover:bg-purple-700 transition-colors',
+                  style: { boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)' }
+                },
+                  React.createElement('svg', {
+                    className: 'w-3.5 h-3.5',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    viewBox: '0 0 24 24'
+                  },
+                    React.createElement('path', {
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round',
+                      strokeWidth: 2,
+                      d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'
+                    })
                   ),
-
-                  // Primary action button
-                  React.createElement('button', {
-                    onClick: syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? handlePush : handlePull,
-                    className: `flex items-center gap-1.5 px-4 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
-                      syncState === 'push' ? 'bg-green-600 hover:bg-green-700' :
-                      syncState === 'pull' ? 'bg-purple-600 hover:bg-purple-700' :
-                      localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'
-                    }`,
-                    style: { boxShadow: `0 2px 8px ${syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? 'rgba(34, 197, 94, 0.3)' : 'rgba(147, 51, 234, 0.3)'}` }
-                  },
-                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-                      syncState === 'push' || (syncState === 'conflict' && localIsNewer)
-                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
-                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
-                    ),
-                    syncState === 'push' ? `Push to ${providerName}` :
-                    syncState === 'pull' ? 'Pull Changes' :
-                    localIsNewer ? 'Push Local' : 'Pull Remote'
-                  )
+                  'Sync Now'
                 )
               )
-            );
-          })(),
+            )
+          ),
 
           // Two-column layout: playlist cover + metadata on left, tracklist on right
           React.createElement('div', { className: 'flex gap-0 p-6' },
@@ -26735,7 +26166,7 @@ useEffect(() => {
 
             // Grid view
             if (playlistsViewMode === 'grid') {
-              return React.createElement('div', { className: 'flex flex-wrap gap-x-4 gap-y-5' },
+              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5' },
                 sorted.map((playlist, index) => {
                   const covers = allPlaylistCovers[playlist.id] || [];
                   const hasCachedCovers = covers.length > 0;
@@ -26763,16 +26194,13 @@ useEffect(() => {
                         });
                       }
                     },
-                    className: 'group cursor-pointer release-card card-fade-up flex-shrink-0',
+                    className: 'group cursor-pointer release-card card-fade-up',
                     style: {
                       padding: '10px',
                       borderRadius: '10px',
                       backgroundColor: '#ffffff',
                       boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                      animationDelay: `${animationDelay}ms`,
-                      width: 'calc((100% - 64px) / 5)', // 5 columns with 16px gaps
-                      minWidth: '160px',
-                      maxWidth: '220px'
+                      animationDelay: `${animationDelay}ms`
                     }
                   },
                     // Album art mosaic or placeholder (draggable)
@@ -27639,7 +27067,10 @@ useEffect(() => {
                                   );
                                   const tracksToPlay = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
                                   if (tracksToPlay.length > 0) {
-                                    playTrackCollection(tracksToPlay, { type: 'album', name: album.title });
+                                    handlePlay(tracksToPlay[0]);
+                                    if (tracksToPlay.length > 1) {
+                                      setCurrentQueue(tracksToPlay.slice(1));
+                                    }
                                   }
                                 }
                               },
@@ -27699,8 +27130,8 @@ useEffect(() => {
                     }, 'ListenBrainz')
                   )
                 ),
-                // Row of weekly jam playlist cards
-                React.createElement('div', { className: 'flex gap-4' },
+                // 2x2 grid of playlist cards (this week & last week)
+                React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
                   homeData.weeklyJams.map((jam, index) =>
                     React.createElement('button', {
                       key: jam.id,
@@ -27709,9 +27140,7 @@ useEffect(() => {
                         backgroundColor: '#ffffff',
                         border: 'none',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                        animationDelay: `${index * 50}ms`,
-                        flex: '1 1 0',
-                        minWidth: '180px'
+                        animationDelay: `${index * 50}ms`
                       },
                       onClick: () => {
                         // Open ephemeral playlist view
@@ -27788,7 +27217,10 @@ useEffect(() => {
                                 }));
                               }
                               if (tracks.length > 0) {
-                                playTrackCollection(tracks, { type: 'weekly-jam', name: `${jam.weekLabel}'s Weekly Jam` });
+                                handlePlay(tracks[0]);
+                                if (tracks.length > 1) {
+                                  setCurrentQueue(tracks.slice(1));
+                                }
                                 showToast(`Playing ${jam.weekLabel}'s Weekly Jam`, 'success');
                               }
                             }
@@ -27852,7 +27284,8 @@ useEffect(() => {
                               animationDelay: `${index * 50}ms`
                             },
                             onClick: () => {
-                              loadPlaylist(playlist);
+                              setSelectedPlaylist(playlist);
+                              navigateTo('playlist-view');
                             }
                           },
                             // 2x2 album art grid or placeholder with hover play button
@@ -27886,7 +27319,8 @@ useEffect(() => {
                                     e.stopPropagation();
                                     // Play all tracks in the playlist
                                     if (playlist.tracks && playlist.tracks.length > 0) {
-                                      playTrackCollection(playlist.tracks, { type: 'playlist', name: playlist.title });
+                                      setQueue(playlist.tracks);
+                                      handlePlay(playlist.tracks[0]);
                                       showToast(`Playing ${playlist.title}`, 'success');
                                     } else {
                                       showToast('Playlist is empty', 'info');
@@ -28131,7 +27565,7 @@ useEffect(() => {
                     // Header section - clickable to discover page
                     React.createElement('button', {
                       className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
-                      onClick: () => { navigateTo('discover'); }
+                      onClick: () => { navigateTo('discover'); loadCharts(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
@@ -29349,43 +28783,17 @@ useEffect(() => {
                     textTransform: 'uppercase'
                   }
                 }, 'POP OF THE TOPS'),
-                // Header tabs (Albums | Songs)
                 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
                   style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  ['albums', 'songs'].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-${tab}`,
-                      className: 'text-white/50 mx-3'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: tab,
-                      onClick: () => {
-                        setChartsTab(tab);
-                        if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
-                          if (chartsSource === 'itunes') {
-                            loadChartsSongs(chartsCountry, true);
-                          } else {
-                            loadLastfmChartsSongs();
-                          }
-                        }
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        chartsTab === tab
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
-                  ]).flat().filter(Boolean)
+                  React.createElement('span', {
+                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                  }, `${charts.length} Albums`)
                 ),
                 React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
-                }, chartsTab === 'albums'
-                  ? 'Top 50 most played albums on Apple Music'
-                  : chartsSource === 'itunes'
-                    ? 'Top 50 most played songs on Apple Music'
-                    : 'Last.fm Weekly Chart')
+                }, 'Top 50 most played albums on Apple Music')
               ),
               // COLLAPSED STATE - Inline layout
               chartsHeaderCollapsed && React.createElement('div', {
@@ -29403,172 +28811,90 @@ useEffect(() => {
                     textTransform: 'uppercase'
                   }
                 }, 'POP OF THE TOPS'),
-                // Header tabs (Albums | Songs) - collapsed inline
-                React.createElement('div', {
-                  className: 'flex items-center gap-1 ml-6',
-                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-                },
-                  ['albums', 'songs'].map((tab, index) => [
-                    index > 0 && React.createElement('span', {
-                      key: `sep-${tab}`,
-                      className: 'text-white/50 mx-2'
-                    }, '|'),
-                    React.createElement('button', {
-                      key: tab,
-                      onClick: () => {
-                        setChartsTab(tab);
-                        if (tab === 'songs' && chartsSongs.length === 0 && !chartsSongsLoading) {
-                          if (chartsSource === 'itunes') {
-                            loadChartsSongs(chartsCountry, true);
-                          } else {
-                            loadLastfmChartsSongs();
-                          }
-                        }
-                      },
-                      className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                        chartsTab === tab ? 'text-white' : 'text-white/60 hover:text-white'
-                      }`
-                    }, tab.charAt(0).toUpperCase() + tab.slice(1))
-                  ]).flat().filter(Boolean)
-                ),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, `${chartsTab === 'albums' ? charts.length : chartsSongs.length} ${chartsTab.charAt(0).toUpperCase() + chartsTab.slice(1)}`)
+                }, `${charts.length} Albums`)
               )
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center gap-4 px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
             style: { flexShrink: 0 }
           },
-            // Source dropdown (only show on Songs tab - Albums is iTunes only)
-            chartsTab === 'songs' && React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setChartsSourceDropdownOpen(!chartsSourceDropdownOpen); },
-                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
-              },
-                React.createElement('span', { className: 'text-gray-400' }, 'Source:'),
-                React.createElement('span', { className: 'font-medium' }, chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              chartsSourceDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
-              },
-                [
-                  { value: 'itunes', label: 'iTunes' },
-                  { value: 'lastfm', label: 'Last.fm' }
-                ].map(option =>
-                  React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsSource(option.value);
-                      setChartsSourceDropdownOpen(false);
-                      setChartsSongsLoaded(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsSource === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    option.label,
-                    chartsSource === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
-
-            // Country dropdown (shown for iTunes only)
-            chartsSource === 'itunes' && React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
-                className: 'flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors'
-              },
-                React.createElement('span', { className: 'text-gray-400' }, 'Country:'),
-                React.createElement('span', { className: 'font-medium' }, CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States'),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              chartsCountryDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[180px] max-h-[300px] overflow-y-auto z-30 border border-gray-200'
-              },
-                CHARTS_COUNTRIES.map(country =>
-                  React.createElement('button', {
-                    key: country.code,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setChartsCountry(country.code);
-                      setChartsCountryDropdownOpen(false);
-                      setChartsLoaded(false);
-                      setChartsSongsLoaded(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      chartsCountry === country.code ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
-                  },
-                    country.name,
-                    chartsCountry === country.code && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                    )
-                  )
-                )
-              )
-            ),
-
-            // Last.fm weekly chart label (no filters needed - it's a global weekly chart)
-            chartsTab === 'songs' && chartsSource === 'lastfm' && React.createElement('span', {
-              className: 'text-sm text-gray-500'
-            }, 'Weekly Global Chart'),
-
-            React.createElement('div', { className: 'flex-1' }),
-            // Search
-            React.createElement('div', { className: 'flex items-center' },
-              chartsSearchOpen ?
-                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
-                  React.createElement('input', {
-                    type: 'text',
-                    value: chartsSearch,
-                    onChange: (e) => setChartsSearch(e.target.value),
-                    onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
-                    autoFocus: true,
-                    placeholder: 'Filter...',
-                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
-                    style: { width: '150px' }
-                  }),
-                  chartsSearch && React.createElement('button', {
-                    onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
-                    className: 'ml-2 text-gray-400 hover:text-gray-600'
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                    )
-                  )
-                )
-              :
+            // Sort dropdown
+              React.createElement('div', { className: 'relative' },
                 React.createElement('button', {
-                  onClick: () => setChartsSearchOpen(true),
-                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  onClick: (e) => { e.stopPropagation(); setChartsSortDropdownOpen(!chartsSortDropdownOpen); },
+                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
                 },
-                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  React.createElement('span', null, chartsSortOptions.find(o => o.value === chartsSort)?.label || 'Sort'),
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                  )
+                ),
+                chartsSortDropdownOpen && React.createElement('div', {
+                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                },
+                  chartsSortOptions.map(option =>
+                    React.createElement('button', {
+                      key: option.value,
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        setChartsSort(option.value);
+                        setChartsSortDropdownOpen(false);
+                      },
+                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                        chartsSort === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                      }`
+                    },
+                      option.label,
+                      chartsSort === option.value && React.createElement('svg', {
+                        className: 'w-4 h-4',
+                        fill: 'none',
+                        viewBox: '0 0 24 24',
+                        stroke: 'currentColor'
+                      },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                      )
+                    )
                   )
                 )
-            )
+              ),
+              React.createElement('div', { className: 'flex-1' }),
+              // Search
+              React.createElement('div', { className: 'flex items-center' },
+                chartsSearchOpen ?
+                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                    React.createElement('input', {
+                      type: 'text',
+                      value: chartsSearch,
+                      onChange: (e) => setChartsSearch(e.target.value),
+                      onBlur: () => { if (!chartsSearch.trim()) setChartsSearchOpen(false); },
+                      autoFocus: true,
+                      placeholder: 'Filter...',
+                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                      style: { width: '150px' }
+                    }),
+                    chartsSearch && React.createElement('button', {
+                      onClick: () => { setChartsSearch(''); setChartsSearchOpen(false); },
+                      className: 'ml-2 text-gray-400 hover:text-gray-600'
+                    },
+                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                      )
+                    )
+                  )
+                :
+                  React.createElement('button', {
+                    onClick: () => setChartsSearchOpen(true),
+                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                  },
+                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                    )
+                  )
+              )
           ),
           // Content area (scrollable)
           React.createElement('div', {
@@ -29579,45 +28905,36 @@ useEffect(() => {
               pointerEvents: 'auto',
               padding: '24px'
             },
-            onScroll: handleChartsScroll,
-            ref: (el) => {
-              chartSongsScrollContainerRef.current = el;
-              if (el && !chartSongsScrollContainerReady) {
-                setChartSongsScrollContainerReady(true);
-              }
-            }
+            onScroll: handleChartsScroll
           },
-            // ALBUMS TAB
-            chartsTab === 'albums' && [
-              // Skeleton loading state for albums
-              (chartsLoading || !chartsLoaded) && React.createElement('div', {
-                key: 'albums-skeleton',
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
-              },
-                Array.from({ length: 15 }).map((_, i) =>
-                  React.createElement('div', { key: `skeleton-${i}` },
-                    // Skeleton album art
+            // Skeleton loading state - show when loading OR when charts haven't been loaded yet
+            (chartsLoading || !chartsLoaded) && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
+            },
+              Array.from({ length: 15 }).map((_, i) =>
+                React.createElement('div', { key: `skeleton-${i}` },
+                  // Skeleton album art
+                  React.createElement('div', {
+                    className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  // Skeleton title
+                  React.createElement('div', { className: 'space-y-2' },
                     React.createElement('div', {
-                      className: 'aspect-square rounded-lg mb-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                     }),
-                    // Skeleton title
-                    React.createElement('div', { className: 'space-y-2' },
-                      React.createElement('div', {
-                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                      })
-                    )
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                    })
                   )
                 )
-              ),
+              )
+            ),
 
-              // Albums grid with filter/sort - only show when loaded and not loading
-              chartsLoaded && !chartsLoading && (() => {
+            // Albums grid with filter/sort - only show when loaded and not loading
+            chartsLoaded && !chartsLoading && (() => {
               const filtered = filterCharts(charts);
               const sorted = sortCharts(filtered);
 
@@ -29839,276 +29156,6 @@ useEffect(() => {
               )
               );
             })()
-            ], // End of albums tab array
-
-            // SONGS TAB
-            chartsTab === 'songs' && [
-              // Skeleton loading state for songs (matching actual song row layout)
-              (chartsSongsLoading || !chartsSongsLoaded) && React.createElement('div', {
-                key: 'songs-skeleton',
-                className: 'space-y-0'
-              },
-                Array.from({ length: 15 }).map((_, i) =>
-                  React.createElement('div', {
-                    key: `song-skeleton-${i}`,
-                    className: 'flex items-center gap-4 py-3 px-4',
-                    style: { borderRadius: '8px', marginBottom: '2px' }
-                  },
-                    // Rank skeleton (width: 32px)
-                    React.createElement('div', {
-                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '32px', height: '14px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
-                    }),
-                    // Title skeleton (width: 360px)
-                    React.createElement('div', {
-                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '360px', height: '14px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
-                    }),
-                    // Artist skeleton (width: 240px)
-                    React.createElement('div', {
-                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '240px', height: '12px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
-                    }),
-                    // Album skeleton (width: 150px)
-                    React.createElement('div', {
-                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '150px', height: '12px', flexShrink: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms` }
-                    }),
-                    // Duration skeleton (width: 50px, pushed right)
-                    React.createElement('div', {
-                      className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                      style: { width: '50px', height: '12px', flexShrink: 0, marginLeft: 'auto', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 60}ms` }
-                    }),
-                    // Resolver icons skeleton (width: 100px)
-                    React.createElement('div', {
-                      className: 'flex items-center gap-1 justify-end',
-                      style: { width: '100px', flexShrink: 0 }
-                    },
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                        style: { animationDelay: `${i * 30 + 75}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                        style: { animationDelay: `${i * 30 + 90}ms` }
-                      })
-                    )
-                  )
-                )
-              ),
-
-              // Songs list - only show when loaded and not loading
-              chartsSongsLoaded && !chartsSongsLoading && (() => {
-                // Filter songs by search
-                const filteredSongs = chartsSearch.trim()
-                  ? chartsSongs.filter(s =>
-                      s.title.toLowerCase().includes(chartsSearch.toLowerCase()) ||
-                      s.artist.toLowerCase().includes(chartsSearch.toLowerCase())
-                    )
-                  : chartsSongs;
-
-                if (filteredSongs.length === 0 && chartsSearch) {
-                  return React.createElement('div', {
-                    key: 'songs-empty-search',
-                    className: 'text-center py-12 text-gray-400'
-                  },
-                    React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    ),
-                    React.createElement('div', { className: 'text-sm' }, 'No songs match your search')
-                  );
-                }
-
-                if (filteredSongs.length === 0) {
-                  return React.createElement('div', {
-                    key: 'songs-empty',
-                    className: 'text-center py-12 text-gray-400'
-                  },
-                    React.createElement('div', { className: 'text-sm' }, 'No songs chart data available')
-                  );
-                }
-
-                return React.createElement('div', {
-                  key: 'songs-list',
-                  className: 'space-y-0'
-                },
-                  filteredSongs.map((song, index) => {
-                    // Use song.id to look up resolved sources from trackSources state
-                    const resolvedSources = trackSources[song.id] || song.sources || {};
-                    const hasResolved = Object.keys(resolvedSources).length > 0;
-                    const isResolving = Object.keys(resolvedSources).length === 0;
-
-                    return React.createElement('div', {
-                      key: song.id,
-                      'data-track-id': song.id,
-                      ref: (el) => {
-                        if (el) {
-                          chartSongsTrackRowRefs.current.set(song.id, el);
-                          if (chartSongsObserverRef.current) {
-                            chartSongsObserverRef.current.observe(el);
-                          }
-                        } else {
-                          chartSongsTrackRowRefs.current.delete(song.id);
-                        }
-                      },
-                      className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
-                        isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
-                      }`,
-                      style: { borderRadius: '8px', marginBottom: '2px' },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        setDraggingTrackForPlaylist(song);
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'track',
-                          track: {
-                            id: song.id,
-                            title: song.title,
-                            artist: song.artist,
-                            album: song.album || '',
-                            duration: song.duration,
-                            sources: song.sources || {}
-                          }
-                        }));
-                      },
-                      onDragEnd: () => {
-                        setDraggingTrackForPlaylist(null);
-                        setDropTargetPlaylistId(null);
-                        setDropTargetNewPlaylist(false);
-                        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                        }
-                      },
-                      onClick: () => {
-                        // Set remaining songs as queue and play this song
-                        const songsAfter = filteredSongs.slice(index + 1);
-                        const context = { type: 'charts', name: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}` };
-                        setQueueWithContext(songsAfter, context);
-                        handlePlay(song);
-                      },
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
-                            type: 'track',
-                            track: song,
-                            sourceType: 'charts',
-                            sourceName: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}`
-                          });
-                        }
-                      }
-                    },
-                      // Rank number
-                      React.createElement('span', {
-                        className: 'flex-shrink-0 text-right',
-                        style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: '#9ca3af' }
-                      }, String(song.rank).padStart(2, '0')),
-
-                      // Song title - fixed width column (matching Recommendations)
-                      React.createElement('span', {
-                        className: 'truncate transition-colors',
-                        style: { pointerEvents: 'none', width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
-                      }, song.title),
-
-                      // Artist name - fixed width column, clickable (matching Recommendations)
-                      React.createElement('span', {
-                        className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                        style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          fetchArtistData(song.artist);
-                        }
-                      }, song.artist),
-
-                      // Album name - fixed width column
-                      React.createElement('span', {
-                        className: 'truncate',
-                        style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
-                      }, song.album || ''),
-
-                      // Duration - fixed width column
-                      React.createElement('span', {
-                        className: 'text-right tabular-nums',
-                        style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
-                      }, formatTime(song.duration)),
-
-                      // Resolver icons - fixed width column (matching Recommendations)
-                      React.createElement('div', {
-                        className: 'flex items-center gap-1 justify-end',
-                        style: { width: '100px', flexShrink: 0, minHeight: '24px' }
-                      },
-                        isResolving ?
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              title: 'Resolving track...'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
-                        : hasResolved ?
-                          Object.entries(resolvedSources)
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const songsAfter = filteredSongs.slice(index + 1);
-                                  const context = { type: 'charts', name: `Charts - ${chartsSource === 'itunes' ? 'iTunes' : 'Last.fm'}` };
-                                  setQueueWithContext(songsAfter, context);
-                                  handlePlay({ ...song, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            })
-                        :
-                          // Show shimmer skeletons while resolving
-                          React.createElement('div', {
-                            className: 'flex items-center gap-1'
-                          },
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              title: 'Resolving track...'
-                            }),
-                            React.createElement('div', {
-                              className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                              style: { animationDelay: '0.1s' }
-                            })
-                          )
-                      )
-                    );
-                  })
-                );
-              })()
-            ] // End of songs tab array
           )
         ),
 
@@ -35411,67 +34458,45 @@ useEffect(() => {
           React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
         ),
 
-        // Actions - Three circular buttons
+        // Actions
         React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
+          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
         },
-          // Add to Playlist button
-          React.createElement('button', {
-            onClick: handleAiAddToPlaylist,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Playlist'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
-            )
-          ),
-          // Play button (center, larger)
-          React.createElement('button', {
-            onClick: handleAiPlay,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-            style: {
-              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
-            title: 'Play Now'
-          },
-            React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
-          ),
-          // Add to Queue button
           React.createElement('button', {
             onClick: handleAiAddToQueue,
             disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+            className: 'w-full transition-colors',
             style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: '500',
               color: '#ffffff',
-              border: 'none',
+              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.05)' : '#7c3aed',
+              borderRadius: '10px',
               cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.5' : '1',
+              marginBottom: '8px'
             },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Queue'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-            )
-          )
+            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = '#6d28d9'; },
+            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = '#7c3aed'; }
+          }, resultsSidebar.loading ? 'Generating...' : `Add ${resultsSidebar.tracks.length} to Queue`),
+          React.createElement('button', {
+            onClick: handleAiSavePlaylist,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
+            className: 'w-full transition-colors',
+            style: {
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '#6b7280' : '#d1d5db',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '10px',
+              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.5' : '1'
+            },
+            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
+            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+          }, 'Save as Playlist')
         )
       )
     ),
@@ -36914,30 +35939,90 @@ useEffect(() => {
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
-            // Connected state
-            qobuzConnected
-              ? React.createElement('div', null,
-                  React.createElement('div', { className: 'flex items-center justify-between' },
-                    React.createElement('div', null,
-                      React.createElement('span', {
-                        style: {
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          color: '#1f2937'
-                        }
-                      }, 'Qobuz Account'),
-                      React.createElement('p', {
-                        style: {
-                          fontSize: '12px',
-                          color: '#6b7280',
-                          marginTop: '2px'
-                        }
-                      },
-                        `Connected as ${qobuzUsername || 'Qobuz User'}`
-                      )
-                    ),
-                    React.createElement('button', {
-                      onClick: disconnectQobuz,
+            React.createElement('div', null,
+              React.createElement('span', {
+                style: {
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#1f2937'
+                }
+              }, 'Qobuz Streaming'),
+              React.createElement('p', {
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  marginTop: '4px',
+                  lineHeight: '1.5'
+                }
+              },
+                'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
+              )
+            )
+          ),
+
+          // Apple Music / MusicKit authentication section
+          selectedResolver.id === 'applemusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            // Native MusicKit availability notice
+            !appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(250, 36, 60, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#9a1f2e'
+              }
+            },
+              React.createElement('strong', null, 'macOS Only: '),
+              'Native MusicKit playback requires macOS and building the helper binary. ',
+              React.createElement('span', { style: { fontFamily: 'monospace', fontSize: '11px' } },
+                'cd native/musickit-helper && ./build.sh'
+              )
+            ),
+            appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#15803d'
+              }
+            },
+              '✓ Native MusicKit available for direct Apple Music playback'
+            ),
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#1f2937'
+                  }
+                }, 'Apple Music Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginTop: '2px'
+                  }
+                },
+                  appleMusicConnected
+                    ? 'Connected and ready for playback'
+                    : appleMusicNativeAvailable
+                      ? 'Sign in with your Apple ID to enable streaming'
+                      : 'Search and URL lookup available (playback opens in browser)'
+                )
+              ),
+              appleMusicNativeAvailable && (
+                appleMusicConnected
+                  ? React.createElement('button', {
+                      onClick: disconnectAppleMusic,
                       className: 'transition-colors',
                       style: {
                         padding: '8px 14px',
@@ -36950,148 +36035,33 @@ useEffect(() => {
                         cursor: 'pointer'
                       }
                     }, 'Disconnect')
-                  ),
-                  React.createElement('div', {
-                    className: 'flex items-center gap-2',
-                    style: {
-                      marginTop: '12px',
-                      fontSize: '12px',
-                      color: qobuzHasSubscription ? '#22c55e' : '#f59e0b'
-                    }
-                  },
-                    React.createElement('span', null, qobuzHasSubscription ? '✓' : '⚠'),
-                    React.createElement('span', null, qobuzHasSubscription
-                      ? 'Full streaming enabled'
-                      : 'Connected (no active subscription - using previews)')
-                  )
-                )
-              // Not connected state - show login form
-              : React.createElement('div', null,
-                  React.createElement('span', {
-                    style: {
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#1f2937'
-                    }
-                  }, 'Qobuz Account'),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: '#6b7280',
-                      marginTop: '4px',
-                      marginBottom: '16px',
-                      lineHeight: '1.5'
-                    }
-                  },
-                    'Sign in to stream full tracks. Without login, 30-second previews are available.'
-                  ),
-                  // Email input
-                  React.createElement('div', { style: { marginBottom: '12px' } },
-                    React.createElement('label', {
+                  : React.createElement('button', {
+                      onClick: connectAppleMusic,
+                      className: 'transition-colors',
                       style: {
-                        display: 'block',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        color: '#374151',
-                        marginBottom: '6px'
-                      }
-                    }, 'Email'),
-                    React.createElement('input', {
-                      type: 'email',
-                      value: qobuzUsernameInput,
-                      onChange: (e) => setQobuzUsernameInput(e.target.value),
-                      placeholder: 'Your Qobuz email',
-                      disabled: qobuzConnecting,
-                      style: {
-                        width: '100%',
-                        padding: '10px 12px',
+                        padding: '8px 14px',
                         fontSize: '13px',
-                        color: '#1f2937',
-                        backgroundColor: '#ffffff',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                        borderRadius: '8px',
-                        outline: 'none',
-                        opacity: qobuzConnecting ? 0.6 : 1
-                      }
-                    })
-                  ),
-                  // Password input
-                  React.createElement('div', { style: { marginBottom: '16px' } },
-                    React.createElement('label', {
-                      style: {
-                        display: 'block',
-                        fontSize: '12px',
                         fontWeight: '500',
-                        color: '#374151',
-                        marginBottom: '6px'
-                      }
-                    }, 'Password'),
-                    React.createElement('input', {
-                      type: 'password',
-                      value: qobuzPasswordInput,
-                      onChange: (e) => setQobuzPasswordInput(e.target.value),
-                      placeholder: 'Your Qobuz password',
-                      disabled: qobuzConnecting,
-                      onKeyDown: (e) => {
-                        if (e.key === 'Enter' && qobuzUsernameInput.trim() && qobuzPasswordInput) {
-                          connectQobuz(qobuzUsernameInput.trim(), qobuzPasswordInput);
-                        }
-                      },
-                      style: {
-                        width: '100%',
-                        padding: '10px 12px',
-                        fontSize: '13px',
-                        color: '#1f2937',
-                        backgroundColor: '#ffffff',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        color: '#ffffff',
+                        backgroundColor: '#FA243C',
+                        border: 'none',
                         borderRadius: '8px',
-                        outline: 'none',
-                        opacity: qobuzConnecting ? 0.6 : 1
+                        cursor: 'pointer'
                       }
-                    })
-                  ),
-                  // Error message
-                  qobuzError && React.createElement('p', {
-                    style: {
-                      fontSize: '12px',
-                      color: '#dc2626',
-                      marginBottom: '12px'
-                    }
-                  }, qobuzError),
-                  // Login button
-                  React.createElement('button', {
-                    onClick: () => connectQobuz(qobuzUsernameInput.trim(), qobuzPasswordInput),
-                    disabled: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput,
-                    className: 'transition-colors',
-                    style: {
-                      width: '100%',
-                      padding: '10px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput
-                        ? '#9ca3af'
-                        : '#0E7EBF',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput
-                        ? 'not-allowed'
-                        : 'pointer',
-                      opacity: qobuzConnecting || !qobuzUsernameInput.trim() || !qobuzPasswordInput ? 0.6 : 1
-                    }
-                  }, qobuzConnecting ? 'Connecting...' : 'Sign In'),
-                  // Privacy note
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#9ca3af',
-                      marginTop: '12px',
-                      lineHeight: '1.5'
-                    }
-                  },
-                    'Your credentials are sent directly to Qobuz and are not stored by Parachord.'
-                  )
-                )
+                    }, 'Connect')
+              )
+            ),
+            appleMusicConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: '#22c55e'
+              }
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'Apple Music authorized for playback')
+            )
           ),
 
           // Last.fm authentication section

@@ -1,0 +1,10 @@
+# MusicKit Helper Binary Directory
+
+This directory contains the native MusicKit helper binary for macOS.
+
+To build the binary:
+1. On macOS, navigate to: native/musickit-helper/
+2. Run: ./build.sh
+3. The binary will be copied here automatically
+
+The binary is required for native Apple Music playback on macOS.

@@ -349,6 +349,59 @@ contextBridge.exposeInMainWorld('electron', {
     clear: (entryQuery) => ipcRenderer.invoke('search-history-clear', entryQuery)
   },
 
+  // MusicKit (Apple Music) native bridge operations - macOS only
+  musicKit: {
+    // Check if native MusicKit helper is available
+    isAvailable: () => ipcRenderer.invoke('musickit:available'),
+    // Start the helper process
+    start: () => ipcRenderer.invoke('musickit:start'),
+    // Check authorization status (uses cache by default for speed)
+    checkAuth: (forceRefresh = false) => ipcRenderer.invoke('musickit:check-auth', forceRefresh),
+    // Get cached auth status (very fast, no IPC to helper)
+    getCachedAuth: () => ipcRenderer.invoke('musickit:get-cached-auth'),
+    // Request user authorization (shows Apple ID sign-in)
+    authorize: () => ipcRenderer.invoke('musickit:authorize'),
+    // Search for songs
+    search: (query, limit = 25) => ipcRenderer.invoke('musickit:search', query, limit),
+    // Resolve a track by artist/title/album
+    resolve: (artist, title, album = null) => ipcRenderer.invoke('musickit:resolve', artist, title, album),
+    // Playback controls
+    play: (songId) => ipcRenderer.invoke('musickit:play', songId),
+    pause: () => ipcRenderer.invoke('musickit:pause'),
+    resume: () => ipcRenderer.invoke('musickit:resume'),
+    stop: () => ipcRenderer.invoke('musickit:stop'),
+    skipNext: () => ipcRenderer.invoke('musickit:skip-next'),
+    skipPrevious: () => ipcRenderer.invoke('musickit:skip-previous'),
+    seek: (position) => ipcRenderer.invoke('musickit:seek', position),
+    // State queries
+    getPlaybackState: () => ipcRenderer.invoke('musickit:get-playback-state'),
+    getNowPlaying: () => ipcRenderer.invoke('musickit:get-now-playing'),
+    // Queue management
+    addToQueue: (songId) => ipcRenderer.invoke('musickit:add-to-queue', songId),
+    // Volume control
+    setVolume: (volume) => ipcRenderer.invoke('musickit:set-volume', volume),
+
+    // Main process polling controls (background-safe, for auto-advance)
+    polling: {
+      start: (params) => ipcRenderer.invoke('applemusic-polling-start', params),
+      stop: () => ipcRenderer.invoke('applemusic-polling-stop'),
+      updateTrack: (params) => ipcRenderer.invoke('applemusic-polling-update-track', params),
+      getStatus: () => ipcRenderer.invoke('applemusic-polling-status'),
+
+      // Listen for polling events from main process
+      onAdvance: (callback) => {
+        ipcRenderer.on('applemusic-polling-advance', (event, data) => {
+          callback(data);
+        });
+      },
+      onProgress: (callback) => {
+        ipcRenderer.on('applemusic-polling-progress', (event, data) => {
+          callback(data);
+        });
+      }
+    }
+  },
+
   // Generic invoke for IPC calls
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 });
