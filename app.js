@@ -10644,6 +10644,21 @@ const Parachord = () => {
       // Stop all local audio sources before switching to browser playback
       stopAllLocalAudio();
 
+      // Stop MusicKit when switching to external browser playback
+      if (window.electron?.musicKit?.pause) {
+        window.electron.musicKit.pause().catch(() => {});
+      }
+      if (window.getMusicKitWeb) {
+        try {
+          const musicKitWeb = window.getMusicKitWeb();
+          if (musicKitWeb?.stop) {
+            musicKitWeb.stop().catch(() => {});
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+
       // Stop Spotify polling when switching to external browser playback
       if (playbackPollerRef.current) {
         console.log('⏹️ Stopping Spotify polling for external browser playback');
@@ -10688,6 +10703,25 @@ const Parachord = () => {
       // Stop all local audio sources before switching to streaming resolver
       // This is a second safety check in case audio wasn't stopped earlier
       stopAllLocalAudio();
+
+      // Stop MusicKit when switching to a non-Apple-Music streaming resolver
+      // We do this explicitly here (not in stopAllLocalAudio) to avoid race conditions
+      // when playing Apple Music tracks
+      if (resolverId !== 'applemusic') {
+        if (window.electron?.musicKit?.pause) {
+          window.electron.musicKit.pause().catch(() => {});
+        }
+        if (window.getMusicKitWeb) {
+          try {
+            const musicKitWeb = window.getMusicKitWeb();
+            if (musicKitWeb?.stop) {
+              musicKitWeb.stop().catch(() => {});
+            }
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      }
 
       const config = await getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
@@ -11126,24 +11160,10 @@ const Parachord = () => {
       }
     }
 
-    // Stop native MusicKit playback if available (macOS Apple Music)
-    if (window.electron?.musicKit?.pause) {
-      window.electron.musicKit.pause().catch(e => {
-        // Ignore errors - MusicKit may not be playing
-      });
-    }
-
-    // Stop MusicKit Web playback if available
-    if (window.getMusicKitWeb) {
-      try {
-        const musicKitWeb = window.getMusicKitWeb();
-        if (musicKitWeb?.stop) {
-          musicKitWeb.stop().catch(() => {});
-        }
-      } catch (e) {
-        // Ignore errors
-      }
-    }
+    // NOTE: We intentionally do NOT stop native MusicKit or MusicKit Web here.
+    // MusicKit playback state is managed by the resolver system, and pausing it
+    // here causes a race condition where the async pause() completes AFTER
+    // a new track starts playing, effectively stopping the newly started track.
   };
 
   // Show prompt for external browser track
