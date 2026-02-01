@@ -6677,11 +6677,8 @@ const Parachord = () => {
     }
 
     // For Apple Music, load developer token with fallback chain:
-    // 1. User-configured (localStorage) > 2. Environment variable > 3. Parachord bundled token
+    // 1. User-configured (localStorage) > 2. Environment variable (.env)
     if (resolverId === 'applemusic') {
-      // Parachord's bundled MusicKit developer token (fallback for users without Apple Developer account)
-      const PARACHORD_MUSICKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjdDTENaVENDUTYifQ.eyJpYXQiOjE3Njk5NjU0NjMsImV4cCI6MTc4NTUxNzQ2MywiaXNzIjoiWVIzWEVURTUzNyJ9.qWb3EdN3TmdO11TI-atg5wRb32E92MBXk_rOar78s8F0slgPab07-j5WlMK8rzV0O48c1MbkGCp3wJHkpj5f2w';
-
       let developerToken = localStorage.getItem('musickit_developer_token') || '';
       let tokenSource = 'user';
 
@@ -6696,13 +6693,6 @@ const Parachord = () => {
         } catch (e) {
           // Ignore errors
         }
-      }
-
-      // Use Parachord's bundled token as fallback
-      if (!developerToken) {
-        developerToken = PARACHORD_MUSICKIT_TOKEN;
-        tokenSource = 'bundled';
-        console.log('🍎 Using Parachord bundled MusicKit developer token');
       }
 
       return {
@@ -19572,15 +19562,21 @@ ${tracks}
   // Check if native MusicKit is available on startup
   useEffect(() => {
     const checkMusicKitAvailable = async () => {
-      // Parachord's bundled MusicKit developer token (fallback for users without Apple Developer account)
-      const PARACHORD_MUSICKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjdDTENaVENDUTYifQ.eyJpYXQiOjE3Njk5NjU0NjMsImV4cCI6MTc4NTUxNzQ2MywiaXNzIjoiWVIzWEVURTUzNyJ9.qWb3EdN3TmdO11TI-atg5wRb32E92MBXk_rOar78s8F0slgPab07-j5WlMK8rzV0O48c1MbkGCp3wJHkpj5f2w';
-
       // Check for MusicKit JS first (cross-platform)
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-      const developerToken = localStorage.getItem('musickit_developer_token') || PARACHORD_MUSICKIT_TOKEN;
+
+      // Load developer token: user-configured > environment variable
+      let developerToken = localStorage.getItem('musickit_developer_token') || '';
+      if (!developerToken && window.electron?.config?.get) {
+        try {
+          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+        } catch (e) {
+          // Ignore errors
+        }
+      }
       const userToken = localStorage.getItem('musickit_user_token') || '';
 
-      if (musicKitWeb) {
+      if (musicKitWeb && developerToken) {
         try {
           console.log('🍎 Initializing MusicKit JS...');
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
