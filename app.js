@@ -10083,6 +10083,26 @@ const Parachord = () => {
     setResultsSidebar(null);
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
+
+  // Handle playing AI results now (replace queue)
+  const handleAiPlay = () => {
+    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
+    const context = { type: 'aiPlaylist', name: 'AI Playlist' };
+    playTrackCollection(resultsSidebar.tracks, context);
+    setResultsSidebar(null);
+  };
+
+  // Handle adding AI results to existing/new playlist
+  const handleAiAddToPlaylist = () => {
+    if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
+    setAddToPlaylistPanel({
+      open: true,
+      tracks: resultsSidebar.tracks,
+      sourceName: resultsSidebar.prompt || 'AI Playlist',
+      sourceType: 'playlist'
+    });
+    setResultsSidebar(null);
+  };
   const addToQueue = (tracks, context = null) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
@@ -35391,45 +35411,67 @@ useEffect(() => {
           React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
         ),
 
-        // Actions
+        // Actions - Three circular buttons
         React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
+          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', gap: '16px' }
         },
+          // Add to Playlist button
+          React.createElement('button', {
+            onClick: handleAiAddToPlaylist,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
+            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+            style: {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              color: '#ffffff',
+              border: 'none',
+              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+            },
+            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+            title: 'Add to Playlist'
+          },
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+            )
+          ),
+          // Play button (center, larger)
+          React.createElement('button', {
+            onClick: handleAiPlay,
+            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
+            className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+            style: {
+              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
+              border: 'none',
+              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+            },
+            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
+            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
+            title: 'Play Now'
+          },
+            React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
+          ),
+          // Add to Queue button
           React.createElement('button', {
             onClick: handleAiAddToQueue,
             disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-full transition-colors',
+            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
             style: {
-              padding: '12px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
               color: '#ffffff',
-              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.05)' : '#7c3aed',
-              borderRadius: '10px',
+              border: 'none',
               cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.5' : '1',
-              marginBottom: '8px'
+              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
             },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = '#6d28d9'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = '#7c3aed'; }
-          }, resultsSidebar.loading ? 'Generating...' : `Add ${resultsSidebar.tracks.length} to Queue`),
-          React.createElement('button', {
-            onClick: handleAiSavePlaylist,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-full transition-colors',
-            style: {
-              padding: '12px 16px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '#6b7280' : '#d1d5db',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              borderRadius: '10px',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.5' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
-          }, 'Save as Playlist')
+            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+            title: 'Add to Queue'
+          },
+            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+            )
+          )
         )
       )
     ),
