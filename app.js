@@ -19602,10 +19602,22 @@ ${tracks}
   };
 
   const saveAppleMusicDeveloperToken = async () => {
+    console.log('=== Save Apple Music Developer Token ===');
     const token = appleMusicDeveloperToken.trim();
+    console.log('Token length:', token.length);
+
     if (window.electron?.store) {
-      await window.electron.store.set('applemusic_developer_token', token);
-      showToast(token ? 'Developer token saved' : 'Developer token cleared', 'success');
+      try {
+        await window.electron.store.set('applemusic_developer_token', token);
+        console.log('Token saved to store');
+        showToast(token ? 'Developer token saved' : 'Developer token cleared', 'success');
+      } catch (error) {
+        console.error('Failed to save token:', error);
+        showToast('Failed to save token', 'error');
+      }
+    } else {
+      console.error('window.electron.store not available');
+      showToast('Storage not available', 'error');
     }
   };
 
