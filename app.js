@@ -27210,8 +27210,8 @@ useEffect(() => {
                     }, 'ListenBrainz')
                   )
                 ),
-                // 2x2 grid of playlist cards (this week & last week)
-                React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
+                // 4-column grid of Weekly Jams (past 4 weeks)
+                React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
                   homeData.weeklyJams.map((jam, index) =>
                     React.createElement('button', {
                       key: jam.id,
@@ -37007,7 +37007,7 @@ useEffect(() => {
                   marginBottom: '12px'
                 }
               }, 'Library Stats'),
-              React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
+              React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
                 React.createElement('div', null,
                   React.createElement('p', {
                     style: {
