@@ -26534,7 +26534,7 @@ useEffect(() => {
 
             // Grid view
             if (playlistsViewMode === 'grid') {
-              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5' },
+              return React.createElement('div', { className: 'flex flex-wrap gap-x-4 gap-y-5' },
                 sorted.map((playlist, index) => {
                   const covers = allPlaylistCovers[playlist.id] || [];
                   const hasCachedCovers = covers.length > 0;
@@ -26562,13 +26562,16 @@ useEffect(() => {
                         });
                       }
                     },
-                    className: 'group cursor-pointer release-card card-fade-up',
+                    className: 'group cursor-pointer release-card card-fade-up flex-shrink-0',
                     style: {
                       padding: '10px',
                       borderRadius: '10px',
                       backgroundColor: '#ffffff',
                       boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                      animationDelay: `${animationDelay}ms`
+                      animationDelay: `${animationDelay}ms`,
+                      width: 'calc((100% - 64px) / 5)', // 5 columns with 16px gaps
+                      minWidth: '160px',
+                      maxWidth: '220px'
                     }
                   },
                     // Album art mosaic or placeholder (draggable)
@@ -27499,16 +27502,19 @@ useEffect(() => {
                   )
                 ),
                 // 2x2 grid of playlist cards (this week & last week)
-                React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
+                React.createElement('div', { className: 'flex flex-wrap gap-4' },
                   homeData.weeklyJams.map((jam, index) =>
                     React.createElement('button', {
                       key: jam.id,
-                      className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg',
+                      className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg flex-shrink-0',
                       style: {
                         backgroundColor: '#ffffff',
                         border: 'none',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                        animationDelay: `${index * 50}ms`
+                        animationDelay: `${index * 50}ms`,
+                        width: 'calc((100% - 16px) / 2)', // 2 columns with 16px gap
+                        minWidth: '200px',
+                        maxWidth: '280px'
                       },
                       onClick: () => {
                         // Open ephemeral playlist view
