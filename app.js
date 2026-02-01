@@ -6676,15 +6676,21 @@ const Parachord = () => {
       return { token };
     }
 
-    // For Apple Music, load developer token from env or localStorage
+    // For Apple Music, load developer token with fallback chain:
+    // 1. User-configured (localStorage) > 2. Environment variable > 3. Parachord bundled token
     if (resolverId === 'applemusic') {
+      // Parachord's bundled MusicKit developer token (fallback for users without Apple Developer account)
+      const PARACHORD_MUSICKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjdDTENaVENDUTYifQ.eyJpYXQiOjE3Njk5NjU0NjMsImV4cCI6MTc4NTUxNzQ2MywiaXNzIjoiWVIzWEVURTUzNyJ9.qWb3EdN3TmdO11TI-atg5wRb32E92MBXk_rOar78s8F0slgPab07-j5WlMK8rzV0O48c1MbkGCp3wJHkpj5f2w';
+
       let developerToken = localStorage.getItem('musickit_developer_token') || '';
+      let tokenSource = 'user';
 
       // Try to load from environment variable if not in localStorage
       if (!developerToken && window.electron?.config?.get) {
         try {
           developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
           if (developerToken) {
+            tokenSource = 'environment';
             console.log('🍎 Loaded MusicKit developer token from environment');
           }
         } catch (e) {
@@ -6692,8 +6698,16 @@ const Parachord = () => {
         }
       }
 
+      // Use Parachord's bundled token as fallback
+      if (!developerToken) {
+        developerToken = PARACHORD_MUSICKIT_TOKEN;
+        tokenSource = 'bundled';
+        console.log('🍎 Using Parachord bundled MusicKit developer token');
+      }
+
       return {
         developerToken,
+        tokenSource,
         storefront: 'us'
       };
     }
@@ -19558,12 +19572,15 @@ ${tracks}
   // Check if native MusicKit is available on startup
   useEffect(() => {
     const checkMusicKitAvailable = async () => {
+      // Parachord's bundled MusicKit developer token (fallback for users without Apple Developer account)
+      const PARACHORD_MUSICKIT_TOKEN = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjdDTENaVENDUTYifQ.eyJpYXQiOjE3Njk5NjU0NjMsImV4cCI6MTc4NTUxNzQ2MywiaXNzIjoiWVIzWEVURTUzNyJ9.qWb3EdN3TmdO11TI-atg5wRb32E92MBXk_rOar78s8F0slgPab07-j5WlMK8rzV0O48c1MbkGCp3wJHkpj5f2w';
+
       // Check for MusicKit JS first (cross-platform)
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-      const developerToken = localStorage.getItem('musickit_developer_token') || '';
+      const developerToken = localStorage.getItem('musickit_developer_token') || PARACHORD_MUSICKIT_TOKEN;
       const userToken = localStorage.getItem('musickit_user_token') || '';
 
-      if (musicKitWeb && developerToken) {
+      if (musicKitWeb) {
         try {
           console.log('🍎 Initializing MusicKit JS...');
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
