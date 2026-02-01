@@ -6999,6 +6999,7 @@ const Parachord = () => {
         duration: track.duration,
         albumArt: track.albumArt,
         sources: track.sources || {},
+        spotifyId: track.spotifyId || track.sources?.spotify?.spotifyId,
         addedAt: Date.now()
       };
 
@@ -7007,6 +7008,15 @@ const Parachord = () => {
       saveCollection(newData);
       showToast(`Added ${track.title} to Collection`);
       showSidebarBadge('collection');
+
+      // Also save to Spotify Liked Songs if track has Spotify ID
+      const spotifyId = track.spotifyId || track.sources?.spotify?.spotifyId;
+      if (spotifyId) {
+        window.electron.sync.saveTracks?.('spotify', [spotifyId]).catch(err => {
+          console.log('Could not sync to Spotify:', err.message);
+        });
+      }
+
       return newData;
     });
   }, [saveCollection, showToast, showSidebarBadge]);
@@ -7017,8 +7027,8 @@ const Parachord = () => {
     const trackId = generateTrackId(track.artist, track.title, track.album);
 
     setCollectionData(prev => {
-      const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
-      if (existingIndex === -1) {
+      const existingTrack = prev.tracks.find(t => t.id === trackId);
+      if (!existingTrack) {
         showToast(`${track.title} is not in your collection`);
         return prev;
       }
@@ -7028,6 +7038,15 @@ const Parachord = () => {
       // Save async (don't block state update)
       saveCollection(newData);
       showToast(`Removed ${track.title} from Collection`);
+
+      // Also remove from Spotify Liked Songs if track has Spotify ID
+      const spotifyId = existingTrack.spotifyId || track.spotifyId || track.sources?.spotify?.spotifyId;
+      if (spotifyId) {
+        window.electron.sync.removeTracks?.('spotify', [spotifyId]).catch(err => {
+          console.log('Could not sync removal to Spotify:', err.message);
+        });
+      }
+
       return newData;
     });
   }, [saveCollection, showToast]);
@@ -7381,40 +7400,6 @@ const Parachord = () => {
           if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
-        } else if (data.action === 'save-to-spotify' && data.track) {
-          // Save track to Spotify Liked Songs
-          const spotifyId = data.track.spotifyId || data.track.sources?.spotify?.spotifyId;
-          if (spotifyId) {
-            try {
-              const result = await window.electron.sync.saveTracks('spotify', [spotifyId]);
-              if (result.success) {
-                showToast(`Added "${data.track.title}" to Spotify Liked Songs`);
-              } else {
-                showToast(`Failed to save to Spotify: ${result.error}`);
-              }
-            } catch (err) {
-              showToast(`Error saving to Spotify: ${err.message}`);
-            }
-          } else {
-            showToast('Track does not have a Spotify ID');
-          }
-        } else if (data.action === 'remove-from-spotify' && data.track) {
-          // Remove track from Spotify Liked Songs
-          const spotifyId = data.track.spotifyId || data.track.sources?.spotify?.spotifyId;
-          if (spotifyId) {
-            try {
-              const result = await window.electron.sync.removeTracks('spotify', [spotifyId]);
-              if (result.success) {
-                showToast(`Removed "${data.track.title}" from Spotify Liked Songs`);
-              } else {
-                showToast(`Failed to remove from Spotify: ${result.error}`);
-              }
-            } catch (err) {
-              showToast(`Error removing from Spotify: ${err.message}`);
-            }
-          } else {
-            showToast('Track does not have a Spotify ID');
-          }
         } else if (data.action === 'follow-on-spotify' && data.artist) {
           // Follow artist on Spotify
           const spotifyId = data.artist.spotifyId || data.artist.sources?.spotify?.spotifyId;

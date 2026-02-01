@@ -2789,34 +2789,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
-  // Add Spotify sync options for tracks with Spotify IDs
-  if (data.type === 'track' || data.type === 'friend-track') {
-    const track = data.track;
-    const spotifyId = track?.spotifyId || track?.sources?.spotify?.spotifyId;
-    if (spotifyId && store.get('spotify_token')) {
-      menuItems.push({ type: 'separator' });
-      menuItems.push({
-        label: 'Save to Spotify Liked Songs',
-        click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
-            action: 'save-to-spotify',
-            track: track
-          });
-        }
-      });
-      menuItems.push({
-        label: 'Remove from Spotify Liked Songs',
-        click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
-            action: 'remove-from-spotify',
-            track: track
-          });
-        }
-      });
-    }
-  }
-
-  // Add Spotify sync options for artists with Spotify IDs
+  // Add Spotify follow/unfollow options for artists with Spotify IDs
   if (data.type === 'artist') {
     const artist = data.artist;
     const spotifyId = artist?.spotifyId || artist?.sources?.spotify?.spotifyId;
