@@ -7329,6 +7329,13 @@ const Parachord = () => {
               lastModified: Date.now()
             }));
           }
+        } else if (data.action === 'edit-playlist' && data.playlistId) {
+          // Navigate to playlist and enter edit mode
+          const playlist = playlists.find(p => p.id === data.playlistId);
+          if (playlist) {
+            await loadPlaylist(playlist);
+            setPlaylistEditMode(true);
+          }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
           // Show confirmation alert
           const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
@@ -7437,7 +7444,7 @@ const Parachord = () => {
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, loadPlaylist, setPlaylistEditMode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
