@@ -19,6 +19,7 @@
         "urlLookup": false
       },
       "requiresAuth": true,
+      "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/spotify.axe",
       "category": "streaming",
       "tags": ["streaming", "subscription", "premium"]
@@ -40,6 +41,7 @@
         "urlLookup": true
       },
       "requiresAuth": false,
+      "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/bandcamp.axe",
       "category": "streaming",
       "tags": ["streaming", "purchase", "independent", "discovery"]
@@ -47,9 +49,9 @@
     {
       "id": "qobuz",
       "name": "Qobuz",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "Parachord Team",
-      "description": "High-quality audio streaming with 30-second previews. Subscription required for full playback.",
+      "description": "Coming soon: High-quality audio streaming from Qobuz. Currently disabled pending API access.",
       "icon": "🎵",
       "color": "#0E7EBF",
       "homepage": "https://qobuz.com",
@@ -61,9 +63,11 @@
         "urlLookup": false
       },
       "requiresAuth": false,
+      "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/qobuz.axe",
       "category": "streaming",
-      "tags": ["streaming", "hi-res", "audiophile", "preview"]
+      "tags": ["streaming", "hi-res", "audiophile", "lossless", "flac"],
+      "_TODO": "Waiting for Qobuz to respond to request for access to their API"
     },
     {
       "id": "soundcloud",
@@ -83,6 +87,7 @@
       },
       "requiresAuth": true,
       "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/soundcloud.axe",
       "category": "streaming",
       "tags": ["streaming", "free", "indie", "soundcloud", "oauth"]
     },

@@ -19,6 +19,8 @@ console.log('SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? '✅ L
 console.log('SPOTIFY_REDIRECT_URI:', process.env.SPOTIFY_REDIRECT_URI || 'Using default');
 console.log('SOUNDCLOUD_CLIENT_ID:', process.env.SOUNDCLOUD_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
 console.log('SOUNDCLOUD_CLIENT_SECRET:', process.env.SOUNDCLOUD_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
+console.log('QOBUZ_APP_ID:', process.env.QOBUZ_APP_ID ? '✅ Loaded' : '⚪ Not set');
+console.log('QOBUZ_APP_SECRET:', process.env.QOBUZ_APP_SECRET ? '✅ Loaded' : '⚪ Not set');
 if (!process.env.SPOTIFY_CLIENT_ID) {
   console.error('');
   console.error('⚠️  WARNING: .env file not found or SPOTIFY_CLIENT_ID not set!');
@@ -1763,6 +1765,202 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   store.delete('soundcloud_token_expiry');
   console.log('SoundCloud tokens cleared');
   return { success: true };
+});
+
+// Qobuz authentication handler - uses username/password to get user_auth_token
+ipcMain.handle('qobuz-login', async (event, username, password) => {
+  console.log('=== Qobuz Login Handler Called ===');
+
+  // Get app credentials from environment
+  const appId = process.env.QOBUZ_APP_ID;
+  const appSecret = process.env.QOBUZ_APP_SECRET;
+
+  if (!appId || !appSecret) {
+    console.error('❌ Missing QOBUZ_APP_ID or QOBUZ_APP_SECRET in .env file!');
+    return { success: false, error: 'Qobuz API credentials not configured' };
+  }
+
+  if (!username || !password) {
+    return { success: false, error: 'Username and password are required' };
+  }
+
+  try {
+    const crypto = require('crypto');
+    // Hash the password with MD5 (Qobuz API requirement)
+    const passwordMd5 = crypto.createHash('md5').update(password).digest('hex');
+
+    // Login to Qobuz API
+    const response = await fetch('https://www.qobuz.com/api.json/0.2/user/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Parachord/1.0.0'
+      },
+      body: new URLSearchParams({
+        username: username,
+        password: passwordMd5,
+        app_id: appId
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Qobuz login failed:', response.status, errorText);
+      return { success: false, error: 'Login failed. Check your credentials.' };
+    }
+
+    const data = await response.json();
+
+    if (!data.user_auth_token) {
+      console.error('❌ No user_auth_token in response:', data);
+      return { success: false, error: data.message || 'Login failed' };
+    }
+
+    console.log('✅ Qobuz login successful for user:', data.user?.display_name || username);
+
+    // Check subscription status
+    const hasSubscription = data.user?.credential?.parameters?.lossy_streaming ||
+                           data.user?.credential?.parameters?.lossless_streaming ||
+                           data.user?.credential?.parameters?.hires_streaming;
+
+    // Store the token and user info
+    store.set('qobuz_user_auth_token', data.user_auth_token);
+    store.set('qobuz_user_id', data.user?.id);
+    store.set('qobuz_username', data.user?.display_name || username);
+    store.set('qobuz_credential', data.user?.credential);
+    store.set('qobuz_has_subscription', hasSubscription);
+
+    return {
+      success: true,
+      username: data.user?.display_name || username,
+      userId: data.user?.id,
+      hasSubscription: hasSubscription,
+      credential: data.user?.credential
+    };
+  } catch (error) {
+    console.error('Qobuz login error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if Qobuz token exists and is valid
+ipcMain.handle('qobuz-check-token', async () => {
+  console.log('=== Qobuz Check Token Handler Called ===');
+
+  const token = store.get('qobuz_user_auth_token');
+  const username = store.get('qobuz_username');
+  const hasSubscription = store.get('qobuz_has_subscription');
+
+  console.log('Qobuz token exists:', !!token);
+  console.log('Qobuz username:', username);
+  console.log('Has subscription:', hasSubscription);
+
+  if (!token) {
+    return null;
+  }
+
+  // Validate token by making a simple API call
+  const appId = process.env.QOBUZ_APP_ID;
+  if (appId) {
+    try {
+      const response = await fetch(`https://www.qobuz.com/api.json/0.2/user/get?user_auth_token=${token}&app_id=${appId}`, {
+        headers: { 'User-Agent': 'Parachord/1.0.0' }
+      });
+
+      if (!response.ok) {
+        console.log('❌ Qobuz token invalid, clearing...');
+        store.delete('qobuz_user_auth_token');
+        store.delete('qobuz_user_id');
+        store.delete('qobuz_username');
+        store.delete('qobuz_credential');
+        store.delete('qobuz_has_subscription');
+        return null;
+      }
+
+      console.log('✓ Qobuz token is valid');
+    } catch (error) {
+      console.error('Error validating Qobuz token:', error);
+      // Don't clear token on network error, just return what we have
+    }
+  }
+
+  return {
+    token,
+    username,
+    hasSubscription
+  };
+});
+
+// Disconnect Qobuz (clear tokens)
+ipcMain.handle('qobuz-disconnect', async () => {
+  console.log('=== Qobuz Disconnect ===');
+  store.delete('qobuz_user_auth_token');
+  store.delete('qobuz_user_id');
+  store.delete('qobuz_username');
+  store.delete('qobuz_credential');
+  store.delete('qobuz_has_subscription');
+  console.log('Qobuz tokens cleared');
+  return { success: true };
+});
+
+// Get Qobuz streaming URL for a track
+ipcMain.handle('qobuz-get-stream-url', async (event, trackId, formatId = 27) => {
+  console.log('=== Qobuz Get Stream URL ===');
+  console.log('Track ID:', trackId);
+  console.log('Format ID:', formatId);
+
+  const token = store.get('qobuz_user_auth_token');
+  const appId = process.env.QOBUZ_APP_ID;
+  const appSecret = process.env.QOBUZ_APP_SECRET;
+
+  if (!token || !appId || !appSecret) {
+    console.error('❌ Missing Qobuz credentials');
+    return { success: false, error: 'Not authenticated with Qobuz' };
+  }
+
+  try {
+    const crypto = require('crypto');
+
+    // Generate request signature
+    // Qobuz uses: MD5(format_id + track_id + timestamp + app_secret)
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signatureInput = `trackgetFileUrlformat_id${formatId}intentstreamtrack_id${trackId}${timestamp}${appSecret}`;
+    const signature = crypto.createHash('md5').update(signatureInput).digest('hex');
+
+    const url = `https://www.qobuz.com/api.json/0.2/track/getFileUrl?track_id=${trackId}&format_id=${formatId}&intent=stream&request_ts=${timestamp}&request_sig=${signature}&app_id=${appId}&user_auth_token=${token}`;
+
+    console.log('Requesting stream URL...');
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Parachord/1.0.0' }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Failed to get stream URL:', response.status, errorText);
+      return { success: false, error: 'Failed to get stream URL' };
+    }
+
+    const data = await response.json();
+
+    if (!data.url) {
+      console.error('❌ No URL in response:', data);
+      return { success: false, error: data.message || 'No stream URL available' };
+    }
+
+    console.log('✅ Got stream URL, format:', data.format_id, 'bit depth:', data.bit_depth, 'sample rate:', data.sampling_rate);
+
+    return {
+      success: true,
+      url: data.url,
+      formatId: data.format_id,
+      bitDepth: data.bit_depth,
+      samplingRate: data.sampling_rate,
+      mimeType: data.mime_type
+    };
+  } catch (error) {
+    console.error('Error getting Qobuz stream URL:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Debug handler to inspect store contents
