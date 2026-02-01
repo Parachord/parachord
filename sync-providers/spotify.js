@@ -20,6 +20,42 @@ const generateTrackId = (artist, title, album) => {
 };
 
 /**
+ * Make an authenticated Spotify API request (non-paginated, supports all methods)
+ */
+const spotifyRequest = async (endpoint, token, options = {}) => {
+  const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
+  const { method = 'GET', body } = options;
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+      await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      return spotifyRequest(endpoint, token, options);
+    }
+    if (response.status === 401) {
+      throw new Error('Spotify token expired. Please reconnect your Spotify account.');
+    }
+    if (response.status === 403) {
+      throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions.');
+    }
+    throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
+  }
+
+  // Some endpoints return 201 with snapshot_id, others return empty
+  const text = await response.text();
+  return text ? JSON.parse(text) : { success: true };
+};
+
+/**
  * Make an authenticated Spotify API request with pagination support
  */
 const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
@@ -294,6 +330,199 @@ const SpotifySyncProvider = {
     } catch {
       return false;
     }
+  },
+
+  /**
+   * Update playlist tracks on Spotify (replaces all tracks)
+   * Spotify limits to 100 tracks per request, so we batch if needed
+   * @param {string} playlistId - Spotify playlist ID
+   * @param {Array} tracks - Array of track objects with spotifyUri
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean, snapshotId: string }
+   */
+  async updatePlaylistTracks(playlistId, tracks, token) {
+    // Filter to only tracks with Spotify URIs
+    const uris = tracks
+      .filter(t => t.spotifyUri)
+      .map(t => t.spotifyUri);
+
+    if (uris.length === 0) {
+      // Clear the playlist if no valid tracks
+      const result = await spotifyRequest(`/playlists/${playlistId}/tracks`, token, {
+        method: 'PUT',
+        body: { uris: [] }
+      });
+      return { success: true, snapshotId: result.snapshot_id };
+    }
+
+    // Spotify allows max 100 tracks per request
+    // First request uses PUT to replace, subsequent use POST to add
+    const batches = [];
+    for (let i = 0; i < uris.length; i += 100) {
+      batches.push(uris.slice(i, i + 100));
+    }
+
+    let snapshotId;
+
+    // First batch: replace all tracks
+    const firstResult = await spotifyRequest(`/playlists/${playlistId}/tracks`, token, {
+      method: 'PUT',
+      body: { uris: batches[0] }
+    });
+    snapshotId = firstResult.snapshot_id;
+
+    // Subsequent batches: add tracks
+    for (let i = 1; i < batches.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+      const addResult = await spotifyRequest(`/playlists/${playlistId}/tracks`, token, {
+        method: 'POST',
+        body: { uris: batches[i] }
+      });
+      snapshotId = addResult.snapshot_id;
+    }
+
+    return { success: true, snapshotId };
+  },
+
+  /**
+   * Check if user owns the playlist (can edit it)
+   */
+  async checkPlaylistOwnership(playlistId, token) {
+    const response = await fetch(`${SPOTIFY_API_BASE}/playlists/${playlistId}?fields=owner.id`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const playlist = await response.json();
+
+    // Get current user
+    const userResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const user = await userResponse.json();
+
+    return playlist.owner?.id === user.id;
+  },
+
+  /**
+   * Save tracks to user's Spotify library (Liked Songs)
+   * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async saveTracks(trackIds, token) {
+    if (!trackIds || trackIds.length === 0) {
+      return { success: true, saved: 0 };
+    }
+
+    // Spotify allows max 50 tracks per request
+    const batches = [];
+    for (let i = 0; i < trackIds.length; i += 50) {
+      batches.push(trackIds.slice(i, i + 50));
+    }
+
+    let totalSaved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/tracks', token, {
+        method: 'PUT',
+        body: { ids: batch }
+      });
+      totalSaved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, saved: totalSaved };
+  },
+
+  /**
+   * Remove tracks from user's Spotify library
+   * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async removeTracks(trackIds, token) {
+    if (!trackIds || trackIds.length === 0) {
+      return { success: true, removed: 0 };
+    }
+
+    // Spotify allows max 50 tracks per request
+    const batches = [];
+    for (let i = 0; i < trackIds.length; i += 50) {
+      batches.push(trackIds.slice(i, i + 50));
+    }
+
+    let totalRemoved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/tracks', token, {
+        method: 'DELETE',
+        body: { ids: batch }
+      });
+      totalRemoved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, removed: totalRemoved };
+  },
+
+  /**
+   * Follow artists on Spotify
+   * @param {string[]} artistIds - Array of Spotify artist IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async followArtists(artistIds, token) {
+    if (!artistIds || artistIds.length === 0) {
+      return { success: true, followed: 0 };
+    }
+
+    // Spotify allows max 50 artists per request
+    const batches = [];
+    for (let i = 0; i < artistIds.length; i += 50) {
+      batches.push(artistIds.slice(i, i + 50));
+    }
+
+    let totalFollowed = 0;
+    for (const batch of batches) {
+      await spotifyRequest(`/me/following?type=artist&ids=${batch.join(',')}`, token, {
+        method: 'PUT'
+      });
+      totalFollowed += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, followed: totalFollowed };
+  },
+
+  /**
+   * Unfollow artists on Spotify
+   * @param {string[]} artistIds - Array of Spotify artist IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async unfollowArtists(artistIds, token) {
+    if (!artistIds || artistIds.length === 0) {
+      return { success: true, unfollowed: 0 };
+    }
+
+    // Spotify allows max 50 artists per request
+    const batches = [];
+    for (let i = 0; i < artistIds.length; i += 50) {
+      batches.push(artistIds.slice(i, i + 50));
+    }
+
+    let totalUnfollowed = 0;
+    for (const batch of batches) {
+      await spotifyRequest(`/me/following?type=artist&ids=${batch.join(',')}`, token, {
+        method: 'DELETE'
+      });
+      totalUnfollowed += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, unfollowed: totalUnfollowed };
   }
 };
 

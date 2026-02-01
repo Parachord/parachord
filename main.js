@@ -1505,9 +1505,13 @@ ipcMain.handle('spotify-auth', async () => {
     'user-read-playback-state',
     'user-modify-playback-state',
     'user-library-read',
+    'user-library-modify',
     'user-follow-read',
+    'user-follow-modify',
     'playlist-read-private',
-    'playlist-read-collaborative'
+    'playlist-read-collaborative',
+    'playlist-modify-public',
+    'playlist-modify-private'
   ].join(' ');
 
   const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true`;
@@ -2785,6 +2789,33 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
+  // Add Spotify follow/unfollow options for artists with Spotify IDs
+  if (data.type === 'artist') {
+    const artist = data.artist;
+    const spotifyId = artist?.spotifyId || artist?.sources?.spotify?.spotifyId;
+    if (spotifyId && store.get('spotify_token')) {
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: 'Follow on Spotify',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'follow-on-spotify',
+            artist: artist
+          });
+        }
+      });
+      menuItems.push({
+        label: 'Unfollow on Spotify',
+        click: () => {
+          mainWindow.webContents.send('track-context-menu-action', {
+            action: 'unfollow-on-spotify',
+            artist: artist
+          });
+        }
+      });
+    }
+  }
+
   const menu = Menu.buildFromTemplate(menuItems);
 
   menu.popup({ window: mainWindow });
@@ -2953,13 +2984,33 @@ ipcMain.handle('playlists-delete', async (event, playlistId) => {
     const playlists = store.get('local_playlists') || [];
     const initialCount = playlists.length;
 
-    // Filter out the playlist with matching ID
-    const filteredPlaylists = playlists.filter(p => p.id !== playlistId);
+    // Find the playlist to check if it's synced
+    const playlistToDelete = playlists.find(p => p.id === playlistId);
 
-    if (filteredPlaylists.length === initialCount) {
+    if (!playlistToDelete) {
       console.log('  ❌ Playlist not found');
       return { success: false, error: 'Playlist not found' };
     }
+
+    // If this is a synced playlist, remove it from the sync settings
+    // so it won't be re-imported on next sync
+    if (playlistToDelete.syncedFrom?.resolver && playlistToDelete.syncedFrom?.externalId) {
+      const resolver = playlistToDelete.syncedFrom.resolver;
+      const externalId = playlistToDelete.syncedFrom.externalId;
+      console.log(`  Unsyncing from ${resolver}: ${externalId}`);
+
+      const syncSettings = store.get('resolver_sync_settings') || {};
+      if (syncSettings[resolver]?.selectedPlaylistIds) {
+        syncSettings[resolver].selectedPlaylistIds = syncSettings[resolver].selectedPlaylistIds.filter(
+          id => id !== externalId
+        );
+        store.set('resolver_sync_settings', syncSettings);
+        console.log(`  ✅ Removed from ${resolver} sync settings`);
+      }
+    }
+
+    // Filter out the playlist with matching ID
+    const filteredPlaylists = playlists.filter(p => p.id !== playlistId);
 
     store.set('local_playlists', filteredPlaylists);
     console.log('  ✅ Deleted playlist');
@@ -3603,6 +3654,154 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
     // Also fetch the current snapshot ID
     const snapshotId = await provider.getPlaylistSnapshot?.(playlistExternalId, token);
     return { success: true, tracks, snapshotId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Push local playlist changes to the sync provider
+ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.playlists) {
+    return { success: false, error: 'Provider does not support playlists' };
+  }
+
+  if (!provider.updatePlaylistTracks) {
+    return { success: false, error: 'Provider does not support pushing playlist changes' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    // Check if user owns the playlist (can only push to owned playlists)
+    if (provider.checkPlaylistOwnership) {
+      const isOwner = await provider.checkPlaylistOwnership(playlistExternalId, token);
+      if (!isOwner) {
+        return { success: false, error: 'You can only push changes to playlists you own' };
+      }
+    }
+
+    const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+    return { success: true, snapshotId: result.snapshotId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Push track changes to sync provider (add to Liked Songs)
+ipcMain.handle('sync:save-tracks', async (event, providerId, trackIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.tracks) {
+    return { success: false, error: 'Provider does not support track syncing' };
+  }
+
+  if (!provider.saveTracks) {
+    return { success: false, error: 'Provider does not support saving tracks' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.saveTracks(trackIds, token);
+    return { success: true, saved: result.saved };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Remove tracks from sync provider library
+ipcMain.handle('sync:remove-tracks', async (event, providerId, trackIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.tracks) {
+    return { success: false, error: 'Provider does not support track syncing' };
+  }
+
+  if (!provider.removeTracks) {
+    return { success: false, error: 'Provider does not support removing tracks' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.removeTracks(trackIds, token);
+    return { success: true, removed: result.removed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Follow artists on sync provider
+ipcMain.handle('sync:follow-artists', async (event, providerId, artistIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.artists) {
+    return { success: false, error: 'Provider does not support artist syncing' };
+  }
+
+  if (!provider.followArtists) {
+    return { success: false, error: 'Provider does not support following artists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.followArtists(artistIds, token);
+    return { success: true, followed: result.followed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Unfollow artists on sync provider
+ipcMain.handle('sync:unfollow-artists', async (event, providerId, artistIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.artists) {
+    return { success: false, error: 'Provider does not support artist syncing' };
+  }
+
+  if (!provider.unfollowArtists) {
+    return { success: false, error: 'Provider does not support unfollowing artists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.unfollowArtists(artistIds, token);
+    return { success: true, unfollowed: result.unfollowed };
   } catch (error) {
     return { success: false, error: error.message };
   }

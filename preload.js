@@ -283,6 +283,11 @@ contextBridge.exposeInMainWorld('electron', {
     cancel: (providerId) => ipcRenderer.invoke('sync:cancel', providerId),
     fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
     fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
+    pushPlaylist: (providerId, playlistExternalId, tracks) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks),
+    saveTracks: (providerId, trackIds) => ipcRenderer.invoke('sync:save-tracks', providerId, trackIds),
+    removeTracks: (providerId, trackIds) => ipcRenderer.invoke('sync:remove-tracks', providerId, trackIds),
+    followArtists: (providerId, artistIds) => ipcRenderer.invoke('sync:follow-artists', providerId, artistIds),
+    unfollowArtists: (providerId, artistIds) => ipcRenderer.invoke('sync:unfollow-artists', providerId, artistIds),
     onProgress: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('sync:progress', handler);
