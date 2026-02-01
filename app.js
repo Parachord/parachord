@@ -4237,6 +4237,7 @@ const Parachord = () => {
   const removeFriendFromCollectionRef = useRef(null);
   const activateListenAlongRef = useRef(null);
   const deactivateListenAlongRef = useRef(null);
+  const loadPlaylistRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
   const audioRef = useRef(null); // HTML5 Audio element for local file playback
   const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
@@ -7332,8 +7333,8 @@ const Parachord = () => {
         } else if (data.action === 'edit-playlist' && data.playlistId) {
           // Navigate to playlist and enter edit mode
           const playlist = playlists.find(p => p.id === data.playlistId);
-          if (playlist) {
-            await loadPlaylist(playlist);
+          if (playlist && loadPlaylistRef.current) {
+            await loadPlaylistRef.current(playlist);
             setPlaylistEditMode(true);
           }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
@@ -7444,7 +7445,7 @@ const Parachord = () => {
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, loadPlaylist, setPlaylistEditMode]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, setPlaylistEditMode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -19218,6 +19219,9 @@ ${tracks}
       setPlaylistTracks([]);
     }
   };
+
+  // Assign loadPlaylist to ref for context menu access
+  loadPlaylistRef.current = loadPlaylist;
 
   // Keep queue in sync with playlistTracks as they get resolved
   // This ensures queue items get their sources updated without re-setting the entire queue
