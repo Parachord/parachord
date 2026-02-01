@@ -27502,16 +27502,19 @@ useEffect(() => {
                   )
                 ),
                 // 2x2 grid of playlist cards (this week & last week)
-                React.createElement('div', { className: 'grid grid-cols-2 gap-4' },
+                React.createElement('div', { className: 'flex flex-wrap gap-4' },
                   homeData.weeklyJams.map((jam, index) =>
                     React.createElement('button', {
                       key: jam.id,
-                      className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg',
+                      className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg flex-shrink-0',
                       style: {
                         backgroundColor: '#ffffff',
                         border: 'none',
                         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                        animationDelay: `${index * 50}ms`
+                        animationDelay: `${index * 50}ms`,
+                        width: 'calc((100% - 16px) / 2)', // 2 columns with 16px gap
+                        minWidth: '200px',
+                        maxWidth: '280px'
                       },
                       onClick: () => {
                         // Open ephemeral playlist view
