@@ -379,6 +379,30 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  // Handle window.open() calls - needed for MusicKit JS Apple ID sign-in popup
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Allow Apple authentication popups to open in new browser windows
+    if (url.includes('apple.com') || url.includes('icloud.com') || url.includes('apple.music')) {
+      console.log('[MusicKit] Opening Apple auth popup:', url);
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 600,
+          height: 700,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true
+          }
+        }
+      };
+    }
+
+    // For other URLs, open in system browser
+    const { shell } = require('electron');
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
