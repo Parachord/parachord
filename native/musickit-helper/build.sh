@@ -46,6 +46,19 @@ cp "Info.plist" "$CONTENTS_DIR/"
 # Create PkgInfo
 echo -n "APPL????" > "$CONTENTS_DIR/PkgInfo"
 
+# Embed provisioning profile if available
+# Look for: 1) PROVISIONING_PROFILE env var, 2) embedded.provisionprofile in script dir
+PROFILE_PATH="${PROVISIONING_PROFILE:-embedded.provisionprofile}"
+if [ -f "$PROFILE_PATH" ]; then
+    echo "Embedding provisioning profile: $PROFILE_PATH"
+    cp "$PROFILE_PATH" "$CONTENTS_DIR/embedded.provisionprofile"
+else
+    echo "Warning: No provisioning profile found at $PROFILE_PATH"
+    echo "  MusicKit entitlement requires a provisioning profile."
+    echo "  Place your profile at: $SCRIPT_DIR/embedded.provisionprofile"
+    echo "  Or set PROVISIONING_PROFILE=/path/to/profile.provisionprofile"
+fi
+
 echo "App bundle created successfully"
 
 # Create output directory for Electron
@@ -53,15 +66,24 @@ OUTPUT_DIR="../../resources/bin/darwin"
 mkdir -p "$OUTPUT_DIR"
 
 # Sign the app bundle
+# Prefer APPLE_SIGNING_IDENTITY env var, otherwise try to find a valid identity
 if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-    echo "Signing with identity: $APPLE_SIGNING_IDENTITY"
-    codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" \
+    SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY"
+else
+    # Try to find a Developer ID or Apple Development certificate
+    SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep -E "(Developer ID Application|Apple Development)" | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
+fi
+
+if [ -n "$SIGNING_IDENTITY" ]; then
+    echo "Signing with identity: $SIGNING_IDENTITY"
+    codesign --force --deep --sign "$SIGNING_IDENTITY" \
         --entitlements MusicKitHelper.entitlements \
         --options runtime \
         "$APP_DIR"
 else
-    echo "Signing ad-hoc..."
-    # Ad-hoc signing for development
+    echo "Warning: No signing identity found, using ad-hoc signing"
+    echo "  Ad-hoc signing won't work with MusicKit entitlement."
+    echo "  Set APPLE_SIGNING_IDENTITY or install a Developer certificate."
     codesign --force --deep --sign - \
         --entitlements MusicKitHelper.entitlements \
         "$APP_DIR"
