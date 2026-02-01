@@ -8595,7 +8595,7 @@ const Parachord = () => {
       } else {
         console.warn('⚠️ Main process polling not available');
       }
-    } else if (resolverId === 'apple-music' && track.appleMusicId) {
+    } else if (resolverId === 'applemusic' && track.appleMusicId) {
       // Apple Music native playback via MusicKit
       console.log(`🔄 Starting Apple Music playback polling via main process...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
