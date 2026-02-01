@@ -3378,6 +3378,13 @@ const Parachord = () => {
   const [soundcloudClientSecretInput, setSoundcloudClientSecretInput] = useState(''); // Client Secret input
   const [soundcloudCredentialsSource, setSoundcloudCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
 
+  // Apple Music / MusicKit state
+  const [appleMusicConnected, setAppleMusicConnected] = useState(false);
+  const [appleMusicUserToken, setAppleMusicUserToken] = useState(null);
+  const [appleMusicDeveloperToken, setAppleMusicDeveloperToken] = useState('');
+  const [appleMusicAdvancedOpen, setAppleMusicAdvancedOpen] = useState(false);
+  const musicKitInstanceRef = useRef(null);
+
   // Media key handling mode: 'always' | 'non-spotify' | 'never'
   const [mediaKeyMode, setMediaKeyMode] = useState('always');
 
@@ -10723,6 +10730,13 @@ const Parachord = () => {
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
         console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
+      }
+
+      // Load Apple Music developer token
+      const savedAppleMusicDevToken = await window.electron.store.get('applemusic_developer_token');
+      if (savedAppleMusicDevToken) {
+        setAppleMusicDeveloperToken(savedAppleMusicDevToken);
+        console.log('🍎 Loaded Apple Music developer token');
       }
 
       // Load friends from storage
@@ -19463,6 +19477,135 @@ ${tracks}
       // Remove SoundCloud sources from all tracks and remove from active resolvers
       removeResolverSources('soundcloud');
       setActiveResolvers(prev => prev.filter(id => id !== 'soundcloud'));
+    }
+  };
+
+  // Apple Music / MusicKit functions
+  const initializeMusicKit = async (developerToken) => {
+    if (!developerToken) {
+      console.error('MusicKit: No developer token provided');
+      return null;
+    }
+
+    // Load MusicKit JS if not already loaded
+    if (!window.MusicKit) {
+      console.log('Loading MusicKit JS...');
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      // Wait for MusicKit to be ready
+      await new Promise(resolve => {
+        if (window.MusicKit) {
+          resolve();
+        } else {
+          document.addEventListener('musickitloaded', resolve, { once: true });
+        }
+      });
+    }
+
+    try {
+      const music = await window.MusicKit.configure({
+        developerToken: developerToken,
+        app: {
+          name: 'Parachord',
+          build: '1.0.0'
+        }
+      });
+      console.log('MusicKit configured successfully');
+      musicKitInstanceRef.current = music;
+      return music;
+    } catch (error) {
+      console.error('MusicKit configuration failed:', error);
+      return null;
+    }
+  };
+
+  const connectAppleMusic = async () => {
+    console.log('=== Connect Apple Music Clicked ===');
+
+    const devToken = appleMusicDeveloperToken.trim();
+    if (!devToken) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'Developer Token Required',
+        message: 'Please enter your MusicKit Developer Token in the Advanced section below.'
+      });
+      setAppleMusicAdvancedOpen(true);
+      return;
+    }
+
+    try {
+      // Initialize MusicKit with developer token
+      const music = await initializeMusicKit(devToken);
+      if (!music) {
+        showConfirmDialog({
+          type: 'error',
+          title: 'MusicKit Error',
+          message: 'Failed to initialize MusicKit. Please check your developer token.'
+        });
+        return;
+      }
+
+      // Authorize user (prompts Apple ID sign-in)
+      console.log('Requesting MusicKit authorization...');
+      const userToken = await music.authorize();
+      console.log('MusicKit authorized, user token received');
+
+      setAppleMusicUserToken(userToken);
+      setAppleMusicConnected(true);
+
+      // Save tokens to persistent storage
+      if (window.electron?.store) {
+        await window.electron.store.set('applemusic_developer_token', devToken);
+        await window.electron.store.set('applemusic_user_token', userToken);
+      }
+
+      showToast('Apple Music connected successfully', 'success');
+    } catch (error) {
+      console.error('Apple Music auth error:', error);
+      showConfirmDialog({
+        type: 'error',
+        title: 'Authentication Failed',
+        message: error.message || 'Apple Music authentication failed. Please try again.'
+      });
+    }
+  };
+
+  const disconnectAppleMusic = async () => {
+    if (musicKitInstanceRef.current) {
+      try {
+        await musicKitInstanceRef.current.unauthorize();
+      } catch (e) {
+        console.log('MusicKit unauthorize error (non-fatal):', e);
+      }
+    }
+
+    setAppleMusicUserToken(null);
+    setAppleMusicConnected(false);
+    musicKitInstanceRef.current = null;
+
+    // Clear from persistent storage
+    if (window.electron?.store) {
+      await window.electron.store.delete('applemusic_user_token');
+    }
+
+    // Remove Apple Music sources from all tracks
+    removeResolverSources('applemusic');
+    setActiveResolvers(prev => prev.filter(id => id !== 'applemusic'));
+
+    showToast('Apple Music disconnected', 'info');
+  };
+
+  const saveAppleMusicDeveloperToken = async () => {
+    const token = appleMusicDeveloperToken.trim();
+    if (window.electron?.store) {
+      await window.electron.store.set('applemusic_developer_token', token);
+      showToast(token ? 'Developer token saved' : 'Developer token cleared', 'success');
     }
   };
 
@@ -35639,6 +35782,155 @@ useEffect(() => {
                 }
               },
                 'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
+              )
+            )
+          ),
+
+          // Apple Music / MusicKit authentication section
+          selectedResolver.id === 'applemusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('div', null,
+                React.createElement('span', {
+                  style: {
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#1f2937'
+                  }
+                }, 'Apple Music Account'),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginTop: '2px'
+                  }
+                },
+                  appleMusicConnected ? 'Connected and ready for playback' : 'Sign in to enable streaming'
+                )
+              ),
+              appleMusicConnected
+                ? React.createElement('button', {
+                    onClick: disconnectAppleMusic,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#dc2626',
+                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Disconnect')
+                : React.createElement('button', {
+                    onClick: connectAppleMusic,
+                    className: 'transition-colors',
+                    style: {
+                      padding: '8px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#FA243C',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Connect')
+            ),
+            appleMusicConnected && React.createElement('div', {
+              className: 'flex items-center gap-2',
+              style: {
+                marginTop: '12px',
+                fontSize: '12px',
+                color: '#22c55e'
+              }
+            },
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'Apple Music subscription connected')
+            ),
+            // Advanced accordion for developer token
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement('span', {
+                  className: 'transform transition-transform ' + (appleMusicAdvancedOpen ? 'rotate-90' : '')
+                }, '▶'),
+                'Advanced (Developer Token)'
+              ),
+              appleMusicAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  'Enter your MusicKit Developer Token (JWT) generated from your Apple Developer account. This is required for Apple Music playback.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'Developer Token'),
+                  React.createElement('textarea', {
+                    value: appleMusicDeveloperToken,
+                    onChange: (e) => setAppleMusicDeveloperToken(e.target.value),
+                    placeholder: 'eyJhbGciOiJFUzI1NiIs...',
+                    rows: 3,
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }
+                  })
+                ),
+                React.createElement('button', {
+                  onClick: saveAppleMusicDeveloperToken,
+                  style: {
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: '#ffffff',
+                    backgroundColor: '#6b7280',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }
+                }, 'Save Token')
               )
             )
           ),
