@@ -6,10 +6,13 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "prebuild": "node scripts/build-native.js",
+    "prebuild:mac": "node scripts/build-native.js",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
+    "build:native": "node scripts/build-native.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -72,9 +75,12 @@
       "!collection.json"
     ],
     "asar": false,
+    "afterSign": "scripts/notarize.js",
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "target": [
         "dmg",
         "zip"

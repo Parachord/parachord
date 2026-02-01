@@ -37,6 +37,15 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      # macOS: Import code signing certificate
+      - name: Import Code Signing Certificate
+        if: matrix.platform == 'mac' && env.CSC_LINK != ''
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          echo "Code signing certificate configured"
+
       - name: Install dependencies
         run: npm ci
 
@@ -44,6 +53,12 @@ jobs:
         run: npm run build:${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing and notarization
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
