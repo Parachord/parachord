@@ -3574,6 +3574,160 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   }
 });
 
+// Push local playlist changes to the sync provider
+ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks, metadata) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.playlists) {
+    return { success: false, error: 'Provider does not support playlists' };
+  }
+
+  if (!provider.updatePlaylistTracks) {
+    return { success: false, error: 'Provider does not support pushing playlist changes' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    // Check if user owns the playlist (can only push to owned playlists)
+    if (provider.checkPlaylistOwnership) {
+      const isOwner = await provider.checkPlaylistOwnership(playlistExternalId, token);
+      if (!isOwner) {
+        return { success: false, error: 'You can only push changes to playlists you own' };
+      }
+    }
+
+    // Push metadata changes (name, description) if provided
+    if (metadata && provider.updatePlaylistDetails) {
+      await provider.updatePlaylistDetails(playlistExternalId, metadata, token);
+    }
+
+    // Push track changes
+    const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+    return { success: true, snapshotId: result.snapshotId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Push track changes to sync provider (add to Liked Songs)
+ipcMain.handle('sync:save-tracks', async (event, providerId, trackIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.tracks) {
+    return { success: false, error: 'Provider does not support track syncing' };
+  }
+
+  if (!provider.saveTracks) {
+    return { success: false, error: 'Provider does not support saving tracks' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.saveTracks(trackIds, token);
+    return { success: true, saved: result.saved };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Remove tracks from sync provider library
+ipcMain.handle('sync:remove-tracks', async (event, providerId, trackIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.tracks) {
+    return { success: false, error: 'Provider does not support track syncing' };
+  }
+
+  if (!provider.removeTracks) {
+    return { success: false, error: 'Provider does not support removing tracks' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.removeTracks(trackIds, token);
+    return { success: true, removed: result.removed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Follow artists on sync provider
+ipcMain.handle('sync:follow-artists', async (event, providerId, artistIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.artists) {
+    return { success: false, error: 'Provider does not support artist syncing' };
+  }
+
+  if (!provider.followArtists) {
+    return { success: false, error: 'Provider does not support following artists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.followArtists(artistIds, token);
+    return { success: true, followed: result.followed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Unfollow artists on sync provider
+ipcMain.handle('sync:unfollow-artists', async (event, providerId, artistIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.artists) {
+    return { success: false, error: 'Provider does not support artist syncing' };
+  }
+
+  if (!provider.unfollowArtists) {
+    return { success: false, error: 'Provider does not support unfollowing artists' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.unfollowArtists(artistIds, token);
+    return { success: true, unfollowed: result.unfollowed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+
+
 // ==============================================
 // MusicKit (Apple Music) Native Bridge Handlers
 // ==============================================
