@@ -15271,7 +15271,7 @@ ${tracks}
 
       // Get this week's and last week's playlists (first two most recent)
       const results = [];
-      for (let i = 0; i < Math.min(2, weeklyPlaylists.length); i++) {
+      for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
         const weeklyJam = weeklyPlaylists[i];
         const playlistId = weeklyJam.playlist?.identifier?.split('/').pop();
         if (!playlistId) continue;
@@ -15279,7 +15279,7 @@ ${tracks}
         // Parse the date from the title to create a friendly label
         const title = weeklyJam.playlist?.title || 'Weekly Jam';
         const dateMatch = title.match(/(\d{4}-\d{2}-\d{2})/);
-        let weekLabel = i === 0 ? 'This Week' : 'Last Week';
+        let weekLabel = i === 0 ? 'This Week' : i === 1 ? 'Last Week' : i === 2 ? '2 Weeks Ago' : '3 Weeks Ago';
 
         results.push({
           id: playlistId,
