@@ -34493,7 +34493,7 @@ useEffect(() => {
 
         // Actions - Three circular buttons
         React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', gap: '16px' }
+          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
         },
           // Add to Playlist button
           React.createElement('button', {
