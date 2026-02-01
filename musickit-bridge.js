@@ -17,6 +17,37 @@ class MusicKitBridge extends EventEmitter {
     this.requestId = 0;
     this.isReady = false;
     this.buffer = '';
+
+    // Authorization caching
+    this._authStatus = null;      // { authorized: boolean, status: string }
+    this._authCheckedAt = 0;      // Timestamp of last check
+    this._authCacheTTL = 60000;   // Cache valid for 60 seconds
+  }
+
+  /**
+   * Get cached authorization status (synchronous)
+   * Returns null if not cached or cache expired
+   */
+  getCachedAuthStatus() {
+    if (!this._authStatus) return null;
+    if (Date.now() - this._authCheckedAt > this._authCacheTTL) return null;
+    return this._authStatus;
+  }
+
+  /**
+   * Check if cached auth shows authorized
+   */
+  isCachedAuthorized() {
+    const cached = this.getCachedAuthStatus();
+    return cached?.authorized === true;
+  }
+
+  /**
+   * Invalidate auth cache (call after failures)
+   */
+  invalidateAuthCache() {
+    this._authStatus = null;
+    this._authCheckedAt = 0;
   }
 
   /**
@@ -264,12 +295,45 @@ class MusicKitBridge extends EventEmitter {
 
   // High-level API methods
 
+  /**
+   * Check authorization status (updates cache)
+   */
   async checkAuthStatus() {
-    return this.send('checkAuthStatus');
+    const result = await this.send('checkAuthStatus');
+    // Update cache
+    this._authStatus = result;
+    this._authCheckedAt = Date.now();
+    this.emit('authStatusChanged', result);
+    return result;
   }
 
+  /**
+   * Get authorization status, using cache if valid
+   * @param {boolean} forceRefresh - Force a fresh check even if cached
+   */
+  async getAuthStatus(forceRefresh = false) {
+    // Return cached if valid and not forcing refresh
+    if (!forceRefresh) {
+      const cached = this.getCachedAuthStatus();
+      if (cached) {
+        console.log('[MusicKit] Using cached auth status:', cached);
+        return cached;
+      }
+    }
+    // Otherwise fetch fresh
+    return this.checkAuthStatus();
+  }
+
+  /**
+   * Request authorization (updates cache)
+   */
   async authorize() {
-    return this.send('authorize');
+    const result = await this.send('authorize');
+    // Update cache
+    this._authStatus = result;
+    this._authCheckedAt = Date.now();
+    this.emit('authStatusChanged', result);
+    return result;
   }
 
   async search(query, limit = 25) {

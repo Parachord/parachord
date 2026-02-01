@@ -3595,15 +3595,25 @@ ipcMain.handle('musickit:start', async () => {
   }
 });
 
-// Check authorization status
-ipcMain.handle('musickit:check-auth', async () => {
+// Check authorization status (uses cache by default, faster for repeated calls)
+ipcMain.handle('musickit:check-auth', async (event, forceRefresh = false) => {
   const bridge = getMusicKitBridge();
   try {
-    const result = await bridge.checkAuthStatus();
+    const result = await bridge.getAuthStatus(forceRefresh);
     return { success: true, ...result };
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// Get cached auth status synchronously (for quick checks)
+ipcMain.handle('musickit:get-cached-auth', async () => {
+  const bridge = getMusicKitBridge();
+  const cached = bridge.getCachedAuthStatus();
+  if (cached) {
+    return { success: true, cached: true, ...cached };
+  }
+  return { success: false, cached: false, authorized: false };
 });
 
 // Request authorization

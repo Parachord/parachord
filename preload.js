@@ -342,8 +342,10 @@ contextBridge.exposeInMainWorld('electron', {
     isAvailable: () => ipcRenderer.invoke('musickit:available'),
     // Start the helper process
     start: () => ipcRenderer.invoke('musickit:start'),
-    // Check authorization status
-    checkAuth: () => ipcRenderer.invoke('musickit:check-auth'),
+    // Check authorization status (uses cache by default for speed)
+    checkAuth: (forceRefresh = false) => ipcRenderer.invoke('musickit:check-auth', forceRefresh),
+    // Get cached auth status (very fast, no IPC to helper)
+    getCachedAuth: () => ipcRenderer.invoke('musickit:get-cached-auth'),
     // Request user authorization (shows Apple ID sign-in)
     authorize: () => ipcRenderer.invoke('musickit:authorize'),
     // Search for songs
