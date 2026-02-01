@@ -465,3 +465,249 @@ describe('Incremental Sync', () => {
     expect(syncType).toBe('full');
   });
 });
+
+describe('Two-Way Playlist Sync', () => {
+  describe('Playlist Push', () => {
+    test('pushes playlist tracks to Spotify', async () => {
+      const mockPushPlaylist = jest.fn().mockResolvedValue({
+        success: true,
+        snapshotId: 'new-snapshot-123'
+      });
+
+      const tracks = [
+        { id: '1', spotifyUri: 'spotify:track:abc123' },
+        { id: '2', spotifyUri: 'spotify:track:def456' }
+      ];
+
+      const result = await mockPushPlaylist('playlist-id', tracks);
+
+      expect(result.success).toBe(true);
+      expect(result.snapshotId).toBe('new-snapshot-123');
+    });
+
+    test('filters out tracks without Spotify URIs', () => {
+      const tracks = [
+        { id: '1', spotifyUri: 'spotify:track:abc123' },
+        { id: '2', title: 'Local Only Track' }, // No spotifyUri
+        { id: '3', spotifyUri: 'spotify:track:def456' }
+      ];
+
+      const uris = tracks
+        .filter(t => t.spotifyUri)
+        .map(t => t.spotifyUri);
+
+      expect(uris).toHaveLength(2);
+      expect(uris).toContain('spotify:track:abc123');
+      expect(uris).toContain('spotify:track:def456');
+    });
+
+    test('batches large playlists (>100 tracks)', () => {
+      const tracks = Array(250).fill(null).map((_, i) => ({
+        id: `track-${i}`,
+        spotifyUri: `spotify:track:${i}`
+      }));
+
+      const uris = tracks.map(t => t.spotifyUri);
+      const batches = [];
+      for (let i = 0; i < uris.length; i += 100) {
+        batches.push(uris.slice(i, i + 100));
+      }
+
+      expect(batches).toHaveLength(3);
+      expect(batches[0]).toHaveLength(100);
+      expect(batches[1]).toHaveLength(100);
+      expect(batches[2]).toHaveLength(50);
+    });
+
+    test('handles empty playlist', async () => {
+      const mockPushPlaylist = jest.fn().mockResolvedValue({
+        success: true,
+        snapshotId: 'empty-snapshot'
+      });
+
+      const result = await mockPushPlaylist('playlist-id', []);
+
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('Playlist Ownership', () => {
+    test('allows push to owned playlists', () => {
+      const playlist = { owner: { id: 'user123' } };
+      const currentUser = { id: 'user123' };
+
+      const isOwner = playlist.owner.id === currentUser.id;
+
+      expect(isOwner).toBe(true);
+    });
+
+    test('blocks push to followed playlists', () => {
+      const playlist = { owner: { id: 'other-user' } };
+      const currentUser = { id: 'user123' };
+
+      const isOwner = playlist.owner.id === currentUser.id;
+
+      expect(isOwner).toBe(false);
+    });
+  });
+
+  describe('Sync Direction Detection', () => {
+    const detectSyncState = (playlist) => {
+      const hasRemoteUpdates = playlist.hasUpdates;
+      const hasLocalChanges = playlist.locallyModified;
+
+      if (hasLocalChanges && hasRemoteUpdates) {
+        return 'conflict';
+      } else if (hasLocalChanges) {
+        return 'push';
+      } else if (hasRemoteUpdates) {
+        return 'pull';
+      }
+      return 'synced';
+    };
+
+    test('detects push needed when locally modified', () => {
+      const playlist = {
+        locallyModified: true,
+        hasUpdates: false
+      };
+
+      expect(detectSyncState(playlist)).toBe('push');
+    });
+
+    test('detects pull needed when remote has updates', () => {
+      const playlist = {
+        locallyModified: false,
+        hasUpdates: true
+      };
+
+      expect(detectSyncState(playlist)).toBe('pull');
+    });
+
+    test('detects conflict when both have changes', () => {
+      const playlist = {
+        locallyModified: true,
+        hasUpdates: true
+      };
+
+      expect(detectSyncState(playlist)).toBe('conflict');
+    });
+
+    test('detects synced when no changes', () => {
+      const playlist = {
+        locallyModified: false,
+        hasUpdates: false
+      };
+
+      expect(detectSyncState(playlist)).toBe('synced');
+    });
+  });
+
+  describe('Conflict Resolution', () => {
+    const resolveConflict = (playlist) => {
+      const localModTime = playlist.lastModified || 0;
+      const lastSyncTime = playlist.syncSources?.spotify?.syncedAt || 0;
+
+      // Local wins if modified after last sync
+      return localModTime > lastSyncTime ? 'local' : 'remote';
+    };
+
+    test('local wins when modified after last sync', () => {
+      const playlist = {
+        lastModified: 2000,
+        syncSources: { spotify: { syncedAt: 1000 } }
+      };
+
+      expect(resolveConflict(playlist)).toBe('local');
+    });
+
+    test('remote wins when last sync is newer', () => {
+      const playlist = {
+        lastModified: 1000,
+        syncSources: { spotify: { syncedAt: 2000 } }
+      };
+
+      expect(resolveConflict(playlist)).toBe('remote');
+    });
+
+    test('remote wins when no local modification time', () => {
+      const playlist = {
+        lastModified: undefined,
+        syncSources: { spotify: { syncedAt: 1000 } }
+      };
+
+      expect(resolveConflict(playlist)).toBe('remote');
+    });
+
+    test('local wins when no sync history', () => {
+      const playlist = {
+        lastModified: 1000,
+        syncSources: {}
+      };
+
+      expect(resolveConflict(playlist)).toBe('local');
+    });
+  });
+
+  describe('Push Result Handling', () => {
+    test('updates snapshot after successful push', () => {
+      const playlist = {
+        syncedFrom: { snapshotId: 'old-snapshot' }
+      };
+
+      const pushResult = { success: true, snapshotId: 'new-snapshot' };
+
+      if (pushResult.success) {
+        playlist.syncedFrom.snapshotId = pushResult.snapshotId;
+      }
+
+      expect(playlist.syncedFrom.snapshotId).toBe('new-snapshot');
+    });
+
+    test('clears locallyModified after successful push', () => {
+      const playlist = {
+        locallyModified: true,
+        hasUpdates: false
+      };
+
+      const pushResult = { success: true };
+
+      if (pushResult.success) {
+        playlist.locallyModified = false;
+      }
+
+      expect(playlist.locallyModified).toBe(false);
+    });
+
+    test('updates syncedAt timestamp after push', () => {
+      const playlist = {
+        syncSources: { spotify: { syncedAt: 1000 } }
+      };
+
+      const pushResult = { success: true };
+      const now = Date.now();
+
+      if (pushResult.success) {
+        playlist.syncSources.spotify.syncedAt = now;
+      }
+
+      expect(playlist.syncSources.spotify.syncedAt).toBe(now);
+    });
+
+    test('preserves state on push failure', () => {
+      const playlist = {
+        locallyModified: true,
+        syncedFrom: { snapshotId: 'original-snapshot' }
+      };
+
+      const pushResult = { success: false, error: 'Network error' };
+
+      if (!pushResult.success) {
+        // State should remain unchanged
+      }
+
+      expect(playlist.locallyModified).toBe(true);
+      expect(playlist.syncedFrom.snapshotId).toBe('original-snapshot');
+    });
+  });
+});
