@@ -8984,8 +8984,6 @@ const Parachord = () => {
 
     // Check _activeResolver first to determine what's actually playing
     // Handle Apple Music playback (must check before Spotify since tracks can have both sources)
-    console.log('🎮 handlePlayPause - currentTrack._activeResolver:', currentTrack._activeResolver);
-    console.log('🎮 handlePlayPause - has musicKit:', !!window.electron?.musicKit);
     const isAppleMusicActive = currentTrack._activeResolver === 'applemusic';
     if (isAppleMusicActive && window.electron?.musicKit) {
       try {
