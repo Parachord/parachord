@@ -9782,12 +9782,12 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
-    // Stop HTML5 Audio if playing (local files, SoundCloud) - do this first to prevent overlap
-    if (audioRef.current && !audioRef.current.paused) {
-      console.log('⏹️ Stopping HTML5 audio before new track');
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+    // Clear the pausedByUser flag since user is explicitly starting new playback
+    pausedByUserRef.current = false;
+
+    // Stop all local audio sources (HTML5 Audio, Qobuz) - do this first to prevent overlap
+    // Always stop regardless of paused state to handle edge cases
+    stopAllLocalAudio();
 
     // Stop any active browser playback before starting new track
     if (browserPlaybackActive && activeExtensionTabId) {
@@ -10136,6 +10136,23 @@ const Parachord = () => {
         window.electron.spotify.polling.stop();
       }
 
+      // Stop Qobuz audio if playing (Qobuz uses its own global audio element)
+      if (window.qobuzAudio) {
+        window.qobuzAudio.pause();
+        window.qobuzAudio.currentTime = 0;
+      }
+
+      // Stop Apple Music preview audio if playing
+      if (window._appleMusicPreviewAudio) {
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
+      }
+
+      // Stop native MusicKit if playing
+      if (window.electron?.musicKit?.pause) {
+        window.electron.musicKit.pause().catch(() => {});
+      }
+
       // Pause Spotify if it's playing
       if (spotifyToken && streamingPlaybackActiveRef.current) {
         console.log('⏹️ Pausing Spotify for local file playback');
@@ -10339,6 +10356,23 @@ const Parachord = () => {
       // Also stop main process polling
       if (window.electron?.spotify?.polling) {
         window.electron.spotify.polling.stop();
+      }
+
+      // Stop Qobuz audio if playing (Qobuz uses its own global audio element)
+      if (window.qobuzAudio) {
+        window.qobuzAudio.pause();
+        window.qobuzAudio.currentTime = 0;
+      }
+
+      // Stop Apple Music preview audio if playing
+      if (window._appleMusicPreviewAudio) {
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
+      }
+
+      // Stop native MusicKit if playing
+      if (window.electron?.musicKit?.pause) {
+        window.electron.musicKit.pause().catch(() => {});
       }
 
       // Pause Spotify if it's playing
@@ -10607,12 +10641,8 @@ const Parachord = () => {
       console.log('🌐 External browser track detected, showing prompt...');
       streamingPlaybackActiveRef.current = false; // Allow browser events for external playback
 
-      // Stop any playing local audio before switching to browser playback
-      if (audioRef.current && !audioRef.current.paused) {
-        console.log('⏹️ Stopping local audio before browser playback');
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
+      // Stop all local audio sources before switching to browser playback
+      stopAllLocalAudio();
 
       // Stop Spotify polling when switching to external browser playback
       if (playbackPollerRef.current) {
@@ -10655,12 +10685,9 @@ const Parachord = () => {
 
     // Use resolver's play method
     try {
-      // Stop any playing local audio before switching to streaming resolver
-      if (audioRef.current && !audioRef.current.paused) {
-        console.log('⏹️ Stopping local audio before streaming playback');
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
+      // Stop all local audio sources before switching to streaming resolver
+      // This is a second safety check in case audio wasn't stopped earlier
+      stopAllLocalAudio();
 
       const config = await getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
@@ -11059,6 +11086,63 @@ const Parachord = () => {
       }
     } catch (error) {
       console.error('Failed to stop Spotify playback:', error);
+    }
+  };
+
+  // Stop all audio playback sources to prevent overlap when switching tracks
+  // This ensures no audio continues playing when transitioning between different resolvers
+  const stopAllLocalAudio = () => {
+    // Stop HTML5 Audio element (used by local files and SoundCloud)
+    // Always call pause() regardless of paused state to handle edge cases
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        console.log('⏹️ Stopped HTML5 audio element');
+      } catch (e) {
+        console.error('Error stopping HTML5 audio:', e);
+      }
+    }
+
+    // Stop Qobuz audio if it exists (Qobuz uses its own global audio element)
+    if (window.qobuzAudio) {
+      try {
+        window.qobuzAudio.pause();
+        window.qobuzAudio.currentTime = 0;
+        console.log('⏹️ Stopped Qobuz audio element');
+      } catch (e) {
+        console.error('Error stopping Qobuz audio:', e);
+      }
+    }
+
+    // Stop Apple Music preview audio if it exists (used for 30-second previews)
+    if (window._appleMusicPreviewAudio) {
+      try {
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
+        console.log('⏹️ Stopped Apple Music preview audio');
+      } catch (e) {
+        console.error('Error stopping Apple Music preview audio:', e);
+      }
+    }
+
+    // Stop native MusicKit playback if available (macOS Apple Music)
+    if (window.electron?.musicKit?.pause) {
+      window.electron.musicKit.pause().catch(e => {
+        // Ignore errors - MusicKit may not be playing
+      });
+    }
+
+    // Stop MusicKit Web playback if available
+    if (window.getMusicKitWeb) {
+      try {
+        const musicKitWeb = window.getMusicKitWeb();
+        if (musicKitWeb?.stop) {
+          musicKitWeb.stop().catch(() => {});
+        }
+      } catch (e) {
+        // Ignore errors
+      }
     }
   };
 
@@ -11542,12 +11626,9 @@ const Parachord = () => {
         window.electron.musicKit.polling.stop().catch(() => {});
       }
 
-      // Stop HTML5 Audio if playing (local files, SoundCloud)
-      if (audioRef.current && !audioRef.current.paused) {
-        console.log('⏹️ Stopping HTML5 audio before next track');
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
+      // Stop all local audio sources (HTML5 Audio for local files/SoundCloud, Qobuz audio)
+      // Always stop regardless of paused state to handle edge cases and prevent overlap
+      stopAllLocalAudio();
 
       // Notify scrobble manager that current track is ending
       if (window.scrobbleManager) {
