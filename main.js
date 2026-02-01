@@ -2571,9 +2571,18 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
-  // Add delete option for playlists
+  // Add edit and delete options for playlists
   if (data.type === 'playlist' && data.playlistId) {
     menuItems.push({ type: 'separator' });
+    menuItems.push({
+      label: 'Edit Playlist',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'edit-playlist',
+          playlistId: data.playlistId
+        });
+      }
+    });
     menuItems.push({
       label: 'Delete Playlist',
       click: () => {
