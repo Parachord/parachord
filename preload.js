@@ -230,9 +230,9 @@ contextBridge.exposeInMainWorld('electron', {
   contextMenu: {
     showTrackMenu: (data) => ipcRenderer.invoke('show-track-context-menu', data),
     onAction: (callback) => {
-      ipcRenderer.on('track-context-menu-action', (event, data) => {
-        callback(data);
-      });
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('track-context-menu-action', handler);
+      return () => ipcRenderer.removeListener('track-context-menu-action', handler);
     }
   },
 

@@ -7240,7 +7240,7 @@ const Parachord = () => {
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
-      window.electron.contextMenu.onAction(async (data) => {
+      const cleanup = window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
@@ -7444,6 +7444,7 @@ const Parachord = () => {
           }
         }
       });
+      return cleanup;
     }
   }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, setPlaylistEditMode]);
 
