@@ -2953,13 +2953,33 @@ ipcMain.handle('playlists-delete', async (event, playlistId) => {
     const playlists = store.get('local_playlists') || [];
     const initialCount = playlists.length;
 
-    // Filter out the playlist with matching ID
-    const filteredPlaylists = playlists.filter(p => p.id !== playlistId);
+    // Find the playlist to check if it's synced
+    const playlistToDelete = playlists.find(p => p.id === playlistId);
 
-    if (filteredPlaylists.length === initialCount) {
+    if (!playlistToDelete) {
       console.log('  ❌ Playlist not found');
       return { success: false, error: 'Playlist not found' };
     }
+
+    // If this is a synced playlist, remove it from the sync settings
+    // so it won't be re-imported on next sync
+    if (playlistToDelete.syncedFrom?.resolver && playlistToDelete.syncedFrom?.externalId) {
+      const resolver = playlistToDelete.syncedFrom.resolver;
+      const externalId = playlistToDelete.syncedFrom.externalId;
+      console.log(`  Unsyncing from ${resolver}: ${externalId}`);
+
+      const syncSettings = store.get('resolver_sync_settings') || {};
+      if (syncSettings[resolver]?.selectedPlaylistIds) {
+        syncSettings[resolver].selectedPlaylistIds = syncSettings[resolver].selectedPlaylistIds.filter(
+          id => id !== externalId
+        );
+        store.set('resolver_sync_settings', syncSettings);
+        console.log(`  ✅ Removed from ${resolver} sync settings`);
+      }
+    }
+
+    // Filter out the playlist with matching ID
+    const filteredPlaylists = playlists.filter(p => p.id !== playlistId);
 
     store.set('local_playlists', filteredPlaylists);
     console.log('  ✅ Deleted playlist');
