@@ -8982,7 +8982,28 @@ const Parachord = () => {
       return;
     }
 
-    const isSpotifyTrack = currentTrack.sources?.spotify || currentTrack.spotifyUri;
+    // Check _activeResolver first to determine what's actually playing
+    // Handle Apple Music playback (must check before Spotify since tracks can have both sources)
+    const isAppleMusicActive = currentTrack._activeResolver === 'applemusic';
+    if (isAppleMusicActive && window.electron?.musicKit) {
+      try {
+        if (isPlaying) {
+          await window.electron.musicKit.pause();
+          setIsPlaying(false);
+          console.log('🍎 Paused Apple Music playback');
+        } else {
+          await window.electron.musicKit.resume();
+          setIsPlaying(true);
+          console.log('🍎 Resumed Apple Music playback');
+        }
+      } catch (error) {
+        console.error('Apple Music play/pause error:', error);
+      }
+      return;
+    }
+
+    const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
+      (!currentTrack._activeResolver && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
@@ -9065,25 +9086,6 @@ const Parachord = () => {
       };
 
       await attemptSpotifyControl(spotifyToken);
-      return;
-    }
-
-    // Handle Apple Music playback
-    const isAppleMusicTrack = currentTrack.sources?.applemusic || currentTrack._activeResolver === 'applemusic';
-    if (isAppleMusicTrack && window.electron?.musicKit) {
-      try {
-        if (isPlaying) {
-          await window.electron.musicKit.pause();
-          setIsPlaying(false);
-          console.log('🍎 Paused Apple Music playback');
-        } else {
-          await window.electron.musicKit.resume();
-          setIsPlaying(true);
-          console.log('🍎 Resumed Apple Music playback');
-        }
-      } catch (error) {
-        console.error('Apple Music play/pause error:', error);
-      }
       return;
     }
 
