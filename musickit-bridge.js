@@ -20,24 +20,38 @@ class MusicKitBridge extends EventEmitter {
   }
 
   /**
-   * Get the path to the MusicKit helper binary
+   * Get the path to the MusicKit helper executable (inside .app bundle)
    */
   getHelperPath() {
-    const isDev = process.env.NODE_ENV === 'development' || !process.resourcesPath;
+    // Look for .app bundle first (required for MusicKit entitlements)
+    // The executable is inside: MusicKitHelper.app/Contents/MacOS/MusicKitHelper
+    const appBundlePaths = [
+      // Development: use Swift build output .app bundle
+      path.join(__dirname, 'native', 'musickit-helper', '.build', 'release', 'MusicKitHelper.app'),
+      // Resources directory
+      path.join(__dirname, 'resources', 'bin', 'darwin', 'MusicKitHelper.app'),
+      // Production path (inside Electron app bundle)
+      path.join(process.resourcesPath || __dirname, 'bin', 'darwin', 'MusicKitHelper.app'),
+    ];
 
-    // Try multiple locations - prioritize build directory during development
-    // (the ad-hoc signed binary works, but re-signed with developer cert gets killed by macOS)
-    const possiblePaths = [
-      // Development: use Swift build output directly (ad-hoc signed, works)
+    for (const appPath of appBundlePaths) {
+      const execPath = path.join(appPath, 'Contents', 'MacOS', 'MusicKitHelper');
+      if (fs.existsSync(execPath)) {
+        console.log('[MusicKit] Found app bundle at:', appPath);
+        return execPath;
+      }
+    }
+
+    // Fallback to old CLI binary (won't have MusicKit playback, but might work for search)
+    const fallbackPaths = [
       path.join(__dirname, 'native', 'musickit-helper', '.build', 'release', 'musickit-helper'),
-      // Fallback to resources
       path.join(__dirname, 'resources', 'bin', 'darwin', 'musickit-helper'),
-      // Production path (inside app bundle)
       path.join(process.resourcesPath || __dirname, 'bin', 'darwin', 'musickit-helper'),
     ];
 
-    for (const p of possiblePaths) {
+    for (const p of fallbackPaths) {
       if (fs.existsSync(p)) {
+        console.log('[MusicKit] Warning: Using fallback CLI binary (no playback support):', p);
         return p;
       }
     }

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import MusicKit
 
 // MARK: - JSON Message Types
@@ -295,61 +296,76 @@ class MusicKitBridge {
     }
 }
 
-// MARK: - Main Entry Point
+// MARK: - App Delegate
 
-@main
-struct MusicKitHelperApp {
-    static func main() async {
-        guard #available(macOS 14.0, *) else {
-            let errorResponse = Response(id: "error", success: false, data: nil, error: "macOS 14.0 (Sonoma) or later required for in-app playback")
-            if let data = try? JSONEncoder().encode(errorResponse), let str = String(data: data, encoding: .utf8) {
-                print(str)
-                fflush(stdout)
-            }
-            return
+@available(macOS 14.0, *)
+class AppDelegate: NSObject, NSApplicationDelegate {
+    private var bridge: MusicKitBridge?
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Initialize bridge on main actor
+        Task { @MainActor in
+            self.bridge = MusicKitBridge()
+
+            // Send ready signal
+            let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.0.0", "platform": "macOS 14+", "appBundle": true]), error: nil)
+            self.sendResponse(readyResponse)
+
+            // Start reading from stdin in background
+            self.startInputLoop()
         }
-
-        await mainLoop()
     }
 
-    @available(macOS 14.0, *)
-    static func mainLoop() async {
-        let bridge = await MusicKitBridge()
-        let encoder = JSONEncoder()
-        let decoder = JSONDecoder()
+    func applicationWillTerminate(_ notification: Notification) {
+        // Cleanup
+    }
 
-        // Send ready signal
-        let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.0.0", "platform": "macOS 14+"]), error: nil)
-        if let data = try? encoder.encode(readyResponse), let str = String(data: data, encoding: .utf8) {
+    private func sendResponse(_ response: Response) {
+        if let data = try? encoder.encode(response), let str = String(data: data, encoding: .utf8) {
             print(str)
             fflush(stdout)
         }
+    }
 
-        // Read commands from stdin
-        while let line = readLine() {
-            guard !line.isEmpty else { continue }
+    private func startInputLoop() {
+        // Read stdin in a background thread
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            while let line = readLine() {
+                guard !line.isEmpty else { continue }
 
-            do {
-                let request = try decoder.decode(Request.self, from: Data(line.utf8))
-                let response = await handleRequest(request, bridge: bridge)
-
-                if let data = try? encoder.encode(response), let str = String(data: data, encoding: .utf8) {
-                    print(str)
-                    fflush(stdout)
+                // Process on main thread
+                DispatchQueue.main.async {
+                    self?.processLine(line)
                 }
-            } catch {
-                let errorResponse = Response(id: "error", success: false, data: nil, error: "Parse error: \(error.localizedDescription)")
-                if let data = try? encoder.encode(errorResponse), let str = String(data: data, encoding: .utf8) {
-                    print(str)
-                    fflush(stdout)
-                }
+            }
+
+            // stdin closed, exit app
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
             }
         }
     }
 
-    @available(macOS 14.0, *)
+    private func processLine(_ line: String) {
+        guard let bridge = self.bridge else { return }
+
+        do {
+            let request = try decoder.decode(Request.self, from: Data(line.utf8))
+
+            Task { @MainActor in
+                let response = await self.handleRequest(request, bridge: bridge)
+                self.sendResponse(response)
+            }
+        } catch {
+            let errorResponse = Response(id: "error", success: false, data: nil, error: "Parse error: \(error.localizedDescription)")
+            sendResponse(errorResponse)
+        }
+    }
+
     @MainActor
-    static func handleRequest(_ request: Request, bridge: MusicKitBridge) async -> Response {
+    private func handleRequest(_ request: Request, bridge: MusicKitBridge) async -> Response {
         do {
             let result: [String: Any]
 
@@ -440,7 +456,7 @@ struct MusicKitHelperApp {
                 result = ["quitting": true]
                 // Exit after sending response
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    exit(0)
+                    NSApp.terminate(nil)
                 }
 
             default:
@@ -452,5 +468,33 @@ struct MusicKitHelperApp {
         } catch {
             return Response(id: request.id, success: false, data: nil, error: error.localizedDescription)
         }
+    }
+}
+
+// MARK: - Main Entry Point
+
+@main
+struct MusicKitHelperApp {
+    static func main() {
+        guard #available(macOS 14.0, *) else {
+            let encoder = JSONEncoder()
+            let errorResponse = Response(id: "error", success: false, data: nil, error: "macOS 14.0 (Sonoma) or later required for in-app playback")
+            if let data = try? encoder.encode(errorResponse), let str = String(data: data, encoding: .utf8) {
+                print(str)
+                fflush(stdout)
+            }
+            return
+        }
+
+        // Create and run the app
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+
+        // Set activation policy to accessory (background agent, no dock icon)
+        app.setActivationPolicy(.accessory)
+
+        // Run the app
+        app.run()
     }
 }

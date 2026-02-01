@@ -2,8 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- MusicKit access for Apple Music playback -->
     <key>com.apple.developer.musickit</key>
     <true/>
+
+    <!-- Allow network access for MusicKit API -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- App sandbox disabled for helper app (needed for stdin/stdout IPC) -->
     <key>com.apple.security.app-sandbox</key>
     <false/>
 </dict>

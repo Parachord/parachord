@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Build script for MusicKit Helper
-# Requires: macOS 12+, Xcode Command Line Tools
+# Build script for MusicKit Helper (.app bundle)
+# Requires: macOS 14+, Xcode Command Line Tools
 
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-echo "Building MusicKit Helper..."
+echo "Building MusicKit Helper App..."
 
 # Build release binary
 swift build -c release
@@ -21,29 +21,68 @@ if [ ! -f "$BINARY_PATH" ]; then
     exit 1
 fi
 
-# Create output directory
+# Create .app bundle structure
+APP_NAME="MusicKitHelper.app"
+APP_DIR=".build/release/$APP_NAME"
+CONTENTS_DIR="$APP_DIR/Contents"
+MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
+
+echo "Creating app bundle at $APP_DIR..."
+
+# Clean previous bundle
+rm -rf "$APP_DIR"
+
+# Create directories
+mkdir -p "$MACOS_DIR"
+mkdir -p "$RESOURCES_DIR"
+
+# Copy executable
+cp "$BINARY_PATH" "$MACOS_DIR/MusicKitHelper"
+
+# Copy Info.plist
+cp "Info.plist" "$CONTENTS_DIR/"
+
+# Create PkgInfo
+echo -n "APPL????" > "$CONTENTS_DIR/PkgInfo"
+
+echo "App bundle created successfully"
+
+# Create output directory for Electron
 OUTPUT_DIR="../../resources/bin/darwin"
 mkdir -p "$OUTPUT_DIR"
 
-# Copy binary
-cp "$BINARY_PATH" "$OUTPUT_DIR/musickit-helper"
-
-# Sign with entitlements (requires Apple Developer certificate for MusicKit)
-# For development, we can sign ad-hoc
+# Sign the app bundle
 if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
     echo "Signing with identity: $APPLE_SIGNING_IDENTITY"
-    codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+    codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" \
         --entitlements MusicKitHelper.entitlements \
         --options runtime \
-        "$OUTPUT_DIR/musickit-helper"
+        "$APP_DIR"
 else
-    echo "Signing ad-hoc (MusicKit may require proper signing)..."
-    codesign --force --sign - \
+    echo "Signing ad-hoc..."
+    # Ad-hoc signing for development
+    codesign --force --deep --sign - \
         --entitlements MusicKitHelper.entitlements \
-        "$OUTPUT_DIR/musickit-helper"
+        "$APP_DIR"
 fi
 
-echo "Build complete: $OUTPUT_DIR/musickit-helper"
+# Verify signature
+echo "Verifying signature..."
+codesign -vv "$APP_DIR" 2>&1 || true
 
-# Verify
-file "$OUTPUT_DIR/musickit-helper"
+# Copy app bundle to output directory
+echo "Copying to $OUTPUT_DIR..."
+rm -rf "$OUTPUT_DIR/MusicKitHelper.app"
+cp -R "$APP_DIR" "$OUTPUT_DIR/"
+
+echo ""
+echo "Build complete!"
+echo "  App bundle: $OUTPUT_DIR/MusicKitHelper.app"
+echo "  Executable: $OUTPUT_DIR/MusicKitHelper.app/Contents/MacOS/MusicKitHelper"
+echo ""
+
+# Show bundle contents
+echo "Bundle contents:"
+ls -la "$OUTPUT_DIR/MusicKitHelper.app/Contents/"
+ls -la "$OUTPUT_DIR/MusicKitHelper.app/Contents/MacOS/"

@@ -1,12 +1,18 @@
 # MusicKit Helper
 
-Native macOS helper for Apple Music integration via MusicKit framework.
+Native macOS helper app for Apple Music playback via MusicKit framework.
+
+## Overview
+
+This is a macOS `.app` bundle (not a CLI binary) that provides MusicKit integration for Parachord. It runs as a background agent (no Dock icon) and communicates with the Electron app via stdin/stdout JSON messages.
+
+**Why an .app bundle?** Apple's `ApplicationMusicPlayer` requires a proper app bundle context with MusicKit entitlements. A simple CLI binary cannot use MusicKit for playback - it will fail with "permission denied".
 
 ## Requirements
 
-- macOS 12.0 (Monterey) or later
+- macOS 14.0 (Sonoma) or later
 - Xcode Command Line Tools
-- Apple Music subscription (for playback)
+- Active Apple Music subscription for playback
 
 ## Building
 
@@ -15,74 +21,113 @@ cd native/musickit-helper
 ./build.sh
 ```
 
-This will:
-1. Build the Swift executable
-2. Copy it to `resources/bin/darwin/musickit-helper`
-3. Sign it with ad-hoc signature (or your Apple Developer certificate if `APPLE_SIGNING_IDENTITY` is set)
+This creates:
+- `.build/release/MusicKitHelper.app` - The app bundle
+- `../../resources/bin/darwin/MusicKitHelper.app` - Copy for Electron
 
-## Signing for Distribution
+## Structure
 
-For distribution, the helper should be signed with a valid Apple Developer certificate:
+```
+MusicKitHelper.app/
+  Contents/
+    Info.plist          # App metadata, LSUIElement (background agent)
+    MacOS/
+      MusicKitHelper    # Executable
+    PkgInfo
+```
+
+## Signing
+
+For development, the build script signs ad-hoc. For distribution:
 
 ```bash
 APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh
 ```
 
-## How It Works
+## Features
 
-The helper is a command-line tool that communicates with Parachord via JSON over stdin/stdout:
+- **Authorization** - Request Apple Music access (shows system dialog)
+- **Search** - Search Apple Music catalog
+- **Resolve** - Find tracks by artist/title
+- **Playback** - Full track playback via ApplicationMusicPlayer
+- **Queue** - Add tracks to queue
+- **Controls** - Play, pause, stop, skip, seek
 
-1. Parachord spawns the helper process
-2. Commands are sent as JSON lines to stdin
-3. Responses are returned as JSON lines from stdout
+## Protocol
 
-### Supported Commands
+JSON messages over stdin/stdout:
 
-| Command | Parameters | Description |
-|---------|------------|-------------|
-| `checkAuthStatus` | - | Check if user has authorized Apple Music |
-| `authorize` | - | Request Apple Music authorization (shows system dialog) |
-| `search` | `query`, `limit` | Search Apple Music catalog |
-| `resolve` | `artist`, `title`, `album` | Find a specific track |
-| `play` | `songId` | Play a track by Apple Music ID |
+**Request:**
+```json
+{
+  "id": "req_1",
+  "action": "play",
+  "params": { "songId": "1234567890" }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req_1",
+  "success": true,
+  "data": { "playing": true },
+  "error": null
+}
+```
+
+## Actions
+
+| Action | Params | Description |
+|--------|--------|-------------|
+| `checkAuthStatus` | - | Check current authorization |
+| `authorize` | - | Request Apple Music access |
+| `search` | `query`, `limit` | Search catalog |
+| `resolve` | `artist`, `title`, `album` | Find specific track |
+| `play` | `songId` | Play track by ID |
 | `pause` | - | Pause playback |
 | `resume` | - | Resume playback |
 | `stop` | - | Stop playback |
-| `skipToNext` | - | Skip to next track |
-| `skipToPrevious` | - | Skip to previous track |
-| `seek` | `position` | Seek to position (seconds) |
-| `getPlaybackState` | - | Get current playback state |
+| `skipToNext` | - | Next track |
+| `skipToPrevious` | - | Previous track |
+| `seek` | `position` | Seek to seconds |
+| `getPlaybackState` | - | Get current state |
 | `getNowPlaying` | - | Get now playing info |
-| `addToQueue` | `songId` | Add track to queue |
-| `setVolume` | `volume` | Set volume (0.0-1.0) |
+| `addToQueue` | `songId` | Add to queue |
+| `setVolume` | `volume` | Set volume (0-1) |
+| `ping` | - | Health check |
+| `quit` | - | Exit helper |
 
-### Example Communication
+## User Experience
 
-Request:
-```json
-{"id":"req_1","action":"search","params":{"query":"Taylor Swift","limit":10}}
-```
+When a user connects Apple Music in Parachord:
 
-Response:
-```json
-{"id":"req_1","success":true,"data":{"songs":[...]}}
-```
+1. Parachord launches the helper app (invisible background agent)
+2. Helper requests MusicKit authorization
+3. macOS shows system prompt: "Parachord MusicKit wants access to Apple Music"
+4. User authorizes
+5. Full playback works!
 
-## Integration with Parachord
-
-The helper is automatically started when needed by the Electron main process via `musickit-bridge.js`. The preload script exposes the API to the renderer process via `window.electron.musicKit`.
+The authorization prompt shows "Parachord MusicKit" (from CFBundleName in Info.plist).
 
 ## Troubleshooting
 
 ### "Helper not found"
-Run the build script to compile the helper binary.
+Run the build script to compile the helper:
+```bash
+cd native/musickit-helper && ./build.sh
+```
 
 ### "Authorization failed"
 - Ensure you have an active Apple Music subscription
 - Check System Preferences > Privacy & Security > Media & Apple Music
-- The app may need to be added to the allowed apps list
+- The "Parachord MusicKit" app needs to be allowed
 
 ### "Playback failed"
 - Verify your Apple Music subscription is active
-- Try signing out and back in to Apple Music
+- Try signing out and back in to Apple Music in System Settings
 - Check that the track is available in your region
+- Ensure the app bundle is properly signed
+
+### "Permission denied"
+This usually means you're running the old CLI binary instead of the .app bundle. Rebuild with `./build.sh` to create the proper .app bundle.
