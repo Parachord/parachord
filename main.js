@@ -3669,7 +3669,7 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
 });
 
 // Push local playlist changes to the sync provider
-ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks) => {
+ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks, metadata) => {
   const provider = SyncEngine.getProvider(providerId);
   if (!provider || !provider.capabilities.playlists) {
     return { success: false, error: 'Provider does not support playlists' };
@@ -3697,6 +3697,12 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       }
     }
 
+    // Push metadata changes (name, description) if provided
+    if (metadata && provider.updatePlaylistDetails) {
+      await provider.updatePlaylistDetails(playlistExternalId, metadata, token);
+    }
+
+    // Push track changes
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
     return { success: true, snapshotId: result.snapshotId };
   } catch (error) {

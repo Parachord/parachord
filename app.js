@@ -7240,7 +7240,7 @@ const Parachord = () => {
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
-      window.electron.contextMenu.onAction(async (data) => {
+      const cleanup = window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
         if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
@@ -7444,6 +7444,7 @@ const Parachord = () => {
           }
         }
       });
+      return cleanup;
     }
   }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, showToast, playlists, setPlaylistEditMode]);
 
@@ -14701,7 +14702,12 @@ ${tracks}
         createdAt: playlist.createdAt || Date.now(),
         addedAt: playlist.addedAt || Date.now(),
         lastModified: Date.now(),
-        isAiPlaylist: playlist.isAiPlaylist || false
+        isAiPlaylist: playlist.isAiPlaylist || false,
+        // Preserve sync-related properties
+        syncedFrom: playlist.syncedFrom,
+        syncSources: playlist.syncSources,
+        hasUpdates: playlist.hasUpdates,
+        locallyModified: playlist.locallyModified
       };
 
       const result = await window.electron.playlists.save(playlistData);
@@ -25568,7 +25574,12 @@ useEffect(() => {
               if (!provider || !externalId) return;
 
               try {
-                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks);
+                // Push both tracks and metadata (name, description)
+                const metadata = {
+                  name: playlist.title,
+                  description: playlist.description
+                };
+                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks, metadata);
                 if (result?.success) {
                   const updatedPlaylist = {
                     ...playlist,

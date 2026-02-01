@@ -230,9 +230,9 @@ contextBridge.exposeInMainWorld('electron', {
   contextMenu: {
     showTrackMenu: (data) => ipcRenderer.invoke('show-track-context-menu', data),
     onAction: (callback) => {
-      ipcRenderer.on('track-context-menu-action', (event, data) => {
-        callback(data);
-      });
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('track-context-menu-action', handler);
+      return () => ipcRenderer.removeListener('track-context-menu-action', handler);
     }
   },
 
@@ -283,7 +283,7 @@ contextBridge.exposeInMainWorld('electron', {
     cancel: (providerId) => ipcRenderer.invoke('sync:cancel', providerId),
     fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
     fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
-    pushPlaylist: (providerId, playlistExternalId, tracks) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks),
+    pushPlaylist: (providerId, playlistExternalId, tracks, metadata) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks, metadata),
     saveTracks: (providerId, trackIds) => ipcRenderer.invoke('sync:save-tracks', providerId, trackIds),
     removeTracks: (providerId, trackIds) => ipcRenderer.invoke('sync:remove-tracks', providerId, trackIds),
     followArtists: (providerId, artistIds) => ipcRenderer.invoke('sync:follow-artists', providerId, artistIds),
