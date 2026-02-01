@@ -385,6 +385,30 @@ const SpotifySyncProvider = {
   },
 
   /**
+   * Update playlist metadata (name, description)
+   * @param {string} playlistId - Spotify playlist ID
+   * @param {Object} metadata - { name?: string, description?: string }
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async updatePlaylistDetails(playlistId, metadata, token) {
+    const body = {};
+    if (metadata.name) body.name = metadata.name;
+    if (metadata.description !== undefined) body.description = metadata.description || '';
+
+    if (Object.keys(body).length === 0) {
+      return { success: true }; // Nothing to update
+    }
+
+    await spotifyRequest(`/playlists/${playlistId}`, token, {
+      method: 'PUT',
+      body
+    });
+
+    return { success: true };
+  },
+
+  /**
    * Check if user owns the playlist (can edit it)
    */
   async checkPlaylistOwnership(playlistId, token) {

@@ -14701,7 +14701,12 @@ ${tracks}
         createdAt: playlist.createdAt || Date.now(),
         addedAt: playlist.addedAt || Date.now(),
         lastModified: Date.now(),
-        isAiPlaylist: playlist.isAiPlaylist || false
+        isAiPlaylist: playlist.isAiPlaylist || false,
+        // Preserve sync-related properties
+        syncedFrom: playlist.syncedFrom,
+        syncSources: playlist.syncSources,
+        hasUpdates: playlist.hasUpdates,
+        locallyModified: playlist.locallyModified
       };
 
       const result = await window.electron.playlists.save(playlistData);
@@ -25568,7 +25573,12 @@ useEffect(() => {
               if (!provider || !externalId) return;
 
               try {
-                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks);
+                // Push both tracks and metadata (name, description)
+                const metadata = {
+                  name: playlist.title,
+                  description: playlist.description
+                };
+                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks, metadata);
                 if (result?.success) {
                   const updatedPlaylist = {
                     ...playlist,
