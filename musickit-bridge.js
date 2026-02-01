@@ -345,7 +345,16 @@ class MusicKitBridge extends EventEmitter {
   }
 
   async play(songId) {
-    return this.send('play', { songId });
+    try {
+      const result = await this.send('play', { songId });
+      return result;
+    } catch (error) {
+      // If play fails, invalidate auth cache so next call re-checks
+      // This handles cases where auth was revoked mid-session
+      console.log('[MusicKit] Play failed, invalidating auth cache:', error.message);
+      this.invalidateAuthCache();
+      throw error;
+    }
   }
 
   async pause() {
@@ -381,7 +390,13 @@ class MusicKitBridge extends EventEmitter {
   }
 
   async addToQueue(songId) {
-    return this.send('addToQueue', { songId });
+    try {
+      return await this.send('addToQueue', { songId });
+    } catch (error) {
+      console.log('[MusicKit] addToQueue failed, invalidating auth cache:', error.message);
+      this.invalidateAuthCache();
+      throw error;
+    }
   }
 
   async setVolume(volume) {
