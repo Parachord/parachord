@@ -3383,6 +3383,7 @@ const Parachord = () => {
   const [appleMusicUserToken, setAppleMusicUserToken] = useState(null);
   const [appleMusicDeveloperToken, setAppleMusicDeveloperToken] = useState('');
   const [appleMusicAdvancedOpen, setAppleMusicAdvancedOpen] = useState(false);
+  const [appleMusicTokenSaved, setAppleMusicTokenSaved] = useState(false);
   const musicKitInstanceRef = useRef(null);
 
   // Media key handling mode: 'always' | 'non-spotify' | 'never'
@@ -19610,14 +19611,14 @@ ${tracks}
       try {
         await window.electron.store.set('applemusic_developer_token', token);
         console.log('Token saved to store');
-        showToast(token ? 'Developer token saved' : 'Developer token cleared', 'success');
+        setAppleMusicTokenSaved(true);
+        // Reset the saved state after 3 seconds
+        setTimeout(() => setAppleMusicTokenSaved(false), 3000);
       } catch (error) {
         console.error('Failed to save token:', error);
-        showToast('Failed to save token', 'error');
       }
     } else {
       console.error('window.electron.store not available');
-      showToast('Storage not available', 'error');
     }
   };
 
@@ -35932,17 +35933,19 @@ useEffect(() => {
                 ),
                 React.createElement('button', {
                   onClick: saveAppleMusicDeveloperToken,
+                  disabled: appleMusicTokenSaved,
                   style: {
                     padding: '6px 12px',
                     fontSize: '12px',
                     fontWeight: '500',
                     color: '#ffffff',
-                    backgroundColor: '#6b7280',
+                    backgroundColor: appleMusicTokenSaved ? '#22c55e' : '#6b7280',
                     border: 'none',
                     borderRadius: '6px',
-                    cursor: 'pointer'
+                    cursor: appleMusicTokenSaved ? 'default' : 'pointer',
+                    transition: 'background-color 0.2s ease'
                   }
-                }, 'Save Token')
+                }, appleMusicTokenSaved ? 'Saved ✓' : 'Save Token')
               )
             )
           ),
