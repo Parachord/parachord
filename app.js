@@ -6657,6 +6657,28 @@ const Parachord = () => {
       return { token };
     }
 
+    // For Apple Music, load developer token from env or localStorage
+    if (resolverId === 'applemusic') {
+      let developerToken = localStorage.getItem('musickit_developer_token') || '';
+
+      // Try to load from environment variable if not in localStorage
+      if (!developerToken && window.electron?.config?.get) {
+        try {
+          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+          if (developerToken) {
+            console.log('🍎 Loaded MusicKit developer token from environment');
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+
+      return {
+        developerToken,
+        storefront: 'us'
+      };
+    }
+
     const configs = {
       qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
@@ -10737,6 +10759,8 @@ const Parachord = () => {
       const savedAppleMusicDevToken = await window.electron.store.get('applemusic_developer_token');
       if (savedAppleMusicDevToken) {
         setAppleMusicDeveloperToken(savedAppleMusicDevToken);
+        // Also save to localStorage for MusicKit JS to use
+        localStorage.setItem('musickit_developer_token', savedAppleMusicDevToken);
         console.log('🍎 Loaded Apple Music developer token');
       }
 
@@ -19487,6 +19511,34 @@ ${tracks}
   // Check if native MusicKit is available on startup
   useEffect(() => {
     const checkMusicKitAvailable = async () => {
+      // Check for MusicKit JS first (cross-platform)
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      const developerToken = localStorage.getItem('musickit_developer_token') || '';
+      const userToken = localStorage.getItem('musickit_user_token') || '';
+
+      if (musicKitWeb && developerToken) {
+        try {
+          console.log('🍎 Initializing MusicKit JS...');
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+
+          const status = musicKitWeb.getAuthStatus();
+          console.log('🍎 MusicKit JS status:', status);
+
+          // If MusicKit JS is already authorized (from previous session), mark as connected
+          if (status.authorized) {
+            console.log('🍎 MusicKit JS already authorized');
+            setAppleMusicConnected(true);
+          } else if (userToken) {
+            // We have a stored user token but MusicKit JS isn't authorized
+            // The user token will be used automatically by MusicKit JS for API calls
+            console.log('🍎 Stored user token available, attempting session restore...');
+          }
+        } catch (error) {
+          console.log('🍎 MusicKit JS init failed:', error.message);
+        }
+      }
+
+      // Also check native MusicKit availability (macOS)
       if (window.electron?.musicKit) {
         const available = await window.electron.musicKit.isAvailable();
         setAppleMusicNativeAvailable(available);
@@ -19496,7 +19548,7 @@ ${tracks}
         if (available) {
           const authStatus = await window.electron.musicKit.checkAuth();
           if (authStatus.success && authStatus.authorized) {
-            console.log('🍎 MusicKit already authorized');
+            console.log('🍎 Native MusicKit already authorized');
             setAppleMusicConnected(true);
           }
         }
@@ -19508,12 +19560,56 @@ ${tracks}
   const connectAppleMusic = async () => {
     console.log('=== Connect Apple Music Clicked ===');
 
-    // Check if native MusicKit is available
+    // Try MusicKit JS first (works cross-platform, requires developer token)
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    const developerToken = localStorage.getItem('musickit_developer_token') || '';
+
+    if (musicKitWeb && developerToken) {
+      try {
+        console.log('[AppleMusic] Trying MusicKit JS authorization...');
+
+        // Configure MusicKit JS if not already configured
+        const status = musicKitWeb.getAuthStatus();
+        if (!status.configured) {
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+        }
+
+        // Request authorization (Apple ID sign-in)
+        const authResult = await musicKitWeb.authorize();
+        console.log('[AppleMusic] MusicKit JS auth result:', authResult);
+
+        if (authResult.authorized) {
+          console.log('🍎 MusicKit JS authorized successfully');
+          setAppleMusicConnected(true);
+
+          // Store the music user token for session persistence
+          if (authResult.userToken) {
+            localStorage.setItem('musickit_user_token', authResult.userToken);
+            console.log('🍎 Music user token stored');
+          }
+
+          // Save auth state
+          if (window.electron?.store) {
+            await window.electron.store.set('applemusic_authorized', true);
+          }
+
+          showToast('Apple Music connected successfully', 'success');
+          return;
+        }
+      } catch (error) {
+        console.log('[AppleMusic] MusicKit JS auth failed:', error.message);
+        // Fall through to native MusicKit
+      }
+    }
+
+    // Fall back to native MusicKit (macOS only)
     if (!window.electron?.musicKit) {
       showConfirmDialog({
         type: 'error',
         title: 'MusicKit Not Available',
-        message: 'MusicKit bridge is not available. Please restart the app.'
+        message: developerToken
+          ? 'MusicKit JS authorization failed. Please check your developer token.'
+          : 'MusicKit requires either a developer token (Settings → Resolvers → Apple Music) or macOS native integration.'
       });
       return;
     }
@@ -19523,7 +19619,7 @@ ${tracks}
       showConfirmDialog({
         type: 'error',
         title: 'MusicKit Not Available',
-        message: 'Native MusicKit is only available on macOS. The MusicKit helper binary needs to be built first.\n\nRun: cd native/musickit-helper && ./build.sh'
+        message: 'Native MusicKit is only available on macOS. For cross-platform support, add your MusicKit developer token in Settings → Resolvers → Apple Music.'
       });
       return;
     }
@@ -19575,6 +19671,19 @@ ${tracks}
   const disconnectAppleMusic = async () => {
     setAppleMusicConnected(false);
 
+    // Clear MusicKit JS user token
+    localStorage.removeItem('musickit_user_token');
+
+    // Sign out of MusicKit JS
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb) {
+      try {
+        await musicKitWeb.unauthorize();
+      } catch (e) {
+        console.log('[AppleMusic] MusicKit JS sign out error:', e);
+      }
+    }
+
     // Clear from persistent storage
     if (window.electron?.store) {
       await window.electron.store.delete('applemusic_authorized');
@@ -19592,18 +19701,38 @@ ${tracks}
     const token = appleMusicDeveloperToken.trim();
     console.log('Token length:', token.length);
 
+    // Save to localStorage for MusicKit JS
+    localStorage.setItem('musickit_developer_token', token);
+    console.log('Token saved to localStorage');
+
+    // Also save to electron store for persistence
     if (window.electron?.store) {
       try {
         await window.electron.store.set('applemusic_developer_token', token);
-        console.log('Token saved to store');
-        setAppleMusicTokenSaved(true);
-        // Reset the saved state after 3 seconds
-        setTimeout(() => setAppleMusicTokenSaved(false), 3000);
+        console.log('Token saved to electron store');
       } catch (error) {
-        console.error('Failed to save token:', error);
+        console.error('Failed to save token to electron store:', error);
+      }
+    }
+
+    setAppleMusicTokenSaved(true);
+    // Reset the saved state after 3 seconds
+    setTimeout(() => setAppleMusicTokenSaved(false), 3000);
+
+    // Try to configure MusicKit JS immediately with the new token
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb && token) {
+      try {
+        console.log('🍎 Configuring MusicKit JS with new token...');
+        await musicKitWeb.configure(token, 'Parachord', '1.0.0');
+        console.log('🍎 MusicKit JS configured');
+        showToast('MusicKit token saved. Click "Connect" to sign in with Apple ID.', 'success');
+      } catch (error) {
+        console.error('🍎 Failed to configure MusicKit JS:', error);
+        showToast('Token saved but MusicKit configuration failed: ' + error.message, 'warning');
       }
     } else {
-      console.error('window.electron.store not available');
+      showToast('Token saved', 'success');
     }
   };
 
