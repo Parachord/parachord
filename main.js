@@ -1507,7 +1507,9 @@ ipcMain.handle('spotify-auth', async () => {
     'user-library-read',
     'user-follow-read',
     'playlist-read-private',
-    'playlist-read-collaborative'
+    'playlist-read-collaborative',
+    'playlist-modify-public',
+    'playlist-modify-private'
   ].join(' ');
 
   const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true`;
@@ -3623,6 +3625,42 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
     // Also fetch the current snapshot ID
     const snapshotId = await provider.getPlaylistSnapshot?.(playlistExternalId, token);
     return { success: true, tracks, snapshotId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Push local playlist changes to the sync provider
+ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.playlists) {
+    return { success: false, error: 'Provider does not support playlists' };
+  }
+
+  if (!provider.updatePlaylistTracks) {
+    return { success: false, error: 'Provider does not support pushing playlist changes' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    // Check if user owns the playlist (can only push to owned playlists)
+    if (provider.checkPlaylistOwnership) {
+      const isOwner = await provider.checkPlaylistOwnership(playlistExternalId, token);
+      if (!isOwner) {
+        return { success: false, error: 'You can only push changes to playlists you own' };
+      }
+    }
+
+    const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+    return { success: true, snapshotId: result.snapshotId };
   } catch (error) {
     return { success: false, error: error.message };
   }

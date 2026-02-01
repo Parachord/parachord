@@ -25460,118 +25460,205 @@ useEffect(() => {
             )
           ),
 
-          // Playlist update banner (shown when playlist has updates from sync source)
-          selectedPlaylist?.hasUpdates && React.createElement('div', {
-            className: 'mx-4 mb-4 overflow-hidden rounded-lg',
-            style: {
-              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%)',
-              border: '1px solid rgba(147, 51, 234, 0.25)',
-              boxShadow: '0 2px 8px rgba(147, 51, 234, 0.08)'
+          // Playlist sync banner (shown when playlist needs sync - push, pull, or conflict)
+          (() => {
+            const playlist = selectedPlaylist;
+            if (!playlist?.syncedFrom) return null;
+
+            const hasRemoteUpdates = playlist.hasUpdates;
+            const hasLocalChanges = playlist.locallyModified;
+            const provider = playlist.syncedFrom.resolver;
+            const providerName = provider === 'spotify' ? 'Spotify' : provider;
+
+            // No sync needed
+            if (!hasRemoteUpdates && !hasLocalChanges) return null;
+
+            // Determine sync state and which version is newer
+            const localModTime = playlist.lastModified || 0;
+            const lastSyncTime = playlist.syncSources?.[provider]?.syncedAt || 0;
+
+            // For conflicts, local wins if modified after last sync
+            const localIsNewer = localModTime > lastSyncTime;
+
+            // Sync state: 'push' | 'pull' | 'conflict'
+            let syncState;
+            if (hasLocalChanges && hasRemoteUpdates) {
+              syncState = 'conflict';
+            } else if (hasLocalChanges) {
+              syncState = 'push';
+            } else {
+              syncState = 'pull';
             }
-          },
-            React.createElement('div', {
-              className: 'flex items-center justify-between px-4 py-3'
+
+            // Colors based on state
+            const colors = {
+              push: { bg: 'rgba(34, 197, 94, 0.12)', border: 'rgba(34, 197, 94, 0.25)', text: 'text-green-600', iconBg: 'rgba(34, 197, 94, 0.2)' },
+              pull: { bg: 'rgba(147, 51, 234, 0.12)', border: 'rgba(147, 51, 234, 0.25)', text: 'text-purple-600', iconBg: 'rgba(147, 51, 234, 0.2)' },
+              conflict: { bg: 'rgba(234, 179, 8, 0.12)', border: 'rgba(234, 179, 8, 0.25)', text: 'text-yellow-600', iconBg: 'rgba(234, 179, 8, 0.2)' }
+            };
+            const c = colors[syncState];
+
+            // Push handler
+            const handlePush = async () => {
+              const externalId = playlist.syncedFrom?.externalId;
+              if (!provider || !externalId) return;
+
+              try {
+                const result = await window.electron.sync.pushPlaylist(provider, externalId, playlist.tracks);
+                if (result?.success) {
+                  const updatedPlaylist = {
+                    ...playlist,
+                    locallyModified: false,
+                    hasUpdates: false,
+                    syncedFrom: {
+                      ...playlist.syncedFrom,
+                      snapshotId: result.snapshotId
+                    },
+                    syncSources: {
+                      ...playlist.syncSources,
+                      [provider]: { ...playlist.syncSources?.[provider], syncedAt: Date.now() }
+                    }
+                  };
+                  setSelectedPlaylist(updatedPlaylist);
+                  setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
+                  await savePlaylistToStore(updatedPlaylist);
+                } else {
+                  console.error('Failed to push playlist:', result?.error);
+                  alert(`Failed to push changes: ${result?.error || 'Unknown error'}`);
+                }
+              } catch (err) {
+                console.error('Failed to push playlist:', err);
+                alert(`Failed to push changes: ${err.message}`);
+              }
+            };
+
+            // Pull handler
+            const handlePull = async () => {
+              const externalId = playlist.syncedFrom?.externalId;
+              if (!provider || !externalId) return;
+
+              try {
+                const result = await window.electron.sync.fetchPlaylistTracks(provider, externalId);
+                if (result?.success && result.tracks) {
+                  const updatedPlaylist = {
+                    ...playlist,
+                    tracks: result.tracks,
+                    hasUpdates: false,
+                    locallyModified: false,
+                    syncedFrom: {
+                      ...playlist.syncedFrom,
+                      snapshotId: result.snapshotId
+                    },
+                    syncSources: {
+                      ...playlist.syncSources,
+                      [provider]: { ...playlist.syncSources?.[provider], syncedAt: Date.now() }
+                    },
+                    lastModified: Date.now()
+                  };
+                  setSelectedPlaylist(updatedPlaylist);
+                  setPlaylistTracks(result.tracks);
+                  setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
+                  await savePlaylistToStore(updatedPlaylist);
+                }
+              } catch (err) {
+                console.error('Failed to pull playlist updates:', err);
+              }
+            };
+
+            // Dismiss handler (clears sync flags without syncing)
+            const handleDismiss = async () => {
+              const updatedPlaylist = { ...playlist, hasUpdates: false, locallyModified: false };
+              setPlaylists(prev => prev.map(p => p.id === playlist.id ? { ...p, hasUpdates: false, locallyModified: false } : p));
+              setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false, locallyModified: false }));
+              await savePlaylistToStore(updatedPlaylist);
+            };
+
+            return React.createElement('div', {
+              className: 'mx-4 mb-4 overflow-hidden rounded-lg',
+              style: {
+                background: `linear-gradient(135deg, ${c.bg} 0%, ${c.bg} 100%)`,
+                border: `1px solid ${c.border}`,
+                boxShadow: `0 2px 8px ${c.bg}`
+              }
             },
-              // Left side: icon + message
-              React.createElement('div', { className: 'flex items-center gap-3' },
-                // Animated sync icon
-                React.createElement('div', {
-                  className: 'flex items-center justify-center w-8 h-8 rounded-full',
-                  style: {
-                    background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%)'
-                  }
-                },
-                  React.createElement('svg', {
-                    className: 'w-4 h-4 text-purple-600',
-                    fill: 'none',
-                    stroke: 'currentColor',
-                    viewBox: '0 0 24 24',
-                    style: { animation: 'spin 3s linear infinite' }
+              React.createElement('div', {
+                className: 'flex items-center justify-between px-4 py-3'
+              },
+                // Left side: icon + message
+                React.createElement('div', { className: 'flex items-center gap-3' },
+                  React.createElement('div', {
+                    className: 'flex items-center justify-center w-8 h-8 rounded-full',
+                    style: { background: c.iconBg }
                   },
-                    React.createElement('path', {
-                      strokeLinecap: 'round',
-                      strokeLinejoin: 'round',
-                      strokeWidth: 2,
-                      d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
-                    })
+                    React.createElement('svg', {
+                      className: `w-4 h-4 ${c.text}`,
+                      fill: 'none',
+                      stroke: 'currentColor',
+                      viewBox: '0 0 24 24'
+                    },
+                      syncState === 'push'
+                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
+                        : syncState === 'pull'
+                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' })
+                    )
+                  ),
+                  React.createElement('div', { className: 'flex flex-col' },
+                    React.createElement('span', {
+                      className: `text-xs font-medium tracking-widest uppercase ${c.text}`
+                    }, syncState === 'push' ? 'Local Changes' : syncState === 'pull' ? 'Remote Changes' : 'Sync Conflict'),
+                    React.createElement('span', {
+                      className: 'text-sm text-gray-600'
+                    }, syncState === 'push'
+                      ? `Push your changes to ${providerName}`
+                      : syncState === 'pull'
+                      ? `Updated on ${providerName}`
+                      : localIsNewer
+                      ? `Your local changes are newer`
+                      : `${providerName} version is newer`)
                   )
                 ),
-                // Text content
-                React.createElement('div', { className: 'flex flex-col' },
-                  React.createElement('span', {
-                    className: 'text-xs font-medium tracking-widest uppercase text-purple-500'
-                  }, 'Sync Available'),
-                  React.createElement('span', {
-                    className: 'text-sm text-gray-600'
-                  }, `Updated on ${selectedPlaylist.syncedFrom?.resolver || 'the source'}`)
-                )
-              ),
-              // Right side: action buttons
-              React.createElement('div', { className: 'flex items-center gap-2' },
-                React.createElement('button', {
-                  onClick: async () => {
-                    const updatedPlaylist = { ...selectedPlaylist, hasUpdates: false };
-                    setPlaylists(prev => prev.map(p =>
-                      p.id === selectedPlaylist.id ? { ...p, hasUpdates: false } : p
-                    ));
-                    setSelectedPlaylist(prev => ({ ...prev, hasUpdates: false }));
-                    await savePlaylistToStore(updatedPlaylist);
+                // Right side: action buttons
+                React.createElement('div', { className: 'flex items-center gap-2' },
+                  React.createElement('button', {
+                    onClick: handleDismiss,
+                    className: 'px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors'
+                  }, 'Dismiss'),
+
+                  // For conflict state, show both options
+                  syncState === 'conflict' && React.createElement('button', {
+                    onClick: handlePull,
+                    className: 'flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-medium rounded-full hover:bg-gray-300 transition-colors'
                   },
-                  className: 'px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors'
-                }, 'Dismiss'),
-                React.createElement('button', {
-                  onClick: async () => {
-                    // Fetch updated tracks from sync source
-                    const provider = selectedPlaylist.syncedFrom?.resolver;
-                    const externalId = selectedPlaylist.syncedFrom?.externalId;
-                    if (provider && externalId) {
-                      try {
-                        const result = await window.electron.sync.fetchPlaylistTracks?.(provider, externalId);
-                        if (result?.success && result.tracks) {
-                          // Update playlist with new tracks and clear hasUpdates
-                          const updatedPlaylist = {
-                            ...selectedPlaylist,
-                            tracks: result.tracks,
-                            hasUpdates: false,
-                            syncedFrom: {
-                              ...selectedPlaylist.syncedFrom,
-                              snapshotId: result.snapshotId
-                            },
-                            lastModified: Date.now()
-                          };
-                          setSelectedPlaylist(updatedPlaylist);
-                          setPlaylistTracks(result.tracks);
-                          setPlaylists(prev => prev.map(p =>
-                            p.id === selectedPlaylist.id ? updatedPlaylist : p
-                          ));
-                          await savePlaylistToStore(updatedPlaylist);
-                        }
-                      } catch (err) {
-                        console.error('Failed to fetch playlist updates:', err);
-                      }
-                    }
-                  },
-                  className: 'flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-full hover:bg-purple-700 transition-colors',
-                  style: { boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)' }
-                },
-                  React.createElement('svg', {
-                    className: 'w-3.5 h-3.5',
-                    fill: 'none',
-                    stroke: 'currentColor',
-                    viewBox: '0 0 24 24'
-                  },
-                    React.createElement('path', {
-                      strokeLinecap: 'round',
-                      strokeLinejoin: 'round',
-                      strokeWidth: 2,
-                      d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'
-                    })
+                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                    ),
+                    `Use ${providerName}`
                   ),
-                  'Sync Now'
+
+                  // Primary action button
+                  React.createElement('button', {
+                    onClick: syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? handlePush : handlePull,
+                    className: `flex items-center gap-1.5 px-4 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
+                      syncState === 'push' ? 'bg-green-600 hover:bg-green-700' :
+                      syncState === 'pull' ? 'bg-purple-600 hover:bg-purple-700' :
+                      localIsNewer ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700'
+                    }`,
+                    style: { boxShadow: `0 2px 8px ${syncState === 'push' || (syncState === 'conflict' && localIsNewer) ? 'rgba(34, 197, 94, 0.3)' : 'rgba(147, 51, 234, 0.3)'}` }
+                  },
+                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
+                      syncState === 'push' || (syncState === 'conflict' && localIsNewer)
+                        ? React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' })
+                        : React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                    ),
+                    syncState === 'push' ? `Push to ${providerName}` :
+                    syncState === 'pull' ? 'Pull Changes' :
+                    localIsNewer ? 'Push Local' : 'Pull Remote'
+                  )
                 )
               )
-            )
-          ),
+            );
+          })(),
 
           // Two-column layout: playlist cover + metadata on left, tracklist on right
           React.createElement('div', { className: 'flex gap-0 p-6' },
