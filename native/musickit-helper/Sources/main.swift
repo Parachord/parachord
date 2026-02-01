@@ -66,9 +66,8 @@ struct AnyCodable: Codable {
 
 // MARK: - MusicKit Bridge
 
-@MainActor
+@available(macOS 12.0, *)
 class MusicKitBridge {
-    private let player = ApplicationMusicPlayer.shared
     private var isAuthorized = false
 
     // Check current authorization status
@@ -113,10 +112,10 @@ class MusicKitBridge {
                 "id": song.id.rawValue,
                 "title": song.title,
                 "artist": song.artistName,
-                "album": song.albumTitle ?? "",
-                "duration": song.duration ?? 0,
-                "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "",
-                "isrc": song.isrc ?? ""
+                "album": song.albumTitle ?? "" as Any,
+                "duration": song.duration ?? 0 as Any,
+                "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "" as Any,
+                "isrc": song.isrc ?? "" as Any
             ]
         }
     }
@@ -145,10 +144,10 @@ class MusicKitBridge {
                     "id": song.id.rawValue,
                     "title": song.title,
                     "artist": song.artistName,
-                    "album": song.albumTitle ?? "",
-                    "duration": song.duration ?? 0,
-                    "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "",
-                    "isrc": song.isrc ?? ""
+                    "album": song.albumTitle ?? "" as Any,
+                    "duration": song.duration ?? 0 as Any,
+                    "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "" as Any,
+                    "isrc": song.isrc ?? "" as Any
                 ]
             }
         }
@@ -159,17 +158,17 @@ class MusicKitBridge {
                 "id": song.id.rawValue,
                 "title": song.title,
                 "artist": song.artistName,
-                "album": song.albumTitle ?? "",
-                "duration": song.duration ?? 0,
-                "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "",
-                "isrc": song.isrc ?? ""
+                "album": song.albumTitle ?? "" as Any,
+                "duration": song.duration ?? 0 as Any,
+                "artworkUrl": song.artwork?.url(width: 300, height: 300)?.absoluteString ?? "" as Any,
+                "isrc": song.isrc ?? "" as Any
             ]
         }
 
         return nil
     }
 
-    // Play a song by Apple Music ID
+    // Play a song by Apple Music ID - opens in Music app
     func play(songId: String) async throws -> [String: Any] {
         let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
         let response = try await request.response()
@@ -178,8 +177,14 @@ class MusicKitBridge {
             throw NSError(domain: "MusicKitBridge", code: 404, userInfo: [NSLocalizedDescriptionKey: "Song not found"])
         }
 
-        player.queue = [song]
-        try await player.play()
+        // Open the song in Apple Music app
+        if let url = song.url {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = [url.absoluteString]
+            try process.run()
+            process.waitUntilExit()
+        }
 
         return [
             "playing": true,
@@ -187,114 +192,135 @@ class MusicKitBridge {
                 "id": song.id.rawValue,
                 "title": song.title,
                 "artist": song.artistName
-            ]
+            ],
+            "note": "Opened in Apple Music app"
         ]
     }
 
-    // Pause playback
+    // Control playback via AppleScript (works with Music app)
     func pause() -> [String: Any] {
-        player.pause()
+        runAppleScript("tell application \"Music\" to pause")
         return ["paused": true]
     }
 
-    // Resume playback
-    func resume() async throws -> [String: Any] {
-        try await player.play()
+    func resume() -> [String: Any] {
+        runAppleScript("tell application \"Music\" to play")
         return ["playing": true]
     }
 
-    // Stop playback
     func stop() -> [String: Any] {
-        player.stop()
+        runAppleScript("tell application \"Music\" to stop")
         return ["stopped": true]
     }
 
-    // Skip to next track
-    func skipToNext() async throws -> [String: Any] {
-        try await player.skipToNextEntry()
+    func skipToNext() -> [String: Any] {
+        runAppleScript("tell application \"Music\" to next track")
         return ["skipped": "next"]
     }
 
-    // Skip to previous track
-    func skipToPrevious() async throws -> [String: Any] {
-        try await player.skipToPreviousEntry()
+    func skipToPrevious() -> [String: Any] {
+        runAppleScript("tell application \"Music\" to previous track")
         return ["skipped": "previous"]
     }
 
-    // Seek to position (in seconds)
     func seek(position: Double) -> [String: Any] {
-        player.playbackTime = position
+        runAppleScript("tell application \"Music\" to set player position to \(position)")
         return ["position": position]
     }
 
-    // Get current playback state
     func getPlaybackState() -> [String: Any] {
-        let state = player.state
+        let stateScript = """
+        tell application "Music"
+            if player state is playing then
+                return "playing"
+            else if player state is paused then
+                return "paused"
+            else
+                return "stopped"
+            end if
+        end tell
+        """
+        let state = runAppleScriptWithResult(stateScript) ?? "unknown"
+
+        let positionScript = """
+        tell application "Music"
+            try
+                return player position
+            on error
+                return 0
+            end try
+        end tell
+        """
+        let positionStr = runAppleScriptWithResult(positionScript) ?? "0"
+        let position = Double(positionStr) ?? 0
+
         return [
-            "status": playbackStatusString(state.playbackStatus),
-            "position": player.playbackTime,
-            "queue": player.queue.entries.map { entry in
-                [
-                    "id": entry.id,
-                    "title": entry.title
+            "status": state,
+            "position": position
+        ]
+    }
+
+    func getNowPlaying() -> [String: Any] {
+        let script = """
+        tell application "Music"
+            if player state is not stopped then
+                set trackName to name of current track
+                set trackArtist to artist of current track
+                set trackAlbum to album of current track
+                set trackDuration to duration of current track
+                return trackName & "|" & trackArtist & "|" & trackAlbum & "|" & trackDuration
+            else
+                return ""
+            end if
+        end tell
+        """
+
+        if let result = runAppleScriptWithResult(script), !result.isEmpty {
+            let parts = result.components(separatedBy: "|")
+            if parts.count >= 4 {
+                return [
+                    "nowPlaying": [
+                        "title": parts[0],
+                        "artist": parts[1],
+                        "album": parts[2],
+                        "duration": Double(parts[3]) ?? 0
+                    ]
                 ]
             }
-        ]
-    }
-
-    private func playbackStatusString(_ status: MusicPlayer.PlaybackStatus) -> String {
-        switch status {
-        case .playing: return "playing"
-        case .paused: return "paused"
-        case .stopped: return "stopped"
-        case .interrupted: return "interrupted"
-        case .seekingForward: return "seekingForward"
-        case .seekingBackward: return "seekingBackward"
-        @unknown default: return "unknown"
         }
+
+        return ["nowPlaying": NSNull()]
     }
 
-    // Set volume (0.0 to 1.0)
     func setVolume(_ volume: Float) -> [String: Any] {
-        // Note: ApplicationMusicPlayer doesn't directly support volume control
-        // Volume is controlled at the system level for Apple Music
-        return ["volume": volume, "note": "Volume is controlled at system level"]
+        let volumeInt = Int(volume * 100)
+        runAppleScript("tell application \"Music\" to set sound volume to \(volumeInt)")
+        return ["volume": volume]
     }
 
-    // Add song to queue
-    func addToQueue(songId: String) async throws -> [String: Any] {
-        let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
-        let response = try await request.response()
-
-        guard let song = response.items.first else {
-            throw NSError(domain: "MusicKitBridge", code: 404, userInfo: [NSLocalizedDescriptionKey: "Song not found"])
-        }
-
-        player.queue.entries.append(contentsOf: [song])
-
-        return [
-            "added": true,
-            "song": [
-                "id": song.id.rawValue,
-                "title": song.title
-            ]
-        ]
+    // Helper to run AppleScript
+    private func runAppleScript(_ script: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
+        process.waitUntilExit()
     }
 
-    // Get now playing info
-    func getNowPlaying() -> [String: Any] {
-        guard let entry = player.queue.currentEntry else {
-            return ["nowPlaying": NSNull()]
-        }
+    private func runAppleScriptWithResult(_ script: String) -> String? {
+        let process = Process()
+        let pipe = Pipe()
 
-        return [
-            "nowPlaying": [
-                "id": entry.id,
-                "title": entry.title,
-                "position": player.playbackTime,
-                "status": playbackStatusString(player.state.playbackStatus)
-            ]
-        ]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        try? process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -303,7 +329,16 @@ class MusicKitBridge {
 @main
 struct MusicKitHelperApp {
     static func main() async {
-        let bridge = await MusicKitBridge()
+        guard #available(macOS 12.0, *) else {
+            let errorResponse = Response(id: "error", success: false, data: nil, error: "macOS 12.0 or later required")
+            if let data = try? JSONEncoder().encode(errorResponse), let str = String(data: data, encoding: .utf8) {
+                print(str)
+                fflush(stdout)
+            }
+            return
+        }
+
+        let bridge = MusicKitBridge()
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
 
@@ -336,10 +371,18 @@ struct MusicKitHelperApp {
         }
     }
 
+    @available(macOS 12.0, *)
     static func handleRequest(_ request: Request, bridge: MusicKitBridge) async -> Response {
         do {
             let result: [String: Any]
-            let params = request.params?.value as? [String: Any] ?? [:]
+
+            // Extract params - convert AnyCodable values to their underlying values
+            var params: [String: Any] = [:]
+            if let requestParams = request.params {
+                for (key, value) in requestParams {
+                    params[key] = value.value
+                }
+            }
 
             switch request.action {
             case "checkAuthStatus":
@@ -378,16 +421,16 @@ struct MusicKitHelperApp {
                 result = bridge.pause()
 
             case "resume":
-                result = try await bridge.resume()
+                result = bridge.resume()
 
             case "stop":
                 result = bridge.stop()
 
             case "skipToNext":
-                result = try await bridge.skipToNext()
+                result = bridge.skipToNext()
 
             case "skipToPrevious":
-                result = try await bridge.skipToPrevious()
+                result = bridge.skipToPrevious()
 
             case "seek":
                 guard let position = params["position"] as? Double else {
@@ -400,12 +443,6 @@ struct MusicKitHelperApp {
 
             case "getNowPlaying":
                 result = bridge.getNowPlaying()
-
-            case "addToQueue":
-                guard let songId = params["songId"] as? String else {
-                    return Response(id: request.id, success: false, data: nil, error: "Missing songId parameter")
-                }
-                result = try await bridge.addToQueue(songId: songId)
 
             case "setVolume":
                 guard let volume = params["volume"] as? Double else {
