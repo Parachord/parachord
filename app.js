@@ -15339,7 +15339,7 @@ ${tracks}
 
       if (weeklyPlaylists.length === 0) return null;
 
-      // Get this week's and last week's playlists (first two most recent)
+      // Get the last 4 weeks of playlists (most recent first)
       const results = [];
       for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
         const weeklyJam = weeklyPlaylists[i];
