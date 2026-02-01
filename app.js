@@ -9065,9 +9065,30 @@ const Parachord = () => {
       };
 
       await attemptSpotifyControl(spotifyToken);
-    } else {
-      // Toggle local playback
-      if (!audioContext) return;
+      return;
+    }
+
+    // Handle Apple Music playback
+    const isAppleMusicTrack = currentTrack.sources?.applemusic || currentTrack._activeResolver === 'applemusic';
+    if (isAppleMusicTrack && window.electron?.musicKit) {
+      try {
+        if (isPlaying) {
+          await window.electron.musicKit.pause();
+          setIsPlaying(false);
+          console.log('🍎 Paused Apple Music playback');
+        } else {
+          await window.electron.musicKit.resume();
+          setIsPlaying(true);
+          console.log('🍎 Resumed Apple Music playback');
+        }
+      } catch (error) {
+        console.error('Apple Music play/pause error:', error);
+      }
+      return;
+    }
+
+    // Toggle local playback (demo audio fallback)
+    if (!audioContext) return;
       if (isPlaying) {
         setIsPlaying(false);
         if (currentSource) {
@@ -34106,6 +34127,7 @@ useEffect(() => {
               (() => {
                 // Check if current track is Spotify (seeking not supported)
                 const isSpotifyTrack = currentTrack && (currentTrack.sources?.spotify || currentTrack.spotifyUri || currentTrack.resolver === 'spotify');
+                const isAppleMusicTrack = currentTrack && (currentTrack.sources?.applemusic || currentTrack._activeResolver === 'applemusic');
                 const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyTrack;
 
                 return React.createElement('input', {
@@ -34121,6 +34143,10 @@ useEffect(() => {
                     // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
                     if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
+                    }
+                    // Handle seeking for Apple Music
+                    if (isAppleMusicTrack && window.electron?.musicKit?.seek) {
+                      await window.electron.musicKit.seek(newPosition);
                     }
                   },
                   className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`,
@@ -34174,10 +34200,11 @@ useEffect(() => {
           (() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);
             const isSpotify = currentResolverId === 'spotify';
+            const isAppleMusic = currentResolverId === 'applemusic';
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported) || isAppleMusic;
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -34198,6 +34225,9 @@ useEffect(() => {
                 if (activeResolverId === 'spotify') {
                   setSpotifyVolume(restoredVolume, true);
                 }
+                if (activeResolverId === 'applemusic' && window.electron?.musicKit?.setVolume) {
+                  window.electron.musicKit.setVolume(restoredVolume / 100);
+                }
               } else {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
@@ -34207,6 +34237,9 @@ useEffect(() => {
                 }
                 if (activeResolverId === 'spotify') {
                   setSpotifyVolume(0, false);
+                }
+                if (activeResolverId === 'applemusic' && window.electron?.musicKit?.setVolume) {
+                  window.electron.musicKit.setVolume(0);
                 }
               }
             };
@@ -34274,6 +34307,10 @@ useEffect(() => {
                     // Spotify: debounced API call to prevent rate limiting
                     if (activeResolverId === 'spotify') {
                       setSpotifyVolumeDebounced(newVolume, true);
+                    }
+                    // Apple Music: set volume (0-1 range)
+                    if (activeResolverId === 'applemusic' && window.electron?.musicKit?.setVolume) {
+                      window.electron.musicKit.setVolume(newVolume / 100);
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
