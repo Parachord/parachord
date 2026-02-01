@@ -44,3 +44,5 @@ collection.json
 # MCP configuration should be committed for team consistency
 # .mcp.json
 .worktrees/
+builtin/
+resources/bin/
