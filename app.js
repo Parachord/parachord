@@ -6676,15 +6676,18 @@ const Parachord = () => {
       return { token };
     }
 
-    // For Apple Music, load developer token from env or localStorage
+    // For Apple Music, load developer token with fallback chain:
+    // 1. User-configured (localStorage) > 2. Environment variable (.env)
     if (resolverId === 'applemusic') {
       let developerToken = localStorage.getItem('musickit_developer_token') || '';
+      let tokenSource = 'user';
 
       // Try to load from environment variable if not in localStorage
       if (!developerToken && window.electron?.config?.get) {
         try {
           developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
           if (developerToken) {
+            tokenSource = 'environment';
             console.log('🍎 Loaded MusicKit developer token from environment');
           }
         } catch (e) {
@@ -6694,6 +6697,7 @@ const Parachord = () => {
 
       return {
         developerToken,
+        tokenSource,
         storefront: 'us'
       };
     }
@@ -19560,7 +19564,16 @@ ${tracks}
     const checkMusicKitAvailable = async () => {
       // Check for MusicKit JS first (cross-platform)
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-      const developerToken = localStorage.getItem('musickit_developer_token') || '';
+
+      // Load developer token: user-configured > environment variable
+      let developerToken = localStorage.getItem('musickit_developer_token') || '';
+      if (!developerToken && window.electron?.config?.get) {
+        try {
+          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+        } catch (e) {
+          // Ignore errors
+        }
+      }
       const userToken = localStorage.getItem('musickit_user_token') || '';
 
       if (musicKitWeb && developerToken) {
