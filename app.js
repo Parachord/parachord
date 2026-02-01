@@ -9089,16 +9089,15 @@ const Parachord = () => {
 
     // Toggle local playback (demo audio fallback)
     if (!audioContext) return;
-      if (isPlaying) {
-        setIsPlaying(false);
-        if (currentSource) {
-          try { currentSource.stop(); setCurrentSource(null); } catch (e) {}
-        }
-      } else {
-        if (audioContext.state === 'suspended') await audioContext.resume();
-        setIsPlaying(true);
-        playDemoAudio(currentTrack);
+    if (isPlaying) {
+      setIsPlaying(false);
+      if (currentSource) {
+        try { currentSource.stop(); setCurrentSource(null); } catch (e) {}
       }
+    } else {
+      if (audioContext.state === 'suspended') await audioContext.resume();
+      setIsPlaying(true);
+      playDemoAudio(currentTrack);
     }
   };
 
