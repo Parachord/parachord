@@ -51,7 +51,7 @@
       "name": "Qobuz",
       "version": "1.1.0",
       "author": "Parachord Team",
-      "description": "High-quality audio streaming from Qobuz. Sign in for full tracks, or listen to 30-second previews without an account.",
+      "description": "Coming soon: High-quality audio streaming from Qobuz. Currently disabled pending API access.",
       "icon": "🎵",
       "color": "#0E7EBF",
       "homepage": "https://qobuz.com",

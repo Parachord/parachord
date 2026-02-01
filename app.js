@@ -3237,8 +3237,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
+  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'youtube']);
+  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'youtube', 'soundcloud', 'qobuz']); // Qobuz at end - disabled pending API access
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
