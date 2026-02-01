@@ -44,6 +44,7 @@ const express = require('express');
 const WebSocket = require('ws');
 
 const LocalFilesService = require('./local-files');
+const { getMusicKitBridge } = require('./musickit-bridge');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -3547,4 +3548,196 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// ==============================================
+// MusicKit (Apple Music) Native Bridge Handlers
+// ==============================================
+
+// Check if MusicKit helper is available (macOS only)
+ipcMain.handle('musickit:available', async () => {
+  const bridge = getMusicKitBridge();
+  return bridge.isAvailable();
+});
+
+// Start the MusicKit helper
+ipcMain.handle('musickit:start', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const started = await bridge.start();
+    return { success: started };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Check authorization status
+ipcMain.handle('musickit:check-auth', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.checkAuthStatus();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Request authorization
+ipcMain.handle('musickit:authorize', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.authorize();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Search for songs
+ipcMain.handle('musickit:search', async (event, query, limit = 25) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.search(query, limit);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Resolve a track by artist/title
+ipcMain.handle('musickit:resolve', async (event, artist, title, album = null) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.resolve(artist, title, album);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Play a song by Apple Music ID
+ipcMain.handle('musickit:play', async (event, songId) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.play(songId);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Pause playback
+ipcMain.handle('musickit:pause', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.pause();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Resume playback
+ipcMain.handle('musickit:resume', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.resume();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Stop playback
+ipcMain.handle('musickit:stop', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.stop_playback();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Skip to next
+ipcMain.handle('musickit:skip-next', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.skipToNext();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Skip to previous
+ipcMain.handle('musickit:skip-previous', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.skipToPrevious();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Seek to position
+ipcMain.handle('musickit:seek', async (event, position) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.seek(position);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Get playback state
+ipcMain.handle('musickit:get-playback-state', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.getPlaybackState();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Get now playing
+ipcMain.handle('musickit:get-now-playing', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.getNowPlaying();
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Add to queue
+ipcMain.handle('musickit:add-to-queue', async (event, songId) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.addToQueue(songId);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Set volume
+ipcMain.handle('musickit:set-volume', async (event, volume) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.setVolume(volume);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Stop MusicKit helper on app quit
+app.on('will-quit', () => {
+  const bridge = getMusicKitBridge();
+  bridge.stop();
 });

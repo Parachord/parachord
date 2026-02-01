@@ -71,7 +71,16 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "extraResources": [
+        {
+          "from": "resources/bin/darwin/",
+          "to": "bin/darwin/",
+          "filter": ["**/*"]
+        }
+      ],
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "icon": "assets/icons/icon.ico",

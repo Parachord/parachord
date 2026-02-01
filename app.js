@@ -690,7 +690,7 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.0.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Bandcamp for:', query); const response = await fetch(`https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=t`, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('Bandcamp search failed:', response.status); return []; } const html = await response.text(); const results = []; const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const searchResults = doc.querySelectorAll('.searchresult'); searchResults.forEach((item, index) => { if (index >= 20) return; try { const heading = item.querySelector('.heading'); const subhead = item.querySelector('.subhead'); const itemUrl = item.querySelector('.itemurl'); if (heading && itemUrl) { const title = heading.textContent.trim(); const artistInfo = subhead ? subhead.textContent.trim() : 'Unknown Artist'; const byMatch = artistInfo.match(/by\\\\s+([^,]+)/); const fromMatch = artistInfo.match(/from\\\\s+(.+)/); const artist = byMatch ? byMatch[1].trim() : 'Unknown Artist'; const album = fromMatch ? fromMatch[1].trim() : (byMatch ? byMatch[1].trim() : 'Single'); const url = itemUrl.textContent.trim(); results.push({ id: `bandcamp-${Date.now()}-${index}`, title: title, artist: artist, album: album, duration: 210, sources: ['bandcamp'], bandcampUrl: url }); } } catch (itemError) { console.error('Error parsing Bandcamp result:', itemError); } }); console.log(`Found ${results.length} Bandcamp results`); return results; } catch (error) { console.error('Bandcamp search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"qobuz","name":"Qobuz","version":"1.0.0","author":"Parachord Team","description":"High-quality audio streaming with 30-second previews. Subscription required for full playback.","icon":"🎵","color":"#0E7EBF","homepage":"https://qobuz.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"settings":{"requiresAuth":false,"authType":"apikey","configurable":{"appId":{"type":"text","label":"App ID","default":"285473059","readonly":true,"description":"Public demo app ID"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Qobuz for:', query); const appId = config.appId || '285473059'; const response = await fetch(`https://www.qobuz.com/api.json/0.2/track/search?query=${encodeURIComponent(query)}&limit=20&app_id=${appId}`, { headers: { 'User-Agent': 'Parachord/1.0.0' } }); if (!response.ok) { console.error('Qobuz search failed:', response.status); return []; } const data = await response.json(); if (!data.tracks || !data.tracks.items) { console.log('No Qobuz results found'); return []; } const results = data.tracks.items.map(track => ({ id: `qobuz-${track.id}`, title: track.title, artist: track.performer?.name || track.album?.artist?.name || 'Unknown Artist', album: track.album?.title || 'Unknown Album', duration: track.duration || 180, sources: ['qobuz'], qobuzId: track.id, albumArt: track.album?.image?.small || track.album?.image?.thumbnail, previewUrl: track.preview_url, streamable: track.streamable, quality: track.maximum_bit_depth ? `${track.maximum_bit_depth}bit/${track.maximum_sampling_rate}kHz` : 'CD Quality' })); console.log(`Found ${results.length} Qobuz results`); return results; } catch (error) { console.error('Qobuz search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.previewUrl) { console.error('No Qobuz preview URL'); return false; } try { const audio = new Audio(track.previewUrl); audio.volume = config.volume || 0.7; await audio.play(); console.log('Playing Qobuz 30-second preview'); return true; } catch (error) { console.error('Failed to play Qobuz preview:', error); return false; } }","init":"async function(config) { console.log('Qobuz resolver initialized'); }","cleanup":"async function() { console.log('Qobuz resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
-  {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.0","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"🍎","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*","music.apple.com/*/song/*","music.apple.com/*/playlist/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Apple Music/iTunes for:', query); if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; const response = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var response = await fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var response = await fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL. Note: iTunes API does not support playlist lookup directly. MusicKit required for full playlist support.'); return null; } var playlistId = playlistIdMatch[1]; console.log('Playlist ID extracted:', playlistId); console.log('Note: Full playlist lookup requires MusicKit API with Apple Developer account.'); console.log('For now, open the playlist URL in browser or use the content script scraper.'); return { id: 'applemusic-playlist-' + playlistId, name: 'Apple Music Playlist', description: 'Playlist lookup requires MusicKit API. Configure your Apple Developer token in resolver settings.', tracks: [], url: url, requiresMusicKit: true }; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { var urlToOpen = track.appleMusicUrl || track.previewUrl; if (!urlToOpen) { console.error('No Apple Music URL found'); return false; } try { if (window.electron && window.electron.shell && window.electron.shell.openExternal) { var result = await window.electron.shell.openExternal(urlToOpen); return result && result.success; } else { var newWindow = window.open(urlToOpen, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Apple Music link:', error); return false; } }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (config.developerToken) { console.log('MusicKit developer token configured - enhanced features available'); } else { console.log('Using iTunes Search API (no auth required). Configure MusicKit token for enhanced features.'); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); }"}},
+  {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.0","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"🍎","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*","music.apple.com/*/song/*","music.apple.com/*/playlist/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { console.log('Searching Apple Music/iTunes for:', query); if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; const response = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var response = await fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var response = await fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL. Note: iTunes API does not support playlist lookup directly. MusicKit required for full playlist support.'); return null; } var playlistId = playlistIdMatch[1]; console.log('Playlist ID extracted:', playlistId); console.log('Note: Full playlist lookup requires MusicKit API with Apple Developer account.'); console.log('For now, open the playlist URL in browser or use the content script scraper.'); return { id: 'applemusic-playlist-' + playlistId, name: 'Apple Music Playlist', description: 'Playlist lookup requires MusicKit API. Configure your Apple Developer token in resolver settings.', tracks: [], url: url, requiresMusicKit: true }; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { if (window.electron && window.electron.musicKit) { try { var authStatus = await window.electron.musicKit.checkAuth(); if (authStatus.success && authStatus.authorized && track.appleMusicId) { console.log('Playing via native MusicKit:', track.appleMusicId); var playResult = await window.electron.musicKit.play(track.appleMusicId); if (playResult.success) { return true; } console.log('Native MusicKit play failed, falling back to URL'); } } catch (e) { console.log('Native MusicKit error, falling back to URL:', e); } } var urlToOpen = track.appleMusicUrl || track.previewUrl; if (!urlToOpen) { console.error('No Apple Music URL found'); return false; } try { if (window.electron && window.electron.shell && window.electron.shell.openExternal) { var result = await window.electron.shell.openExternal(urlToOpen); return result && result.success; } else { var newWindow = window.open(urlToOpen, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Apple Music link:', error); return false; } }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (window.electron && window.electron.musicKit) { window.electron.musicKit.isAvailable().then(function(avail) { if (avail) { console.log('Native MusicKit available for Apple Music playback'); } }); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); }"}},
 ];
 
 
@@ -19481,92 +19481,87 @@ ${tracks}
     }
   };
 
-  // Apple Music / MusicKit functions
-  const initializeMusicKit = async (developerToken) => {
-    if (!developerToken) {
-      console.error('MusicKit: No developer token provided');
-      return null;
-    }
+  // Apple Music / MusicKit functions (Native bridge for macOS)
+  const [appleMusicNativeAvailable, setAppleMusicNativeAvailable] = useState(false);
 
-    // Load MusicKit JS if not already loaded
-    if (!window.MusicKit) {
-      console.log('Loading MusicKit JS...');
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
-        script.async = true;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-      // Wait for MusicKit to be ready
-      await new Promise(resolve => {
-        if (window.MusicKit) {
-          resolve();
-        } else {
-          document.addEventListener('musickitloaded', resolve, { once: true });
-        }
-      });
-    }
+  // Check if native MusicKit is available on startup
+  useEffect(() => {
+    const checkMusicKitAvailable = async () => {
+      if (window.electron?.musicKit) {
+        const available = await window.electron.musicKit.isAvailable();
+        setAppleMusicNativeAvailable(available);
+        console.log('🍎 Native MusicKit available:', available);
 
-    try {
-      const music = await window.MusicKit.configure({
-        developerToken: developerToken,
-        app: {
-          name: 'Parachord',
-          build: '1.0.0'
+        // If available and we have a saved auth state, check if still authorized
+        if (available) {
+          const authStatus = await window.electron.musicKit.checkAuth();
+          if (authStatus.success && authStatus.authorized) {
+            console.log('🍎 MusicKit already authorized');
+            setAppleMusicConnected(true);
+          }
         }
-      });
-      console.log('MusicKit configured successfully');
-      musicKitInstanceRef.current = music;
-      return music;
-    } catch (error) {
-      console.error('MusicKit configuration failed:', error);
-      return null;
-    }
-  };
+      }
+    };
+    checkMusicKitAvailable();
+  }, []);
 
   const connectAppleMusic = async () => {
     console.log('=== Connect Apple Music Clicked ===');
 
-    const devToken = appleMusicDeveloperToken.trim();
-    if (!devToken) {
+    // Check if native MusicKit is available
+    if (!window.electron?.musicKit) {
       showConfirmDialog({
         type: 'error',
-        title: 'Developer Token Required',
-        message: 'Please enter your MusicKit Developer Token in the Advanced section below.'
+        title: 'MusicKit Not Available',
+        message: 'MusicKit bridge is not available. Please restart the app.'
       });
-      setAppleMusicAdvancedOpen(true);
+      return;
+    }
+
+    const isAvailable = await window.electron.musicKit.isAvailable();
+    if (!isAvailable) {
+      showConfirmDialog({
+        type: 'error',
+        title: 'MusicKit Not Available',
+        message: 'Native MusicKit is only available on macOS. The MusicKit helper binary needs to be built first.\n\nRun: cd native/musickit-helper && ./build.sh'
+      });
       return;
     }
 
     try {
-      // Initialize MusicKit with developer token
-      const music = await initializeMusicKit(devToken);
-      if (!music) {
-        showConfirmDialog({
-          type: 'error',
-          title: 'MusicKit Error',
-          message: 'Failed to initialize MusicKit. Please check your developer token.'
-        });
-        return;
+      // Start the MusicKit helper if needed
+      console.log('Starting MusicKit helper...');
+      const startResult = await window.electron.musicKit.start();
+      if (!startResult.success) {
+        throw new Error('Failed to start MusicKit helper');
       }
 
-      // Authorize user (prompts Apple ID sign-in)
+      // Request authorization (will show system dialog for Apple ID sign-in)
       console.log('Requesting MusicKit authorization...');
-      const userToken = await music.authorize();
-      console.log('MusicKit authorized, user token received');
+      const authResult = await window.electron.musicKit.authorize();
 
-      setAppleMusicUserToken(userToken);
-      setAppleMusicConnected(true);
-
-      // Save tokens to persistent storage
-      if (window.electron?.store) {
-        await window.electron.store.set('applemusic_developer_token', devToken);
-        await window.electron.store.set('applemusic_user_token', userToken);
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Authorization failed');
       }
 
-      showToast('Apple Music connected successfully', 'success');
+      if (authResult.authorized) {
+        console.log('🍎 MusicKit authorized successfully');
+        setAppleMusicConnected(true);
+
+        // Save auth state
+        if (window.electron?.store) {
+          await window.electron.store.set('applemusic_authorized', true);
+        }
+
+        showToast('Apple Music connected successfully', 'success');
+      } else {
+        // User denied or other status
+        showConfirmDialog({
+          type: 'info',
+          title: 'Authorization Required',
+          message: 'Apple Music access was not granted. Status: ' + authResult.status
+        });
+      }
     } catch (error) {
       console.error('Apple Music auth error:', error);
       showConfirmDialog({
@@ -19578,21 +19573,11 @@ ${tracks}
   };
 
   const disconnectAppleMusic = async () => {
-    if (musicKitInstanceRef.current) {
-      try {
-        await musicKitInstanceRef.current.unauthorize();
-      } catch (e) {
-        console.log('MusicKit unauthorize error (non-fatal):', e);
-      }
-    }
-
-    setAppleMusicUserToken(null);
     setAppleMusicConnected(false);
-    musicKitInstanceRef.current = null;
 
     // Clear from persistent storage
     if (window.electron?.store) {
-      await window.electron.store.delete('applemusic_user_token');
+      await window.electron.store.delete('applemusic_authorized');
     }
 
     // Remove Apple Music sources from all tracks
@@ -35806,6 +35791,35 @@ useEffect(() => {
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
+            // Native MusicKit availability notice
+            !appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(250, 36, 60, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#9a1f2e'
+              }
+            },
+              React.createElement('strong', null, 'macOS Only: '),
+              'Native MusicKit playback requires macOS and building the helper binary. ',
+              React.createElement('span', { style: { fontFamily: 'monospace', fontSize: '11px' } },
+                'cd native/musickit-helper && ./build.sh'
+              )
+            ),
+            appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#15803d'
+              }
+            },
+              '✓ Native MusicKit available for direct Apple Music playback'
+            ),
             React.createElement('div', { className: 'flex items-center justify-between' },
               React.createElement('div', null,
                 React.createElement('span', {
@@ -35822,38 +35836,44 @@ useEffect(() => {
                     marginTop: '2px'
                   }
                 },
-                  appleMusicConnected ? 'Connected and ready for playback' : 'Sign in to enable streaming'
+                  appleMusicConnected
+                    ? 'Connected and ready for playback'
+                    : appleMusicNativeAvailable
+                      ? 'Sign in with your Apple ID to enable streaming'
+                      : 'Search and URL lookup available (playback opens in browser)'
                 )
               ),
-              appleMusicConnected
-                ? React.createElement('button', {
-                    onClick: disconnectAppleMusic,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#dc2626',
-                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Disconnect')
-                : React.createElement('button', {
-                    onClick: connectAppleMusic,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: '#FA243C',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Connect')
+              appleMusicNativeAvailable && (
+                appleMusicConnected
+                  ? React.createElement('button', {
+                      onClick: disconnectAppleMusic,
+                      className: 'transition-colors',
+                      style: {
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }
+                    }, 'Disconnect')
+                  : React.createElement('button', {
+                      onClick: connectAppleMusic,
+                      className: 'transition-colors',
+                      style: {
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#ffffff',
+                        backgroundColor: '#FA243C',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }
+                    }, 'Connect')
+              )
             ),
             appleMusicConnected && React.createElement('div', {
               className: 'flex items-center gap-2',
@@ -35864,89 +35884,7 @@ useEffect(() => {
               }
             },
               React.createElement('span', null, '✓'),
-              React.createElement('span', null, 'Apple Music subscription connected')
-            ),
-            // Advanced accordion for developer token
-            React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('button', {
-                onClick: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen),
-                className: 'flex items-center gap-1',
-                style: {
-                  fontSize: '12px',
-                  color: '#6b7280',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0'
-                }
-              },
-                React.createElement('span', {
-                  className: 'transform transition-transform ' + (appleMusicAdvancedOpen ? 'rotate-90' : '')
-                }, '▶'),
-                'Advanced (Developer Token)'
-              ),
-              appleMusicAdvancedOpen && React.createElement('div', {
-                style: {
-                  marginTop: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                  borderRadius: '8px'
-                }
-              },
-                React.createElement('p', {
-                  style: {
-                    fontSize: '11px',
-                    color: '#6b7280',
-                    marginBottom: '12px',
-                    lineHeight: '1.5'
-                  }
-                },
-                  'Enter your MusicKit Developer Token (JWT) generated from your Apple Developer account. This is required for Apple Music playback.'
-                ),
-                React.createElement('div', { style: { marginBottom: '10px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Developer Token'),
-                  React.createElement('textarea', {
-                    value: appleMusicDeveloperToken,
-                    onChange: (e) => setAppleMusicDeveloperToken(e.target.value),
-                    placeholder: 'eyJhbGciOiJFUzI1NiIs...',
-                    rows: 3,
-                    style: {
-                      width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '11px',
-                      fontFamily: 'monospace',
-                      color: '#1f2937',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
-                      borderRadius: '6px',
-                      outline: 'none',
-                      resize: 'vertical'
-                    }
-                  })
-                ),
-                React.createElement('button', {
-                  onClick: saveAppleMusicDeveloperToken,
-                  disabled: appleMusicTokenSaved,
-                  style: {
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: '#ffffff',
-                    backgroundColor: appleMusicTokenSaved ? '#22c55e' : '#6b7280',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: appleMusicTokenSaved ? 'default' : 'pointer',
-                    transition: 'background-color 0.2s ease'
-                  }
-                }, appleMusicTokenSaved ? 'Saved ✓' : 'Save Token')
-              )
+              React.createElement('span', null, 'Apple Music authorized for playback')
             )
           ),
 
