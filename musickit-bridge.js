@@ -75,14 +75,24 @@ class MusicKitBridge extends EventEmitter {
     }
 
     console.log('[MusicKit] Starting helper:', helperPath);
+    console.log('[MusicKit] Helper exists:', fs.existsSync(helperPath));
+    console.log('[MusicKit] Helper stats:', fs.statSync(helperPath).mode.toString(8));
 
     return new Promise((resolve) => {
-      this.process = spawn(helperPath, [], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env }
-      });
+      try {
+        this.process = spawn(helperPath, [], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env }
+        });
+        console.log('[MusicKit] Process spawned, PID:', this.process.pid);
+      } catch (spawnError) {
+        console.error('[MusicKit] Spawn error:', spawnError);
+        resolve(false);
+        return;
+      }
 
       this.process.stdout.on('data', (data) => {
+        console.log('[MusicKit] stdout raw:', data.toString());
         this.handleData(data);
       });
 
@@ -97,17 +107,23 @@ class MusicKitBridge extends EventEmitter {
         resolve(false);
       });
 
-      this.process.on('close', (code) => {
-        console.log('[MusicKit] Process closed with code:', code);
+      this.process.on('close', (code, signal) => {
+        console.log('[MusicKit] Process closed with code:', code, 'signal:', signal);
         this.process = null;
         this.isReady = false;
         this.emit('close', code);
+      });
+
+      this.process.on('exit', (code, signal) => {
+        console.log('[MusicKit] Process exit with code:', code, 'signal:', signal);
       });
 
       // Wait for ready signal
       const readyTimeout = setTimeout(() => {
         if (!this.isReady) {
           console.log('[MusicKit] Timeout waiting for ready signal');
+          console.log('[MusicKit] Buffer contents:', this.buffer);
+          console.log('[MusicKit] Process still alive:', this.process && !this.process.killed);
           this.stop();
           resolve(false);
         }
@@ -126,19 +142,24 @@ class MusicKitBridge extends EventEmitter {
    */
   handleData(data) {
     this.buffer += data.toString();
+    console.log('[MusicKit] handleData, buffer now:', this.buffer.substring(0, 200));
 
     // Process complete JSON lines
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop(); // Keep incomplete line in buffer
+    console.log('[MusicKit] Lines to process:', lines.length);
 
     for (const line of lines) {
       if (!line.trim()) continue;
+      console.log('[MusicKit] Processing line:', line.substring(0, 100));
 
       try {
         const response = JSON.parse(line);
+        console.log('[MusicKit] Parsed response id:', response.id);
 
         // Check for ready signal
         if (response.id === 'ready') {
+          console.log('[MusicKit] Got ready signal!');
           this.isReady = true;
           this.emit('ready', response.data);
           continue;
