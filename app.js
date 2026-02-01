@@ -9811,6 +9811,56 @@ const Parachord = () => {
     setCurrentQueue(prev => [...prev, ...taggedTracks]);
   };
 
+  // Helper to play a collection of tracks, respecting shuffle mode
+  // If shuffle is on, picks a random first track and shuffles the rest
+  const playTrackCollection = (tracks, context = null) => {
+    if (!tracks || tracks.length === 0) return;
+
+    let tracksToPlay = [...tracks];
+
+    // Tag tracks with context if provided
+    if (context) {
+      tracksToPlay = tracksToPlay.map(track => ({
+        ...track,
+        _playbackContext: context
+      }));
+    }
+
+    let firstTrack;
+    let remainingTracks;
+
+    if (shuffleMode && tracksToPlay.length > 1) {
+      // Shuffle mode: pick random first track, shuffle the rest
+      const randomIndex = Math.floor(Math.random() * tracksToPlay.length);
+      firstTrack = tracksToPlay[randomIndex];
+
+      // Get remaining tracks (excluding the randomly picked one)
+      const remaining = [...tracksToPlay.slice(0, randomIndex), ...tracksToPlay.slice(randomIndex + 1)];
+
+      // Fisher-Yates shuffle the remaining tracks
+      for (let i = remaining.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
+      }
+      remainingTracks = remaining;
+
+      // Store original order for unshuffle
+      originalQueueRef.current = tracksToPlay.slice(1); // Original order minus first
+      console.log('🔀 Shuffle ON - playing random track first, queue shuffled');
+    } else {
+      // Normal mode: play first track, queue rest in order
+      firstTrack = tracksToPlay[0];
+      remainingTracks = tracksToPlay.slice(1);
+    }
+
+    // Set queue and play
+    setCurrentQueue(remainingTracks);
+    if (context) {
+      setPlaybackContext(context);
+    }
+    handlePlay(firstTrack);
+  };
+
   // Open save dialog for queue as playlist
   const handleSaveQueueAsPlaylist = () => {
     // Build track list: currently playing + queue
@@ -27569,10 +27619,7 @@ useEffect(() => {
                                   );
                                   const tracksToPlay = albumTracks.length > 0 ? albumTracks : tracks.slice(0, 10);
                                   if (tracksToPlay.length > 0) {
-                                    handlePlay(tracksToPlay[0]);
-                                    if (tracksToPlay.length > 1) {
-                                      setCurrentQueue(tracksToPlay.slice(1));
-                                    }
+                                    playTrackCollection(tracksToPlay, { type: 'album', name: album.title });
                                   }
                                 }
                               },
@@ -27721,10 +27768,7 @@ useEffect(() => {
                                 }));
                               }
                               if (tracks.length > 0) {
-                                handlePlay(tracks[0]);
-                                if (tracks.length > 1) {
-                                  setCurrentQueue(tracks.slice(1));
-                                }
+                                playTrackCollection(tracks, { type: 'weekly-jam', name: `${jam.weekLabel}'s Weekly Jam` });
                                 showToast(`Playing ${jam.weekLabel}'s Weekly Jam`, 'success');
                               }
                             }
@@ -27822,8 +27866,7 @@ useEffect(() => {
                                     e.stopPropagation();
                                     // Play all tracks in the playlist
                                     if (playlist.tracks && playlist.tracks.length > 0) {
-                                      setQueue(playlist.tracks);
-                                      handlePlay(playlist.tracks[0]);
+                                      playTrackCollection(playlist.tracks, { type: 'playlist', name: playlist.title });
                                       showToast(`Playing ${playlist.title}`, 'success');
                                     } else {
                                       showToast('Playlist is empty', 'info');
