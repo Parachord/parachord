@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "MusicKitHelper",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "musickit-helper", targets: ["MusicKitHelper"])
