@@ -110,24 +110,23 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
-      "type": "meta-service",
       "version": "1.0.0",
       "author": "Parachord Team",
-      "description": "Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.",
+      "description": "Stream music via Apple Music with MusicKit. Requires Apple Music subscription and MusicKit developer token.",
       "icon": "🍎",
       "color": "#FA243C",
       "homepage": "https://music.apple.com",
       "capabilities": {
         "resolve": true,
         "search": true,
-        "stream": false,
+        "stream": true,
         "browse": false,
         "urlLookup": true
       },
-      "requiresAuth": false,
+      "requiresAuth": true,
       "builtin": true,
-      "category": "metadata",
-      "tags": ["metadata", "free", "itunes", "apple", "url-lookup", "musickit"]
+      "category": "streaming",
+      "tags": ["streaming", "subscription", "apple", "musickit", "url-lookup"]
     },
     {
       "id": "localfiles",
