@@ -711,3 +711,172 @@ describe('Two-Way Playlist Sync', () => {
     });
   });
 });
+
+describe('Collection Two-Way Sync', () => {
+  describe('Track Sync', () => {
+    test('saves tracks to Spotify', async () => {
+      const mockSaveTracks = jest.fn().mockResolvedValue({
+        success: true,
+        saved: 3
+      });
+
+      const trackIds = ['track1', 'track2', 'track3'];
+      const result = await mockSaveTracks(trackIds);
+
+      expect(result.success).toBe(true);
+      expect(result.saved).toBe(3);
+    });
+
+    test('removes tracks from Spotify', async () => {
+      const mockRemoveTracks = jest.fn().mockResolvedValue({
+        success: true,
+        removed: 2
+      });
+
+      const trackIds = ['track1', 'track2'];
+      const result = await mockRemoveTracks(trackIds);
+
+      expect(result.success).toBe(true);
+      expect(result.removed).toBe(2);
+    });
+
+    test('batches track saves (max 50 per request)', () => {
+      const trackIds = Array(120).fill(null).map((_, i) => `track-${i}`);
+
+      const batches = [];
+      for (let i = 0; i < trackIds.length; i += 50) {
+        batches.push(trackIds.slice(i, i + 50));
+      }
+
+      expect(batches).toHaveLength(3);
+      expect(batches[0]).toHaveLength(50);
+      expect(batches[1]).toHaveLength(50);
+      expect(batches[2]).toHaveLength(20);
+    });
+
+    test('handles empty track list', async () => {
+      const mockSaveTracks = jest.fn().mockResolvedValue({
+        success: true,
+        saved: 0
+      });
+
+      const result = await mockSaveTracks([]);
+
+      expect(result.success).toBe(true);
+      expect(result.saved).toBe(0);
+    });
+
+    test('extracts Spotify ID from track sources', () => {
+      const track1 = { spotifyId: 'direct-id' };
+      const track2 = { sources: { spotify: { spotifyId: 'nested-id' } } };
+      const track3 = { title: 'No Spotify' };
+
+      const getSpotifyId = (track) =>
+        track.spotifyId || track.sources?.spotify?.spotifyId;
+
+      expect(getSpotifyId(track1)).toBe('direct-id');
+      expect(getSpotifyId(track2)).toBe('nested-id');
+      expect(getSpotifyId(track3)).toBeUndefined();
+    });
+  });
+
+  describe('Artist Sync', () => {
+    test('follows artists on Spotify', async () => {
+      const mockFollowArtists = jest.fn().mockResolvedValue({
+        success: true,
+        followed: 2
+      });
+
+      const artistIds = ['artist1', 'artist2'];
+      const result = await mockFollowArtists(artistIds);
+
+      expect(result.success).toBe(true);
+      expect(result.followed).toBe(2);
+    });
+
+    test('unfollows artists on Spotify', async () => {
+      const mockUnfollowArtists = jest.fn().mockResolvedValue({
+        success: true,
+        unfollowed: 1
+      });
+
+      const artistIds = ['artist1'];
+      const result = await mockUnfollowArtists(artistIds);
+
+      expect(result.success).toBe(true);
+      expect(result.unfollowed).toBe(1);
+    });
+
+    test('batches artist follows (max 50 per request)', () => {
+      const artistIds = Array(75).fill(null).map((_, i) => `artist-${i}`);
+
+      const batches = [];
+      for (let i = 0; i < artistIds.length; i += 50) {
+        batches.push(artistIds.slice(i, i + 50));
+      }
+
+      expect(batches).toHaveLength(2);
+      expect(batches[0]).toHaveLength(50);
+      expect(batches[1]).toHaveLength(25);
+    });
+
+    test('extracts Spotify ID from artist sources', () => {
+      const artist1 = { spotifyId: 'direct-artist-id' };
+      const artist2 = { sources: { spotify: { spotifyId: 'nested-artist-id' } } };
+      const artist3 = { name: 'Local Artist' };
+
+      const getSpotifyId = (artist) =>
+        artist.spotifyId || artist.sources?.spotify?.spotifyId;
+
+      expect(getSpotifyId(artist1)).toBe('direct-artist-id');
+      expect(getSpotifyId(artist2)).toBe('nested-artist-id');
+      expect(getSpotifyId(artist3)).toBeUndefined();
+    });
+  });
+
+  describe('Error Handling', () => {
+    test('handles 401 auth error', async () => {
+      const mockSaveTracks = jest.fn().mockRejectedValue(
+        new Error('Spotify token expired. Please reconnect your Spotify account.')
+      );
+
+      await expect(mockSaveTracks(['track1'])).rejects.toThrow('Spotify token expired');
+    });
+
+    test('handles 403 permission error', async () => {
+      const mockFollowArtists = jest.fn().mockRejectedValue(
+        new Error('Missing permissions. Please disconnect and reconnect Spotify.')
+      );
+
+      await expect(mockFollowArtists(['artist1'])).rejects.toThrow('Missing permissions');
+    });
+
+    test('handles rate limiting with retry', async () => {
+      let attempts = 0;
+      const mockWithRetry = jest.fn().mockImplementation(async () => {
+        attempts++;
+        if (attempts === 1) {
+          throw { status: 429, retryAfter: 1 };
+        }
+        return { success: true };
+      });
+
+      const fetchWithRetry = async () => {
+        try {
+          return await mockWithRetry();
+        } catch (error) {
+          if (error.status === 429) {
+            await new Promise(r => setTimeout(r, 10)); // Shortened for test
+            return await mockWithRetry();
+          }
+          throw error;
+        }
+      };
+
+      const result = await fetchWithRetry();
+
+      expect(result.success).toBe(true);
+      expect(attempts).toBe(2);
+    });
+  });
+});

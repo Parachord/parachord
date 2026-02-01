@@ -405,6 +405,124 @@ const SpotifySyncProvider = {
     const user = await userResponse.json();
 
     return playlist.owner?.id === user.id;
+  },
+
+  /**
+   * Save tracks to user's Spotify library (Liked Songs)
+   * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async saveTracks(trackIds, token) {
+    if (!trackIds || trackIds.length === 0) {
+      return { success: true, saved: 0 };
+    }
+
+    // Spotify allows max 50 tracks per request
+    const batches = [];
+    for (let i = 0; i < trackIds.length; i += 50) {
+      batches.push(trackIds.slice(i, i + 50));
+    }
+
+    let totalSaved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/tracks', token, {
+        method: 'PUT',
+        body: { ids: batch }
+      });
+      totalSaved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, saved: totalSaved };
+  },
+
+  /**
+   * Remove tracks from user's Spotify library
+   * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async removeTracks(trackIds, token) {
+    if (!trackIds || trackIds.length === 0) {
+      return { success: true, removed: 0 };
+    }
+
+    // Spotify allows max 50 tracks per request
+    const batches = [];
+    for (let i = 0; i < trackIds.length; i += 50) {
+      batches.push(trackIds.slice(i, i + 50));
+    }
+
+    let totalRemoved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/tracks', token, {
+        method: 'DELETE',
+        body: { ids: batch }
+      });
+      totalRemoved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, removed: totalRemoved };
+  },
+
+  /**
+   * Follow artists on Spotify
+   * @param {string[]} artistIds - Array of Spotify artist IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async followArtists(artistIds, token) {
+    if (!artistIds || artistIds.length === 0) {
+      return { success: true, followed: 0 };
+    }
+
+    // Spotify allows max 50 artists per request
+    const batches = [];
+    for (let i = 0; i < artistIds.length; i += 50) {
+      batches.push(artistIds.slice(i, i + 50));
+    }
+
+    let totalFollowed = 0;
+    for (const batch of batches) {
+      await spotifyRequest(`/me/following?type=artist&ids=${batch.join(',')}`, token, {
+        method: 'PUT'
+      });
+      totalFollowed += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, followed: totalFollowed };
+  },
+
+  /**
+   * Unfollow artists on Spotify
+   * @param {string[]} artistIds - Array of Spotify artist IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async unfollowArtists(artistIds, token) {
+    if (!artistIds || artistIds.length === 0) {
+      return { success: true, unfollowed: 0 };
+    }
+
+    // Spotify allows max 50 artists per request
+    const batches = [];
+    for (let i = 0; i < artistIds.length; i += 50) {
+      batches.push(artistIds.slice(i, i + 50));
+    }
+
+    let totalUnfollowed = 0;
+    for (const batch of batches) {
+      await spotifyRequest(`/me/following?type=artist&ids=${batch.join(',')}`, token, {
+        method: 'DELETE'
+      });
+      totalUnfollowed += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, unfollowed: totalUnfollowed };
   }
 };
 
