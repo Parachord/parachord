@@ -379,7 +379,27 @@ contextBridge.exposeInMainWorld('electron', {
     // Queue management
     addToQueue: (songId) => ipcRenderer.invoke('musickit:add-to-queue', songId),
     // Volume control
-    setVolume: (volume) => ipcRenderer.invoke('musickit:set-volume', volume)
+    setVolume: (volume) => ipcRenderer.invoke('musickit:set-volume', volume),
+
+    // Main process polling controls (background-safe, for auto-advance)
+    polling: {
+      start: (params) => ipcRenderer.invoke('applemusic-polling-start', params),
+      stop: () => ipcRenderer.invoke('applemusic-polling-stop'),
+      updateTrack: (params) => ipcRenderer.invoke('applemusic-polling-update-track', params),
+      getStatus: () => ipcRenderer.invoke('applemusic-polling-status'),
+
+      // Listen for polling events from main process
+      onAdvance: (callback) => {
+        ipcRenderer.on('applemusic-polling-advance', (event, data) => {
+          callback(data);
+        });
+      },
+      onProgress: (callback) => {
+        ipcRenderer.on('applemusic-polling-progress', (event, data) => {
+          callback(data);
+        });
+      }
+    }
   },
 
   // Generic invoke for IPC calls

@@ -317,6 +317,128 @@ const spotifyPoller = {
   }
 };
 
+// Apple Music Playback Polling Service
+// Runs in main process to avoid OS timer throttling when app is backgrounded
+const appleMusicPoller = {
+  interval: null,
+  expectedSongId: null,
+  trackTitle: null,
+  trackArtist: null,
+  trackDuration: 0,
+  lastStatus: null,
+  lastPosition: 0,
+  pollCount: 0,
+
+  POLL_INTERVAL: 5000, // 5 seconds - more frequent for native playback
+
+  async start(songId, trackTitle, trackArtist, duration) {
+    console.log('🍎 [Main] Starting Apple Music polling...');
+    console.log(`   Track: ${trackTitle} by ${trackArtist}`);
+    console.log(`   Song ID: ${songId}`);
+
+    this.stop(); // Clear any existing polling
+
+    this.expectedSongId = songId;
+    this.trackTitle = trackTitle;
+    this.trackArtist = trackArtist;
+    this.trackDuration = duration || 0;
+    this.lastStatus = null;
+    this.lastPosition = 0;
+    this.pollCount = 0;
+
+    // Do an immediate poll, then set up interval
+    await this.poll();
+
+    this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+  },
+
+  stop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+    this.expectedSongId = null;
+    console.log('⏹️ [Main] Apple Music polling stopped');
+  },
+
+  updateTrack(songId, trackTitle, trackArtist, duration) {
+    console.log(`🍎 [Main] Updating expected track: ${trackTitle} by ${trackArtist}`);
+    this.expectedSongId = songId;
+    this.trackTitle = trackTitle;
+    this.trackArtist = trackArtist;
+    this.trackDuration = duration || 0;
+    this.pollCount = 0;
+    this.lastPosition = 0;
+    this.lastStatus = null;
+  },
+
+  async poll() {
+    if (!this.expectedSongId) {
+      console.log('🍎 [Main] Poll skipped - no expected song ID');
+      return;
+    }
+
+    this.pollCount++;
+
+    try {
+      const bridge = getMusicKitBridge();
+      if (!bridge.isReady) {
+        console.log('🍎 [Main] MusicKit bridge not ready');
+        return;
+      }
+
+      const state = await bridge.send('getPlaybackState');
+      const status = state?.status;
+      const position = state?.position || 0;
+
+      // Send progress update to renderer
+      this.sendToRenderer('applemusic-polling-progress', {
+        status,
+        position,
+        duration: this.trackDuration,
+        percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0
+      });
+
+      // Detect track ended
+      if (this.lastStatus === 'playing' && status === 'stopped') {
+        console.log('🍎 [Main] Track stopped, signaling advance...');
+        this.sendToRenderer('applemusic-polling-advance', { reason: 'stopped' });
+        this.stop();
+        return;
+      }
+
+      // Detect near end of track
+      if (status === 'playing' && this.trackDuration > 0) {
+        const remaining = this.trackDuration - position;
+        if (remaining <= 2) { // Within 2 seconds of end
+          console.log('🍎 [Main] Track ending soon, signaling advance...');
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'near-end' });
+          this.stop();
+          return;
+        }
+      }
+
+      // Detect if position wrapped back (track finished and restarted or new track)
+      if (this.lastPosition > 30 && position < 5 && status === 'playing') {
+        console.log('🍎 [Main] Position reset detected, may be new track or loop');
+        // Don't auto-advance on position reset - could be a loop or user action
+      }
+
+      this.lastStatus = status;
+      this.lastPosition = position;
+
+    } catch (error) {
+      console.error('[Main] Apple Music polling error:', error.message);
+    }
+  },
+
+  sendToRenderer(channel, data = {}) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data);
+    }
+  }
+};
+
 // Helper to wait for local files service to be ready
 async function waitForLocalFilesService() {
   // If already initialized, return immediately
@@ -1847,6 +1969,32 @@ ipcMain.handle('spotify-polling-status', async () => {
   return {
     active: spotifyPoller.interval !== null || spotifyPoller.recoveryInterval !== null,
     expectedTrackUri: spotifyPoller.expectedTrackUri
+  };
+});
+
+// Apple Music Polling IPC Handlers
+ipcMain.handle('applemusic-polling-start', async (event, { songId, trackTitle, trackArtist, duration }) => {
+  console.log('=== Start Apple Music Polling (IPC) ===');
+  await appleMusicPoller.start(songId, trackTitle, trackArtist, duration);
+  return { success: true };
+});
+
+ipcMain.handle('applemusic-polling-stop', async () => {
+  console.log('=== Stop Apple Music Polling (IPC) ===');
+  appleMusicPoller.stop();
+  return { success: true };
+});
+
+ipcMain.handle('applemusic-polling-update-track', async (event, { songId, trackTitle, trackArtist, duration }) => {
+  console.log('=== Update Apple Music Polling Track (IPC) ===');
+  appleMusicPoller.updateTrack(songId, trackTitle, trackArtist, duration);
+  return { success: true };
+});
+
+ipcMain.handle('applemusic-polling-status', async () => {
+  return {
+    active: appleMusicPoller.interval !== null,
+    expectedSongId: appleMusicPoller.expectedSongId
   };
 });
 
@@ -3726,7 +3874,7 @@ ipcMain.handle('sync:unfollow-artists', async (event, providerId, artistIds) => 
   } catch (error) {
     return { success: false, error: error.message };
   }
-
+});
 
 // ==============================================
 // MusicKit (Apple Music) Native Bridge Handlers

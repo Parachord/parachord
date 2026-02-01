@@ -6556,6 +6556,25 @@ const Parachord = () => {
     }
   }, []);
 
+  // Main process Apple Music polling event handlers
+  // This polling runs in main process and is not affected by OS timer throttling
+  useEffect(() => {
+    if (window.electron?.musicKit?.polling) {
+      // Handle advance signal from main process polling
+      window.electron.musicKit.polling.onAdvance((data) => {
+        console.log('🎵 [Main→Renderer] Apple Music advance signal received:', data.reason);
+        if (handleNextRef.current) {
+          handleNextRef.current();
+        }
+      });
+
+      // Handle progress updates (for potential UI sync)
+      window.electron.musicKit.polling.onProgress((data) => {
+        console.log(`▶️ [Main→Renderer] Apple Music progress: ${data.percentComplete?.toFixed(1)}%`);
+      });
+    }
+  }, []);
+
   // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {
@@ -8576,15 +8595,43 @@ const Parachord = () => {
       } else {
         console.warn('⚠️ Main process polling not available');
       }
+    } else if (resolverId === 'apple-music' && track.appleMusicId) {
+      // Apple Music native playback via MusicKit
+      console.log(`🔄 Starting Apple Music playback polling via main process...`);
+      console.log(`   Track: ${track.title} by ${track.artist}`);
+      console.log(`   Song ID: ${track.appleMusicId}`);
+
+      // Use main process polling (background-safe, not affected by OS timer throttling)
+      if (window.electron?.musicKit?.polling) {
+        window.electron.musicKit.polling.start({
+          songId: track.appleMusicId,
+          trackTitle: track.title,
+          trackArtist: track.artist,
+          duration: track.duration || 0
+        }).then(() => {
+          console.log('✅ Apple Music main process polling started');
+        }).catch((err) => {
+          console.error('❌ Failed to start Apple Music polling:', err);
+        });
+      } else {
+        console.warn('⚠️ Apple Music main process polling not available');
+      }
     }
     // For future HTML5 audio resolvers, add event listener logic here
   };
 
-  // Stop main process Spotify polling (helper function)
+  // Stop main process polling (helper function)
   const stopMainProcessPolling = () => {
+    // Stop Spotify polling
     if (window.electron?.spotify?.polling) {
       window.electron.spotify.polling.stop().catch((err) => {
-        console.error('Error stopping main process polling:', err);
+        console.error('Error stopping Spotify main process polling:', err);
+      });
+    }
+    // Stop Apple Music polling
+    if (window.electron?.musicKit?.polling) {
+      window.electron.musicKit.polling.stop().catch((err) => {
+        console.error('Error stopping Apple Music main process polling:', err);
       });
     }
   };
