@@ -25,11 +25,13 @@ class MusicKitBridge extends EventEmitter {
   getHelperPath() {
     const isDev = process.env.NODE_ENV === 'development' || !process.resourcesPath;
 
-    // Try multiple locations
+    // Try multiple locations - prioritize build directory during development
+    // (the ad-hoc signed binary works, but re-signed with developer cert gets killed by macOS)
     const possiblePaths = [
-      // Development paths
-      path.join(__dirname, 'resources', 'bin', 'darwin', 'musickit-helper'),
+      // Development: use Swift build output directly (ad-hoc signed, works)
       path.join(__dirname, 'native', 'musickit-helper', '.build', 'release', 'musickit-helper'),
+      // Fallback to resources
+      path.join(__dirname, 'resources', 'bin', 'darwin', 'musickit-helper'),
       // Production path (inside app bundle)
       path.join(process.resourcesPath || __dirname, 'bin', 'darwin', 'musickit-helper'),
     ];
