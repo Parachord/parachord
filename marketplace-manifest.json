@@ -19,6 +19,7 @@
         "urlLookup": false
       },
       "requiresAuth": true,
+      "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/spotify.axe",
       "category": "streaming",
       "tags": ["streaming", "subscription", "premium"]
@@ -40,6 +41,7 @@
         "urlLookup": true
       },
       "requiresAuth": false,
+      "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/bandcamp.axe",
       "category": "streaming",
       "tags": ["streaming", "purchase", "independent", "discovery"]
@@ -85,6 +87,7 @@
       },
       "requiresAuth": true,
       "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/soundcloud.axe",
       "category": "streaming",
       "tags": ["streaming", "free", "indie", "soundcloud", "oauth"]
     },
