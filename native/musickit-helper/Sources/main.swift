@@ -314,7 +314,7 @@ struct MusicKitHelperApp {
 
     @available(macOS 14.0, *)
     static func mainLoop() async {
-        let bridge = MusicKitBridge()
+        let bridge = await MusicKitBridge()
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
 
