@@ -4726,10 +4726,12 @@ const Parachord = () => {
   const resolveTracksInBackground = async (tracks) => {
     console.log(`🔍 Background resolution: resolving ${tracks.length} tracks across all sources...`);
 
-    // Use ref to avoid stale closure issues
+    // Use refs to avoid stale closure issues
     const currentResolvers = loadedResolversRef.current;
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => currentResolvers.find(r => r.id === id))
       .filter(r => r && r.capabilities.resolve);
 
@@ -4858,10 +4860,12 @@ const Parachord = () => {
 
       // Now resolve across all enabled resolvers for playable sources
       console.log(`🔍 Resolving playable sources...`);
-      // Use ref to avoid stale closure issues when called from extension message handler
+      // Use refs to avoid stale closure issues when called from extension message handler
       const currentResolvers = loadedResolversRef.current;
-      const enabledResolvers = resolverOrder
-        .filter(id => activeResolvers.includes(id))
+      const currentActiveResolvers = activeResolversRef.current;
+      const currentResolverOrder = resolverOrderRef.current;
+      const enabledResolvers = currentResolverOrder
+        .filter(id => currentActiveResolvers.includes(id))
         .map(id => currentResolvers.find(r => r.id === id))
         .filter(r => r && r.capabilities.resolve);
 
@@ -7823,14 +7827,17 @@ const Parachord = () => {
       }
 
       // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
+      // Use refs to avoid stale closure issues when called from callbacks
+      const currentActiveResolvers = activeResolversRef.current;
+      const currentResolverOrder = resolverOrderRef.current;
       const preferredResolver = trackOrSource.preferredResolver;
       const sortedSources = availableResolvers.map(resId => ({
         resolverId: resId,
         source: trackOrSource.sources[resId],
-        priority: resolverOrder.indexOf(resId),
+        priority: currentResolverOrder.indexOf(resId),
         confidence: trackOrSource.sources[resId].confidence || 0
       }))
-      .filter(s => activeResolvers.includes(s.resolverId)) // Only enabled resolvers
+      .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
       .sort((a, b) => {
         // If a preferred resolver is specified, prioritize it
         if (preferredResolver) {
@@ -8544,7 +8551,10 @@ const Parachord = () => {
 
           // Spotify failed after retry - try to fall back to next best source
           if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && activeResolvers.includes(id));
+            // Use refs for current resolver settings
+            const fallbackActiveResolvers = activeResolversRef.current;
+            const fallbackResolverOrder = resolverOrderRef.current;
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority
@@ -8552,7 +8562,7 @@ const Parachord = () => {
                 .map(resId => ({
                   resolverId: resId,
                   source: trackOrSource.sources[resId],
-                  priority: resolverOrder.indexOf(resId)
+                  priority: fallbackResolverOrder.indexOf(resId)
                 }))
                 .sort((a, b) => a.priority - b.priority);
 
@@ -10403,9 +10413,11 @@ const Parachord = () => {
 
     console.log(`🔍 Resolving recording: ${track.artist} - ${track.title}`);
 
-    // Query all enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query all enabled resolvers in priority order (using refs to avoid stale closure)
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -12496,9 +12508,11 @@ const Parachord = () => {
 
     const freshSources = {};
 
-    // Query enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query enabled resolvers in priority order (using refs for current values)
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -12601,8 +12615,11 @@ const Parachord = () => {
                       cachedData.resolverHash === currentResolverHash;
 
     // Check if there are active resolvers that weren't queried in the cached data
+    // Use refs to avoid stale closure issues
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
-    const missingResolvers = activeResolvers.filter(id =>
+    const missingResolvers = currentActiveResolvers.filter(id =>
       !cachedResolverIds.includes(id) &&
       allResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
@@ -12731,14 +12748,14 @@ const Parachord = () => {
 
     const sources = {};
 
-    // Query enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query enabled resolvers in priority order (using refs for current values)
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
-    console.log(`  📋 Active resolvers: ${activeResolvers.join(', ')}`);
-    console.log(`  📋 Resolver order: ${resolverOrder.join(', ')}`);
+    console.log(`  📋 Active resolvers: ${currentActiveResolvers.join(', ')}`);
+    console.log(`  📋 Resolver order: ${currentResolverOrder.join(', ')}`);
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
