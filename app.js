@@ -7953,7 +7953,8 @@ const Parachord = () => {
 
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
-    if (spinoffMode && !trackOrSource._playbackContext?.type?.includes('spinoff')) {
+    // Use ref instead of state to avoid race condition when handleNext calls exitSpinoff then handlePlay
+    if (spinoffModeRef.current && !trackOrSource._playbackContext?.type?.includes('spinoff')) {
       exitSpinoff();
     }
 
@@ -19024,6 +19025,10 @@ ${tracks}
 
   // Exit spinoff mode - return to normal queue playback
   const exitSpinoff = () => {
+    // Set ref immediately to prevent race conditions with handlePlay
+    // (state update is async but handlePlay may check spinoffMode before it updates)
+    spinoffModeRef.current = false;
+
     // Abort and cleanup pool context
     abortSchedulerContext('spinoff');
 
