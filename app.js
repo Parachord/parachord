@@ -5218,12 +5218,43 @@ const Parachord = () => {
     if (!track) return null;
     // First check if we have an explicitly set active resolver (set during playback)
     if (track._activeResolver) return track._activeResolver;
-    // Fall back to checking resolver-specific properties at top level OR nested in sources
+
+    // Fall back to checking resolver-specific properties, but only for active resolvers
+    const active = activeResolversRef.current || [];
+
+    // Check sources object first (most reliable) - prefer active resolvers
+    if (track.sources && typeof track.sources === 'object') {
+      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId));
+      if (availableSources.length > 0) {
+        // Return the highest priority active resolver
+        const resolverOrder = resolverOrderRef.current || [];
+        availableSources.sort((a, b) => {
+          const aIdx = resolverOrder.indexOf(a);
+          const bIdx = resolverOrder.indexOf(b);
+          return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+        });
+        return availableSources[0];
+      }
+    }
+
+    // Fall back to checking top-level properties (for older track formats)
+    if ((track.spotifyUri || track.spotifyId) && active.includes('spotify')) return 'spotify';
+    if (track.bandcampUrl && active.includes('bandcamp')) return 'bandcamp';
+    if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
+    if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
+    if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
+
+    // Last resort: return any resolver from sources (even if disabled) for display purposes
+    if (track.sources && typeof track.sources === 'object') {
+      const allSources = Object.keys(track.sources);
+      if (allSources.length > 0) return allSources[0];
+    }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
     if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
+
     return null;
   };
 
@@ -20626,10 +20657,15 @@ const getCurrentPlaybackState = async () => {
     return;
   }
 
-  // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
-  // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
+  // Don't update track info when playing via a non-Spotify resolver
+  // This prevents Spotify polling from interfering with other resolver playback
   const currentResolver = currentTrackRef.current?._activeResolver;
-  if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
+  if (currentResolver && currentResolver !== 'spotify') {
+    return;
+  }
+
+  // Don't poll if Spotify is disabled in activeResolvers
+  if (!activeResolversRef.current.includes('spotify')) {
     return;
   }
 
