@@ -7,6 +7,7 @@
  * 3. Pools (spinoff/listen-along next 5)
  * 4. Page (viewport + overscan)
  * 5. Sidebar (visible friend tracks)
+ * 6. Background (idle pre-resolution for collection/playlist tracks)
  */
 
 // IIFE to avoid polluting global scope
@@ -16,7 +17,8 @@
     hover: 2,
     pool: 3,
     page: 4,
-    sidebar: 5
+    sidebar: 5,
+    background: 6
   };
 
   class ResolutionScheduler {
@@ -39,6 +41,10 @@
       // Processing state
       this.isProcessing = false;
       this.resolveCallback = null;
+
+      // Idle callback for background pre-resolution
+      this.idleCallback = null;
+      this.idleTimeoutId = null;
     }
 
     /**
@@ -50,9 +56,50 @@
     }
 
     /**
+     * Set the idle callback function
+     * Called when the scheduler becomes idle (no pending tracks)
+     * @param {Function|null} callback - Callback to invoke when idle
+     */
+    setOnIdleCallback(callback) {
+      this.idleCallback = callback;
+      // Clear any existing idle timeout
+      if (this.idleTimeoutId) {
+        clearTimeout(this.idleTimeoutId);
+        this.idleTimeoutId = null;
+      }
+      // If setting a callback and we're currently idle, schedule it
+      if (callback && this.pending.size === 0 && !this.isProcessing) {
+        this._scheduleIdleCallback();
+      }
+    }
+
+    /**
+     * Schedule the idle callback with a delay
+     * @private
+     */
+    _scheduleIdleCallback() {
+      if (!this.idleCallback) return;
+      // Clear any existing timeout
+      if (this.idleTimeoutId) {
+        clearTimeout(this.idleTimeoutId);
+      }
+      // Schedule idle callback after 2 seconds of inactivity
+      this.idleTimeoutId = setTimeout(() => {
+        this.idleTimeoutId = null;
+        if (this.idleCallback && this.pending.size === 0 && !this.isProcessing) {
+          this.idleCallback();
+          // Re-schedule if still idle after callback
+          if (this.pending.size === 0 && !this.isProcessing) {
+            this._scheduleIdleCallback();
+          }
+        }
+      }, 2000);
+    }
+
+    /**
      * Register a visibility context
      * @param {string} id - Unique context ID
-     * @param {'queue'|'pool'|'page'|'sidebar'} type - Context type
+     * @param {'queue'|'pool'|'page'|'sidebar'|'background'} type - Context type
      * @param {object} options - Context options
      * @param {number} options.playbackLookahead - Number of tracks ahead to keep resolved
      */
@@ -293,6 +340,15 @@
     }
 
     /**
+     * Check if a track has been resolved
+     * @param {string} trackKey - Track key
+     * @returns {boolean}
+     */
+    hasResolved(trackKey) {
+      return this.resolved.has(trackKey);
+    }
+
+    /**
      * Get count of pending tracks
      * @returns {number}
      */
@@ -383,6 +439,8 @@
       const next = this.peekNext();
       if (!next) {
         this.isProcessing = false;
+        // Schedule idle callback when processing completes
+        this._scheduleIdleCallback();
         return;
       }
 
