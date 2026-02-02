@@ -4297,6 +4297,9 @@ const Parachord = () => {
   const collectionSourceSaveTimer = useRef(null);
   const pendingPlaylistSourceUpdates = useRef({}); // Map of playlistId -> { trackId -> sources }
   const playlistSourceSaveTimer = useRef(null);
+  const prevActiveViewRef = useRef(null); // Track previous view to detect navigation away
+  const flushCollectionSourcesRef = useRef(null); // Ref to access flush function from beforeunload
+  const flushPlaylistSourcesRef = useRef(null); // Ref to access flush function from beforeunload
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
@@ -5177,6 +5180,14 @@ const Parachord = () => {
   useEffect(() => {
     // Also handle beforeunload for when window closes
     const handleBeforeUnload = () => {
+      // Flush any pending source updates before the window closes
+      if (flushCollectionSourcesRef.current) {
+        flushCollectionSourcesRef.current();
+      }
+      if (flushPlaylistSourcesRef.current) {
+        flushPlaylistSourcesRef.current();
+      }
+
       if (spotifyTokenRef.current) {
         // Use sendBeacon for reliable delivery during page unload
         const url = 'https://api.spotify.com/v1/me/player/pause';
@@ -5193,6 +5204,13 @@ const Parachord = () => {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Flush any pending source updates on component unmount
+      if (flushCollectionSourcesRef.current) {
+        flushCollectionSourcesRef.current();
+      }
+      if (flushPlaylistSourcesRef.current) {
+        flushPlaylistSourcesRef.current();
+      }
       if (playbackPollerRef.current) {
         clearInterval(playbackPollerRef.current);
         playbackPollerRef.current = null;
@@ -7019,6 +7037,58 @@ const Parachord = () => {
     }
   }, []);
 
+  // Flush pending collection source updates immediately (call on navigation/close)
+  const flushPendingCollectionSources = useCallback(() => {
+    // Cancel any pending debounced save
+    if (collectionSourceSaveTimer.current) {
+      clearTimeout(collectionSourceSaveTimer.current);
+      collectionSourceSaveTimer.current = null;
+    }
+
+    const updates = pendingCollectionSourceUpdates.current;
+    const updateCount = Object.keys(updates).length;
+    if (updateCount === 0) return;
+
+    console.log(`💾 Flushing resolved sources for ${updateCount} track(s) to collection...`);
+
+    const now = Date.now();
+    setCollectionData(prev => {
+      let hasChanges = false;
+      const updatedTracks = prev.tracks.map(track => {
+        const newSources = updates[track.id];
+        if (newSources) {
+          // Merge new sources with existing, keeping existing sources if they exist
+          const mergedSources = { ...track.sources };
+          for (const [resolverId, sourceData] of Object.entries(newSources)) {
+            if (!mergedSources[resolverId]) {
+              // Add resolvedAt timestamp for TTL tracking
+              mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
+              hasChanges = true;
+            }
+          }
+          if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
+            return { ...track, sources: mergedSources };
+          }
+        }
+        return track;
+      });
+
+      if (hasChanges) {
+        const newData = { ...prev, tracks: updatedTracks };
+        saveCollection(newData);
+        console.log(`✅ Flushed sources for ${updateCount} track(s)`);
+        return newData;
+      }
+      return prev;
+    });
+
+    // Clear pending updates
+    pendingCollectionSourceUpdates.current = {};
+  }, [saveCollection]);
+
+  // Store flush function in ref for access from beforeunload handler
+  flushCollectionSourcesRef.current = flushPendingCollectionSources;
+
   // Queue resolved sources to be persisted back to collection (debounced)
   // This ensures Apple Music and other resolver results are cached for faster subsequent plays
   const queueCollectionSourceUpdate = useCallback((trackId, sources) => {
@@ -7034,19 +7104,40 @@ const Parachord = () => {
     }
 
     collectionSourceSaveTimer.current = setTimeout(() => {
-      const updates = pendingCollectionSourceUpdates.current;
-      const updateCount = Object.keys(updates).length;
-      if (updateCount === 0) return;
+      flushPendingCollectionSources();
+    }, 5000);
+  }, [flushPendingCollectionSources]);
 
-      console.log(`💾 Persisting resolved sources for ${updateCount} track(s) to collection...`);
+  // Flush pending playlist source updates immediately (call on navigation/close)
+  const flushPendingPlaylistSources = useCallback(() => {
+    // Cancel any pending debounced save
+    if (playlistSourceSaveTimer.current) {
+      clearTimeout(playlistSourceSaveTimer.current);
+      playlistSourceSaveTimer.current = null;
+    }
 
+    const updates = pendingPlaylistSourceUpdates.current;
+    const playlistIds = Object.keys(updates);
+    if (playlistIds.length === 0) return;
+
+    console.log(`💾 Flushing resolved sources to ${playlistIds.length} playlist(s)...`);
+
+    for (const plId of playlistIds) {
+      const trackUpdates = updates[plId];
+      const updateCount = Object.keys(trackUpdates).length;
+      if (updateCount === 0) continue;
+
+      // Find the playlist in state
       const now = Date.now();
-      setCollectionData(prev => {
+      setPlaylists(prev => {
+        const playlistIndex = prev.findIndex(p => p.id === plId);
+        if (playlistIndex === -1) return prev;
+
+        const playlist = prev[playlistIndex];
         let hasChanges = false;
-        const updatedTracks = prev.tracks.map(track => {
-          const newSources = updates[track.id];
+        const updatedTracks = playlist.tracks.map(track => {
+          const newSources = trackUpdates[track.id];
           if (newSources) {
-            // Merge new sources with existing, keeping existing sources if they exist
             const mergedSources = { ...track.sources };
             for (const [resolverId, sourceData] of Object.entries(newSources)) {
               if (!mergedSources[resolverId]) {
@@ -7063,18 +7154,25 @@ const Parachord = () => {
         });
 
         if (hasChanges) {
-          const newData = { ...prev, tracks: updatedTracks };
-          saveCollection(newData);
-          console.log(`✅ Persisted sources for ${updateCount} track(s)`);
-          return newData;
+          const updatedPlaylist = { ...playlist, tracks: updatedTracks, lastModified: Date.now() };
+          const newPlaylists = [...prev];
+          newPlaylists[playlistIndex] = updatedPlaylist;
+
+          // Save to disk asynchronously
+          savePlaylistToStore(updatedPlaylist);
+          console.log(`✅ Flushed sources for ${updateCount} track(s) in playlist: ${playlist.title}`);
+          return newPlaylists;
         }
         return prev;
       });
+    }
 
-      // Clear pending updates
-      pendingCollectionSourceUpdates.current = {};
-    }, 5000);
-  }, [saveCollection]);
+    // Clear pending updates
+    pendingPlaylistSourceUpdates.current = {};
+  }, []);
+
+  // Store flush function in ref for access from beforeunload handler
+  flushPlaylistSourcesRef.current = flushPendingPlaylistSources;
 
   // Queue resolved sources to be persisted back to a playlist (debounced)
   const queuePlaylistSourceUpdate = useCallback((playlistId, trackId, sources) => {
@@ -7091,62 +7189,27 @@ const Parachord = () => {
       clearTimeout(playlistSourceSaveTimer.current);
     }
 
-    playlistSourceSaveTimer.current = setTimeout(async () => {
-      const updates = pendingPlaylistSourceUpdates.current;
-      const playlistIds = Object.keys(updates);
-      if (playlistIds.length === 0) return;
-
-      console.log(`💾 Persisting resolved sources to ${playlistIds.length} playlist(s)...`);
-
-      for (const plId of playlistIds) {
-        const trackUpdates = updates[plId];
-        const updateCount = Object.keys(trackUpdates).length;
-        if (updateCount === 0) continue;
-
-        // Find the playlist in state
-        const now = Date.now();
-        setPlaylists(prev => {
-          const playlistIndex = prev.findIndex(p => p.id === plId);
-          if (playlistIndex === -1) return prev;
-
-          const playlist = prev[playlistIndex];
-          let hasChanges = false;
-          const updatedTracks = playlist.tracks.map(track => {
-            const newSources = trackUpdates[track.id];
-            if (newSources) {
-              const mergedSources = { ...track.sources };
-              for (const [resolverId, sourceData] of Object.entries(newSources)) {
-                if (!mergedSources[resolverId]) {
-                  // Add resolvedAt timestamp for TTL tracking
-                  mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
-                  hasChanges = true;
-                }
-              }
-              if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
-                return { ...track, sources: mergedSources };
-              }
-            }
-            return track;
-          });
-
-          if (hasChanges) {
-            const updatedPlaylist = { ...playlist, tracks: updatedTracks, lastModified: Date.now() };
-            const newPlaylists = [...prev];
-            newPlaylists[playlistIndex] = updatedPlaylist;
-
-            // Save to disk asynchronously
-            savePlaylistToStore(updatedPlaylist);
-            console.log(`✅ Persisted sources for ${updateCount} track(s) in playlist: ${playlist.title}`);
-            return newPlaylists;
-          }
-          return prev;
-        });
-      }
-
-      // Clear pending updates
-      pendingPlaylistSourceUpdates.current = {};
+    playlistSourceSaveTimer.current = setTimeout(() => {
+      flushPendingPlaylistSources();
     }, 5000);
-  }, []);
+  }, [flushPendingPlaylistSources]);
+
+  // Flush pending sources when leaving library/playlists views
+  useEffect(() => {
+    const prevView = prevActiveViewRef.current;
+    prevActiveViewRef.current = activeView;
+
+    // Flush collection sources when leaving library view
+    if (prevView === 'library' && activeView !== 'library') {
+      flushPendingCollectionSources();
+    }
+
+    // Flush playlist sources when leaving playlists or playlist-view views
+    if ((prevView === 'playlists' || prevView === 'playlist-view') &&
+        activeView !== 'playlists' && activeView !== 'playlist-view') {
+      flushPendingPlaylistSources();
+    }
+  }, [activeView, flushPendingCollectionSources, flushPendingPlaylistSources]);
 
   // Add track to collection
   const addTrackToCollection = useCallback((track) => {
