@@ -3464,6 +3464,7 @@ const Parachord = () => {
   const searchTimeoutRef = useRef(null);
   const searchQueryRef = useRef('');
   const abortControllerRef = useRef(null);
+  const searchInputRef = useRef(null); // Ref for search input to support Ctrl+F focus
   // Recommendations state
   const [recommendations, setRecommendations] = useState({
     artists: [],
@@ -23978,10 +23979,20 @@ useEffect(() => {
           // Large search input with cursor styling
           React.createElement('div', { className: 'mb-8' },
             React.createElement('input', {
-              ref: (el) => el && activeView === 'search' && !searchQuery && el.focus(),
+              ref: (el) => {
+                searchInputRef.current = el;
+                if (el && activeView === 'search' && !searchQuery) el.focus();
+              },
               type: 'text',
               value: searchQuery,
               onChange: (e) => handleSearchInput(e.target.value),
+              onKeyDown: (e) => {
+                // Prevent keyboard shortcuts from interfering while typing in search
+                // Allow Escape to propagate for navigation, but stop other keys
+                if (e.key !== 'Escape') {
+                  e.stopPropagation();
+                }
+              },
               placeholder: '',
               className: 'w-full text-6xl font-extralight text-gray-900 bg-transparent border-none outline-none tracking-tight',
               style: {
@@ -36116,6 +36127,8 @@ useEffect(() => {
           value: aiPrompt,
           onChange: (e) => setAiPrompt(e.target.value),
           onKeyDown: (e) => {
+            // Prevent global shortcuts from interfering while typing
+            e.stopPropagation();
             if (e.key === 'Enter' && aiPrompt.trim() && !aiLoading) {
               handleAiGenerate(aiPrompt.trim());
             }
@@ -36538,6 +36551,8 @@ useEffect(() => {
             value: aiSavePlaylistName,
             onChange: (e) => setAiSavePlaylistName(e.target.value),
             onKeyDown: (e) => {
+              // Prevent global shortcuts from interfering while typing
+              e.stopPropagation();
               if (e.key === 'Enter' && aiSavePlaylistName.trim()) {
                 handleAiSavePlaylistConfirm();
               }
@@ -36637,6 +36652,8 @@ useEffect(() => {
             value: queueSavePlaylistName,
             onChange: (e) => setQueueSavePlaylistName(e.target.value),
             onKeyDown: (e) => {
+              // Prevent global shortcuts from interfering while typing
+              e.stopPropagation();
               if (e.key === 'Enter' && queueSavePlaylistName.trim()) {
                 handleSaveQueueConfirm();
               }
@@ -36756,6 +36773,8 @@ useEffect(() => {
                 value: urlImportValue,
                 onChange: (e) => setUrlImportValue(e.target.value),
                 onKeyDown: (e) => {
+                  // Prevent global shortcuts from interfering while typing
+                  e.stopPropagation();
                   if (e.key === 'Enter' && urlImportValue.trim() && !urlImportLoading) {
                     (async () => {
                       setUrlImportLoading(true);
@@ -36970,6 +36989,8 @@ useEffect(() => {
             value: addFriendInput,
             onChange: (e) => setAddFriendInput(e.target.value),
             onKeyDown: (e) => {
+              // Prevent global shortcuts from interfering while typing
+              e.stopPropagation();
               if (e.key === 'Enter' && addFriendInput.trim()) {
                 addFriend(addFriendInput);
               }
@@ -40033,6 +40054,8 @@ useEffect(() => {
                   value: newPlaylistName,
                   onChange: (e) => setNewPlaylistName(e.target.value),
                   onKeyDown: (e) => {
+                    // Prevent global shortcuts from interfering while typing
+                    e.stopPropagation();
                     if (e.key === 'Enter' && newPlaylistName.trim()) {
                       // Create new playlist with the tracks
                       const playlistId = newPlaylistName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
