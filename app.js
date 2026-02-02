@@ -87,10 +87,37 @@ window.iTunesRateLimiter = (() => {
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 20) => {
-  // Try MusicKit first if available and configured
+  // Try MusicKit first if available
   const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
   if (musicKitWeb) {
-    const status = musicKitWeb.getAuthStatus();
+    let status = musicKitWeb.getAuthStatus();
+
+    // If not configured, try to configure with token from localStorage or env
+    if (!status.configured) {
+      let developerToken = localStorage.getItem('musickit_developer_token') || '';
+
+      // Try to get from electron config (.env) if not in localStorage
+      if (!developerToken && window.electron?.config?.get) {
+        try {
+          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+        } catch (e) {
+          console.log('[AppleMusicSearch] Could not get token from env:', e.message);
+        }
+      }
+
+      // Configure MusicKit if we have a token
+      if (developerToken) {
+        try {
+          console.log('[AppleMusicSearch] Configuring MusicKit with token from', localStorage.getItem('musickit_developer_token') ? 'localStorage' : 'env');
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+          status = musicKitWeb.getAuthStatus();
+        } catch (configError) {
+          console.log('[AppleMusicSearch] Failed to configure MusicKit:', configError.message);
+        }
+      }
+    }
+
+    // Use MusicKit search if configured
     if (status.configured) {
       try {
         console.log('[AppleMusicSearch] Using MusicKit API for:', query);
