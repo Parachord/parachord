@@ -11121,7 +11121,7 @@ const Parachord = () => {
       // Load last active view
       const savedLastView = await window.electron.store.get('last_active_view');
       if (savedLastView) {
-        const validViews = ['library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
+        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
           if (savedLastView.view === 'artist' && savedLastView.artistName) {
@@ -40545,6 +40545,10 @@ useEffect(() => {
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
+          } else if (playbackContext.type === 'weekly-jam') {
+            // Navigate to home view where Weekly Jams are displayed
+            // If we have the jam ID, we could potentially scroll to or highlight that jam
+            navigateTo('home');
           }
           setQueueDrawerOpen(false);
         },
@@ -40567,6 +40571,7 @@ useEffect(() => {
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
             playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
+            playbackContext.type === 'weekly-jam' ? `${playbackContext.name || 'Weekly Jam'}` :
             playbackContext.name || 'Unknown'
           )
         ),
