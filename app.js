@@ -7923,9 +7923,9 @@ const Parachord = () => {
     }
   };
 
-  // Fetch playlist covers when viewing playlists page
+  // Fetch playlist covers when viewing playlists page or home page
   useEffect(() => {
-    if (activeView !== 'playlists' || playlists.length === 0) return;
+    if ((activeView !== 'playlists' && activeView !== 'home') || playlists.length === 0) return;
 
     // Fetch covers for playlists that don't have cached covers yet
     const fetchMissingCovers = async () => {
@@ -28274,8 +28274,7 @@ useEffect(() => {
                               animationDelay: `${index * 50}ms`
                             },
                             onClick: () => {
-                              setSelectedPlaylist(playlist);
-                              navigateTo('playlist-view');
+                              loadPlaylist(playlist);
                             }
                           },
                             // 2x2 album art grid or placeholder with hover play button
