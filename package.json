@@ -98,14 +98,18 @@
     "dmg": {
       "icon": "assets/icons/icon.icns",
       "iconSize": 80,
+      "window": {
+        "width": 540,
+        "height": 380
+      },
       "contents": [
         {
           "x": 130,
-          "y": 220
+          "y": 180
         },
         {
           "x": 410,
-          "y": 220,
+          "y": 180,
           "type": "link",
           "path": "/Applications"
         }
