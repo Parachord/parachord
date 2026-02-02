@@ -23660,25 +23660,25 @@ useEffect(() => {
                       }
                     }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
-                    // Track title - fixed width column
+                    // Track title - flexible column
                     React.createElement('span', {
                       className: 'truncate transition-colors',
                       style: {
                         pointerEvents: 'none',
-                        width: '360px',
-                        flexShrink: 0,
+                        flex: '1 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         fontWeight: isNowPlaying && isPlaying ? '500' : '400',
                         color: isNowPlaying && isPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af'
                       }
                     }, track.title),
 
-                    // Artist name - fixed width column, clickable
+                    // Artist name - flexible column, clickable
                     React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '220px',
-                        flexShrink: 0,
+                        flex: '0.7 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       },
@@ -23688,12 +23688,12 @@ useEffect(() => {
                       }
                     }, track.artist),
 
-                    // Album name - fixed width column, clickable
+                    // Album name - flexible column, clickable
                     track.album ? React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '150px',
-                        flexShrink: 0,
+                        flex: '0.5 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       },
@@ -23705,15 +23705,12 @@ useEffect(() => {
                       className: 'truncate',
                       style: {
                         pointerEvents: 'none',
-                        width: '150px',
-                        flexShrink: 0,
+                        flex: '0.5 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       }
                     }, ''),
-
-                    // Spacer to push duration and resolvers to the right
-                    React.createElement('div', { className: 'flex-1' }),
 
                     // Duration - right-justified before resolver icons
                     React.createElement('span', {
@@ -23721,7 +23718,6 @@ useEffect(() => {
                       style: {
                         pointerEvents: 'none',
                         width: '50px',
-                        marginLeft: 'auto',
                         marginRight: '16px',
                         fontSize: '12px',
                         color: '#9ca3af',
@@ -27265,25 +27261,25 @@ useEffect(() => {
                             }
                           }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
-                      // Track title - fixed width column
+                      // Track title - flexible column
                       React.createElement('span', {
                         className: 'truncate transition-colors',
                         style: {
                           pointerEvents: 'none',
-                          width: '360px',
-                          flexShrink: 0,
+                          flex: '1 1 0',
+                          minWidth: 0,
                           fontSize: '13px',
                           fontWeight: isNowPlaying && isPlaying ? '500' : '400',
                           color: isNowPlaying && isPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af'
                         }
                       }, track.title),
 
-                      // Artist name - fixed width column, clickable
+                      // Artist name - flexible column, clickable
                       React.createElement('span', {
                         className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                         style: {
-                          width: '240px',
-                          flexShrink: 0,
+                          flex: '0.7 1 0',
+                          minWidth: 0,
                           fontSize: '12px',
                           color: '#6b7280'
                         },
@@ -27295,12 +27291,10 @@ useEffect(() => {
 
                       // Duration - fixed width column (before resolver icons)
                       React.createElement('span', {
-                        className: 'text-right tabular-nums',
+                        className: 'text-right tabular-nums flex-shrink-0',
                         style: {
                           pointerEvents: 'none',
                           width: '50px',
-                          flexShrink: 0,
-                          marginLeft: 'auto',
                           fontSize: '12px',
                           color: '#9ca3af'
                         }
@@ -27396,20 +27390,20 @@ useEffect(() => {
                         className: 'w-6 h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
                         style: { width: '32px', animationDelay: `${index * 50}ms` }
                       }),
-                      // Track title skeleton
+                      // Track title skeleton - flexible
                       React.createElement('div', {
                         className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '360px', flexShrink: 0, animationDelay: `${index * 50 + 25}ms` }
+                        style: { flex: '1 1 0', minWidth: 0, animationDelay: `${index * 50 + 25}ms` }
                       }),
-                      // Artist name skeleton
+                      // Artist name skeleton - flexible
                       React.createElement('div', {
                         className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '180px', flexShrink: 0, animationDelay: `${index * 50 + 50}ms` }
+                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: `${index * 50 + 50}ms` }
                       }),
                       // Duration skeleton
                       React.createElement('div', {
-                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
-                        style: { width: '40px', marginLeft: 'auto', animationDelay: `${index * 50 + 75}ms` }
+                        className: 'h-4 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer flex-shrink-0',
+                        style: { width: '40px', animationDelay: `${index * 50 + 75}ms` }
                       }),
                       // Resolver icons skeleton
                       React.createElement('div', { className: 'flex items-center gap-1', style: { width: '140px', flexShrink: 0 } },
@@ -29635,27 +29629,25 @@ useEffect(() => {
                         className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
                         style: { width: '24px', flexShrink: 0 }
                       }),
-                      // Title skeleton
+                      // Title skeleton - flexible
                       React.createElement('div', {
                         className: 'h-3.5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { width: '360px', flexShrink: 0, animationDelay: '0.1s' }
+                        style: { flex: '1 1 0', minWidth: 0, animationDelay: '0.1s' }
                       }),
-                      // Artist skeleton
+                      // Artist skeleton - flexible
                       React.createElement('div', {
                         className: 'h-3.5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { width: '220px', flexShrink: 0, animationDelay: '0.2s' }
+                        style: { flex: '0.7 1 0', minWidth: 0, animationDelay: '0.2s' }
                       }),
-                      // Album skeleton
+                      // Album skeleton - flexible
                       React.createElement('div', {
                         className: 'h-3.5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { width: '150px', flexShrink: 0, animationDelay: '0.3s' }
+                        style: { flex: '0.5 1 0', minWidth: 0, animationDelay: '0.3s' }
                       }),
-                      // Spacer
-                      React.createElement('div', { className: 'flex-1' }),
                       // Duration skeleton
                       React.createElement('div', {
-                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                        style: { width: '50px', flexShrink: 0, marginRight: '16px', animationDelay: '0.4s' }
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer flex-shrink-0',
+                        style: { width: '50px', marginRight: '16px', animationDelay: '0.4s' }
                       }),
                       // Resolver icons skeleton
                       React.createElement('div', {
@@ -29799,25 +29791,25 @@ useEffect(() => {
                       }
                     }, isNowPlaying && isPlaying ? '▶' : String(index + 1).padStart(2, '0')),
 
-                    // Track title - fixed width column
+                    // Track title - flexible column
                     React.createElement('span', {
                       className: 'truncate transition-colors',
                       style: {
                         pointerEvents: 'none',
-                        width: '360px',
-                        flexShrink: 0,
+                        flex: '1 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         fontWeight: isNowPlaying && isPlaying ? '500' : '400',
                         color: isNowPlaying && isPlaying ? '#7c3aed' : '#374151'
                       }
                     }, track.title),
 
-                    // Artist name - fixed width column, clickable
+                    // Artist name - flexible column, clickable
                     React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '220px',
-                        flexShrink: 0,
+                        flex: '0.7 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       },
@@ -29827,12 +29819,12 @@ useEffect(() => {
                       }
                     }, track.artist || 'Unknown Artist'),
 
-                    // Album name - fixed width column, clickable
+                    // Album name - flexible column, clickable
                     track.album ? React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '150px',
-                        flexShrink: 0,
+                        flex: '0.5 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       },
@@ -29844,15 +29836,12 @@ useEffect(() => {
                       className: 'truncate',
                       style: {
                         pointerEvents: 'none',
-                        width: '150px',
-                        flexShrink: 0,
+                        flex: '0.5 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         color: '#6b7280'
                       }
                     }, ''),
-
-                    // Spacer to push duration and resolvers to the right
-                    React.createElement('div', { className: 'flex-1' }),
 
                     // Duration - right-justified before resolver icons
                     React.createElement('span', {
@@ -29860,7 +29849,6 @@ useEffect(() => {
                       style: {
                         pointerEvents: 'none',
                         width: '50px',
-                        marginLeft: 'auto',
                         marginRight: '16px',
                         fontSize: '12px',
                         color: '#9ca3af',
@@ -30834,17 +30822,16 @@ useEffect(() => {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
                     style: { width: '32px', backgroundSize: '200% 100%', animationDelay: `${i * 30}ms`, flexShrink: 0 }
                   }),
-                  // Title skeleton
+                  // Title skeleton - flexible
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms`, flexShrink: 0 }
+                    style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms` }
                   }),
-                  // Artist skeleton
+                  // Artist skeleton - flexible
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { width: '240px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms`, flexShrink: 0 }
+                    style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
                   }),
-                  React.createElement('div', { className: 'flex-1' }),
                   // Listeners skeleton
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
@@ -30947,25 +30934,25 @@ useEffect(() => {
                       }
                     }, isNowPlaying ? '▶' : String(track.rank).padStart(2, '0')),
 
-                    // Track title (matches Recommended Songs: 360px width)
+                    // Track title - flexible column
                     React.createElement('span', {
                       className: 'truncate transition-colors',
                       style: {
                         pointerEvents: 'none',
-                        width: '360px',
-                        flexShrink: 0,
+                        flex: '1 1 0',
+                        minWidth: 0,
                         fontSize: '13px',
                         fontWeight: isNowPlaying ? '500' : '400',
                         color: isNowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af'
                       }
                     }, track.title),
 
-                    // Artist name (matches Recommended Songs: 240px width, clickable)
+                    // Artist name - flexible column, clickable
                     React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '240px',
-                        flexShrink: 0,
+                        flex: '0.7 1 0',
+                        minWidth: 0,
                         fontSize: '12px',
                         color: '#6b7280'
                       },
@@ -30974,9 +30961,6 @@ useEffect(() => {
                         fetchArtistData(track.artist);
                       }
                     }, track.artist),
-
-                    // Spacer
-                    React.createElement('div', { className: 'flex-1' }),
 
                     // Listeners count (in place of duration)
                     track.listeners > 0 && React.createElement('span', {
@@ -31743,23 +31727,23 @@ useEffect(() => {
                       className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
                     },
                       React.createElement('div', {
-                        className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0',
                         style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                        style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '240px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                        style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
                       }),
                       React.createElement('div', {
-                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0',
                         style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
                       }),
                       React.createElement('div', {
-                        className: 'flex gap-1 ml-auto',
+                        className: 'flex gap-1 flex-shrink-0',
                         style: { width: '140px' }
                       },
                         React.createElement('div', {
@@ -32032,32 +32016,32 @@ useEffect(() => {
                           style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: '#9ca3af' }
                         }, String(index + 1).padStart(2, '0')),
 
-                        // Track title - fixed width column
+                        // Track title - flexible column
                         React.createElement('span', {
                           className: 'truncate transition-colors',
-                          style: { pointerEvents: 'none', width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
+                          style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
                         }, track.title),
 
-                        // Artist name - fixed width column, clickable
+                        // Artist name - flexible column, clickable
                         React.createElement('span', {
                           className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                          style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: '#6b7280' },
                           onClick: (e) => {
                             e.stopPropagation();
                             fetchArtistData(track.artist);
                           }
                         }, track.artist),
 
-                        // Album name - fixed width column
+                        // Album name - flexible column
                         React.createElement('span', {
                           className: 'truncate',
-                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: '#9ca3af' }
                         }, track.album || ''),
 
                         // Duration - fixed width column
                         React.createElement('span', {
-                          className: 'text-right tabular-nums',
-                          style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                          className: 'text-right tabular-nums flex-shrink-0',
+                          style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: '#9ca3af' }
                         }, formatTime(track.duration)),
 
                         // Resolver icons - fixed width column
@@ -32413,23 +32397,23 @@ useEffect(() => {
                       className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
                     },
                       React.createElement('div', {
-                        className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0',
                         style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                        style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '240px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                        style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
                       }),
                       React.createElement('div', {
-                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '80px', marginLeft: 'auto', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0',
+                        style: { width: '80px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
                       }),
                       React.createElement('div', {
-                        className: 'flex gap-1',
+                        className: 'flex gap-1 flex-shrink-0',
                         style: { width: '140px' }
                       },
                         React.createElement('div', {
@@ -32523,20 +32507,20 @@ useEffect(() => {
                         }, track.nowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
                         React.createElement('span', {
                           className: 'truncate transition-colors',
-                          style: { pointerEvents: 'none', width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af' }
+                          style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af' }
                         }, track.title),
                         React.createElement('span', {
                           className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                          style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: '#6b7280' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
                         React.createElement('span', {
                           className: 'truncate',
-                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: '#9ca3af' }
                         }, track.album || ''),
                         React.createElement('span', {
-                          className: 'text-right tabular-nums',
-                          style: { pointerEvents: 'none', width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                          className: 'text-right tabular-nums flex-shrink-0',
+                          style: { pointerEvents: 'none', width: '80px', fontSize: '12px', color: '#9ca3af' }
                         }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
                         React.createElement('div', {
                           className: 'flex items-center gap-1 justify-end',
@@ -32582,10 +32566,10 @@ useEffect(() => {
                       key: `top-track-skeleton-${i}`,
                       className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
                     },
-                      React.createElement('div', { className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { width: '360px', backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { width: '240px', backgroundSize: '200% 100%' } }),
-                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { width: '80px', marginLeft: 'auto', backgroundSize: '200% 100%' } })
+                      React.createElement('div', { className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0', style: { backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer', style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%' } }),
+                      React.createElement('div', { className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer flex-shrink-0', style: { width: '80px', backgroundSize: '200% 100%' } })
                     )
                   )
                 )
@@ -32639,17 +32623,17 @@ useEffect(() => {
                         onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.electron.contextMenu.showTrackMenu({ type: 'track', track }); }
                       },
                         React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: '#9ca3af' } }, `#${track.rank}`),
-                        React.createElement('span', { className: 'truncate transition-colors', style: { width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' } }, track.title),
+                        React.createElement('span', { className: 'truncate transition-colors', style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' } }, track.title),
                         React.createElement('span', {
                           className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                          style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: '#6b7280' },
                           onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                         }, track.artist),
                         React.createElement('span', {
                           className: 'truncate',
-                          style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: '#9ca3af' }
                         }, track.album || ''),
-                        React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
+                        React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
                             Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
@@ -33482,20 +33466,20 @@ useEffect(() => {
                           }, track.nowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
                           React.createElement('span', {
                             className: 'truncate transition-colors',
-                            style: { pointerEvents: 'none', width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af' }
+                            style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: track.nowPlaying ? '500' : '400', color: track.nowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af' }
                           }, track.title),
                           React.createElement('span', {
                             className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                            style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                            style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: '#6b7280' },
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
                           React.createElement('span', {
                             className: 'truncate',
-                            style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                            style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: '#9ca3af' }
                           }, track.album || ''),
                           React.createElement('span', {
-                            className: 'text-right tabular-nums',
-                            style: { pointerEvents: 'none', width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                            className: 'text-right tabular-nums flex-shrink-0',
+                            style: { pointerEvents: 'none', width: '80px', fontSize: '12px', color: '#9ca3af' }
                           }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
                           React.createElement('div', {
                             className: 'flex items-center gap-1 justify-end',
@@ -33585,20 +33569,20 @@ useEffect(() => {
                           }, `#${track.rank || index + 1}`),
                           React.createElement('span', {
                             className: 'truncate transition-colors',
-                            style: { width: '360px', flexShrink: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
+                            style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? '#374151' : '#9ca3af' }
                           }, track.title),
                           React.createElement('span', {
                             className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                            style: { width: '240px', flexShrink: 0, fontSize: '12px', color: '#6b7280' },
+                            style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: '#6b7280' },
                             onClick: (e) => { e.stopPropagation(); fetchArtistData(track.artist); }
                           }, track.artist),
                           React.createElement('span', {
                             className: 'truncate',
-                            style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
+                            style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: '#9ca3af' }
                           }, track.album || ''),
                           React.createElement('span', {
-                            className: 'text-right tabular-nums',
-                            style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                            className: 'text-right tabular-nums flex-shrink-0',
+                            style: { width: '80px', fontSize: '12px', color: '#9ca3af' }
                           }, `${track.playCount} plays`),
                           React.createElement('div', {
                             className: 'flex items-center gap-1 justify-end',
