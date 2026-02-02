@@ -345,6 +345,7 @@ const appleMusicPoller = {
     this.lastStatus = null;
     this.lastPosition = 0;
     this.pollCount = 0;
+    this.zeroPositionCount = 0; // Track consecutive zero-position polls after playback started
 
     // Do an immediate poll, then set up interval
     await this.poll();
@@ -370,6 +371,7 @@ const appleMusicPoller = {
     this.pollCount = 0;
     this.lastPosition = 0;
     this.lastStatus = null;
+    this.zeroPositionCount = 0;
   },
 
   async poll() {
@@ -418,10 +420,53 @@ const appleMusicPoller = {
         }
       }
 
+      // Check if Apple Music moved to a different track (song ID or title changed)
+      const currentSongId = state?.songId;
+      const currentSongTitle = state?.songTitle;
+
+      // Only check for song changes if we have something to compare
+      if (currentSongId && this.expectedSongId) {
+        // Compare catalog song IDs
+        if (currentSongId !== this.expectedSongId) {
+          console.log(`🍎 [Main] Song ID changed from ${this.expectedSongId} to ${currentSongId}, signaling advance...`);
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'song-changed' });
+          this.stop();
+          return;
+        }
+      } else if (currentSongTitle && this.trackTitle) {
+        // Fall back to title comparison if song ID not available
+        // Normalize titles for comparison (lowercase, trim)
+        const normalizedCurrent = currentSongTitle.toLowerCase().trim();
+        const normalizedExpected = this.trackTitle.toLowerCase().trim();
+        if (normalizedCurrent !== normalizedExpected) {
+          console.log(`🍎 [Main] Song title changed from "${this.trackTitle}" to "${currentSongTitle}", signaling advance...`);
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'song-changed' });
+          this.stop();
+          return;
+        }
+      }
+
+      // Track consecutive zero-position polls (after track had started playing)
+      // This catches cases where Apple Music stops without clear status change
+      if (position < 1 && this.lastPosition > 10) {
+        this.zeroPositionCount++;
+        console.log(`🍎 [Main] Position dropped to ${position.toFixed(1)}s (was ${this.lastPosition.toFixed(1)}s), zero count: ${this.zeroPositionCount}`);
+        if (this.zeroPositionCount >= 3) {
+          console.log('🍎 [Main] Position stuck at 0 for multiple polls, signaling advance...');
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'position-stuck' });
+          this.stop();
+          return;
+        }
+      } else if (position > 1) {
+        // Reset zero count when position advances
+        this.zeroPositionCount = 0;
+      }
+
       // Detect if position wrapped back (track finished and restarted or new track)
       if (this.lastPosition > 30 && position < 5 && status === 'playing') {
         console.log('🍎 [Main] Position reset detected, may be new track or loop');
-        // Don't auto-advance on position reset - could be a loop or user action
+        // If we have song ID tracking, this case is handled above
+        // The zero-position tracking above also helps catch stuck cases
       }
 
       this.lastStatus = status;
