@@ -6061,7 +6061,7 @@ const Parachord = () => {
       title: track.title,
       artist: track.artist,
       album: track.album || '',
-      duration: track.duration || 0,
+      duration: track.duration || 180, // Default to 3 minutes if duration not scraped
       // These will be resolved by the resolution system
       source: null,
       resolvedBy: null,
