@@ -16068,13 +16068,9 @@ ${tracks}
       setFriends(prev => [...prev, newFriend]);
       // Auto-pin the friend to sidebar (they're not saved to collection yet)
       setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
-
-      // If friend is on-air when added, mark as auto-pinned so they get auto-unpinned when offline
-      const isOnAirNow = newFriend.cachedRecentTrack?.timestamp &&
-        (Date.now() - newFriend.cachedRecentTrack.timestamp) < 10 * 60 * 1000;
-      if (isOnAirNow) {
-        setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
-      }
+      // Mark as auto-pinned so they get auto-unpinned when offline
+      // (only manually pinned friends via context menu/drag stay permanently)
+      setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
 
       setAddFriendModalOpen(false);
       setAddFriendInput('');
