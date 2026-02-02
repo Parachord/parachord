@@ -503,12 +503,21 @@ const appleMusicPoller = {
         }
       }
 
-      // Track consecutive zero-position polls (after track had started playing)
+      // Detect if position wrapped back (track finished - large position drop)
+      // This is the primary end-of-track detection when MusicKit doesn't report stopped/paused
+      if (this.playbackConfirmed && this.lastPosition > 30 && position < 5) {
+        console.log(`🍎 [Main] Position wraparound detected (${this.lastPosition.toFixed(1)}s → ${position.toFixed(1)}s), signaling advance...`);
+        this.sendToRenderer('applemusic-polling-advance', { reason: 'position-wraparound' });
+        this.stop();
+        return;
+      }
+
+      // Track consecutive zero-position polls (after playback had been confirmed)
       // This catches cases where Apple Music stops without clear status change
-      if (position < 1 && this.lastPosition > 10) {
+      if (this.playbackConfirmed && position < 1) {
         this.zeroPositionCount++;
-        console.log(`🍎 [Main] Position dropped to ${position.toFixed(1)}s (was ${this.lastPosition.toFixed(1)}s), zero count: ${this.zeroPositionCount}`);
-        if (this.zeroPositionCount >= 3) {
+        console.log(`🍎 [Main] Position near zero (${position.toFixed(1)}s), consecutive count: ${this.zeroPositionCount}`);
+        if (this.zeroPositionCount >= 2) {
           console.log('🍎 [Main] Position stuck at 0 for multiple polls, signaling advance...');
           this.sendToRenderer('applemusic-polling-advance', { reason: 'position-stuck' });
           this.stop();
@@ -517,13 +526,6 @@ const appleMusicPoller = {
       } else if (position > 1) {
         // Reset zero count when position advances
         this.zeroPositionCount = 0;
-      }
-
-      // Detect if position wrapped back (track finished and restarted or new track)
-      if (this.lastPosition > 30 && position < 5 && status === 'playing') {
-        console.log('🍎 [Main] Position reset detected, may be new track or loop');
-        // If we have song ID tracking, this case is handled above
-        // The zero-position tracking above also helps catch stuck cases
       }
 
       this.lastStatus = status;
