@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-01-30
+> Last updated: 2026-02-02
 
 ---
 
@@ -47,6 +47,7 @@
 - [x] **Linux builds** - .deb, .rpm, AppImage
 - [ ] **Mobile apps** - iOS/Android
 - [x] **Auto-updates** - Electron auto-updater
+- [ ] **DMG installer background** - Custom background with drag arrow for Applications
 
 ### Playback
 - [ ] **Repeat modes** - Repeat one, repeat all, no repeat
@@ -110,6 +111,7 @@
 - Last.fm, ListenBrainz, Libre.fm scrobbling
 - Imported Friends/Curators with detailed profiles, recently playing and charts for each
 - Active Friends appear in sidebar with now playing info (or pin friends to always be in sidebar)
+- Auto-unpin friends from sidebar when they stop listening (unless manually pinned)
 - Listen Along to friends in almost-real-time (via Last.fm and Listenbrainz data)
 
 ### Home Page
@@ -143,6 +145,10 @@
 - Embedded web player with smart links
 - Browser extension for one-click imports and YT playback control
 - Parchord.com website
+
+### Platform
+- macOS dock icon properly renders without gray outline (square SVG source)
+- Icon generation scripts for all platforms
 
 ## Development
 - Automated CI/CD pipeline
