@@ -233,10 +233,15 @@ class MusicKitBridge {
     // Get current playback state
     func getPlaybackState() -> [String: Any] {
         let state = player.state
-        return [
+        var result: [String: Any] = [
             "status": playbackStatusString(state.playbackStatus),
             "position": player.playbackTime
         ]
+        // Include current song ID if available (for detecting track changes)
+        if let entry = player.queue.currentEntry {
+            result["songId"] = entry.id.rawValue
+        }
+        return result
     }
 
     private func playbackStatusString(_ status: MusicPlayer.PlaybackStatus) -> String {
