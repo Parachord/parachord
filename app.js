@@ -1444,7 +1444,7 @@ const VirtualizedQueueList = React.memo(({
       // Resolver icons
       React.createElement('div', {
         className: 'flex items-center gap-1 justify-end',
-        style: { width: '90px', flexShrink: 0, minHeight: '20px' }
+        style: { width: '140px', flexShrink: 0, minHeight: '20px' }
       },
         isError ?
           React.createElement('button', {
