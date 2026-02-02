@@ -10482,35 +10482,54 @@ const Parachord = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
+    // Time periods to fetch for richer context
+    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit }
+    const periods = [
+      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 5, trackLimit: 10 },
+      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 5, trackLimit: 10 },
+      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 5, trackLimit: 10 },
+      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 5, trackLimit: 10 }
+    ];
+
     // Try Last.fm first
     if (lastfmConfig?.username) {
       const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
-          console.log('🎵 Fetching listening context from Last.fm...');
+          console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
 
-          // Fetch top artists (10) and top tracks (25) in parallel
-          const [artistsRes, tracksRes] = await Promise.all([
-            fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=3month&limit=10`),
-            fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=3month&limit=25`)
-          ]);
+          // Fetch all periods in parallel
+          const periodPromises = periods.map(async (period) => {
+            const [artistsRes, tracksRes] = await Promise.all([
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`)
+            ]);
 
-          if (artistsRes.ok && tracksRes.ok) {
-            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+            if (artistsRes.ok && tracksRes.ok) {
+              const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+              return {
+                window: period.label,
+                top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
+                top_tracks: (tracksData.toptracks?.track || []).map(t => ({
+                  artist: t.artist?.name || 'Unknown',
+                  title: t.name
+                }))
+              };
+            }
+            return null;
+          });
 
-            const topArtists = (artistsData.topartists?.artist || []).map(a => a.name);
-            const topTracks = (tracksData.toptracks?.track || []).map(t => ({
-              artist: t.artist?.name || 'Unknown',
-              title: t.name
-            }));
+          const results = await Promise.all(periodPromises);
+          const validResults = results.filter(r => r !== null);
 
-            console.log(`🎵 Got ${topArtists.length} artists and ${topTracks.length} tracks from Last.fm`);
+          if (validResults.length > 0) {
+            const totalArtists = validResults.reduce((sum, r) => sum + r.top_artists.length, 0);
+            const totalTracks = validResults.reduce((sum, r) => sum + r.top_tracks.length, 0);
+            console.log(`🎵 Got ${totalArtists} artists and ${totalTracks} tracks from Last.fm across ${validResults.length} time periods`);
 
             return {
               source: 'Last.fm',
-              window: 'last_3_months',
-              top_artists: topArtists,
-              top_tracks: topTracks
+              periods: validResults
             };
           }
         } catch (err) {
@@ -10522,36 +10541,45 @@ const Parachord = () => {
     // Fall back to ListenBrainz
     if (listenbrainzConfig?.username) {
       try {
-        console.log('🎵 Fetching listening context from ListenBrainz...');
+        console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
 
-        // Fetch top artists (10) and top tracks (25) in parallel
-        const [artistsRes, tracksRes] = await Promise.all([
-          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=quarter&count=10`),
-          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=quarter&count=25`)
-        ]);
+        // Fetch all periods in parallel
+        const periodPromises = periods.map(async (period) => {
+          const [artistsRes, tracksRes] = await Promise.all([
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`)
+          ]);
 
-        // Handle 204 No Content
-        if (artistsRes.status === 204 || tracksRes.status === 204) {
-          console.log('🎵 No ListenBrainz stats available for this period');
+          // Handle 204 No Content
+          if (artistsRes.status === 204 || tracksRes.status === 204) {
+            return null;
+          }
+
+          if (artistsRes.ok && tracksRes.ok) {
+            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+            return {
+              window: period.label,
+              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
+              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
+                artist: t.artist_name || 'Unknown',
+                title: t.track_name
+              }))
+            };
+          }
           return null;
-        }
+        });
 
-        if (artistsRes.ok && tracksRes.ok) {
-          const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+        const results = await Promise.all(periodPromises);
+        const validResults = results.filter(r => r !== null);
 
-          const topArtists = (artistsData.payload?.artists || []).map(a => a.artist_name);
-          const topTracks = (tracksData.payload?.recordings || []).map(t => ({
-            artist: t.artist_name || 'Unknown',
-            title: t.track_name
-          }));
-
-          console.log(`🎵 Got ${topArtists.length} artists and ${topTracks.length} tracks from ListenBrainz`);
+        if (validResults.length > 0) {
+          const totalArtists = validResults.reduce((sum, r) => sum + r.top_artists.length, 0);
+          const totalTracks = validResults.reduce((sum, r) => sum + r.top_tracks.length, 0);
+          console.log(`🎵 Got ${totalArtists} artists and ${totalTracks} tracks from ListenBrainz across ${validResults.length} time periods`);
 
           return {
             source: 'ListenBrainz',
-            window: 'last_3_months',
-            top_artists: topArtists,
-            top_tracks: topTracks
+            periods: validResults
           };
         }
       } catch (err) {
