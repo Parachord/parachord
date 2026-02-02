@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Add padding to icon files to prevent macOS dock outline effect
+# Fix macOS dock icon gray outline by filling transparent areas with background color
 # Requires ImageMagick: brew install imagemagick
 
 set -e
 
 ICONS_DIR="assets/icons"
-PADDING_PERCENT=12  # 12% padding on each side (icon will be 76% of canvas)
+BG_COLOR="#1e2939"  # Dark background color from the icon
 
 # Check for ImageMagick
 if ! command -v convert &> /dev/null; then
@@ -14,38 +14,46 @@ if ! command -v convert &> /dev/null; then
     exit 1
 fi
 
+# First, restore from backup if one exists
+LATEST_BACKUP=$(ls -td "$ICONS_DIR"/backup-* 2>/dev/null | head -1)
+if [ -n "$LATEST_BACKUP" ] && [ -d "$LATEST_BACKUP" ]; then
+    echo "Restoring icons from backup: $LATEST_BACKUP"
+    for file in "$LATEST_BACKUP"/*.png; do
+        if [ -f "$file" ]; then
+            cp "$file" "$ICONS_DIR/"
+        fi
+    done
+fi
+
 # Backup original icons
 BACKUP_DIR="$ICONS_DIR/backup-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BACKUP_DIR"
-echo "Backing up original icons to $BACKUP_DIR"
+echo "Backing up current icons to $BACKUP_DIR"
 
 for size in 16 32 48 128 256 512 1024; do
     if [ -f "$ICONS_DIR/icon${size}.png" ]; then
         cp "$ICONS_DIR/icon${size}.png" "$BACKUP_DIR/"
     fi
 done
+cp "$ICONS_DIR/icon.icns" "$BACKUP_DIR/" 2>/dev/null || true
 
-# Add padding to each icon size
-echo "Adding padding to icons..."
+# Fill transparent areas with background color
+echo "Filling transparent corners with background color..."
 
 for size in 16 32 48 128 256 512 1024; do
     if [ -f "$ICONS_DIR/icon${size}.png" ]; then
         echo "  Processing icon${size}.png"
 
-        # Calculate the inner size (the actual icon will be smaller)
-        inner_size=$(echo "$size * (100 - 2 * $PADDING_PERCENT) / 100" | bc)
-
-        # Resize the icon smaller, then extend canvas with transparent background
+        # Flatten the image onto a background of the dark color
+        # This removes ALL transparency, filling corners with the bg color
         convert "$ICONS_DIR/icon${size}.png" \
-            -resize ${inner_size}x${inner_size} \
-            -gravity center \
-            -background none \
-            -extent ${size}x${size} \
+            -background "$BG_COLOR" \
+            -flatten \
             "$ICONS_DIR/icon${size}.png"
     fi
 done
 
-echo "Padding added to all PNG icons."
+echo "Transparent areas filled."
 
 # Regenerate .icns file for macOS
 echo "Regenerating icon.icns..."
@@ -71,5 +79,8 @@ iconutil -c icns "$ICONSET_DIR" -o "$ICONS_DIR/icon.icns"
 # Cleanup
 rm -rf "$ICONSET_DIR"
 
-echo "Done! icon.icns has been regenerated."
+echo ""
+echo "Done! The icons now have square corners (no transparency)."
+echo "macOS will apply its own rounded mask without adding a gray background."
+echo ""
 echo "Rebuild the app with: npm run build:mac"
