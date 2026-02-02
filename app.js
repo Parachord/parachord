@@ -34205,7 +34205,8 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported) || isAppleMusic;
+            // Note: Apple Music volume not supported - MusicKit's ApplicationMusicPlayer only supports system-level volume
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -34253,6 +34254,9 @@ useEffect(() => {
                 }
                 if (isSpotify && spotifyDevice && spotifyDevice.type !== 'Computer') {
                   return `Volume control not available on ${spotifyDevice.name || spotifyDevice.type}`;
+                }
+                if (isAppleMusic) {
+                  return 'Volume control not available for Apple Music';
                 }
                 return 'Volume control not available';
               }
