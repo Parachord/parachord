@@ -7737,6 +7737,14 @@ const Parachord = () => {
     let sourceToPlay = trackOrSource;
 
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
+      // Merge in resolved sources from trackSources state if available
+      // This ensures we have all available sources including those resolved in background
+      const resolvedSources = trackSources[trackOrSource.id] || {};
+      if (Object.keys(resolvedSources).length > 0) {
+        trackOrSource = { ...trackOrSource, sources: { ...trackOrSource.sources, ...resolvedSources } };
+        sourceToPlay = trackOrSource;
+      }
+
       // We have a track with multiple sources - select the best one
       let availableResolvers = Object.keys(trackOrSource.sources);
 
@@ -28453,7 +28461,8 @@ useEffect(() => {
                       const tracksAfter = sorted.slice(index + 1);
                       const context = { type: 'library', name: 'Collection' };
                       setQueueWithContext(tracksAfter, context);
-                      handlePlay(track);
+                      // Pass track with merged sources (original + resolved) so handlePlay can use all available resolvers
+                      handlePlay({ ...track, sources: effectiveSources });
                     },
                     onContextMenu: (e) => {
                       e.preventDefault();
