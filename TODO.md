@@ -10,12 +10,10 @@
 ### Resolvers
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Additional streaming source
-- [x] **Local files resolver** - Scan user's music folder
 - [ ] **Qobuz full streaming** - User authentication
 
 
 ### Playlists
-- [x] **Import from Spotify/Apple Music** - Convert external playlists
 - [ ] **Smart playlists** - Auto-generate from listening history, smarterplaylists
 
 ---
@@ -23,16 +21,13 @@
 ## 🎯 Medium Priority
 
 ### Library
-- [x] **Persist library to disk** - Save user's library
 - [ ] **Import/export library** - Backup and restore
-- [ ] **Listening history stats** - Charts, most played
 
 ### Social
 - [ ] **Collaborative playlists** - Multi-user editing
 - [ ] **Listening parties** - Synchronized group listening
 
 ### Accessibility & UX
-- [x] **Keyboard shortcuts** - Full keyboard navigation
 - [ ] **Themes** - Light/dark mode toggle
 
 ### Artist Pages
@@ -43,10 +38,7 @@
 ## 💡 Future Considerations
 
 ### Platform & Distribution
-- [x] **macOS build** - Apple Silicon support
-- [x] **Linux builds** - .deb, .rpm, AppImage
 - [ ] **Mobile apps** - iOS/Android
-- [x] **Auto-updates** - Electron auto-updater
 - [ ] **DMG installer background** - Custom background with drag arrow for Applications
 
 ### Playback
@@ -60,12 +52,10 @@
 ### Advanced Features
 - [ ] **Backend server** - Optional server for advanced features
 - [ ] **Discord Rich Presence** - Show now playing
-- [x] **AI recommendations** - ML-based playlist generation
 - [ ] **Community features** - matrix.org
 
 ### Developer
 - [ ] **TypeScript migration** - Type safety
-- [ ] **Unit tests** - Test coverage for core features
 
 ---
 
@@ -89,6 +79,7 @@
 ### Plug-Ins (content resolvers and metadata providers)
 - Spotify Connect, YouTube, Bandcamp, Qobuz, SoundCloud
 - Apple Music (search only), Wikipedia, Discogs
+- Local files resolver (scan user's music folder)
 - Plugin system (.axe format) with marketplace
 - Hot-reload and auto-sync
 
@@ -100,6 +91,10 @@
 - "Spinoff" radio station from currently playing song while saving queue for when you return
 - Media Key support
 - Quick Look artist bio tooltip
+- Background pre-resolution for collection and playlist tracks
+- Persist resolved sources to collection/playlists for faster playback
+- Improved Apple Music end-of-track detection with auto-advance
+- Resolver fallback when primary resolver playback fails
 
 ### Playlists
 - Drag/drop/import of Spotify, Apple Music and hosted .XSPF playlists
@@ -130,9 +125,12 @@
 - Background sync with update detection
 - Shuffle mode with Collection Station
 - Personal charts (over varying time frames), listening history
+- Persist library to disk for offline access
 
 ### Discovery
-- Charts tabs (Albums/Songs) with iTunes and Last.fm sources
+- Charts tabs (Albums/Songs) with iTunes, Last.fm, and Apple Music sources
+- Last.fm Charts with country/genre filtering and Global option
+- Apple Music top songs chart with country/region support
 - Recommendations (Artists/Albums) with Last.fm and Listenbrainz sources
 - Weekly Jam playlists (this week & last) via ListenBrainz
 - Critically acclaimed albums (aggregated and filtered editorial reviews from across the web)
@@ -141,6 +139,9 @@
 - Cinematic Light design system
 - First-run tutorial
 - In-app drag/drop of objects to playbar, queue and playlists
+- Full keyboard navigation with shortcuts
+- Skeleton loading animations in History tabs
+- Advanced Settings UI for Apple Music developer token
 
 ## Web
 - Embedded web player with smart links
@@ -148,12 +149,17 @@
 - Parchord.com website
 
 ### Platform
+- macOS build with Apple Silicon support
+- Linux builds (.deb, .rpm, AppImage)
+- Auto-updates via Electron auto-updater
 - macOS dock icon properly renders without gray outline (square SVG source)
 - Icon generation scripts for all platforms
+- DMG installer with Applications folder icon
 
 ## Development
 - Automated CI/CD pipeline
 - Automated builds for Mac/Windows/Linux
+- Jest tests for charts utilities
 
 ---
 
