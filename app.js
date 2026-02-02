@@ -9228,6 +9228,15 @@ const Parachord = () => {
   const handlePlayPause = async () => {
     if (!currentTrack) return;
 
+    // Check if this is a restored track that needs explicit start (not just resume)
+    // This handles tracks restored from saved queue on app reopen
+    if (!isPlaying && trackNeedsExplicitStart.current) {
+      console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
+      trackNeedsExplicitStart.current = false;
+      handlePlay(currentTrack);
+      return;
+    }
+
     // Check if browser extension is controlling playback
     if (browserPlaybackActive && extensionConnected) {
       console.log('🌐 Sending play/pause to browser extension');
@@ -9332,35 +9341,24 @@ const Parachord = () => {
               }
             }
           } else {
-            // Playing - check if we need to explicitly start this track
-            // (e.g., restored from saved queue, Spotify may have different track loaded)
-            if (trackNeedsExplicitStart.current) {
-              // Use handlePlay to properly start the track with device handling
-              // This ensures device discovery and wake-up logic is used
-              console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
-              trackNeedsExplicitStart.current = false;
-              handlePlay(currentTrack);
-              return true;
-            } else {
-              // Normal resume
-              const response = await fetch('https://api.spotify.com/v1/me/player/play', {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `Bearer ${token}`
-                }
-              });
+            // Resume Spotify playback
+            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
 
-              if (response.ok || response.status === 204) {
-                setIsPlaying(true);
-                console.log('Resumed Spotify playback');
-                return true;
-              } else if (response.status === 401 && !isRetry) {
-                // Token expired - try to refresh
-                console.log('🔄 Spotify token expired on play, attempting refresh...');
-                const newToken = await refreshSpotifyToken();
-                if (newToken) {
-                  return attemptSpotifyControl(newToken, true);
-                }
+            if (response.ok || response.status === 204) {
+              setIsPlaying(true);
+              console.log('Resumed Spotify playback');
+              return true;
+            } else if (response.status === 401 && !isRetry) {
+              // Token expired - try to refresh
+              console.log('🔄 Spotify token expired on play, attempting refresh...');
+              const newToken = await refreshSpotifyToken();
+              if (newToken) {
+                return attemptSpotifyControl(newToken, true);
               }
             }
           }
