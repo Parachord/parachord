@@ -14102,6 +14102,13 @@ const Parachord = () => {
     lastfmChartsTracksRef.current = lastfmCharts;
   }, [lastfmCharts]);
 
+  // Set scroll container ready when switching to Songs tab (ref callback may not fire if element already exists)
+  useEffect(() => {
+    if (activeView === 'charts' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current) {
+      setLastfmChartsScrollContainerReady(true);
+    }
+  }, [activeView, chartsTab]);
+
   // IntersectionObserver for Last.fm charts tracks visibility
   useEffect(() => {
     if (activeView !== 'charts' || chartsTab !== 'songs') {
