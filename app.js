@@ -14102,12 +14102,13 @@ const Parachord = () => {
     lastfmChartsTracksRef.current = lastfmCharts;
   }, [lastfmCharts]);
 
-  // Set scroll container ready when switching to Songs tab (ref callback may not fire if element already exists)
+  // Set scroll container ready when switching to Songs tab or after charts reload
+  // (ref callback may not fire if element already exists)
   useEffect(() => {
-    if (activeView === 'charts' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current) {
+    if (activeView === 'charts' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current && !lastfmChartsLoading) {
       setLastfmChartsScrollContainerReady(true);
     }
-  }, [activeView, chartsTab]);
+  }, [activeView, chartsTab, lastfmChartsLoading]);
 
   // IntersectionObserver for Last.fm charts tracks visibility
   useEffect(() => {
@@ -14121,7 +14122,7 @@ const Parachord = () => {
     const tracks = lastfmCharts;
     if (tracks.length === 0) return;
 
-    // Clear stale visible track IDs when filter changes
+    // Clear stale visible track IDs when tracks change (e.g., country switch)
     visibleLastfmChartsTrackIds.current.clear();
     updateSchedulerVisibility('lastfm-charts-tracks', []);
 
@@ -16050,6 +16051,7 @@ ${tracks}
 
     setLastfmChartsLoading(true);
     setLastfmChartsLoaded(false);
+    setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
       let url;
