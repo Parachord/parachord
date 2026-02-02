@@ -237,13 +237,18 @@ class MusicKitBridge {
             "status": playbackStatusString(state.playbackStatus),
             "position": player.playbackTime
         ]
-        // Include current song ID if available (for detecting track changes)
+        // Include current song ID and duration if available (for detecting track changes and end-of-track)
         // Note: entry.id is the queue entry ID, not the song catalog ID
         // We need to get the song's catalog ID from the underlying item
         if let entry = player.queue.currentEntry {
-            // Try to get the song's catalog ID from the entry's item
+            // Try to get the song's catalog ID and duration from the entry's item
             if let song = entry.item as? Song {
                 result["songId"] = song.id.rawValue
+                result["songTitle"] = song.title
+                // Include duration if available (in seconds)
+                if let duration = song.duration {
+                    result["duration"] = duration
+                }
             } else {
                 // Fall back to entry title for comparison (less reliable but better than nothing)
                 result["songTitle"] = entry.title

@@ -4791,29 +4791,28 @@ const Parachord = () => {
       .filter(r => r && r.capabilities.resolve);
 
     // Process tracks in batches to avoid overwhelming APIs
+    // iTunes API has strict rate limits (~20 req/min), so we process Apple Music sequentially
     const BATCH_SIZE = 5;
+    const ITUNES_DELAY_MS = 500; // 500ms between iTunes API calls to stay under rate limit
+
     for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
       const batch = tracks.slice(i, i + BATCH_SIZE);
 
+      // Separate resolvers into rate-limited (iTunes) and non-rate-limited
+      const rateLimitedResolvers = enabledResolvers.filter(r => r.id === 'applemusic');
+      const normalResolvers = enabledResolvers.filter(r => r.id !== 'applemusic');
+
+      // Process normal resolvers in parallel (Spotify, etc have higher limits)
       await Promise.all(batch.map(async (track) => {
-        // Skip if track already has multiple sources
-        if (Object.keys(track.sources).length >= enabledResolvers.length) {
-          return;
-        }
+        if (Object.keys(track.sources).length >= enabledResolvers.length) return;
 
-        const resolvePromises = enabledResolvers.map(async (resolver) => {
-          // Skip if we already have this source
+        const resolvePromises = normalResolvers.map(async (resolver) => {
           if (track.sources[resolver.id]) return;
-
           try {
             const config = await getResolverConfig(resolver.id);
             const result = await resolver.resolve(track.artist, track.title, track.album, config);
             if (result) {
-              track.sources[resolver.id] = {
-                ...result,
-                confidence: 0.9
-              };
-              // Also update album/albumArt if not set
+              track.sources[resolver.id] = { ...result, confidence: 0.9 };
               if (!track.album && result.album) track.album = result.album;
               if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
               console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
@@ -4822,13 +4821,35 @@ const Parachord = () => {
             // Silently fail - background resolution is best-effort
           }
         });
-
         await Promise.all(resolvePromises);
       }));
 
-      // Small delay between batches to be nice to APIs
+      // Process rate-limited resolvers (Apple Music/iTunes) sequentially with delays
+      for (const resolver of rateLimitedResolvers) {
+        for (const track of batch) {
+          if (track.sources[resolver.id]) continue;
+          if (Object.keys(track.sources).length >= enabledResolvers.length) continue;
+
+          try {
+            const config = await getResolverConfig(resolver.id);
+            const result = await resolver.resolve(track.artist, track.title, track.album, config);
+            if (result) {
+              track.sources[resolver.id] = { ...result, confidence: 0.9 };
+              if (!track.album && result.album) track.album = result.album;
+              if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
+              console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
+            }
+          } catch (error) {
+            // Silently fail
+          }
+          // Delay between iTunes API calls to respect rate limits
+          await new Promise(resolve => setTimeout(resolve, ITUNES_DELAY_MS));
+        }
+      }
+
+      // Delay between batches
       if (i + BATCH_SIZE < tracks.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 
