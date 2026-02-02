@@ -28223,7 +28223,7 @@ useEffect(() => {
                       },
                         React.createElement('div', {
                           className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                          style: { background: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)' }
+                          style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
                         },
                           weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
                             React.createElement('img', {
@@ -28236,10 +28236,10 @@ useEffect(() => {
                             React.createElement('div', {
                               key: `placeholder-${i}`,
                               className: 'w-full h-full flex items-center justify-center',
-                              style: { backgroundColor: i % 2 === 0 ? '#FFE082' : '#FFECB3' }
+                              style: { backgroundColor: i % 2 === 0 ? '#c7d2fe' : '#e0e7ff' }
                             },
                               i === 0 && React.createElement('svg', {
-                                className: 'w-12 h-12 text-orange-400',
+                                className: 'w-12 h-12 text-indigo-300',
                                 fill: 'none',
                                 viewBox: '0 0 24 24',
                                 stroke: 'currentColor'
