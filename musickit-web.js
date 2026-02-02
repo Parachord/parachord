@@ -70,16 +70,23 @@ class MusicKitWeb {
     }
 
     try {
-      console.log('[MusicKitWeb] Configuring MusicKit...');
-
-      this.musicKit = await window.MusicKit.configure({
+      // Build configuration object with explicit app name
+      const musicKitConfig = {
         developerToken: developerToken,
         app: {
-          name: appName,
-          build: appBuild,
+          name: 'Parachord',
+          build: '1.0.0',
         },
         sourceType: 24, // Web player source type
-      });
+      };
+
+      // Debug: Log the full configuration to verify app name is correct
+      console.log('[MusicKitWeb] Configuring MusicKit with config:', JSON.stringify({
+        ...musicKitConfig,
+        developerToken: musicKitConfig.developerToken.substring(0, 20) + '...' // Truncate token for privacy
+      }, null, 2));
+
+      this.musicKit = await window.MusicKit.configure(musicKitConfig);
 
       this.isConfigured = true;
       this.isAuthorized = this.musicKit.isAuthorized;

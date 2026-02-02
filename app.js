@@ -838,6 +838,16 @@ const SERVICE_LOGO_PATHS = {
 
 // Helper to create resolver icon at any size
 const ResolverIcon = ({ resolverId, size = 14, fill = 'white' }) => {
+  // Use PNG image for SoundCloud
+  if (resolverId === 'soundcloud') {
+    return React.createElement('img', {
+      src: 'assets/icons/soundcloud-icon-white.png',
+      width: size,
+      height: size,
+      alt: 'SoundCloud',
+      style: { flexShrink: 0, objectFit: 'contain' }
+    });
+  }
   const path = SERVICE_LOGO_PATHS[resolverId];
   if (!path) return null;
   return React.createElement('svg', {
@@ -863,14 +873,12 @@ const SERVICE_LOGOS = {
   youtube: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' })
   ),
-  soundcloud: React.createElement('svg', { viewBox: '0 0 64 64', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('rect', { x: '2', y: '28', width: '4', height: '16', rx: '2' }),
-    React.createElement('rect', { x: '10', y: '22', width: '4', height: '28', rx: '2' }),
-    React.createElement('rect', { x: '18', y: '16', width: '4', height: '40', rx: '2' }),
-    React.createElement('rect', { x: '26', y: '20', width: '4', height: '32', rx: '2' }),
-    React.createElement('rect', { x: '34', y: '24', width: '4', height: '24', rx: '2' }),
-    React.createElement('path', { d: 'M42 20c0-1.1.9-2 2-2h8c6.6 0 12 5.4 12 12s-5.4 12-12 12H44c-1.1 0-2-.9-2-2V20z' })
-  ),
+  soundcloud: React.createElement('img', {
+    src: 'assets/icons/soundcloud-icon-white.png',
+    className: 'w-16 h-16',
+    alt: 'SoundCloud',
+    style: { objectFit: 'contain' }
+  }),
   applemusic: React.createElement('svg', { viewBox: '0 0 361 361', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M263.54,234.26c0,4.56-0.04,8.7-1,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.66-12.5,4.55c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.4-12.99-6.6c-5.17-4.74-8.39-11.14-9.09-17.82c-0.82-7.84,1.79-16.21,7.67-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.13-2.61,2.17-5.78,2.17-8.92l0-79.29c0-6.07-2.72-7.72-8.52-6.61c-4.14,0.81-93.09,18.75-93.09,18.75c-5.02,1.21-6.78,2.85-6.78,9.08l0,116.15c0,4.56-0.24,8.7-1.19,13.26c-0.93,4.43-2.63,8.6-5.24,12.35c-2.61,3.74-5.95,6.81-9.85,9.11c-3.95,2.33-8.08,3.72-12.5,4.61c-8.3,1.67-13.97,2.05-19.31,0.98c-5.14-1.03-9.5-3.47-12.99-6.66c-5.17-4.74-8.17-11.14-8.88-17.82c-0.82-7.84,1.57-16.21,7.46-22.38c2.97-3.11,6.7-5.57,11.68-7.51c5.21-2.02,10.96-3.23,19.8-5.01c2.33-0.47,4.66-0.94,6.99-1.41c3.06-0.62,5.69-1.4,7.81-3.99c2.12-2.59,2.37-5.64,2.37-8.76c0-24.6,0-133.92,0-133.92c0-1.8,0.15-3.02,0.24-3.62c0.43-2.82,1.56-5.24,3.6-6.95c1.7-1.42,3.88-2.41,6.67-3l0.04-0.01l107-21.59c0.93-0.19,8.66-1.56,9.53-1.64c5.78-0.5,9.03,3.3,9.03,9.46V234.26z' })
   ),
@@ -3154,6 +3162,7 @@ const Parachord = () => {
   const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
   // Shuffle mode - randomize queue order
   const [shuffleMode, setShuffleMode] = useState(false);
+  const shuffleModeRef = useRef(false); // Ref for shuffle mode to avoid stale closures in callbacks
   const originalQueueRef = useRef(null); // Store original queue order before shuffle for restore
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
@@ -3251,6 +3260,7 @@ const Parachord = () => {
   const [playlists, setPlaylists] = useState([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(true); // Loading state for playlists
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const selectedPlaylistRef = useRef(null); // Ref for accessing in callbacks without stale closures
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [weeklyJamCovers, setWeeklyJamCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
@@ -4282,6 +4292,12 @@ const Parachord = () => {
   const collectionTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [collectionScrollContainerReady, setCollectionScrollContainerReady] = useState(false)
 
+  // Refs for persisting resolved sources back to collection and playlists (debounced)
+  const pendingCollectionSourceUpdates = useRef({}); // Map of trackId -> sources to merge
+  const collectionSourceSaveTimer = useRef(null);
+  const pendingPlaylistSourceUpdates = useRef({}); // Map of playlistId -> { trackId -> sources }
+  const playlistSourceSaveTimer = useRef(null);
+
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
   // Close add-to-playlist sort dropdown when clicking outside
@@ -4308,6 +4324,7 @@ const Parachord = () => {
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
+  useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
@@ -4716,10 +4733,12 @@ const Parachord = () => {
   const resolveTracksInBackground = async (tracks) => {
     console.log(`🔍 Background resolution: resolving ${tracks.length} tracks across all sources...`);
 
-    // Use ref to avoid stale closure issues
+    // Use refs to avoid stale closure issues
     const currentResolvers = loadedResolversRef.current;
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => currentResolvers.find(r => r.id === id))
       .filter(r => r && r.capabilities.resolve);
 
@@ -4848,10 +4867,12 @@ const Parachord = () => {
 
       // Now resolve across all enabled resolvers for playable sources
       console.log(`🔍 Resolving playable sources...`);
-      // Use ref to avoid stale closure issues when called from extension message handler
+      // Use refs to avoid stale closure issues when called from extension message handler
       const currentResolvers = loadedResolversRef.current;
-      const enabledResolvers = resolverOrder
-        .filter(id => activeResolvers.includes(id))
+      const currentActiveResolvers = activeResolversRef.current;
+      const currentResolverOrder = resolverOrderRef.current;
+      const enabledResolvers = currentResolverOrder
+        .filter(id => currentActiveResolvers.includes(id))
         .map(id => currentResolvers.find(r => r.id === id))
         .filter(r => r && r.capabilities.resolve);
 
@@ -5204,12 +5225,43 @@ const Parachord = () => {
     if (!track) return null;
     // First check if we have an explicitly set active resolver (set during playback)
     if (track._activeResolver) return track._activeResolver;
-    // Fall back to checking resolver-specific properties at top level OR nested in sources
+
+    // Fall back to checking resolver-specific properties, but only for active resolvers
+    const active = activeResolversRef.current || [];
+
+    // Check sources object first (most reliable) - prefer active resolvers
+    if (track.sources && typeof track.sources === 'object') {
+      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId));
+      if (availableSources.length > 0) {
+        // Return the highest priority active resolver
+        const resolverOrder = resolverOrderRef.current || [];
+        availableSources.sort((a, b) => {
+          const aIdx = resolverOrder.indexOf(a);
+          const bIdx = resolverOrder.indexOf(b);
+          return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+        });
+        return availableSources[0];
+      }
+    }
+
+    // Fall back to checking top-level properties (for older track formats)
+    if ((track.spotifyUri || track.spotifyId) && active.includes('spotify')) return 'spotify';
+    if (track.bandcampUrl && active.includes('bandcamp')) return 'bandcamp';
+    if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
+    if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
+    if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
+
+    // Last resort: return any resolver from sources (even if disabled) for display purposes
+    if (track.sources && typeof track.sources === 'object') {
+      const allSources = Object.keys(track.sources);
+      if (allSources.length > 0) return allSources[0];
+    }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
     if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
+
     return null;
   };
 
@@ -5318,6 +5370,7 @@ const Parachord = () => {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
+    persistedSources: 30 * 24 * 60 * 60 * 1000, // 30 days (persisted to collection/playlists)
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
@@ -6794,13 +6847,14 @@ const Parachord = () => {
           const data = await window.electron.collection.load();
 
           // Clean up corrupted sources data (e.g., numeric keys like "0" instead of resolver IDs)
-          const validResolverIds = ['spotify', 'youtube', 'bandcamp', 'qobuz', 'soundcloud', 'localfiles'];
+          // Valid resolver IDs are non-numeric strings (corrupted entries have keys like "0", "1", "2")
+          const isValidResolverId = (key) => typeof key === 'string' && key.length > 0 && !/^\d+$/.test(key);
           let cleanedCount = 0;
           const cleanedTracks = data.tracks?.map(track => {
             if (track.sources && typeof track.sources === 'object') {
               const cleanedSources = {};
               for (const [key, value] of Object.entries(track.sources)) {
-                if (validResolverIds.includes(key)) {
+                if (isValidResolverId(key)) {
                   cleanedSources[key] = value;
                 } else {
                   cleanedCount++;
@@ -6963,6 +7017,135 @@ const Parachord = () => {
         console.error('Collection save error:', error);
       }
     }
+  }, []);
+
+  // Queue resolved sources to be persisted back to collection (debounced)
+  // This ensures Apple Music and other resolver results are cached for faster subsequent plays
+  const queueCollectionSourceUpdate = useCallback((trackId, sources) => {
+    // Merge new sources with any pending updates for this track
+    pendingCollectionSourceUpdates.current[trackId] = {
+      ...pendingCollectionSourceUpdates.current[trackId],
+      ...sources
+    };
+
+    // Debounce the save - wait 5 seconds after last update before writing
+    if (collectionSourceSaveTimer.current) {
+      clearTimeout(collectionSourceSaveTimer.current);
+    }
+
+    collectionSourceSaveTimer.current = setTimeout(() => {
+      const updates = pendingCollectionSourceUpdates.current;
+      const updateCount = Object.keys(updates).length;
+      if (updateCount === 0) return;
+
+      console.log(`💾 Persisting resolved sources for ${updateCount} track(s) to collection...`);
+
+      const now = Date.now();
+      setCollectionData(prev => {
+        let hasChanges = false;
+        const updatedTracks = prev.tracks.map(track => {
+          const newSources = updates[track.id];
+          if (newSources) {
+            // Merge new sources with existing, keeping existing sources if they exist
+            const mergedSources = { ...track.sources };
+            for (const [resolverId, sourceData] of Object.entries(newSources)) {
+              if (!mergedSources[resolverId]) {
+                // Add resolvedAt timestamp for TTL tracking
+                mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
+                hasChanges = true;
+              }
+            }
+            if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
+              return { ...track, sources: mergedSources };
+            }
+          }
+          return track;
+        });
+
+        if (hasChanges) {
+          const newData = { ...prev, tracks: updatedTracks };
+          saveCollection(newData);
+          console.log(`✅ Persisted sources for ${updateCount} track(s)`);
+          return newData;
+        }
+        return prev;
+      });
+
+      // Clear pending updates
+      pendingCollectionSourceUpdates.current = {};
+    }, 5000);
+  }, [saveCollection]);
+
+  // Queue resolved sources to be persisted back to a playlist (debounced)
+  const queuePlaylistSourceUpdate = useCallback((playlistId, trackId, sources) => {
+    if (!pendingPlaylistSourceUpdates.current[playlistId]) {
+      pendingPlaylistSourceUpdates.current[playlistId] = {};
+    }
+    pendingPlaylistSourceUpdates.current[playlistId][trackId] = {
+      ...pendingPlaylistSourceUpdates.current[playlistId][trackId],
+      ...sources
+    };
+
+    // Debounce the save - wait 5 seconds after last update before writing
+    if (playlistSourceSaveTimer.current) {
+      clearTimeout(playlistSourceSaveTimer.current);
+    }
+
+    playlistSourceSaveTimer.current = setTimeout(async () => {
+      const updates = pendingPlaylistSourceUpdates.current;
+      const playlistIds = Object.keys(updates);
+      if (playlistIds.length === 0) return;
+
+      console.log(`💾 Persisting resolved sources to ${playlistIds.length} playlist(s)...`);
+
+      for (const plId of playlistIds) {
+        const trackUpdates = updates[plId];
+        const updateCount = Object.keys(trackUpdates).length;
+        if (updateCount === 0) continue;
+
+        // Find the playlist in state
+        const now = Date.now();
+        setPlaylists(prev => {
+          const playlistIndex = prev.findIndex(p => p.id === plId);
+          if (playlistIndex === -1) return prev;
+
+          const playlist = prev[playlistIndex];
+          let hasChanges = false;
+          const updatedTracks = playlist.tracks.map(track => {
+            const newSources = trackUpdates[track.id];
+            if (newSources) {
+              const mergedSources = { ...track.sources };
+              for (const [resolverId, sourceData] of Object.entries(newSources)) {
+                if (!mergedSources[resolverId]) {
+                  // Add resolvedAt timestamp for TTL tracking
+                  mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
+                  hasChanges = true;
+                }
+              }
+              if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
+                return { ...track, sources: mergedSources };
+              }
+            }
+            return track;
+          });
+
+          if (hasChanges) {
+            const updatedPlaylist = { ...playlist, tracks: updatedTracks, lastModified: Date.now() };
+            const newPlaylists = [...prev];
+            newPlaylists[playlistIndex] = updatedPlaylist;
+
+            // Save to disk asynchronously
+            savePlaylistToStore(updatedPlaylist);
+            console.log(`✅ Persisted sources for ${updateCount} track(s) in playlist: ${playlist.title}`);
+            return newPlaylists;
+          }
+          return prev;
+        });
+      }
+
+      // Clear pending updates
+      pendingPlaylistSourceUpdates.current = {};
+    }, 5000);
   }, []);
 
   // Add track to collection
@@ -7517,6 +7700,10 @@ const Parachord = () => {
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
 
+  // Keep selectedPlaylistRef in sync for callbacks
+  useEffect(() => {
+    selectedPlaylistRef.current = selectedPlaylist;
+  }, [selectedPlaylist]);
 
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
@@ -7723,6 +7910,47 @@ const Parachord = () => {
       window.electron.playbackWindow.close();
     }
 
+    // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+    // This handles race conditions where streamingPlaybackActiveRef may already be reset
+    // by handleNext but playback is still in progress or loading
+
+    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
+    if (spotifyToken) {
+      console.log('⏹️ Pausing Spotify before playing new track');
+      fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${spotifyToken}` }
+      }).catch(() => {}); // Silently ignore - may not be playing
+    }
+
+    // Always pause Apple Music native playback (macOS MusicKit)
+    if (window.electron?.musicKit) {
+      console.log('⏹️ Pausing Apple Music (native) before playing new track');
+      window.electron.musicKit.pause().catch(() => {}); // Silently ignore - may not be playing
+    }
+
+    // Always pause Apple Music web playback (MusicKit JS)
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb) {
+      try {
+        console.log('⏹️ Pausing Apple Music (web) before playing new track');
+        musicKitWeb.pause();
+      } catch (e) {} // Silently ignore - may not be configured or playing
+    }
+
+    // Always stop Apple Music preview audio if it exists
+    if (window._appleMusicPreviewAudio) {
+      console.log('⏹️ Stopping Apple Music preview audio');
+      window._appleMusicPreviewAudio.pause();
+      window._appleMusicPreviewAudio.currentTime = 0;
+    }
+
+    // Always stop main process polling for both Spotify and Apple Music
+    stopMainProcessPolling();
+
+    // Reset streaming flag
+    streamingPlaybackActiveRef.current = false;
+
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
     if (spinoffMode && !trackOrSource._playbackContext?.type?.includes('spinoff')) {
@@ -7772,14 +8000,17 @@ const Parachord = () => {
       }
 
       // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
+      // Use refs to avoid stale closure issues when called from callbacks
+      const currentActiveResolvers = activeResolversRef.current;
+      const currentResolverOrder = resolverOrderRef.current;
       const preferredResolver = trackOrSource.preferredResolver;
       const sortedSources = availableResolvers.map(resId => ({
         resolverId: resId,
         source: trackOrSource.sources[resId],
-        priority: resolverOrder.indexOf(resId),
+        priority: currentResolverOrder.indexOf(resId),
         confidence: trackOrSource.sources[resId].confidence || 0
       }))
-      .filter(s => activeResolvers.includes(s.resolverId)) // Only enabled resolvers
+      .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
       .sort((a, b) => {
         // If a preferred resolver is specified, prioritize it
         if (preferredResolver) {
@@ -8493,7 +8724,10 @@ const Parachord = () => {
 
           // Spotify failed after retry - try to fall back to next best source
           if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && activeResolvers.includes(id));
+            // Use refs for current resolver settings
+            const fallbackActiveResolvers = activeResolversRef.current;
+            const fallbackResolverOrder = resolverOrderRef.current;
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority
@@ -8501,7 +8735,7 @@ const Parachord = () => {
                 .map(resId => ({
                   resolverId: resId,
                   source: trackOrSource.sources[resId],
-                  priority: resolverOrder.indexOf(resId)
+                  priority: fallbackResolverOrder.indexOf(resId)
                 }))
                 .sort((a, b) => a.priority - b.priority);
 
@@ -8536,8 +8770,52 @@ const Parachord = () => {
           }
         }
 
-        // No fallback available or non-Spotify failure - show re-resolve dialog
-        if (!trackOrSource._spotifyFallback && sourceToPlay.artist && sourceToPlay.title) {
+        // For Apple Music, fall back to next best source (track may not be available in region)
+        if (resolverId === 'applemusic' && !trackOrSource._appleMusicFallback) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+            // Use refs for current resolver settings
+            const fallbackActiveResolvers = activeResolversRef.current;
+            const fallbackResolverOrder = resolverOrderRef.current;
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && fallbackActiveResolvers.includes(id));
+
+            if (otherSources.length > 0) {
+              // Sort by resolver priority
+              const sortedFallbacks = otherSources
+                .map(resId => ({
+                  resolverId: resId,
+                  source: trackOrSource.sources[resId],
+                  priority: fallbackResolverOrder.indexOf(resId)
+                }))
+                .sort((a, b) => a.priority - b.priority);
+
+              const fallback = sortedFallbacks[0];
+              const fallbackResolver = currentResolvers.find(r => r.id === fallback.resolverId);
+
+              console.log(`🔄 Apple Music unavailable for this track, falling back to ${fallbackResolver?.name || fallback.resolverId}`);
+
+              showToast(
+                `Track not available on Apple Music. Playing via ${fallbackResolver?.name || fallback.resolverId}.`,
+                'info'
+              );
+
+              // Create fallback track without applemusic source to prevent loop
+              const fallbackTrack = {
+                ...trackOrSource,
+                sources: Object.fromEntries(
+                  Object.entries(trackOrSource.sources).filter(([id]) => id !== 'applemusic')
+                ),
+                _appleMusicFallback: true // Mark that we fell back from Apple Music
+              };
+
+              // Play via the fallback source
+              handlePlay(fallbackTrack);
+              return;
+            }
+          }
+        }
+
+        // No fallback available or non-Spotify/Apple Music failure - show re-resolve dialog
+        if (!trackOrSource._spotifyFallback && !trackOrSource._appleMusicFallback && sourceToPlay.artist && sourceToPlay.title) {
           console.log('🔄 Attempting to re-resolve track with fresh sources...');
           const artistName = sourceToPlay.artist;
           const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
@@ -8950,6 +9228,15 @@ const Parachord = () => {
   const handlePlayPause = async () => {
     if (!currentTrack) return;
 
+    // Check if this is a restored track that needs explicit start (not just resume)
+    // This handles tracks restored from saved queue on app reopen
+    if (!isPlaying && trackNeedsExplicitStart.current) {
+      console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
+      trackNeedsExplicitStart.current = false;
+      handlePlay(currentTrack);
+      return;
+    }
+
     // Check if browser extension is controlling playback
     if (browserPlaybackActive && extensionConnected) {
       console.log('🌐 Sending play/pause to browser extension');
@@ -9054,35 +9341,24 @@ const Parachord = () => {
               }
             }
           } else {
-            // Playing - check if we need to explicitly start this track
-            // (e.g., restored from saved queue, Spotify may have different track loaded)
-            if (trackNeedsExplicitStart.current) {
-              // Use handlePlay to properly start the track with device handling
-              // This ensures device discovery and wake-up logic is used
-              console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
-              trackNeedsExplicitStart.current = false;
-              handlePlay(currentTrack);
-              return true;
-            } else {
-              // Normal resume
-              const response = await fetch('https://api.spotify.com/v1/me/player/play', {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `Bearer ${token}`
-                }
-              });
+            // Resume Spotify playback
+            const response = await fetch('https://api.spotify.com/v1/me/player/play', {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
 
-              if (response.ok || response.status === 204) {
-                setIsPlaying(true);
-                console.log('Resumed Spotify playback');
-                return true;
-              } else if (response.status === 401 && !isRetry) {
-                // Token expired - try to refresh
-                console.log('🔄 Spotify token expired on play, attempting refresh...');
-                const newToken = await refreshSpotifyToken();
-                if (newToken) {
-                  return attemptSpotifyControl(newToken, true);
-                }
+            if (response.ok || response.status === 204) {
+              setIsPlaying(true);
+              console.log('Resumed Spotify playback');
+              return true;
+            } else if (response.status === 401 && !isRetry) {
+              // Token expired - try to refresh
+              console.log('🔄 Spotify token expired on play, attempting refresh...');
+              const newToken = await refreshSpotifyToken();
+              if (newToken) {
+                return attemptSpotifyControl(newToken, true);
               }
             }
           }
@@ -9154,9 +9430,12 @@ const Parachord = () => {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
       }
-      // Also stop main process polling
+      // Also stop main process polling (both Spotify and Apple Music)
       if (window.electron?.spotify?.polling) {
         window.electron.spotify.polling.stop();
+      }
+      if (window.electron?.musicKit?.polling) {
+        window.electron.musicKit.polling.stop().catch(() => {});
       }
 
       // Stop HTML5 Audio if playing (local files, SoundCloud)
@@ -9169,6 +9448,40 @@ const Parachord = () => {
       // Notify scrobble manager that current track is ending
       if (window.scrobbleManager) {
         window.scrobbleManager.onTrackEnd();
+      }
+
+      // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+      // This handles race conditions during async track loading
+
+      // Always pause Spotify if we have a token
+      if (spotifyToken) {
+        console.log('⏹️ Pausing Spotify before next track');
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        }).catch(() => {}); // Silently ignore
+      }
+
+      // Always pause Apple Music native playback
+      if (window.electron?.musicKit) {
+        console.log('⏹️ Pausing Apple Music (native) before next track');
+        window.electron.musicKit.pause().catch(() => {}); // Silently ignore
+      }
+
+      // Always pause Apple Music web playback (MusicKit JS)
+      const musicKitWebNext = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      if (musicKitWebNext) {
+        try {
+          console.log('⏹️ Pausing Apple Music (web) before next track');
+          musicKitWebNext.pause();
+        } catch (e) {} // Silently ignore
+      }
+
+      // Always stop Apple Music preview audio if it exists
+      if (window._appleMusicPreviewAudio) {
+        console.log('⏹️ Stopping Apple Music preview audio');
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
       }
 
       // CRITICAL: Reset streaming playback flag when advancing tracks
@@ -9363,17 +9676,38 @@ const Parachord = () => {
       window.scrobbleManager.onTrackEnd();
     }
 
-    // Pause Spotify if it was playing (must happen BEFORE resetting streamingPlaybackActiveRef)
-    if (spotifyToken && streamingPlaybackActiveRef.current) {
-      console.log('⏹️ Pausing Spotify before going to previous track');
+    // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+    // This prevents race conditions where the streamingPlaybackActiveRef flag may be stale
+
+    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
+    if (spotifyToken) {
+      console.log('⏹️ Pausing Spotify before previous track');
+      fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${spotifyToken}` }
+      }).catch(() => {}); // Silently ignore - may not be playing
+    }
+
+    // Always pause Apple Music native playback (macOS MusicKit)
+    if (window.electron?.musicKit) {
+      console.log('⏹️ Pausing Apple Music (native) before previous track');
+      window.electron.musicKit.pause().catch(() => {}); // Silently ignore
+    }
+
+    // Always pause Apple Music web playback (MusicKit JS)
+    const musicKitWebPrev = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWebPrev) {
       try {
-        await fetch('https://api.spotify.com/v1/me/player/pause', {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${spotifyToken}` }
-        });
-      } catch (e) {
-        console.log('Could not pause Spotify:', e.message);
-      }
+        console.log('⏹️ Pausing Apple Music (web) before previous track');
+        musicKitWebPrev.pause();
+      } catch (e) {} // Silently ignore
+    }
+
+    // Always stop Apple Music preview audio if it exists
+    if (window._appleMusicPreviewAudio) {
+      console.log('⏹️ Stopping Apple Music preview audio');
+      window._appleMusicPreviewAudio.pause();
+      window._appleMusicPreviewAudio.currentTime = 0;
     }
 
     // CRITICAL: Reset streaming playback flag when changing tracks
@@ -9406,9 +9740,12 @@ const Parachord = () => {
       clearInterval(pollingRecoveryRef.current);
       pollingRecoveryRef.current = null;
     }
-    // Also stop main process polling
+    // Also stop main process polling (both Spotify and Apple Music)
     if (window.electron?.spotify?.polling) {
       window.electron.spotify.polling.stop();
+    }
+    if (window.electron?.musicKit?.polling) {
+      window.electron.musicKit.polling.stop().catch(() => {});
     }
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
@@ -9727,7 +10064,7 @@ const Parachord = () => {
     let firstTrack;
     let remainingTracks;
 
-    if (shuffleMode && tracksToPlay.length > 1) {
+    if (shuffleModeRef.current && tracksToPlay.length > 1) {
       // Shuffle mode: pick random first track, shuffle the rest
       const randomIndex = Math.floor(Math.random() * tracksToPlay.length);
       firstTrack = tracksToPlay[randomIndex];
@@ -10291,9 +10628,11 @@ const Parachord = () => {
 
     console.log(`🔍 Resolving recording: ${track.artist} - ${track.title}`);
 
-    // Query all enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query all enabled resolvers in priority order (using refs to avoid stale closure)
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -11025,7 +11364,7 @@ const Parachord = () => {
       // Load last active view
       const savedLastView = await window.electron.store.get('last_active_view');
       if (savedLastView) {
-        const validViews = ['library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
+        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
           if (savedLastView.view === 'artist' && savedLastView.artistName) {
@@ -11085,13 +11424,23 @@ const Parachord = () => {
           } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
             // Restore playlist detail view - need to find the playlist by ID
             setActiveView('playlist-view');
-            setViewHistory(['library', 'playlists', 'playlist-view']);
+            // Use different view history for ephemeral playlists (e.g., Weekly Jams from home)
+            if (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz') {
+              setViewHistory(['home', 'playlist-view']);
+            } else {
+              setViewHistory(['library', 'playlists', 'playlist-view']);
+            }
             // Store pending playlist load - will be processed once playlists are loaded
+            // For ephemeral ListenBrainz playlists, include extra info for reconstruction
             setPendingPlaylistLoad({
               id: savedLastView.playlistId,
-              title: savedLastView.playlistTitle
+              title: savedLastView.playlistTitle,
+              isEphemeral: savedLastView.isEphemeral,
+              source: savedLastView.playlistSource,
+              listenbrainzId: savedLastView.listenbrainzId,
+              weekLabel: savedLastView.weekLabel
             });
-            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})`);
+            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})${savedLastView.isEphemeral ? ' [ephemeral]' : ''}`);
           } else if (savedLastView.view === 'discover') {
             // Restore discover view - charts will be loaded by useEffect when cacheLoaded is true
             setActiveView('discover');
@@ -11264,6 +11613,15 @@ const Parachord = () => {
     if (activeView === 'playlist-view' && selectedPlaylist) {
       viewData.playlistId = selectedPlaylist.id;
       viewData.playlistTitle = selectedPlaylist.title;
+      // Save extra info for ephemeral playlists so they can be reconstructed
+      if (selectedPlaylist.isEphemeral) {
+        viewData.isEphemeral = true;
+        viewData.playlistSource = selectedPlaylist.source;
+        if (selectedPlaylist.listenbrainzId) {
+          viewData.listenbrainzId = selectedPlaylist.listenbrainzId;
+          viewData.weekLabel = selectedPlaylist.weekLabel;
+        }
+      }
     }
     if (activeView === 'friendHistory' && currentFriend) {
       viewData.friendId = currentFriend.id;
@@ -11302,6 +11660,34 @@ const Parachord = () => {
   // Load pending playlist once playlists are loaded
   useEffect(() => {
     if (pendingPlaylistLoad) {
+      // For ephemeral ListenBrainz playlists (Weekly Jams), look in homeData.weeklyJams
+      if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz' && pendingPlaylistLoad.listenbrainzId) {
+        const jam = homeData.weeklyJams?.find(j => j.id === pendingPlaylistLoad.listenbrainzId);
+        if (jam) {
+          console.log(`📦 Reconstructing ephemeral playlist for restored view: ${jam.title}`);
+          setPendingPlaylistLoad(null);
+          // Reconstruct the ephemeral playlist object
+          const ephemeralPlaylist = {
+            id: `listenbrainz-${jam.id}`,
+            listenbrainzId: jam.id,
+            title: jam.title,
+            weekLabel: jam.weekLabel,
+            description: jam.description,
+            tracks: jam.tracks || [],
+            tracksLoaded: jam.tracksLoaded,
+            isExternal: true,
+            isEphemeral: true,
+            source: 'listenbrainz',
+            creator: 'ListenBrainz'
+          };
+          loadPlaylist(ephemeralPlaylist, { skipNavigation: true });
+          return;
+        }
+        // Weekly jams not loaded yet - wait for them
+        return;
+      }
+
+      // For regular playlists, look in playlists array
       const playlist = playlists.find(p => p.id === pendingPlaylistLoad.id);
       if (playlist) {
         console.log(`📦 Loading playlist for restored view: ${playlist.title}`);
@@ -11312,17 +11698,25 @@ const Parachord = () => {
       }
       // Don't clear pending or fall back yet - hosted playlists may still be loading
     }
-  }, [playlists, pendingPlaylistLoad]);
+  }, [playlists, pendingPlaylistLoad, homeData.weeklyJams]);
 
   // Give up on pending playlist load after timeout (hosted playlists should be loaded by then)
   useEffect(() => {
     if (pendingPlaylistLoad) {
       const timer = setTimeout(() => {
         if (pendingPlaylistLoad) {
-          console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
-          setPendingPlaylistLoad(null);
-          setActiveView('playlists');
-          setViewHistory(['library', 'playlists']);
+          // For ephemeral ListenBrainz playlists, fall back to home (where Weekly Jams are displayed)
+          if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz') {
+            console.log(`📦 Weekly Jam not found after timeout: ${pendingPlaylistLoad.title}, falling back to home view`);
+            setPendingPlaylistLoad(null);
+            setActiveView('home');
+            setViewHistory(['home']);
+          } else {
+            console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
+            setPendingPlaylistLoad(null);
+            setActiveView('playlists');
+            setViewHistory(['library', 'playlists']);
+          }
         }
       }, 5000); // 5 second timeout to allow hosted playlists to load
       return () => clearTimeout(timer);
@@ -12329,9 +12723,11 @@ const Parachord = () => {
 
     const freshSources = {};
 
-    // Query enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query enabled resolvers in priority order (using refs for current values)
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -12424,6 +12820,28 @@ const Parachord = () => {
     const cachedData = trackSourcesCache.current[cacheKey];
     const now = Date.now();
 
+    // Get current active resolvers for filtering
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+
+    // Check if track has persisted sources (from collection/playlist storage)
+    // Filter to only include sources that are:
+    // 1. From an active (enabled) resolver
+    // 2. Within TTL (or from sync which has no resolvedAt)
+    const persistedSources = track.sources && typeof track.sources === 'object'
+      ? Object.fromEntries(
+          Object.entries(track.sources).filter(([resolverId, sourceData]) => {
+            // Must be from an active resolver
+            if (!currentActiveResolvers.includes(resolverId)) return false;
+            // Sources without resolvedAt are from sync (Spotify) - always valid
+            if (!sourceData.resolvedAt) return true;
+            // Check if source is within persisted TTL
+            return (now - sourceData.resolvedAt) < CACHE_TTL.persistedSources;
+          })
+        )
+      : {};
+    const hasValidPersistedSources = Object.keys(persistedSources).length > 0;
+
     // Cache is valid if:
     // 1. Not forcing refresh
     // 2. Data exists and not expired
@@ -12433,15 +12851,17 @@ const Parachord = () => {
                       (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
                       cachedData.resolverHash === currentResolverHash;
 
-    // Check if there are active resolvers that weren't queried in the cached data
+    // Check if there are active resolvers that weren't queried in the cached data or persisted sources
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
-    const missingResolvers = activeResolvers.filter(id =>
-      !cachedResolverIds.includes(id) &&
+    const persistedResolverIds = Object.keys(persistedSources);
+    const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
+    const missingResolvers = currentActiveResolvers.filter(id =>
+      !availableResolverIds.includes(id) &&
       allResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
-    if (cachedData) {
-      console.log(`  🔍 Cache check for "${track.title}": hash match=${cachedData.resolverHash === currentResolverHash}, missing resolvers: ${missingResolvers.join(', ') || 'none'}`);
+    if (cachedData || hasValidPersistedSources) {
+      console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
     }
 
     if (cacheValid && missingResolvers.length === 0) {
@@ -12465,6 +12885,92 @@ const Parachord = () => {
 
     // Check abort after cache check
     if (signal?.aborted) return;
+
+    // If we have valid persisted sources (no in-memory cache), use them and resolve missing
+    if (!cacheValid && hasValidPersistedSources && missingResolvers.length === 0) {
+      console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
+
+      // Use persisted sources and cache them in memory
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: persistedSources
+      }));
+
+      trackSourcesCache.current[cacheKey] = {
+        sources: persistedSources,
+        timestamp: now,
+        resolverHash: currentResolverHash
+      };
+
+      return persistedSources;
+    }
+
+    // If we have valid persisted sources but missing resolvers, query only the missing ones
+    if (!cacheValid && hasValidPersistedSources && missingResolvers.length > 0) {
+      console.log(`🔍 Persisted sources found but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
+
+      // Start with persisted sources
+      const sources = { ...persistedSources };
+
+      // Query only missing resolvers
+      const missingResolverInstances = missingResolvers
+        .map(id => allResolvers.find(r => r.id === id))
+        .filter(Boolean);
+
+      const resolverPromises = missingResolverInstances.map(async (resolver) => {
+        if (signal?.aborted) return;
+        if (!resolver.capabilities.resolve || !resolver.play) return;
+
+        try {
+          const config = await getResolverConfig(resolver.id);
+          if (signal?.aborted) return;
+
+          console.log(`  🔎 Trying ${resolver.id}...`);
+          const result = await resolver.resolve(artistName, track.title, null, config);
+
+          if (signal?.aborted) return;
+
+          if (result) {
+            sources[resolver.id] = {
+              ...result,
+              confidence: calculateConfidence(track, result)
+            };
+            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+          } else {
+            console.log(`  ⚪ ${resolver.name}: No match found`);
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        }
+      });
+
+      await Promise.all(resolverPromises);
+
+      if (signal?.aborted) return;
+
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: sources
+      }));
+
+      trackSourcesCache.current[cacheKey] = {
+        sources: sources,
+        timestamp: now,
+        resolverHash: currentResolverHash
+      };
+
+      // Persist new sources back to collection/playlist
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
+
+      return sources;
+    }
 
     // If cache is valid but missing resolvers, query only the missing ones
     if (cacheValid && missingResolvers.length > 0) {
@@ -12553,6 +13059,17 @@ const Parachord = () => {
         resolverHash: getResolverSettingsHash()
       };
 
+      // Persist new sources back to collection if this track is in the collection
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+
+      // Also persist to selected playlist if track is in it
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
+
       return sources;
     }
 
@@ -12564,14 +13081,14 @@ const Parachord = () => {
 
     const sources = {};
 
-    // Query enabled resolvers in priority order
-    const enabledResolvers = resolverOrder
-      .filter(id => activeResolvers.includes(id))
+    // Query enabled resolvers in priority order (using refs for current values)
+    const enabledResolvers = currentResolverOrder
+      .filter(id => currentActiveResolvers.includes(id))
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
-    console.log(`  📋 Active resolvers: ${activeResolvers.join(', ')}`);
-    console.log(`  📋 Resolver order: ${resolverOrder.join(', ')}`);
+    console.log(`  📋 Active resolvers: ${currentActiveResolvers.join(', ')}`);
+    console.log(`  📋 Resolver order: ${currentResolverOrder.join(', ')}`);
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -12660,6 +13177,18 @@ const Parachord = () => {
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash()
       };
+
+      // Persist new sources back to collection if this track is in the collection
+      // This ensures Apple Music and other resolver results are cached for faster subsequent plays
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+
+      // Also persist to selected playlist if track is in it
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
 
       console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
     }
@@ -20398,10 +20927,15 @@ const getCurrentPlaybackState = async () => {
     return;
   }
 
-  // Don't update track info when playing via HTML5 Audio (local files or SoundCloud)
-  // Check if audioRef is active and not paused - this means we're using HTML5 Audio for playback
+  // Don't update track info when playing via a non-Spotify resolver
+  // This prevents Spotify polling from interfering with other resolver playback
   const currentResolver = currentTrackRef.current?._activeResolver;
-  if (currentResolver === 'localfiles' || currentResolver === 'soundcloud') {
+  if (currentResolver && currentResolver !== 'spotify') {
+    return;
+  }
+
+  // Don't poll if Spotify is disabled in activeResolvers
+  if (!activeResolversRef.current.includes('spotify')) {
     return;
   }
 
@@ -40449,6 +40983,10 @@ useEffect(() => {
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
+          } else if (playbackContext.type === 'weekly-jam') {
+            // Navigate to home view where Weekly Jams are displayed
+            // If we have the jam ID, we could potentially scroll to or highlight that jam
+            navigateTo('home');
           }
           setQueueDrawerOpen(false);
         },
@@ -40471,6 +41009,7 @@ useEffect(() => {
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
             playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
+            playbackContext.type === 'weekly-jam' ? `${playbackContext.name || 'Weekly Jam'}` :
             playbackContext.name || 'Unknown'
           )
         ),
