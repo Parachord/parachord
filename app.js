@@ -3260,6 +3260,7 @@ const Parachord = () => {
   const [playlists, setPlaylists] = useState([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(true); // Loading state for playlists
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const selectedPlaylistRef = useRef(null); // Ref for accessing in callbacks without stale closures
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [weeklyJamCovers, setWeeklyJamCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
@@ -4290,6 +4291,12 @@ const Parachord = () => {
   const collectionScrollContainerRef = useRef(null);
   const collectionTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [collectionScrollContainerReady, setCollectionScrollContainerReady] = useState(false)
+
+  // Refs for persisting resolved sources back to collection and playlists (debounced)
+  const pendingCollectionSourceUpdates = useRef({}); // Map of trackId -> sources to merge
+  const collectionSourceSaveTimer = useRef(null);
+  const pendingPlaylistSourceUpdates = useRef({}); // Map of playlistId -> { trackId -> sources }
+  const playlistSourceSaveTimer = useRef(null);
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
 
@@ -5363,6 +5370,7 @@ const Parachord = () => {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
+    persistedSources: 30 * 24 * 60 * 60 * 1000, // 30 days (persisted to collection/playlists)
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
@@ -6839,13 +6847,14 @@ const Parachord = () => {
           const data = await window.electron.collection.load();
 
           // Clean up corrupted sources data (e.g., numeric keys like "0" instead of resolver IDs)
-          const validResolverIds = ['spotify', 'youtube', 'bandcamp', 'qobuz', 'soundcloud', 'localfiles'];
+          // Valid resolver IDs are non-numeric strings (corrupted entries have keys like "0", "1", "2")
+          const isValidResolverId = (key) => typeof key === 'string' && key.length > 0 && !/^\d+$/.test(key);
           let cleanedCount = 0;
           const cleanedTracks = data.tracks?.map(track => {
             if (track.sources && typeof track.sources === 'object') {
               const cleanedSources = {};
               for (const [key, value] of Object.entries(track.sources)) {
-                if (validResolverIds.includes(key)) {
+                if (isValidResolverId(key)) {
                   cleanedSources[key] = value;
                 } else {
                   cleanedCount++;
@@ -7008,6 +7017,135 @@ const Parachord = () => {
         console.error('Collection save error:', error);
       }
     }
+  }, []);
+
+  // Queue resolved sources to be persisted back to collection (debounced)
+  // This ensures Apple Music and other resolver results are cached for faster subsequent plays
+  const queueCollectionSourceUpdate = useCallback((trackId, sources) => {
+    // Merge new sources with any pending updates for this track
+    pendingCollectionSourceUpdates.current[trackId] = {
+      ...pendingCollectionSourceUpdates.current[trackId],
+      ...sources
+    };
+
+    // Debounce the save - wait 5 seconds after last update before writing
+    if (collectionSourceSaveTimer.current) {
+      clearTimeout(collectionSourceSaveTimer.current);
+    }
+
+    collectionSourceSaveTimer.current = setTimeout(() => {
+      const updates = pendingCollectionSourceUpdates.current;
+      const updateCount = Object.keys(updates).length;
+      if (updateCount === 0) return;
+
+      console.log(`💾 Persisting resolved sources for ${updateCount} track(s) to collection...`);
+
+      const now = Date.now();
+      setCollectionData(prev => {
+        let hasChanges = false;
+        const updatedTracks = prev.tracks.map(track => {
+          const newSources = updates[track.id];
+          if (newSources) {
+            // Merge new sources with existing, keeping existing sources if they exist
+            const mergedSources = { ...track.sources };
+            for (const [resolverId, sourceData] of Object.entries(newSources)) {
+              if (!mergedSources[resolverId]) {
+                // Add resolvedAt timestamp for TTL tracking
+                mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
+                hasChanges = true;
+              }
+            }
+            if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
+              return { ...track, sources: mergedSources };
+            }
+          }
+          return track;
+        });
+
+        if (hasChanges) {
+          const newData = { ...prev, tracks: updatedTracks };
+          saveCollection(newData);
+          console.log(`✅ Persisted sources for ${updateCount} track(s)`);
+          return newData;
+        }
+        return prev;
+      });
+
+      // Clear pending updates
+      pendingCollectionSourceUpdates.current = {};
+    }, 5000);
+  }, [saveCollection]);
+
+  // Queue resolved sources to be persisted back to a playlist (debounced)
+  const queuePlaylistSourceUpdate = useCallback((playlistId, trackId, sources) => {
+    if (!pendingPlaylistSourceUpdates.current[playlistId]) {
+      pendingPlaylistSourceUpdates.current[playlistId] = {};
+    }
+    pendingPlaylistSourceUpdates.current[playlistId][trackId] = {
+      ...pendingPlaylistSourceUpdates.current[playlistId][trackId],
+      ...sources
+    };
+
+    // Debounce the save - wait 5 seconds after last update before writing
+    if (playlistSourceSaveTimer.current) {
+      clearTimeout(playlistSourceSaveTimer.current);
+    }
+
+    playlistSourceSaveTimer.current = setTimeout(async () => {
+      const updates = pendingPlaylistSourceUpdates.current;
+      const playlistIds = Object.keys(updates);
+      if (playlistIds.length === 0) return;
+
+      console.log(`💾 Persisting resolved sources to ${playlistIds.length} playlist(s)...`);
+
+      for (const plId of playlistIds) {
+        const trackUpdates = updates[plId];
+        const updateCount = Object.keys(trackUpdates).length;
+        if (updateCount === 0) continue;
+
+        // Find the playlist in state
+        const now = Date.now();
+        setPlaylists(prev => {
+          const playlistIndex = prev.findIndex(p => p.id === plId);
+          if (playlistIndex === -1) return prev;
+
+          const playlist = prev[playlistIndex];
+          let hasChanges = false;
+          const updatedTracks = playlist.tracks.map(track => {
+            const newSources = trackUpdates[track.id];
+            if (newSources) {
+              const mergedSources = { ...track.sources };
+              for (const [resolverId, sourceData] of Object.entries(newSources)) {
+                if (!mergedSources[resolverId]) {
+                  // Add resolvedAt timestamp for TTL tracking
+                  mergedSources[resolverId] = { ...sourceData, resolvedAt: now };
+                  hasChanges = true;
+                }
+              }
+              if (Object.keys(mergedSources).length > Object.keys(track.sources || {}).length) {
+                return { ...track, sources: mergedSources };
+              }
+            }
+            return track;
+          });
+
+          if (hasChanges) {
+            const updatedPlaylist = { ...playlist, tracks: updatedTracks, lastModified: Date.now() };
+            const newPlaylists = [...prev];
+            newPlaylists[playlistIndex] = updatedPlaylist;
+
+            // Save to disk asynchronously
+            savePlaylistToStore(updatedPlaylist);
+            console.log(`✅ Persisted sources for ${updateCount} track(s) in playlist: ${playlist.title}`);
+            return newPlaylists;
+          }
+          return prev;
+        });
+      }
+
+      // Clear pending updates
+      pendingPlaylistSourceUpdates.current = {};
+    }, 5000);
   }, []);
 
   // Add track to collection
@@ -7562,6 +7700,10 @@ const Parachord = () => {
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
 
+  // Keep selectedPlaylistRef in sync for callbacks
+  useEffect(() => {
+    selectedPlaylistRef.current = selectedPlaylist;
+  }, [selectedPlaylist]);
 
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
@@ -12680,6 +12822,28 @@ const Parachord = () => {
     const cachedData = trackSourcesCache.current[cacheKey];
     const now = Date.now();
 
+    // Get current active resolvers for filtering
+    const currentActiveResolvers = activeResolversRef.current;
+    const currentResolverOrder = resolverOrderRef.current;
+
+    // Check if track has persisted sources (from collection/playlist storage)
+    // Filter to only include sources that are:
+    // 1. From an active (enabled) resolver
+    // 2. Within TTL (or from sync which has no resolvedAt)
+    const persistedSources = track.sources && typeof track.sources === 'object'
+      ? Object.fromEntries(
+          Object.entries(track.sources).filter(([resolverId, sourceData]) => {
+            // Must be from an active resolver
+            if (!currentActiveResolvers.includes(resolverId)) return false;
+            // Sources without resolvedAt are from sync (Spotify) - always valid
+            if (!sourceData.resolvedAt) return true;
+            // Check if source is within persisted TTL
+            return (now - sourceData.resolvedAt) < CACHE_TTL.persistedSources;
+          })
+        )
+      : {};
+    const hasValidPersistedSources = Object.keys(persistedSources).length > 0;
+
     // Cache is valid if:
     // 1. Not forcing refresh
     // 2. Data exists and not expired
@@ -12689,18 +12853,17 @@ const Parachord = () => {
                       (now - cachedData.timestamp) < CACHE_TTL.trackSources &&
                       cachedData.resolverHash === currentResolverHash;
 
-    // Check if there are active resolvers that weren't queried in the cached data
-    // Use refs to avoid stale closure issues
-    const currentActiveResolvers = activeResolversRef.current;
-    const currentResolverOrder = resolverOrderRef.current;
+    // Check if there are active resolvers that weren't queried in the cached data or persisted sources
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
+    const persistedResolverIds = Object.keys(persistedSources);
+    const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
     const missingResolvers = currentActiveResolvers.filter(id =>
-      !cachedResolverIds.includes(id) &&
+      !availableResolverIds.includes(id) &&
       allResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
-    if (cachedData) {
-      console.log(`  🔍 Cache check for "${track.title}": hash match=${cachedData.resolverHash === currentResolverHash}, missing resolvers: ${missingResolvers.join(', ') || 'none'}`);
+    if (cachedData || hasValidPersistedSources) {
+      console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
     }
 
     if (cacheValid && missingResolvers.length === 0) {
@@ -12724,6 +12887,92 @@ const Parachord = () => {
 
     // Check abort after cache check
     if (signal?.aborted) return;
+
+    // If we have valid persisted sources (no in-memory cache), use them and resolve missing
+    if (!cacheValid && hasValidPersistedSources && missingResolvers.length === 0) {
+      console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
+
+      // Use persisted sources and cache them in memory
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: persistedSources
+      }));
+
+      trackSourcesCache.current[cacheKey] = {
+        sources: persistedSources,
+        timestamp: now,
+        resolverHash: currentResolverHash
+      };
+
+      return persistedSources;
+    }
+
+    // If we have valid persisted sources but missing resolvers, query only the missing ones
+    if (!cacheValid && hasValidPersistedSources && missingResolvers.length > 0) {
+      console.log(`🔍 Persisted sources found but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
+
+      // Start with persisted sources
+      const sources = { ...persistedSources };
+
+      // Query only missing resolvers
+      const missingResolverInstances = missingResolvers
+        .map(id => allResolvers.find(r => r.id === id))
+        .filter(Boolean);
+
+      const resolverPromises = missingResolverInstances.map(async (resolver) => {
+        if (signal?.aborted) return;
+        if (!resolver.capabilities.resolve || !resolver.play) return;
+
+        try {
+          const config = await getResolverConfig(resolver.id);
+          if (signal?.aborted) return;
+
+          console.log(`  🔎 Trying ${resolver.id}...`);
+          const result = await resolver.resolve(artistName, track.title, null, config);
+
+          if (signal?.aborted) return;
+
+          if (result) {
+            sources[resolver.id] = {
+              ...result,
+              confidence: calculateConfidence(track, result)
+            };
+            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+          } else {
+            console.log(`  ⚪ ${resolver.name}: No match found`);
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          console.error(`  ❌ ${resolver.name} resolve error:`, error);
+        }
+      });
+
+      await Promise.all(resolverPromises);
+
+      if (signal?.aborted) return;
+
+      setTrackSources(prev => ({
+        ...prev,
+        [trackKey]: sources
+      }));
+
+      trackSourcesCache.current[cacheKey] = {
+        sources: sources,
+        timestamp: now,
+        resolverHash: currentResolverHash
+      };
+
+      // Persist new sources back to collection/playlist
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
+
+      return sources;
+    }
 
     // If cache is valid but missing resolvers, query only the missing ones
     if (cacheValid && missingResolvers.length > 0) {
@@ -12811,6 +13060,17 @@ const Parachord = () => {
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash()
       };
+
+      // Persist new sources back to collection if this track is in the collection
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+
+      // Also persist to selected playlist if track is in it
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
 
       return sources;
     }
@@ -12919,6 +13179,18 @@ const Parachord = () => {
         timestamp: Date.now(),
         resolverHash: getResolverSettingsHash()
       };
+
+      // Persist new sources back to collection if this track is in the collection
+      // This ensures Apple Music and other resolver results are cached for faster subsequent plays
+      if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+        queueCollectionSourceUpdate(track.id, sources);
+      }
+
+      // Also persist to selected playlist if track is in it
+      const currentPlaylist = selectedPlaylistRef.current;
+      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      }
 
       console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
     }
