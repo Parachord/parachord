@@ -37419,6 +37419,95 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'Apple Music authorized for playback')
+            ),
+
+            // Advanced accordion for MusicKit developer token
+            React.createElement('div', { style: { marginTop: '16px' } },
+              React.createElement('button', {
+                onClick: () => setAppleMusicAdvancedOpen(!appleMusicAdvancedOpen),
+                className: 'flex items-center gap-1',
+                style: {
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0'
+                }
+              },
+                React.createElement('span', {
+                  className: `transform transition-transform ${appleMusicAdvancedOpen ? 'rotate-90' : ''}`
+                }, '▶'),
+                'Advanced'
+              ),
+              appleMusicAdvancedOpen && React.createElement('div', {
+                style: {
+                  marginTop: '12px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  borderRadius: '8px'
+                }
+              },
+                React.createElement('p', {
+                  style: {
+                    fontSize: '11px',
+                    color: '#6b7280',
+                    marginBottom: '12px',
+                    lineHeight: '1.5'
+                  }
+                },
+                  appleMusicDeveloperToken
+                    ? 'Using your MusicKit developer token for enhanced search (no rate limits).'
+                    : 'Add a MusicKit developer token to use Apple Music API for searches instead of iTunes API. This eliminates rate limiting issues.'
+                ),
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('label', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#6b7280',
+                      display: 'block',
+                      marginBottom: '4px'
+                    }
+                  }, 'MusicKit Developer Token (JWT)'),
+                  React.createElement('input', {
+                    type: 'password',
+                    value: appleMusicDeveloperToken,
+                    onChange: (e) => setAppleMusicDeveloperToken(e.target.value),
+                    placeholder: 'eyJ...',
+                    style: {
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  })
+                ),
+                React.createElement('p', {
+                  style: {
+                    fontSize: '10px',
+                    color: '#9ca3af',
+                    marginBottom: '12px',
+                    lineHeight: '1.4'
+                  }
+                }, 'Get a token from the Apple Developer Portal (requires Apple Developer account). The token is a JWT that authenticates your app with Apple Music API.'),
+                React.createElement('button', {
+                  onClick: saveAppleMusicDeveloperToken,
+                  style: {
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: appleMusicTokenSaved ? '#22c55e' : '#ffffff',
+                    backgroundColor: appleMusicTokenSaved ? 'rgba(34, 197, 94, 0.1)' : '#FA243C',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }
+                }, appleMusicTokenSaved ? '✓ Saved' : 'Save Token')
+              )
             )
           ),
 
