@@ -4476,6 +4476,8 @@ const Parachord = () => {
   const lastfmChartsObserverRef = useRef(null);
   const visibleLastfmChartsTrackIds = useRef(new Set());
   const lastfmChartsTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const lastfmChartsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
+  const [lastfmChartsScrollContainerReady, setLastfmChartsScrollContainerReady] = useState(false);
 
   // Refs for history tracks visibility tracking
   const historyTrackRowRefs = useRef(new Map());
@@ -14105,6 +14107,7 @@ const Parachord = () => {
     if (activeView !== 'charts' || chartsTab !== 'songs') {
       lastfmChartsObserverRef.current?.disconnect();
       visibleLastfmChartsTrackIds.current.clear();
+      setLastfmChartsScrollContainerReady(false);
       return;
     }
 
@@ -14114,6 +14117,12 @@ const Parachord = () => {
     // Clear stale visible track IDs when filter changes
     visibleLastfmChartsTrackIds.current.clear();
     updateSchedulerVisibility('lastfm-charts-tracks', []);
+
+    // Wait for scroll container to be available
+    const scrollContainer = lastfmChartsScrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
 
     lastfmChartsObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -14148,14 +14157,14 @@ const Parachord = () => {
           updateSchedulerVisibility('lastfm-charts-tracks', visibleTracks);
         }
       },
-      { rootMargin: '200px' }
+      { root: scrollContainer, rootMargin: '200px' }
     );
 
     lastfmChartsRowRefs.current.forEach((element) => {
       if (element) lastfmChartsObserverRef.current.observe(element);
     });
 
-    // Manually check initial visibility
+    // Manually check initial visibility after a short delay
     setTimeout(() => {
       if (!lastfmChartsObserverRef.current) return;
       const currentTracks = lastfmChartsTracksRef.current;
@@ -14164,7 +14173,9 @@ const Parachord = () => {
       lastfmChartsRowRefs.current.forEach((element, trackId) => {
         if (!element) return;
         const rect = element.getBoundingClientRect();
-        const isVisible = rect.bottom >= -200 && rect.top <= window.innerHeight + 200;
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const isVisible = rect.bottom >= containerRect.top - 200 &&
+                         rect.top <= containerRect.bottom + 200;
         if (isVisible) {
           visibleLastfmChartsTrackIds.current.add(trackId);
           const track = currentTracks.find(t => t.id === trackId);
@@ -14183,7 +14194,7 @@ const Parachord = () => {
     }, 50);
 
     return () => lastfmChartsObserverRef.current?.disconnect();
-  }, [activeView, chartsTab, lastfmCharts, updateSchedulerVisibility, chartsSearch]);
+  }, [activeView, chartsTab, lastfmCharts, updateSchedulerVisibility, chartsSearch, lastfmChartsScrollContainerReady]);
 
   // Register page context for history tracks resolution
   useEffect(() => {
@@ -30370,6 +30381,12 @@ useEffect(() => {
           // Content area (scrollable)
           React.createElement('div', {
             className: 'scrollable-content',
+            ref: (el) => {
+              lastfmChartsScrollContainerRef.current = el;
+              if (el && chartsTab === 'songs') {
+                setLastfmChartsScrollContainerReady(true);
+              }
+            },
             style: {
               flex: 1,
               overflowY: 'scroll',
@@ -30828,18 +30845,14 @@ useEffect(() => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                transition: 'transform 0.1s ease'
+                                pointerEvents: 'auto',
+                                opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
+                                transition: 'transform 0.1s'
                               },
                               onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
                               onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: `Play on ${resolver.name}`
-                            },
-                              React.createElement('img', {
-                                src: resolver.icon,
-                                alt: resolver.name,
-                                style: { width: '12px', height: '12px', filter: 'brightness(0) invert(1)' }
-                              })
-                            );
+                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
                           })
                       : null
                     )
