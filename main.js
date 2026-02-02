@@ -328,6 +328,7 @@ const appleMusicPoller = {
   lastStatus: null,
   lastPosition: 0,
   pollCount: 0,
+  playbackConfirmed: false, // Set to true once we've confirmed the expected song started playing
 
   POLL_INTERVAL: 5000, // 5 seconds - more frequent for native playback
 
@@ -346,8 +347,10 @@ const appleMusicPoller = {
     this.lastPosition = 0;
     this.pollCount = 0;
     this.zeroPositionCount = 0; // Track consecutive zero-position polls after playback started
+    this.playbackConfirmed = false; // Will be set to true once expected song is detected playing
 
-    // Do an immediate poll, then set up interval
+    // Delay first poll slightly to give MusicKit time to start the new track
+    await new Promise(resolve => setTimeout(resolve, 1500));
     await this.poll();
 
     this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
@@ -372,6 +375,7 @@ const appleMusicPoller = {
     this.lastPosition = 0;
     this.lastStatus = null;
     this.zeroPositionCount = 0;
+    this.playbackConfirmed = false; // Reset confirmation for new track
   },
 
   async poll() {
@@ -393,6 +397,13 @@ const appleMusicPoller = {
       const status = state?.status;
       const position = state?.position || 0;
 
+      // Use duration from MusicKit if we don't have it (or it's 0)
+      // The Swift helper now includes duration from the Song object
+      if ((!this.trackDuration || this.trackDuration === 0) && state?.duration) {
+        console.log(`🍎 [Main] Using duration from MusicKit: ${state.duration}s`);
+        this.trackDuration = state.duration;
+      }
+
       // Send progress update to renderer
       this.sendToRenderer('applemusic-polling-progress', {
         status,
@@ -401,15 +412,30 @@ const appleMusicPoller = {
         percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0
       });
 
-      // Detect track ended
-      if (this.lastStatus === 'playing' && status === 'stopped') {
-        console.log('🍎 [Main] Track stopped, signaling advance...');
-        this.sendToRenderer('applemusic-polling-advance', { reason: 'stopped' });
-        this.stop();
-        return;
+      // Detect track ended - MusicKit may report 'stopped' or 'paused' when track finishes
+      if (this.lastStatus === 'playing' && (status === 'stopped' || status === 'paused')) {
+        // If paused, check if we're at/near the end of the track (genuine end vs user pause)
+        if (status === 'paused') {
+          const isNearEnd = this.trackDuration > 0 && (this.trackDuration - position) <= 3;
+          const isAtEnd = this.trackDuration > 0 && position >= this.trackDuration - 1;
+          if (isNearEnd || isAtEnd) {
+            console.log(`🍎 [Main] Track paused at end (pos: ${position.toFixed(1)}s, duration: ${this.trackDuration}s), signaling advance...`);
+            this.sendToRenderer('applemusic-polling-advance', { reason: 'paused-at-end' });
+            this.stop();
+            return;
+          }
+          // Otherwise it's a user pause, don't advance
+          console.log(`🍎 [Main] Track paused mid-playback (pos: ${position.toFixed(1)}s), not advancing`);
+        } else {
+          // Status is 'stopped'
+          console.log('🍎 [Main] Track stopped, signaling advance...');
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'stopped' });
+          this.stop();
+          return;
+        }
       }
 
-      // Detect near end of track
+      // Detect near end of track (while still playing)
       if (status === 'playing' && this.trackDuration > 0) {
         const remaining = this.trackDuration - position;
         if (remaining <= 2) { // Within 2 seconds of end
@@ -420,12 +446,43 @@ const appleMusicPoller = {
         }
       }
 
+      // Fallback: If we have duration and position has reached/passed it
+      if (this.trackDuration > 0 && position >= this.trackDuration) {
+        console.log(`🍎 [Main] Position (${position.toFixed(1)}s) >= duration (${this.trackDuration}s), signaling advance...`);
+        this.sendToRenderer('applemusic-polling-advance', { reason: 'position-past-end' });
+        this.stop();
+        return;
+      }
+
       // Check if Apple Music moved to a different track (song ID or title changed)
       const currentSongId = state?.songId;
       const currentSongTitle = state?.songTitle;
 
-      // Only check for song changes if we have something to compare
-      if (currentSongId && this.expectedSongId) {
+      // First, check if we can confirm playback started for the expected track
+      // We need to confirm before we can detect song changes (otherwise we might
+      // trigger on a previous track that hasn't been replaced yet)
+      if (!this.playbackConfirmed) {
+        // Confirm if: song ID matches, OR (title matches AND position > 0 AND playing)
+        const songIdMatches = currentSongId && currentSongId === this.expectedSongId;
+        const titleMatches = currentSongTitle && this.trackTitle &&
+          currentSongTitle.toLowerCase().trim() === this.trackTitle.toLowerCase().trim();
+        const isPlaying = status === 'playing' && position > 0;
+
+        if (songIdMatches || (titleMatches && isPlaying)) {
+          this.playbackConfirmed = true;
+          console.log(`🍎 [Main] Playback confirmed for expected track (songId: ${songIdMatches}, title: ${titleMatches})`);
+        } else {
+          // Not yet confirmed - skip song-changed detection for now
+          // Log if we're still waiting
+          if (this.pollCount <= 3) {
+            console.log(`🍎 [Main] Waiting for playback to start... (poll ${this.pollCount}, currentSongId: ${currentSongId}, expected: ${this.expectedSongId})`);
+          }
+        }
+      }
+
+      // Only check for song changes AFTER playback has been confirmed
+      // This prevents false positives when MusicKit is still switching tracks
+      if (this.playbackConfirmed && currentSongId && this.expectedSongId) {
         // Compare catalog song IDs
         if (currentSongId !== this.expectedSongId) {
           console.log(`🍎 [Main] Song ID changed from ${this.expectedSongId} to ${currentSongId}, signaling advance...`);
@@ -433,7 +490,7 @@ const appleMusicPoller = {
           this.stop();
           return;
         }
-      } else if (currentSongTitle && this.trackTitle) {
+      } else if (this.playbackConfirmed && currentSongTitle && this.trackTitle) {
         // Fall back to title comparison if song ID not available
         // Normalize titles for comparison (lowercase, trim)
         const normalizedCurrent = currentSongTitle.toLowerCase().trim();
