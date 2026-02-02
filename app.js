@@ -3162,6 +3162,7 @@ const Parachord = () => {
   const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
   // Shuffle mode - randomize queue order
   const [shuffleMode, setShuffleMode] = useState(false);
+  const shuffleModeRef = useRef(false); // Ref for shuffle mode to avoid stale closures in callbacks
   const originalQueueRef = useRef(null); // Store original queue order before shuffle for restore
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
@@ -4316,6 +4317,7 @@ const Parachord = () => {
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
+  useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
@@ -9837,7 +9839,7 @@ const Parachord = () => {
     let firstTrack;
     let remainingTracks;
 
-    if (shuffleMode && tracksToPlay.length > 1) {
+    if (shuffleModeRef.current && tracksToPlay.length > 1) {
       // Shuffle mode: pick random first track, shuffle the rest
       const randomIndex = Math.floor(Math.random() * tracksToPlay.length);
       firstTrack = tracksToPlay[randomIndex];
