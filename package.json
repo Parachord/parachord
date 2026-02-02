@@ -96,6 +96,8 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
+      "icon": "assets/icons/icon.icns",
+      "iconSize": 80,
       "contents": [
         {
           "x": 130,
