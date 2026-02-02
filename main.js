@@ -328,6 +328,7 @@ const appleMusicPoller = {
   lastStatus: null,
   lastPosition: 0,
   pollCount: 0,
+  playbackConfirmed: false, // Set to true once we've confirmed the expected song started playing
 
   POLL_INTERVAL: 5000, // 5 seconds - more frequent for native playback
 
@@ -346,8 +347,10 @@ const appleMusicPoller = {
     this.lastPosition = 0;
     this.pollCount = 0;
     this.zeroPositionCount = 0; // Track consecutive zero-position polls after playback started
+    this.playbackConfirmed = false; // Will be set to true once expected song is detected playing
 
-    // Do an immediate poll, then set up interval
+    // Delay first poll slightly to give MusicKit time to start the new track
+    await new Promise(resolve => setTimeout(resolve, 1500));
     await this.poll();
 
     this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
@@ -372,6 +375,7 @@ const appleMusicPoller = {
     this.lastPosition = 0;
     this.lastStatus = null;
     this.zeroPositionCount = 0;
+    this.playbackConfirmed = false; // Reset confirmation for new track
   },
 
   async poll() {
@@ -424,8 +428,31 @@ const appleMusicPoller = {
       const currentSongId = state?.songId;
       const currentSongTitle = state?.songTitle;
 
-      // Only check for song changes if we have something to compare
-      if (currentSongId && this.expectedSongId) {
+      // First, check if we can confirm playback started for the expected track
+      // We need to confirm before we can detect song changes (otherwise we might
+      // trigger on a previous track that hasn't been replaced yet)
+      if (!this.playbackConfirmed) {
+        // Confirm if: song ID matches, OR (title matches AND position > 0 AND playing)
+        const songIdMatches = currentSongId && currentSongId === this.expectedSongId;
+        const titleMatches = currentSongTitle && this.trackTitle &&
+          currentSongTitle.toLowerCase().trim() === this.trackTitle.toLowerCase().trim();
+        const isPlaying = status === 'playing' && position > 0;
+
+        if (songIdMatches || (titleMatches && isPlaying)) {
+          this.playbackConfirmed = true;
+          console.log(`🍎 [Main] Playback confirmed for expected track (songId: ${songIdMatches}, title: ${titleMatches})`);
+        } else {
+          // Not yet confirmed - skip song-changed detection for now
+          // Log if we're still waiting
+          if (this.pollCount <= 3) {
+            console.log(`🍎 [Main] Waiting for playback to start... (poll ${this.pollCount}, currentSongId: ${currentSongId}, expected: ${this.expectedSongId})`);
+          }
+        }
+      }
+
+      // Only check for song changes AFTER playback has been confirmed
+      // This prevents false positives when MusicKit is still switching tracks
+      if (this.playbackConfirmed && currentSongId && this.expectedSongId) {
         // Compare catalog song IDs
         if (currentSongId !== this.expectedSongId) {
           console.log(`🍎 [Main] Song ID changed from ${this.expectedSongId} to ${currentSongId}, signaling advance...`);
@@ -433,7 +460,7 @@ const appleMusicPoller = {
           this.stop();
           return;
         }
-      } else if (currentSongTitle && this.trackTitle) {
+      } else if (this.playbackConfirmed && currentSongTitle && this.trackTitle) {
         // Fall back to title comparison if song ID not available
         // Normalize titles for comparison (lowercase, trim)
         const normalizedCurrent = currentSongTitle.toLowerCase().trim();
