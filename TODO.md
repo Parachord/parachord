@@ -95,15 +95,16 @@
 ### Playback
 - Seamless transitioning of mixed source playback, queuing and playlisting
 - Standard transport controls (prev/next/play/pause/shuffle) that work consistently across all playback sources (even those like YT that playback in browser)
+- Apple Music embedded playback with play/pause and seeking controls
 - "Top Loader" Queue with virtualization and option to save queue between sessions
 - "Spinoff" radio station from currently playing song while saving queue for when you return
 - Media Key support
 - Quick Look artist bio tooltip
 
-## Playlists
+### Playlists
 - Drag/drop/import of Spotify, Apple Music and hosted .XSPF playlists
 - AI/Prompted Playlists via ChatGPT and/or Google Gemini
-- Sync playlists from Spotify
+- Two-way playlist sync with Spotify (tracks added/removed in Parachord sync back to Spotify)
 - Manage/edit playlists
 - Export playlists (as .xspf files)
 
