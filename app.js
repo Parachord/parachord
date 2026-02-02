@@ -10553,12 +10553,18 @@ const Parachord = () => {
 
           if (validResults.length > 0) {
             const deduped = deduplicateResults(validResults);
-            const totalArtists = deduped.reduce((sum, r) => sum + r.top_artists.length, 0);
-            const totalTracks = deduped.reduce((sum, r) => sum + r.top_tracks.length, 0);
-            console.log(`🎵 Got ${totalArtists} unique artists and ${totalTracks} unique tracks from Last.fm across ${deduped.length} time periods`);
+            // Flatten for backward compatibility with AI plugins
+            const allArtists = deduped.flatMap(p => p.top_artists);
+            const allTracks = deduped.flatMap(p => p.top_tracks);
+            console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
 
             return {
               source: 'Last.fm',
+              // Backward compatible flat format for existing AI plugins
+              window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
+              top_artists: allArtists,
+              top_tracks: allTracks,
+              // Rich structured format for future use
               periods: deduped
             };
           }
@@ -10604,12 +10610,18 @@ const Parachord = () => {
 
         if (validResults.length > 0) {
           const deduped = deduplicateResults(validResults);
-          const totalArtists = deduped.reduce((sum, r) => sum + r.top_artists.length, 0);
-          const totalTracks = deduped.reduce((sum, r) => sum + r.top_tracks.length, 0);
-          console.log(`🎵 Got ${totalArtists} unique artists and ${totalTracks} unique tracks from ListenBrainz across ${deduped.length} time periods`);
+          // Flatten for backward compatibility with AI plugins
+          const allArtists = deduped.flatMap(p => p.top_artists);
+          const allTracks = deduped.flatMap(p => p.top_tracks);
+          console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from ListenBrainz across ${deduped.length} time periods`);
 
           return {
             source: 'ListenBrainz',
+            // Backward compatible flat format for existing AI plugins
+            window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
+            top_artists: allArtists,
+            top_tracks: allTracks,
+            // Rich structured format for future use
             periods: deduped
           };
         }
