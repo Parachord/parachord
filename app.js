@@ -4471,6 +4471,12 @@ const Parachord = () => {
   const recommendationsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
   const [recommendationsScrollContainerReady, setRecommendationsScrollContainerReady] = useState(false);
 
+  // Refs for Last.fm charts tracks visibility tracking
+  const lastfmChartsRowRefs = useRef(new Map());
+  const lastfmChartsObserverRef = useRef(null);
+  const visibleLastfmChartsTrackIds = useRef(new Set());
+  const lastfmChartsTracksRef = useRef([]); // Ref to access current tracks in observer callback
+
   // Refs for history tracks visibility tracking
   const historyTrackRowRefs = useRef(new Map());
   const historyObserverRef = useRef(null);
@@ -14077,6 +14083,107 @@ const Parachord = () => {
 
     return () => recommendationsObserverRef.current?.disconnect();
   }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady, recommendationsSourceFilter]);
+
+  // Register page context for Last.fm charts tracks resolution
+  useEffect(() => {
+    if (activeView === 'charts' && chartsTab === 'songs' && lastfmCharts.length > 0) {
+      const cleanup = registerPageContext('lastfm-charts-tracks');
+      return () => {
+        abortSchedulerContext('lastfm-charts-tracks', { afterCurrentBatch: true });
+        cleanup();
+      };
+    }
+  }, [activeView, chartsTab, lastfmCharts.length, registerPageContext, abortSchedulerContext]);
+
+  // Keep ref in sync with Last.fm charts tracks for observer callback
+  useEffect(() => {
+    lastfmChartsTracksRef.current = lastfmCharts;
+  }, [lastfmCharts]);
+
+  // IntersectionObserver for Last.fm charts tracks visibility
+  useEffect(() => {
+    if (activeView !== 'charts' || chartsTab !== 'songs') {
+      lastfmChartsObserverRef.current?.disconnect();
+      visibleLastfmChartsTrackIds.current.clear();
+      return;
+    }
+
+    const tracks = lastfmCharts;
+    if (tracks.length === 0) return;
+
+    // Clear stale visible track IDs when filter changes
+    visibleLastfmChartsTrackIds.current.clear();
+    updateSchedulerVisibility('lastfm-charts-tracks', []);
+
+    lastfmChartsObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        entries.forEach(entry => {
+          const trackId = entry.target.dataset.trackId;
+          if (entry.isIntersecting) {
+            if (!visibleLastfmChartsTrackIds.current.has(trackId)) {
+              visibleLastfmChartsTrackIds.current.add(trackId);
+              changed = true;
+            }
+          } else {
+            if (visibleLastfmChartsTrackIds.current.has(trackId)) {
+              visibleLastfmChartsTrackIds.current.delete(trackId);
+              changed = true;
+            }
+          }
+        });
+
+        if (changed) {
+          const currentTracks = lastfmChartsTracksRef.current;
+          const visibleTracks = [];
+          visibleLastfmChartsTrackIds.current.forEach(trackId => {
+            const track = currentTracks.find(t => t.id === trackId);
+            if (track) {
+              visibleTracks.push({
+                key: trackId,
+                data: { track: { id: track.id, title: track.title, artist: track.artist, album: '' }, artistName: track.artist || 'Unknown Artist' }
+              });
+            }
+          });
+          updateSchedulerVisibility('lastfm-charts-tracks', visibleTracks);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    lastfmChartsRowRefs.current.forEach((element) => {
+      if (element) lastfmChartsObserverRef.current.observe(element);
+    });
+
+    // Manually check initial visibility
+    setTimeout(() => {
+      if (!lastfmChartsObserverRef.current) return;
+      const currentTracks = lastfmChartsTracksRef.current;
+      const visibleTracks = [];
+
+      lastfmChartsRowRefs.current.forEach((element, trackId) => {
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const isVisible = rect.bottom >= -200 && rect.top <= window.innerHeight + 200;
+        if (isVisible) {
+          visibleLastfmChartsTrackIds.current.add(trackId);
+          const track = currentTracks.find(t => t.id === trackId);
+          if (track) {
+            visibleTracks.push({
+              key: trackId,
+              data: { track: { id: track.id, title: track.title, artist: track.artist, album: '' }, artistName: track.artist || 'Unknown Artist' }
+            });
+          }
+        }
+      });
+
+      if (visibleTracks.length > 0) {
+        updateSchedulerVisibility('lastfm-charts-tracks', visibleTracks);
+      }
+    }, 50);
+
+    return () => lastfmChartsObserverRef.current?.disconnect();
+  }, [activeView, chartsTab, lastfmCharts, updateSchedulerVisibility, chartsSearch]);
 
   // Register page context for history tracks resolution
   useEffect(() => {
@@ -30493,41 +30600,41 @@ useEffect(() => {
               );
             })(),
 
-            // SONGS TAB - Skeleton loading for table rows
+            // SONGS TAB - Skeleton loading for table rows (matches Recommended Songs layout)
             chartsTab === 'songs' && (lastfmChartsLoading || !lastfmChartsLoaded) && React.createElement('div', {
-              className: 'space-y-2'
+              className: 'space-y-0'
             },
               Array.from({ length: 20 }).map((_, i) =>
                 React.createElement('div', {
                   key: `skeleton-row-${i}`,
                   className: 'flex items-center gap-4 py-3 px-4',
-                  style: { borderRadius: '8px' }
+                  style: { borderRadius: '8px', marginBottom: '2px' }
                 },
-                  // Rank skeleton
+                  // Track number skeleton
                   React.createElement('div', {
-                    className: 'w-8 h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30}ms` }
-                  }),
-                  // Album art skeleton
-                  React.createElement('div', {
-                    className: 'w-10 h-10 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 30 + 10}ms`, flexShrink: 0 }
+                    className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { width: '32px', backgroundSize: '200% 100%', animationDelay: `${i * 30}ms`, flexShrink: 0 }
                   }),
                   // Title skeleton
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { width: '280px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 20}ms` }
+                    style: { width: '360px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 15}ms`, flexShrink: 0 }
                   }),
                   // Artist skeleton
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { width: '180px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms` }
+                    style: { width: '240px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 30}ms`, flexShrink: 0 }
                   }),
                   React.createElement('div', { className: 'flex-1' }),
                   // Listeners skeleton
                   React.createElement('div', {
                     className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
-                    style: { width: '80px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 40}ms` }
+                    style: { width: '80px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 45}ms`, flexShrink: 0 }
+                  }),
+                  // Badge skeleton
+                  React.createElement('div', {
+                    className: 'h-5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
+                    style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 30 + 60}ms`, flexShrink: 0 }
                   })
                 )
               )
@@ -30554,14 +30661,32 @@ useEffect(() => {
 
               return React.createElement('div', { className: 'space-y-0' },
                 filtered.map((track, index) => {
+                  // Look up resolved sources from trackSources state
+                  const resolvedSources = trackSources[track.id] || {};
+                  const hasResolved = Object.keys(resolvedSources).length > 0;
+                  const isResolving = !hasResolved;
                   const isCurrentTrack = currentTrack?.title === track.title && currentTrack?.artist === track.artist;
                   const isNowPlaying = isCurrentTrack && isPlaying;
 
                   return React.createElement('div', {
                     key: track.id,
+                    'data-track-id': track.id,
+                    ref: (el) => {
+                      if (el) {
+                        // Register for intersection observer to trigger resolution
+                        if (lastfmChartsRowRefs.current) {
+                          lastfmChartsRowRefs.current.set(track.id, el);
+                        }
+                        if (lastfmChartsObserverRef.current) {
+                          lastfmChartsObserverRef.current.observe(el);
+                        }
+                      } else if (lastfmChartsRowRefs.current) {
+                        lastfmChartsRowRefs.current.delete(track.id);
+                      }
+                    },
                     className: `flex items-center gap-4 py-3 px-4 cursor-pointer transition-all group ${
-                      isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
-                    }`,
+                      isResolving ? 'opacity-60' : ''
+                    } ${isNowPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'}`,
                     style: { borderRadius: '8px', marginBottom: '2px' },
                     onClick: () => {
                       const tracksAfter = filtered.slice(index + 1);
@@ -30579,63 +30704,38 @@ useEffect(() => {
                       }
                     }
                   },
-                    // Rank number or playing indicator
+                    // Track number (matches Recommended Songs: 32px width)
                     React.createElement('span', {
-                      className: 'flex-shrink-0 text-right font-medium',
+                      className: 'flex-shrink-0 text-right',
                       style: {
+                        pointerEvents: 'none',
                         width: '32px',
                         fontSize: '12px',
+                        fontWeight: '500',
                         color: isNowPlaying ? '#8b5cf6' : '#9ca3af'
                       }
                     }, isNowPlaying ? '▶' : String(track.rank).padStart(2, '0')),
 
-                    // Album art (small)
-                    React.createElement('div', {
-                      style: {
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                        backgroundColor: track.albumArt ? '#f3f4f6' : '#1f1f1f'
-                      }
-                    },
-                      track.albumArt ? React.createElement('img', {
-                        src: track.albumArt,
-                        alt: track.title,
-                        style: { width: '100%', height: '100%', objectFit: 'cover' },
-                        onError: (e) => { e.target.style.display = 'none'; }
-                      }) : React.createElement('div', {
-                        style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-                      },
-                        React.createElement('svg', {
-                          style: { width: '16px', height: '16px', color: 'rgba(255,255,255,0.3)' },
-                          fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 1
-                        },
-                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                        )
-                      )
-                    ),
-
-                    // Track title
+                    // Track title (matches Recommended Songs: 360px width)
                     React.createElement('span', {
                       className: 'truncate transition-colors',
                       style: {
-                        width: '300px',
+                        pointerEvents: 'none',
+                        width: '360px',
                         flexShrink: 0,
                         fontSize: '13px',
                         fontWeight: isNowPlaying ? '500' : '400',
-                        color: isNowPlaying ? '#7c3aed' : '#374151'
+                        color: isNowPlaying ? '#7c3aed' : hasResolved ? '#374151' : '#9ca3af'
                       }
                     }, track.title),
 
-                    // Artist name (clickable)
+                    // Artist name (matches Recommended Songs: 240px width, clickable)
                     React.createElement('span', {
                       className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
                       style: {
-                        width: '200px',
+                        width: '240px',
                         flexShrink: 0,
-                        fontSize: '13px',
+                        fontSize: '12px',
                         color: '#6b7280'
                       },
                       onClick: (e) => {
@@ -30647,25 +30747,79 @@ useEffect(() => {
                     // Spacer
                     React.createElement('div', { className: 'flex-1' }),
 
-                    // Listeners count
+                    // Listeners count (in place of duration)
                     track.listeners > 0 && React.createElement('span', {
-                      className: 'flex-shrink-0 tabular-nums',
+                      className: 'flex-shrink-0 tabular-nums text-right',
                       style: {
+                        pointerEvents: 'none',
+                        width: '90px',
                         fontSize: '12px',
-                        color: '#9ca3af',
-                        marginRight: '8px'
+                        color: '#9ca3af'
                       }
                     }, `${(track.listeners / 1000).toFixed(0)}K listeners`),
 
-                    // Source badge
-                    React.createElement('span', {
-                      className: 'px-2 py-0.5 rounded text-xs',
-                      style: {
-                        backgroundColor: '#dc262615',
-                        color: '#dc2626',
-                        flexShrink: 0
-                      }
-                    }, 'Last.fm')
+                    // Resolver icons (matches Recommended Songs: 140px width)
+                    React.createElement('div', {
+                      className: 'flex items-center gap-1 justify-end',
+                      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
+                    },
+                      isResolving ?
+                        React.createElement('div', { className: 'flex items-center gap-1' },
+                          React.createElement('div', {
+                            className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                            title: 'Resolving track...'
+                          }),
+                          React.createElement('div', {
+                            className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
+                            style: { animationDelay: '0.1s' }
+                          })
+                        )
+                      : hasResolved ?
+                        Object.entries(resolvedSources)
+                          .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                          .sort(([aId], [bId]) => {
+                            const aIndex = resolverOrder.indexOf(aId);
+                            const bIndex = resolverOrder.indexOf(bId);
+                            return aIndex - bIndex;
+                          })
+                          .map(([resolverId, source]) => {
+                            const resolver = allResolvers.find(r => r.id === resolverId);
+                            if (!resolver || !resolver.play) return null;
+                            return React.createElement('button', {
+                              key: resolverId,
+                              className: 'no-drag',
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                const tracksAfter = filtered.slice(index + 1);
+                                const context = { type: 'lastfm-charts', name: 'Last.fm Charts' };
+                                setQueueWithContext(tracksAfter.map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '' })), context);
+                                handlePlay({ ...track, id: track.id, title: track.title, artist: track.artist, album: '', preferredResolver: resolverId });
+                              },
+                              style: {
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '4px',
+                                backgroundColor: resolver.color,
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'transform 0.1s ease'
+                              },
+                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                              title: `Play on ${resolver.name}`
+                            },
+                              React.createElement('img', {
+                                src: resolver.icon,
+                                alt: resolver.name,
+                                style: { width: '12px', height: '12px', filter: 'brightness(0) invert(1)' }
+                              })
+                            );
+                          })
+                      : null
+                    )
                   );
                 })
               );
