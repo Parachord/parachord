@@ -40993,8 +40993,9 @@ useEffect(() => {
               onClick: async () => {
                 // Save tutorial completion
                 await window.electron.store.set('tutorial_completed', true);
-                // Save active resolvers
-                await window.electron.store.set('active_resolvers', activeResolvers);
+                // Save resolver settings (use refs to avoid stale closure)
+                await window.electron.store.set('active_resolvers', activeResolversRef.current);
+                await window.electron.store.set('resolver_order', resolverOrderRef.current);
                 // Close tutorial
                 setFirstRunTutorial(prev => ({ ...prev, open: false }));
                 // Always navigate to Settings > Plug-Ins
