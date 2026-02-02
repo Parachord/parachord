@@ -8597,8 +8597,52 @@ const Parachord = () => {
           }
         }
 
-        // No fallback available or non-Spotify failure - show re-resolve dialog
-        if (!trackOrSource._spotifyFallback && sourceToPlay.artist && sourceToPlay.title) {
+        // For Apple Music, fall back to next best source (track may not be available in region)
+        if (resolverId === 'applemusic' && !trackOrSource._appleMusicFallback) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+            // Use refs for current resolver settings
+            const fallbackActiveResolvers = activeResolversRef.current;
+            const fallbackResolverOrder = resolverOrderRef.current;
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && fallbackActiveResolvers.includes(id));
+
+            if (otherSources.length > 0) {
+              // Sort by resolver priority
+              const sortedFallbacks = otherSources
+                .map(resId => ({
+                  resolverId: resId,
+                  source: trackOrSource.sources[resId],
+                  priority: fallbackResolverOrder.indexOf(resId)
+                }))
+                .sort((a, b) => a.priority - b.priority);
+
+              const fallback = sortedFallbacks[0];
+              const fallbackResolver = currentResolvers.find(r => r.id === fallback.resolverId);
+
+              console.log(`🔄 Apple Music unavailable for this track, falling back to ${fallbackResolver?.name || fallback.resolverId}`);
+
+              showToast(
+                `Track not available on Apple Music. Playing via ${fallbackResolver?.name || fallback.resolverId}.`,
+                'info'
+              );
+
+              // Create fallback track without applemusic source to prevent loop
+              const fallbackTrack = {
+                ...trackOrSource,
+                sources: Object.fromEntries(
+                  Object.entries(trackOrSource.sources).filter(([id]) => id !== 'applemusic')
+                ),
+                _appleMusicFallback: true // Mark that we fell back from Apple Music
+              };
+
+              // Play via the fallback source
+              handlePlay(fallbackTrack);
+              return;
+            }
+          }
+        }
+
+        // No fallback available or non-Spotify/Apple Music failure - show re-resolve dialog
+        if (!trackOrSource._spotifyFallback && !trackOrSource._appleMusicFallback && sourceToPlay.artist && sourceToPlay.title) {
           console.log('🔄 Attempting to re-resolve track with fresh sources...');
           const artistName = sourceToPlay.artist;
           const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
