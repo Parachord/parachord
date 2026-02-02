@@ -28448,7 +28448,7 @@ useEffect(() => {
                       },
                         React.createElement('div', {
                           className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                          style: { background: 'linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%)' }
+                          style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
                         },
                           weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
                             React.createElement('img', {
@@ -28461,10 +28461,10 @@ useEffect(() => {
                             React.createElement('div', {
                               key: `placeholder-${i}`,
                               className: 'w-full h-full flex items-center justify-center',
-                              style: { backgroundColor: i % 2 === 0 ? '#FFE082' : '#FFECB3' }
+                              style: { backgroundColor: i % 2 === 0 ? '#c7d2fe' : '#e0e7ff' }
                             },
                               i === 0 && React.createElement('svg', {
-                                className: 'w-12 h-12 text-orange-400',
+                                className: 'w-12 h-12 text-indigo-300',
                                 fill: 'none',
                                 viewBox: '0 0 24 24',
                                 stroke: 'currentColor'
@@ -32127,8 +32127,33 @@ useEffect(() => {
             // TOP ARTISTS TAB
             historyTab === 'topArtists' && (
               topArtists.loading ?
-                // Cards will appear with their own shimmer animations when data is ready
-                null
+                // Skeleton loading grid
+                React.createElement('div', {
+                  className: 'grid gap-4',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                },
+                  Array.from({ length: 12 }).map((_, i) =>
+                    React.createElement('div', {
+                      key: `artist-skeleton-${i}`,
+                      className: 'bg-white rounded-lg overflow-hidden'
+                    },
+                      React.createElement('div', {
+                        className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                      }),
+                      React.createElement('div', { className: 'p-3' },
+                        React.createElement('div', {
+                          className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                        }),
+                        React.createElement('div', {
+                          className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                        })
+                      )
+                    )
+                  )
+                )
               : topArtists.error ?
                 React.createElement('div', { className: 'text-center py-12' },
                   React.createElement('div', { className: 'text-gray-400 mb-4' }, topArtists.error),
@@ -32281,8 +32306,45 @@ useEffect(() => {
             // TOP ALBUMS TAB
             historyTab === 'topAlbums' && (
               topAlbums.loading ?
-                // Cards will appear with their own shimmer animations when data is ready
-                null
+                // Skeleton loading grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5 pb-6'
+                },
+                  Array.from({ length: 10 }).map((_, i) =>
+                    React.createElement('div', {
+                      key: `album-skeleton-${i}`,
+                      style: {
+                        padding: '10px',
+                        borderRadius: '10px',
+                        backgroundColor: '#ffffff',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)'
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                        style: {
+                          aspectRatio: '1',
+                          borderRadius: '6px',
+                          marginBottom: '10px',
+                          backgroundSize: '200% 100%',
+                          animationDelay: `${i * 50}ms`
+                        }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 mb-2 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 mb-1 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                      }),
+                      React.createElement('div', {
+                        className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/3 animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                      })
+                    )
+                  )
+                )
               : topAlbums.error ?
                 React.createElement('div', { className: 'text-center py-12' },
                   React.createElement('div', { className: 'text-gray-400 mb-4' }, topAlbums.error),
