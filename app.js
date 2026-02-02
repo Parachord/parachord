@@ -31585,7 +31585,7 @@ useEffect(() => {
                       }),
                       React.createElement('div', {
                         className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
-                        style: { width: '50px', marginLeft: 'auto', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
+                        style: { width: '80px', marginLeft: 'auto', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
                       }),
                       React.createElement('div', {
                         className: 'flex gap-1',
@@ -31695,8 +31695,8 @@ useEffect(() => {
                         }, track.album || ''),
                         React.createElement('span', {
                           className: 'text-right tabular-nums',
-                          style: { pointerEvents: 'none', width: '50px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
-                        }, track.duration ? formatTime(track.duration) : '--:--'),
+                          style: { pointerEvents: 'none', width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }
+                        }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
                         React.createElement('div', {
                           className: 'flex items-center gap-1 justify-end',
                           style: { width: '140px', flexShrink: 0, minHeight: '24px' }
