@@ -7723,6 +7723,39 @@ const Parachord = () => {
       window.electron.playbackWindow.close();
     }
 
+    // Stop streaming playback (Spotify/Apple Music) if active - prevents simultaneous playback
+    // when switching from a streaming resolver to any other source
+    if (streamingPlaybackActiveRef.current) {
+      const currentActiveResolver = currentTrackRef.current?._activeResolver;
+
+      // Pause Spotify if it was playing
+      if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
+        console.log('⏹️ Pausing Spotify before playing new track');
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        }).catch(e => console.log('Could not pause Spotify:', e.message));
+      }
+
+      // Pause Apple Music if it was playing
+      if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
+        console.log('⏹️ Pausing Apple Music before playing new track');
+        window.electron.musicKit.pause().catch(e => console.log('Could not pause Apple Music:', e.message));
+      }
+
+      // Also stop Apple Music preview audio if it exists
+      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+        console.log('⏹️ Stopping Apple Music preview audio');
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
+      }
+
+      // Stop main process polling for both Spotify and Apple Music
+      stopMainProcessPolling();
+
+      streamingPlaybackActiveRef.current = false;
+    }
+
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
     if (spinoffMode && !trackOrSource._playbackContext?.type?.includes('spinoff')) {
@@ -9154,9 +9187,12 @@ const Parachord = () => {
         clearInterval(pollingRecoveryRef.current);
         pollingRecoveryRef.current = null;
       }
-      // Also stop main process polling
+      // Also stop main process polling (both Spotify and Apple Music)
       if (window.electron?.spotify?.polling) {
         window.electron.spotify.polling.stop();
+      }
+      if (window.electron?.musicKit?.polling) {
+        window.electron.musicKit.polling.stop().catch(() => {});
       }
 
       // Stop HTML5 Audio if playing (local files, SoundCloud)
@@ -9169,6 +9205,33 @@ const Parachord = () => {
       // Notify scrobble manager that current track is ending
       if (window.scrobbleManager) {
         window.scrobbleManager.onTrackEnd();
+      }
+
+      // Pause streaming playback (Spotify/Apple Music) before advancing
+      // This prevents overlap when auto-advancing to a different resolver
+      const currentActiveResolver = currentTrackRef.current?._activeResolver;
+      if (streamingPlaybackActiveRef.current) {
+        // Pause Spotify if it was playing
+        if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
+          console.log('⏹️ Pausing Spotify before next track');
+          fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          }).catch(e => console.log('Could not pause Spotify:', e.message));
+        }
+
+        // Pause Apple Music if it was playing
+        if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
+          console.log('⏹️ Pausing Apple Music before next track');
+          window.electron.musicKit.pause().catch(e => console.log('Could not pause Apple Music:', e.message));
+        }
+
+        // Also stop Apple Music preview audio if it exists
+        if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+          console.log('⏹️ Stopping Apple Music preview audio');
+          window._appleMusicPreviewAudio.pause();
+          window._appleMusicPreviewAudio.currentTime = 0;
+        }
       }
 
       // CRITICAL: Reset streaming playback flag when advancing tracks
@@ -9363,16 +9426,38 @@ const Parachord = () => {
       window.scrobbleManager.onTrackEnd();
     }
 
-    // Pause Spotify if it was playing (must happen BEFORE resetting streamingPlaybackActiveRef)
-    if (spotifyToken && streamingPlaybackActiveRef.current) {
-      console.log('⏹️ Pausing Spotify before going to previous track');
-      try {
-        await fetch('https://api.spotify.com/v1/me/player/pause', {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${spotifyToken}` }
-        });
-      } catch (e) {
-        console.log('Could not pause Spotify:', e.message);
+    // Pause streaming playback (must happen BEFORE resetting streamingPlaybackActiveRef)
+    if (streamingPlaybackActiveRef.current) {
+      const currentActiveResolver = track?._activeResolver;
+
+      // Pause Spotify if it was playing
+      if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
+        console.log('⏹️ Pausing Spotify before going to previous track');
+        try {
+          await fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+        } catch (e) {
+          console.log('Could not pause Spotify:', e.message);
+        }
+      }
+
+      // Pause Apple Music if it was playing
+      if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
+        console.log('⏹️ Pausing Apple Music before going to previous track');
+        try {
+          await window.electron.musicKit.pause();
+        } catch (e) {
+          console.log('Could not pause Apple Music:', e.message);
+        }
+      }
+
+      // Also stop Apple Music preview audio if it exists
+      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+        console.log('⏹️ Stopping Apple Music preview audio');
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
       }
     }
 
@@ -9406,9 +9491,12 @@ const Parachord = () => {
       clearInterval(pollingRecoveryRef.current);
       pollingRecoveryRef.current = null;
     }
-    // Also stop main process polling
+    // Also stop main process polling (both Spotify and Apple Music)
     if (window.electron?.spotify?.polling) {
       window.electron.spotify.polling.stop();
+    }
+    if (window.electron?.musicKit?.polling) {
+      window.electron.musicKit.polling.stop().catch(() => {});
     }
     if (externalTrackTimeoutRef.current) {
       clearTimeout(externalTrackTimeoutRef.current);
