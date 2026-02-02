@@ -14088,7 +14088,8 @@ const Parachord = () => {
 
   // Register page context for Last.fm charts tracks resolution
   useEffect(() => {
-    if (activeView === 'charts' && chartsTab === 'songs' && lastfmCharts.length > 0) {
+    // Note: Charts (Pop of the Tops) uses activeView === 'discover'
+    if (activeView === 'discover' && chartsTab === 'songs' && lastfmCharts.length > 0) {
       const cleanup = registerPageContext('lastfm-charts-tracks');
       return () => {
         abortSchedulerContext('lastfm-charts-tracks', { afterCurrentBatch: true });
@@ -14105,14 +14106,16 @@ const Parachord = () => {
   // Set scroll container ready when switching to Songs tab or after charts reload
   // (ref callback may not fire if element already exists)
   useEffect(() => {
-    if (activeView === 'charts' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current && !lastfmChartsLoading) {
+    // Note: Charts (Pop of the Tops) uses activeView === 'discover'
+    if (activeView === 'discover' && chartsTab === 'songs' && lastfmChartsScrollContainerRef.current && !lastfmChartsLoading) {
       setLastfmChartsScrollContainerReady(true);
     }
   }, [activeView, chartsTab, lastfmChartsLoading]);
 
   // IntersectionObserver for Last.fm charts tracks visibility
   useEffect(() => {
-    if (activeView !== 'charts' || chartsTab !== 'songs') {
+    // Note: Charts (Pop of the Tops) uses activeView === 'discover'
+    if (activeView !== 'discover' || chartsTab !== 'songs') {
       lastfmChartsObserverRef.current?.disconnect();
       visibleLastfmChartsTrackIds.current.clear();
       setLastfmChartsScrollContainerReady(false);
