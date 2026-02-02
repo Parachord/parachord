@@ -11197,13 +11197,23 @@ const Parachord = () => {
           } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
             // Restore playlist detail view - need to find the playlist by ID
             setActiveView('playlist-view');
-            setViewHistory(['library', 'playlists', 'playlist-view']);
+            // Use different view history for ephemeral playlists (e.g., Weekly Jams from home)
+            if (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz') {
+              setViewHistory(['home', 'playlist-view']);
+            } else {
+              setViewHistory(['library', 'playlists', 'playlist-view']);
+            }
             // Store pending playlist load - will be processed once playlists are loaded
+            // For ephemeral ListenBrainz playlists, include extra info for reconstruction
             setPendingPlaylistLoad({
               id: savedLastView.playlistId,
-              title: savedLastView.playlistTitle
+              title: savedLastView.playlistTitle,
+              isEphemeral: savedLastView.isEphemeral,
+              source: savedLastView.playlistSource,
+              listenbrainzId: savedLastView.listenbrainzId,
+              weekLabel: savedLastView.weekLabel
             });
-            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})`);
+            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})${savedLastView.isEphemeral ? ' [ephemeral]' : ''}`);
           } else if (savedLastView.view === 'discover') {
             // Restore discover view - charts will be loaded by useEffect when cacheLoaded is true
             setActiveView('discover');
@@ -11376,6 +11386,15 @@ const Parachord = () => {
     if (activeView === 'playlist-view' && selectedPlaylist) {
       viewData.playlistId = selectedPlaylist.id;
       viewData.playlistTitle = selectedPlaylist.title;
+      // Save extra info for ephemeral playlists so they can be reconstructed
+      if (selectedPlaylist.isEphemeral) {
+        viewData.isEphemeral = true;
+        viewData.playlistSource = selectedPlaylist.source;
+        if (selectedPlaylist.listenbrainzId) {
+          viewData.listenbrainzId = selectedPlaylist.listenbrainzId;
+          viewData.weekLabel = selectedPlaylist.weekLabel;
+        }
+      }
     }
     if (activeView === 'friendHistory' && currentFriend) {
       viewData.friendId = currentFriend.id;
@@ -11414,6 +11433,34 @@ const Parachord = () => {
   // Load pending playlist once playlists are loaded
   useEffect(() => {
     if (pendingPlaylistLoad) {
+      // For ephemeral ListenBrainz playlists (Weekly Jams), look in homeData.weeklyJams
+      if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz' && pendingPlaylistLoad.listenbrainzId) {
+        const jam = homeData.weeklyJams?.find(j => j.id === pendingPlaylistLoad.listenbrainzId);
+        if (jam) {
+          console.log(`📦 Reconstructing ephemeral playlist for restored view: ${jam.title}`);
+          setPendingPlaylistLoad(null);
+          // Reconstruct the ephemeral playlist object
+          const ephemeralPlaylist = {
+            id: `listenbrainz-${jam.id}`,
+            listenbrainzId: jam.id,
+            title: jam.title,
+            weekLabel: jam.weekLabel,
+            description: jam.description,
+            tracks: jam.tracks || [],
+            tracksLoaded: jam.tracksLoaded,
+            isExternal: true,
+            isEphemeral: true,
+            source: 'listenbrainz',
+            creator: 'ListenBrainz'
+          };
+          loadPlaylist(ephemeralPlaylist, { skipNavigation: true });
+          return;
+        }
+        // Weekly jams not loaded yet - wait for them
+        return;
+      }
+
+      // For regular playlists, look in playlists array
       const playlist = playlists.find(p => p.id === pendingPlaylistLoad.id);
       if (playlist) {
         console.log(`📦 Loading playlist for restored view: ${playlist.title}`);
@@ -11424,17 +11471,25 @@ const Parachord = () => {
       }
       // Don't clear pending or fall back yet - hosted playlists may still be loading
     }
-  }, [playlists, pendingPlaylistLoad]);
+  }, [playlists, pendingPlaylistLoad, homeData.weeklyJams]);
 
   // Give up on pending playlist load after timeout (hosted playlists should be loaded by then)
   useEffect(() => {
     if (pendingPlaylistLoad) {
       const timer = setTimeout(() => {
         if (pendingPlaylistLoad) {
-          console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
-          setPendingPlaylistLoad(null);
-          setActiveView('playlists');
-          setViewHistory(['library', 'playlists']);
+          // For ephemeral ListenBrainz playlists, fall back to home (where Weekly Jams are displayed)
+          if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz') {
+            console.log(`📦 Weekly Jam not found after timeout: ${pendingPlaylistLoad.title}, falling back to home view`);
+            setPendingPlaylistLoad(null);
+            setActiveView('home');
+            setViewHistory(['home']);
+          } else {
+            console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
+            setPendingPlaylistLoad(null);
+            setActiveView('playlists');
+            setViewHistory(['library', 'playlists']);
+          }
         }
       }, 5000); // 5 second timeout to allow hosted playlists to load
       return () => clearTimeout(timer);
