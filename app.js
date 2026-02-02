@@ -30888,8 +30888,15 @@ useEffect(() => {
                       const tracksAfter = filtered.slice(index + 1);
                       const contextName = chartsSongsSource === 'apple' ? 'Apple Music Charts' : 'Last.fm Charts';
                       const context = { type: 'songs-charts', name: contextName };
-                      setQueueWithContext(tracksAfter.map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '' })), context);
-                      handlePlay({ id: track.id, title: track.title, artist: track.artist, album: '' });
+                      // Include sources (resolved or empty) to trigger proper playback/resolution flow
+                      setQueueWithContext(tracksAfter.map(t => ({
+                        id: t.id, title: t.title, artist: t.artist, album: '',
+                        sources: trackSources[t.id] || {}
+                      })), context);
+                      handlePlay({
+                        id: track.id, title: track.title, artist: track.artist, album: '',
+                        sources: trackSources[track.id] || {}
+                      });
                     },
                     onContextMenu: (e) => {
                       e.preventDefault();
