@@ -239,7 +239,7 @@ class MusicKitBridge {
         ]
         // Include current song ID if available (for detecting track changes)
         if let entry = player.queue.currentEntry {
-            result["songId"] = entry.id.rawValue
+            result["songId"] = entry.id
         }
         return result
     }
