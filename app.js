@@ -216,7 +216,8 @@ const CONTEXT_PRIORITY = {
   hover: 2,
   pool: 3,
   page: 4,
-  sidebar: 5
+  sidebar: 5,
+  background: 10 // Lowest priority - for pre-resolving collection/playlists when idle
 };
 
 /**
@@ -249,6 +250,9 @@ class ResolutionScheduler {
     // Processing state
     this.isProcessing = false;
     this.resolveCallback = null;
+
+    // Callback for when queue becomes idle (for background pre-resolution)
+    this.onIdleCallback = null;
   }
 
   /**
@@ -257,6 +261,15 @@ class ResolutionScheduler {
    */
   setResolveCallback(callback) {
     this.resolveCallback = callback;
+  }
+
+  /**
+   * Set callback for when queue becomes idle (no pending tracks)
+   * Used for background pre-resolution of collection/playlists
+   * @param {Function} callback - () => void
+   */
+  setOnIdleCallback(callback) {
+    this.onIdleCallback = callback;
   }
 
   /**
@@ -570,6 +583,16 @@ class ResolutionScheduler {
     const next = this.peekNext();
     if (!next) {
       this.isProcessing = false;
+      // Notify that we're idle - allows background pre-resolution to queue more tracks
+      if (this.onIdleCallback) {
+        // Use setTimeout to allow the callback to enqueue tracks without blocking
+        setTimeout(() => {
+          // Only call if still idle (no new high-priority tracks added)
+          if (!this.isProcessing && this.pending.size === 0 && this.onIdleCallback) {
+            this.onIdleCallback();
+          }
+        }, 500); // Small delay before starting background work
+      }
       return;
     }
 
@@ -606,6 +629,28 @@ class ResolutionScheduler {
     await new Promise(resolve => setTimeout(resolve, 150));
 
     this._processNext();
+  }
+
+  /**
+   * Check if a track has been resolved in this session
+   * @param {string} trackKey - Track key
+   * @returns {boolean}
+   */
+  hasResolved(trackKey) {
+    return this.resolved.has(trackKey);
+  }
+
+  /**
+   * Check if there are any high-priority (non-background) pending tracks
+   * @returns {boolean}
+   */
+  hasHighPriorityPending() {
+    for (const [, entry] of this.pending) {
+      if (entry.priority < CONTEXT_PRIORITY.background) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -12857,7 +12902,7 @@ const Parachord = () => {
   // Resolve a single track across all active resolvers
   // isQueueResolution: when true, this is a priority queue resolution that won't yield
   const resolveTrack = async (track, artistName, options = {}) => {
-    const { forceRefresh = false, isQueueResolution = false, signal } = options;
+    const { forceRefresh = false, isQueueResolution = false, signal, playlistId } = options;
 
     // Validate required parameters
     if (!track || !track.title) {
@@ -13128,10 +13173,15 @@ const Parachord = () => {
         queueCollectionSourceUpdate(track.id, sources);
       }
 
-      // Also persist to selected playlist if track is in it
-      const currentPlaylist = selectedPlaylistRef.current;
-      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
-        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      // Also persist to playlist if track is in it
+      // Check explicit playlistId first (for background resolution), then selectedPlaylist
+      if (track.id && playlistId) {
+        queuePlaylistSourceUpdate(playlistId, track.id, sources);
+      } else {
+        const currentPlaylist = selectedPlaylistRef.current;
+        if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+          queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+        }
       }
 
       return sources;
@@ -13248,10 +13298,15 @@ const Parachord = () => {
         queueCollectionSourceUpdate(track.id, sources);
       }
 
-      // Also persist to selected playlist if track is in it
-      const currentPlaylist = selectedPlaylistRef.current;
-      if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
-        queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+      // Also persist to playlist if track is in it
+      // Check explicit playlistId first (for background resolution), then selectedPlaylist
+      if (track.id && playlistId) {
+        queuePlaylistSourceUpdate(playlistId, track.id, sources);
+      } else {
+        const currentPlaylist = selectedPlaylistRef.current;
+        if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+          queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
+        }
       }
 
       console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
@@ -13275,7 +13330,8 @@ const Parachord = () => {
     resolutionScheduler.setResolveCallback(async (trackData, signal) => {
       await resolveTrack(trackData.track, trackData.artistName, {
         signal,
-        isQueueResolution: trackData.isQueueResolution
+        isQueueResolution: trackData.isQueueResolution,
+        playlistId: trackData.playlistId // For background playlist resolution
       });
     });
   }, [resolveTrack]);
@@ -13354,6 +13410,140 @@ const Parachord = () => {
     const cleanup = registerQueueContext('queue', 5);
     return cleanup;
   }, [registerQueueContext]);
+
+  // Background pre-resolution: register context and idle callback
+  const backgroundResolutionIndex = useRef(0); // Track progress through collection
+  const backgroundPlaylistIndex = useRef({ playlistIdx: 0, trackIdx: 0 }); // Track progress through playlists
+  const backgroundBatchSize = 25; // Tracks to queue per idle callback
+
+  useEffect(() => {
+    // Register background context
+    resolutionScheduler.registerContext('background', 'background');
+
+    // Set up idle callback to pre-resolve collection and playlist tracks
+    resolutionScheduler.setOnIdleCallback(() => {
+      const now = Date.now();
+      const currentActiveResolvers = activeResolversRef.current || [];
+
+      // Skip if no active resolvers
+      if (currentActiveResolvers.length === 0) return;
+
+      // Collect tracks that need resolution
+      const tracksToResolve = [];
+
+      // First, check collection tracks
+      const allCollectionTracks = [...(library || []), ...(collectionData?.tracks || [])];
+      let collectionIdx = backgroundResolutionIndex.current;
+
+      while (tracksToResolve.length < backgroundBatchSize && collectionIdx < allCollectionTracks.length) {
+        const track = allCollectionTracks[collectionIdx];
+        collectionIdx++;
+
+        if (!track?.id) continue;
+
+        // Check if track needs resolution for any active resolver
+        const trackKey = `bg-${track.id}`;
+        if (resolutionScheduler.hasResolved(trackKey) || resolutionScheduler.hasPending(trackKey)) {
+          continue;
+        }
+
+        // Check if track already has valid sources for all active resolvers
+        let needsResolution = false;
+        for (const resolverId of currentActiveResolvers) {
+          const source = track.sources?.[resolverId];
+          if (!source) {
+            needsResolution = true;
+            break;
+          }
+          // Check if source has expired (only if it has resolvedAt - sync sources are always valid)
+          if (source.resolvedAt && (now - source.resolvedAt) >= CACHE_TTL.persistedSources) {
+            needsResolution = true;
+            break;
+          }
+        }
+
+        if (needsResolution) {
+          tracksToResolve.push({
+            key: trackKey,
+            data: {
+              track,
+              artistName: track.artist,
+              isQueueResolution: false
+            }
+          });
+        }
+      }
+      backgroundResolutionIndex.current = collectionIdx;
+
+      // If we've finished collection, move to playlists
+      if (collectionIdx >= allCollectionTracks.length && tracksToResolve.length < backgroundBatchSize) {
+        const playlistList = playlists || [];
+        let { playlistIdx, trackIdx } = backgroundPlaylistIndex.current;
+
+        while (tracksToResolve.length < backgroundBatchSize && playlistIdx < playlistList.length) {
+          const playlist = playlistList[playlistIdx];
+          const playlistTracks = playlist?.tracks || [];
+
+          while (tracksToResolve.length < backgroundBatchSize && trackIdx < playlistTracks.length) {
+            const track = playlistTracks[trackIdx];
+            trackIdx++;
+
+            if (!track?.id) continue;
+
+            const trackKey = `bg-pl-${playlist.id}-${track.id}`;
+            if (resolutionScheduler.hasResolved(trackKey) || resolutionScheduler.hasPending(trackKey)) {
+              continue;
+            }
+
+            // Check if track needs resolution
+            let needsResolution = false;
+            for (const resolverId of currentActiveResolvers) {
+              const source = track.sources?.[resolverId];
+              if (!source) {
+                needsResolution = true;
+                break;
+              }
+              if (source.resolvedAt && (now - source.resolvedAt) >= CACHE_TTL.persistedSources) {
+                needsResolution = true;
+                break;
+              }
+            }
+
+            if (needsResolution) {
+              tracksToResolve.push({
+                key: trackKey,
+                data: {
+                  track,
+                  artistName: track.artist,
+                  isQueueResolution: false,
+                  playlistId: playlist.id // Include playlist ID for persistence
+                }
+              });
+            }
+          }
+
+          if (trackIdx >= playlistTracks.length) {
+            playlistIdx++;
+            trackIdx = 0;
+          }
+        }
+        backgroundPlaylistIndex.current = { playlistIdx, trackIdx };
+      }
+
+      // Enqueue tracks for background resolution
+      if (tracksToResolve.length > 0) {
+        console.log(`🔄 [Background] Queuing ${tracksToResolve.length} tracks for pre-resolution...`);
+        for (const { key, data } of tracksToResolve) {
+          resolutionScheduler.enqueue(key, 'background', data);
+        }
+      }
+    });
+
+    return () => {
+      resolutionScheduler.setOnIdleCallback(null);
+      resolutionScheduler.unregisterContext('background');
+    };
+  }, [library, collectionData, playlists]);
 
   // Register page context for collection tracks resolution
   useEffect(() => {
