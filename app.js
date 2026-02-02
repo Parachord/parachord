@@ -22427,6 +22427,7 @@ useEffect(() => {
                         )
                       : hasResolved ?
                         Object.entries(resolvedSources)
+                          .filter(([resolverId]) => activeResolvers.includes(resolverId))
                           .sort(([aId], [bId]) => {
                             const aIndex = resolverOrder.indexOf(aId);
                             const bIndex = resolverOrder.indexOf(bId);
@@ -26003,6 +26004,7 @@ useEffect(() => {
                           )
                         : hasResolved ?
                           Object.entries(resolvedSources)
+                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
                             .sort(([aId], [bId]) => {
                               const aIndex = resolverOrder.indexOf(aId);
                               const bIndex = resolverOrder.indexOf(bId);
@@ -28555,8 +28557,9 @@ useEffect(() => {
                         const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
 
                         if (hasExternalSources) {
-                          // Show all resolver icons (including LO)
+                          // Show resolver icons only for enabled resolvers
                           return Object.entries(sources)
+                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
                             .sort(([aId], [bId]) => {
                               const aIndex = resolverOrder.indexOf(aId);
                               const bIndex = resolverOrder.indexOf(bId);
@@ -30372,6 +30375,7 @@ useEffect(() => {
                             )
                           : hasResolved ?
                             Object.entries(resolvedSources)
+                              .filter(([resolverId]) => activeResolvers.includes(resolverId))
                               .sort(([aId], [bId]) => {
                                 const aIndex = resolverOrder.indexOf(aId);
                                 const bIndex = resolverOrder.indexOf(bId);
@@ -30839,7 +30843,7 @@ useEffect(() => {
                               React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
                           : hasResolved ?
-                            Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                            Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -30943,7 +30947,7 @@ useEffect(() => {
                         React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '100px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
-                            Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                            Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
                               if (!resolver || !resolver.play) return null;
                               return React.createElement('button', {
@@ -31736,7 +31740,7 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ?
-                              Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
@@ -31839,7 +31843,7 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
                             : hasResolved ?
-                              Object.entries(resolvedSources).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
