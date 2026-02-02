@@ -7731,38 +7731,46 @@ const Parachord = () => {
       window.electron.playbackWindow.close();
     }
 
-    // Stop streaming playback (Spotify/Apple Music) if active - prevents simultaneous playback
-    // when switching from a streaming resolver to any other source
-    if (streamingPlaybackActiveRef.current) {
-      const currentActiveResolver = currentTrackRef.current?._activeResolver;
+    // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+    // This handles race conditions where streamingPlaybackActiveRef may already be reset
+    // by handleNext but playback is still in progress or loading
 
-      // Pause Spotify if it was playing
-      if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
-        console.log('⏹️ Pausing Spotify before playing new track');
-        fetch('https://api.spotify.com/v1/me/player/pause', {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${spotifyToken}` }
-        }).catch(e => console.log('Could not pause Spotify:', e.message));
-      }
-
-      // Pause Apple Music if it was playing
-      if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
-        console.log('⏹️ Pausing Apple Music before playing new track');
-        window.electron.musicKit.pause().catch(e => console.log('Could not pause Apple Music:', e.message));
-      }
-
-      // Also stop Apple Music preview audio if it exists
-      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
-        console.log('⏹️ Stopping Apple Music preview audio');
-        window._appleMusicPreviewAudio.pause();
-        window._appleMusicPreviewAudio.currentTime = 0;
-      }
-
-      // Stop main process polling for both Spotify and Apple Music
-      stopMainProcessPolling();
-
-      streamingPlaybackActiveRef.current = false;
+    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
+    if (spotifyToken) {
+      console.log('⏹️ Pausing Spotify before playing new track');
+      fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${spotifyToken}` }
+      }).catch(() => {}); // Silently ignore - may not be playing
     }
+
+    // Always pause Apple Music native playback (macOS MusicKit)
+    if (window.electron?.musicKit) {
+      console.log('⏹️ Pausing Apple Music (native) before playing new track');
+      window.electron.musicKit.pause().catch(() => {}); // Silently ignore - may not be playing
+    }
+
+    // Always pause Apple Music web playback (MusicKit JS)
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWeb) {
+      try {
+        console.log('⏹️ Pausing Apple Music (web) before playing new track');
+        musicKitWeb.pause();
+      } catch (e) {} // Silently ignore - may not be configured or playing
+    }
+
+    // Always stop Apple Music preview audio if it exists
+    if (window._appleMusicPreviewAudio) {
+      console.log('⏹️ Stopping Apple Music preview audio');
+      window._appleMusicPreviewAudio.pause();
+      window._appleMusicPreviewAudio.currentTime = 0;
+    }
+
+    // Always stop main process polling for both Spotify and Apple Music
+    stopMainProcessPolling();
+
+    // Reset streaming flag
+    streamingPlaybackActiveRef.current = false;
 
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
@@ -9215,31 +9223,38 @@ const Parachord = () => {
         window.scrobbleManager.onTrackEnd();
       }
 
-      // Pause streaming playback (Spotify/Apple Music) before advancing
-      // This prevents overlap when auto-advancing to a different resolver
-      const currentActiveResolver = currentTrackRef.current?._activeResolver;
-      if (streamingPlaybackActiveRef.current) {
-        // Pause Spotify if it was playing
-        if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
-          console.log('⏹️ Pausing Spotify before next track');
-          fetch('https://api.spotify.com/v1/me/player/pause', {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${spotifyToken}` }
-          }).catch(e => console.log('Could not pause Spotify:', e.message));
-        }
+      // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+      // This handles race conditions during async track loading
 
-        // Pause Apple Music if it was playing
-        if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
-          console.log('⏹️ Pausing Apple Music before next track');
-          window.electron.musicKit.pause().catch(e => console.log('Could not pause Apple Music:', e.message));
-        }
+      // Always pause Spotify if we have a token
+      if (spotifyToken) {
+        console.log('⏹️ Pausing Spotify before next track');
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        }).catch(() => {}); // Silently ignore
+      }
 
-        // Also stop Apple Music preview audio if it exists
-        if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
-          console.log('⏹️ Stopping Apple Music preview audio');
-          window._appleMusicPreviewAudio.pause();
-          window._appleMusicPreviewAudio.currentTime = 0;
-        }
+      // Always pause Apple Music native playback
+      if (window.electron?.musicKit) {
+        console.log('⏹️ Pausing Apple Music (native) before next track');
+        window.electron.musicKit.pause().catch(() => {}); // Silently ignore
+      }
+
+      // Always pause Apple Music web playback (MusicKit JS)
+      const musicKitWebNext = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      if (musicKitWebNext) {
+        try {
+          console.log('⏹️ Pausing Apple Music (web) before next track');
+          musicKitWebNext.pause();
+        } catch (e) {} // Silently ignore
+      }
+
+      // Always stop Apple Music preview audio if it exists
+      if (window._appleMusicPreviewAudio) {
+        console.log('⏹️ Stopping Apple Music preview audio');
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
       }
 
       // CRITICAL: Reset streaming playback flag when advancing tracks
@@ -9434,39 +9449,38 @@ const Parachord = () => {
       window.scrobbleManager.onTrackEnd();
     }
 
-    // Pause streaming playback (must happen BEFORE resetting streamingPlaybackActiveRef)
-    if (streamingPlaybackActiveRef.current) {
-      const currentActiveResolver = track?._activeResolver;
+    // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
+    // This prevents race conditions where the streamingPlaybackActiveRef flag may be stale
 
-      // Pause Spotify if it was playing
-      if (spotifyToken && (currentActiveResolver === 'spotify' || !currentActiveResolver)) {
-        console.log('⏹️ Pausing Spotify before going to previous track');
-        try {
-          await fetch('https://api.spotify.com/v1/me/player/pause', {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${spotifyToken}` }
-          });
-        } catch (e) {
-          console.log('Could not pause Spotify:', e.message);
-        }
-      }
+    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
+    if (spotifyToken) {
+      console.log('⏹️ Pausing Spotify before previous track');
+      fetch('https://api.spotify.com/v1/me/player/pause', {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${spotifyToken}` }
+      }).catch(() => {}); // Silently ignore - may not be playing
+    }
 
-      // Pause Apple Music if it was playing
-      if (currentActiveResolver === 'applemusic' && window.electron?.musicKit) {
-        console.log('⏹️ Pausing Apple Music before going to previous track');
-        try {
-          await window.electron.musicKit.pause();
-        } catch (e) {
-          console.log('Could not pause Apple Music:', e.message);
-        }
-      }
+    // Always pause Apple Music native playback (macOS MusicKit)
+    if (window.electron?.musicKit) {
+      console.log('⏹️ Pausing Apple Music (native) before previous track');
+      window.electron.musicKit.pause().catch(() => {}); // Silently ignore
+    }
 
-      // Also stop Apple Music preview audio if it exists
-      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
-        console.log('⏹️ Stopping Apple Music preview audio');
-        window._appleMusicPreviewAudio.pause();
-        window._appleMusicPreviewAudio.currentTime = 0;
-      }
+    // Always pause Apple Music web playback (MusicKit JS)
+    const musicKitWebPrev = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    if (musicKitWebPrev) {
+      try {
+        console.log('⏹️ Pausing Apple Music (web) before previous track');
+        musicKitWebPrev.pause();
+      } catch (e) {} // Silently ignore
+    }
+
+    // Always stop Apple Music preview audio if it exists
+    if (window._appleMusicPreviewAudio) {
+      console.log('⏹️ Stopping Apple Music preview audio');
+      window._appleMusicPreviewAudio.pause();
+      window._appleMusicPreviewAudio.currentTime = 0;
     }
 
     // CRITICAL: Reset streaming playback flag when changing tracks
