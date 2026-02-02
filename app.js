@@ -10482,14 +10482,43 @@ const Parachord = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
-    // Time periods to fetch for richer context
+    // Time periods to fetch for richer context (fetch more than needed, will dedupe)
     // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit }
     const periods = [
-      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 5, trackLimit: 10 },
-      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 5, trackLimit: 10 },
-      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 5, trackLimit: 10 },
-      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 5, trackLimit: 10 }
+      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15 },
+      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15 },
+      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15 },
+      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15 }
     ];
+
+    // Deduplicate results across time periods for maximum variety
+    // Items only appear in their first (most recent) time period
+    const deduplicateResults = (results) => {
+      const seenArtists = new Set();
+      const seenTracks = new Set();
+
+      return results.map(period => {
+        const uniqueArtists = period.top_artists.filter(artist => {
+          const key = artist.toLowerCase();
+          if (seenArtists.has(key)) return false;
+          seenArtists.add(key);
+          return true;
+        });
+
+        const uniqueTracks = period.top_tracks.filter(track => {
+          const key = `${track.artist.toLowerCase()}|${track.title.toLowerCase()}`;
+          if (seenTracks.has(key)) return false;
+          seenTracks.add(key);
+          return true;
+        });
+
+        return {
+          ...period,
+          top_artists: uniqueArtists,
+          top_tracks: uniqueTracks
+        };
+      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0);
+    };
 
     // Try Last.fm first
     if (lastfmConfig?.username) {
@@ -10523,13 +10552,14 @@ const Parachord = () => {
           const validResults = results.filter(r => r !== null);
 
           if (validResults.length > 0) {
-            const totalArtists = validResults.reduce((sum, r) => sum + r.top_artists.length, 0);
-            const totalTracks = validResults.reduce((sum, r) => sum + r.top_tracks.length, 0);
-            console.log(`🎵 Got ${totalArtists} artists and ${totalTracks} tracks from Last.fm across ${validResults.length} time periods`);
+            const deduped = deduplicateResults(validResults);
+            const totalArtists = deduped.reduce((sum, r) => sum + r.top_artists.length, 0);
+            const totalTracks = deduped.reduce((sum, r) => sum + r.top_tracks.length, 0);
+            console.log(`🎵 Got ${totalArtists} unique artists and ${totalTracks} unique tracks from Last.fm across ${deduped.length} time periods`);
 
             return {
               source: 'Last.fm',
-              periods: validResults
+              periods: deduped
             };
           }
         } catch (err) {
@@ -10573,13 +10603,14 @@ const Parachord = () => {
         const validResults = results.filter(r => r !== null);
 
         if (validResults.length > 0) {
-          const totalArtists = validResults.reduce((sum, r) => sum + r.top_artists.length, 0);
-          const totalTracks = validResults.reduce((sum, r) => sum + r.top_tracks.length, 0);
-          console.log(`🎵 Got ${totalArtists} artists and ${totalTracks} tracks from ListenBrainz across ${validResults.length} time periods`);
+          const deduped = deduplicateResults(validResults);
+          const totalArtists = deduped.reduce((sum, r) => sum + r.top_artists.length, 0);
+          const totalTracks = deduped.reduce((sum, r) => sum + r.top_tracks.length, 0);
+          console.log(`🎵 Got ${totalArtists} unique artists and ${totalTracks} unique tracks from ListenBrainz across ${deduped.length} time periods`);
 
           return {
             source: 'ListenBrainz',
-            periods: validResults
+            periods: deduped
           };
         }
       } catch (err) {
