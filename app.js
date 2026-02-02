@@ -8357,8 +8357,13 @@ const Parachord = () => {
       });
 
       if (sortedSources.length === 0) {
-        console.error('❌ No enabled resolvers found for track');
+        console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
         setTrackLoading(false); // Clear loading state
+        showConfirmDialog({
+          type: 'error',
+          title: 'No Enabled Source',
+          message: 'This track has sources but none match your enabled resolvers. Check your resolver settings.'
+        });
         return;
       }
 
