@@ -10680,6 +10680,15 @@ const Parachord = () => {
         listeningContext = await fetchListeningContext();
         if (!listeningContext) {
           console.log('🎵 No listening context available, proceeding without');
+        } else {
+          console.log('🎵 Listening context:', {
+            source: listeningContext.source,
+            window: listeningContext.window,
+            hasTopArtists: !!listeningContext.top_artists,
+            topArtistsLength: listeningContext.top_artists?.length,
+            hasTopTracks: !!listeningContext.top_tracks,
+            topTracksLength: listeningContext.top_tracks?.length
+          });
         }
       }
 
