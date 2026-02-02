@@ -19440,14 +19440,8 @@ ${tracks}
         console.log('Valid token found, setting connected state');
         setSpotifyToken(tokenData.token);
         setSpotifyConnected(true);
-        // Enable Spotify resolver if authenticated
-        setActiveResolvers(prev => {
-          if (!prev.includes('spotify')) {
-            console.log('Adding Spotify to active resolvers');
-            return [...prev, 'spotify'];
-          }
-          return prev;
-        });
+        // Note: Don't auto-enable Spotify resolver here - respect user's saved preference
+        // The resolver will only be enabled if it's in activeResolvers (loaded from storage)
       } else {
         console.log('No valid token found');
       }
@@ -19558,14 +19552,8 @@ ${tracks}
         console.log('Valid SoundCloud token found, setting connected state');
         setSoundcloudToken(tokenData.token);
         setSoundcloudConnected(true);
-        // Enable SoundCloud resolver if authenticated
-        setActiveResolvers(prev => {
-          if (!prev.includes('soundcloud')) {
-            console.log('Adding SoundCloud to active resolvers');
-            return [...prev, 'soundcloud'];
-          }
-          return prev;
-        });
+        // Note: Don't auto-enable SoundCloud resolver here - respect user's saved preference
+        // The resolver will only be enabled if it's in activeResolvers (loaded from storage)
       } else {
         console.log('No valid SoundCloud token found');
       }
