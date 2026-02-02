@@ -3810,7 +3810,7 @@ const Parachord = () => {
   const [chartsSearchOpen, setChartsSearchOpen] = useState(false);
   const [chartsSearch, setChartsSearch] = useState('');
   const [chartsTab, setChartsTab] = useState('albums'); // 'albums' (iTunes) | 'songs' (Last.fm)
-  const [chartsCountry, setChartsCountry] = useState('us'); // ISO code for iTunes, full name for Last.fm
+  const [chartsCountry, setChartsCountry] = useState(''); // Empty = global, or ISO code for country charts
   const [chartsCountryDropdownOpen, setChartsCountryDropdownOpen] = useState(false);
   const [lastfmCharts, setLastfmCharts] = useState([]); // Last.fm top tracks
   const [lastfmChartsLoading, setLastfmChartsLoading] = useState(false);
@@ -30273,8 +30273,8 @@ useEffect(() => {
                   onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
                   className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
                 },
-                  React.createElement('span', { className: 'text-gray-400 mr-1' }, 'Country:'),
-                  React.createElement('span', null, CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States'),
+                  React.createElement('span', { className: 'text-gray-400 mr-1' }, 'Region:'),
+                  React.createElement('span', null, chartsCountry ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States') : 'Global'),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
                   )
@@ -30282,6 +30282,30 @@ useEffect(() => {
                 chartsCountryDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-gray-200'
                 },
+                  // Global option
+                  React.createElement('button', {
+                    key: 'global',
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setChartsCountry('');
+                      setChartsCountryDropdownOpen(false);
+                      loadLastfmCharts({ forceReload: true });
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      !chartsCountry ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    'Global',
+                    !chartsCountry && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  ),
+                  // Country options
                   CHARTS_COUNTRIES.map(country =>
                     React.createElement('button', {
                       key: country.code,
@@ -30289,7 +30313,6 @@ useEffect(() => {
                         e.stopPropagation();
                         setChartsCountry(country.code);
                         setChartsCountryDropdownOpen(false);
-                        // Reload Last.fm charts with new country
                         loadLastfmCharts({ country: country.code, forceReload: true });
                       },
                       className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
