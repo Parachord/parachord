@@ -420,13 +420,30 @@ const appleMusicPoller = {
         }
       }
 
-      // Check if Apple Music moved to a different track (song ID changed)
+      // Check if Apple Music moved to a different track (song ID or title changed)
       const currentSongId = state?.songId;
-      if (currentSongId && this.expectedSongId && currentSongId !== this.expectedSongId) {
-        console.log(`🍎 [Main] Song ID changed from ${this.expectedSongId} to ${currentSongId}, signaling advance...`);
-        this.sendToRenderer('applemusic-polling-advance', { reason: 'song-changed' });
-        this.stop();
-        return;
+      const currentSongTitle = state?.songTitle;
+
+      // Only check for song changes if we have something to compare
+      if (currentSongId && this.expectedSongId) {
+        // Compare catalog song IDs
+        if (currentSongId !== this.expectedSongId) {
+          console.log(`🍎 [Main] Song ID changed from ${this.expectedSongId} to ${currentSongId}, signaling advance...`);
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'song-changed' });
+          this.stop();
+          return;
+        }
+      } else if (currentSongTitle && this.trackTitle) {
+        // Fall back to title comparison if song ID not available
+        // Normalize titles for comparison (lowercase, trim)
+        const normalizedCurrent = currentSongTitle.toLowerCase().trim();
+        const normalizedExpected = this.trackTitle.toLowerCase().trim();
+        if (normalizedCurrent !== normalizedExpected) {
+          console.log(`🍎 [Main] Song title changed from "${this.trackTitle}" to "${currentSongTitle}", signaling advance...`);
+          this.sendToRenderer('applemusic-polling-advance', { reason: 'song-changed' });
+          this.stop();
+          return;
+        }
       }
 
       // Track consecutive zero-position polls (after track had started playing)
