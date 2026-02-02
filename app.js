@@ -10557,9 +10557,8 @@ const Parachord = () => {
             const allArtists = deduped.flatMap(p => p.top_artists);
             const allTracks = deduped.flatMap(p => p.top_tracks);
             console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
-            console.log('🎵 [DEBUG] allArtists is array:', Array.isArray(allArtists), 'first 3:', allArtists.slice(0, 3));
 
-            const contextObj = {
+            return {
               source: 'Last.fm',
               // Backward compatible flat format for existing AI plugins
               window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
@@ -10568,8 +10567,6 @@ const Parachord = () => {
               // Rich structured format for future use
               periods: deduped
             };
-            console.log('🎵 [DEBUG] Returning context with top_artists:', contextObj.top_artists?.length, 'top_tracks:', contextObj.top_tracks?.length);
-            return contextObj;
           }
         } catch (err) {
           console.error('Failed to fetch Last.fm context:', err);
@@ -10683,15 +10680,6 @@ const Parachord = () => {
         listeningContext = await fetchListeningContext();
         if (!listeningContext) {
           console.log('🎵 No listening context available, proceeding without');
-        } else {
-          console.log('🎵 Listening context:', {
-            source: listeningContext.source,
-            window: listeningContext.window,
-            hasTopArtists: !!listeningContext.top_artists,
-            topArtistsLength: listeningContext.top_artists?.length,
-            hasTopTracks: !!listeningContext.top_tracks,
-            topTracksLength: listeningContext.top_tracks?.length
-          });
         }
       }
 
