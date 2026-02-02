@@ -16169,7 +16169,7 @@ ${tracks}
 
   // Load Apple Music Songs Charts
   const loadAppleMusicSongsCharts = async (options = {}) => {
-    const { forceReload = false } = options;
+    const { forceReload = false, country = chartsCountry || 'us' } = options;
 
     if (appleMusicSongsChartsLoading) return;
     if (appleMusicSongsChartsLoaded && !forceReload) return;
@@ -16178,9 +16178,13 @@ ${tracks}
     setAppleMusicSongsChartsLoaded(false);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
+    // Apple Music uses country codes (us, gb, de, etc.) - default to 'us' if empty
+    const countryCode = country || 'us';
+    const countryName = CHARTS_COUNTRIES.find(c => c.code === countryCode)?.name || 'United States';
+
     try {
-      console.log('📊 Loading Apple Music Songs Charts...');
-      const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/songs.json');
+      console.log(`📊 Loading Apple Music Songs Charts (${countryName})...`);
+      const response = await fetch(`https://rss.marketingtools.apple.com/api/v2/${countryCode}/music/most-played/50/songs.json`);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unable to read error response');
@@ -16189,7 +16193,7 @@ ${tracks}
       }
 
       const data = await response.json();
-      console.log('📊 Apple Music Songs Charts response:', { feedTitle: data?.feed?.title, resultsCount: data?.feed?.results?.length });
+      console.log('📊 Apple Music Songs Charts response:', { feedTitle: data?.feed?.title, resultsCount: data?.feed?.results?.length, country: data?.feed?.country });
 
       const results = data?.feed?.results || [];
       if (results.length === 0) {
@@ -16197,7 +16201,7 @@ ${tracks}
       }
 
       const parsedTracks = results.map((item, index) => ({
-        id: `apple-chart-${index}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        id: `apple-chart-${countryCode}-${index}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
         title: item.name || '',
         artist: item.artistName || 'Unknown Artist',
         album: '', // Songs endpoint doesn't include album name
@@ -16209,7 +16213,7 @@ ${tracks}
         releaseDate: item.releaseDate || null
       }));
 
-      console.log(`📊 Parsed ${parsedTracks.length} tracks from Apple Music Songs Charts`);
+      console.log(`📊 Parsed ${parsedTracks.length} tracks from Apple Music Songs Charts (${countryName})`);
 
       setAppleMusicSongsCharts(parsedTracks);
       setAppleMusicSongsChartsLoaded(true);
@@ -30308,7 +30312,7 @@ useEffect(() => {
                         // Load charts based on selected source when switching to songs tab
                         if (tab === 'songs' && cacheLoaded) {
                           if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts();
+                            loadAppleMusicSongsCharts({ country: chartsCountry });
                           } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
                             loadLastfmCharts({ country: chartsCountry });
                           }
@@ -30361,7 +30365,7 @@ useEffect(() => {
                         setChartsTab(tab);
                         if (tab === 'songs' && cacheLoaded) {
                           if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                            loadAppleMusicSongsCharts();
+                            loadAppleMusicSongsCharts({ country: chartsCountry });
                           } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
                             loadLastfmCharts({ country: chartsCountry });
                           }
@@ -30407,7 +30411,7 @@ useEffect(() => {
                       setChartsSongsSource('apple');
                       setChartsSongsSourceDropdownOpen(false);
                       if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
-                        loadAppleMusicSongsCharts();
+                        loadAppleMusicSongsCharts({ country: chartsCountry });
                       }
                     },
                     className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
@@ -30439,14 +30443,17 @@ useEffect(() => {
                   )
                 )
               ),
-              // Country dropdown (for Songs tab / Last.fm only)
-              chartsTab === 'songs' && chartsSongsSource === 'lastfm' && React.createElement('div', { className: 'relative ml-2' },
+              // Country dropdown (for Songs tab - both Apple Music and Last.fm)
+              chartsTab === 'songs' && React.createElement('div', { className: 'relative ml-2' },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setChartsCountryDropdownOpen(!chartsCountryDropdownOpen); },
                   className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
                 },
                   React.createElement('span', { className: 'text-gray-400 mr-1' }, 'Region:'),
-                  React.createElement('span', null, chartsCountry ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States') : 'Global'),
+                  // Apple Music doesn't have "Global", so show "United States" when empty; Last.fm shows "Global"
+                  React.createElement('span', null, chartsCountry
+                    ? (CHARTS_COUNTRIES.find(c => c.code === chartsCountry)?.name || 'United States')
+                    : (chartsSongsSource === 'lastfm' ? 'Global' : 'United States')),
                   React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
                   )
@@ -30454,8 +30461,8 @@ useEffect(() => {
                 chartsCountryDropdownOpen && React.createElement('div', {
                   className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] max-h-64 overflow-y-auto z-30 border border-gray-200'
                 },
-                  // Global option
-                  React.createElement('button', {
+                  // Global option (Last.fm only - Apple Music doesn't have a global chart)
+                  chartsSongsSource === 'lastfm' && React.createElement('button', {
                     key: 'global',
                     onClick: (e) => {
                       e.stopPropagation();
@@ -30485,14 +30492,22 @@ useEffect(() => {
                         e.stopPropagation();
                         setChartsCountry(country.code);
                         setChartsCountryDropdownOpen(false);
-                        loadLastfmCharts({ country: country.code, forceReload: true });
+                        // Load appropriate charts based on source
+                        if (chartsSongsSource === 'apple') {
+                          loadAppleMusicSongsCharts({ country: country.code, forceReload: true });
+                        } else {
+                          loadLastfmCharts({ country: country.code, forceReload: true });
+                        }
                       },
                       className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        chartsCountry === country.code ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        // For Apple Music, empty chartsCountry means 'us' (first country)
+                        (chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us')
+                          ? 'text-gray-900 font-medium'
+                          : chartsCountry === country.code ? 'text-gray-900 font-medium' : 'text-gray-600'
                       }`
                     },
                       country.name,
-                      chartsCountry === country.code && React.createElement('svg', {
+                      ((chartsSongsSource === 'apple' && !chartsCountry && country.code === 'us') || chartsCountry === country.code) && React.createElement('svg', {
                         className: 'w-4 h-4',
                         fill: 'none',
                         viewBox: '0 0 24 24',
