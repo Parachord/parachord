@@ -3139,7 +3139,7 @@ const ReleasePage = ({
               // Resolver icons (sources available for this track)
               React.createElement('div', {
                 className: 'flex items-center gap-1 flex-shrink-0 ml-auto',
-                style: { pointerEvents: 'none', minHeight: '24px', width: '100px', justifyContent: 'flex-end' }
+                style: { pointerEvents: 'none', minHeight: '24px', width: '140px', justifyContent: 'flex-end' }
               },
                 (() => {
                   // Use availableResolvers from outer scope (already looked up via trackId)
@@ -23274,7 +23274,7 @@ useEffect(() => {
                     // Resolver icons - fixed width column
                     React.createElement('div', {
                       className: 'flex items-center gap-1 justify-end',
-                      style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                      style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                     },
                       isResolving ?
                         React.createElement('div', {
@@ -26851,7 +26851,7 @@ useEffect(() => {
                       // Resolver icons - fixed width column (last column)
                       React.createElement('div', {
                         className: 'flex items-center gap-1 justify-end',
-                        style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                        style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                       },
                         isResolving ?
                           React.createElement('div', {
@@ -26954,7 +26954,7 @@ useEffect(() => {
                         style: { width: '40px', marginLeft: 'auto', animationDelay: `${index * 50 + 75}ms` }
                       }),
                       // Resolver icons skeleton
-                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: '100px', flexShrink: 0 } },
+                      React.createElement('div', { className: 'flex items-center gap-1', style: { width: '140px', flexShrink: 0 } },
                         React.createElement('div', {
                           className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%] animate-shimmer',
                           style: { animationDelay: `${index * 50 + 100}ms` }
@@ -29202,7 +29202,7 @@ useEffect(() => {
                       // Resolver icons skeleton
                       React.createElement('div', {
                         className: 'flex items-center gap-1 justify-end',
-                        style: { width: '100px', flexShrink: 0 }
+                        style: { width: '140px', flexShrink: 0 }
                       },
                         React.createElement('div', {
                           className: 'w-5 h-5 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-shimmer',
@@ -29413,7 +29413,7 @@ useEffect(() => {
                     // Resolver icons - fixed width column (last column)
                     React.createElement('div', {
                       className: 'flex items-center gap-1 flex-shrink-0',
-                      style: { pointerEvents: 'none', minHeight: '20px', width: '100px', justifyContent: 'flex-end' }
+                      style: { pointerEvents: 'none', minHeight: '20px', width: '140px', justifyContent: 'flex-end' }
                     },
                       (() => {
                         const sources = effectiveSources;
@@ -30919,7 +30919,7 @@ useEffect(() => {
                       }),
                       React.createElement('div', {
                         className: 'flex gap-1 ml-auto',
-                        style: { width: '100px' }
+                        style: { width: '140px' }
                       },
                         React.createElement('div', {
                           className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
@@ -31222,7 +31222,7 @@ useEffect(() => {
                         // Resolver icons - fixed width column
                         React.createElement('div', {
                           className: 'flex items-center gap-1 justify-end',
-                          style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                          style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                         },
                           isResolving ?
                             React.createElement('div', {
@@ -31589,7 +31589,7 @@ useEffect(() => {
                       }),
                       React.createElement('div', {
                         className: 'flex gap-1',
-                        style: { width: '100px' }
+                        style: { width: '140px' }
                       },
                         React.createElement('div', {
                           className: 'w-5 h-5 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
@@ -31699,7 +31699,7 @@ useEffect(() => {
                         }, track.duration ? formatTime(track.duration) : '--:--'),
                         React.createElement('div', {
                           className: 'flex items-center gap-1 justify-end',
-                          style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                          style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                         },
                           isResolving ?
                             React.createElement('div', { className: 'flex items-center gap-1' },
@@ -31809,7 +31809,7 @@ useEffect(() => {
                           style: { pointerEvents: 'none', width: '150px', flexShrink: 0, fontSize: '12px', color: '#9ca3af' }
                         }, track.album || ''),
                         React.createElement('span', { className: 'text-right tabular-nums', style: { width: '80px', flexShrink: 0, marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' } }, `${track.playCount} plays`),
-                        React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '100px', flexShrink: 0, minHeight: '24px' } },
+                        React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ?
                             Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                               const resolver = allResolvers.find(r => r.id === resolverId);
@@ -32596,7 +32596,7 @@ useEffect(() => {
                           }, track.timestamp ? formatTimeAgo(track.timestamp) : ''),
                           React.createElement('div', {
                             className: 'flex items-center gap-1 justify-end',
-                            style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                            style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                           },
                             isResolving ?
                               React.createElement('div', { className: 'flex items-center gap-1' },
@@ -32699,7 +32699,7 @@ useEffect(() => {
                           }, `${track.playCount} plays`),
                           React.createElement('div', {
                             className: 'flex items-center gap-1 justify-end',
-                            style: { width: '100px', flexShrink: 0, minHeight: '24px' }
+                            style: { width: '140px', flexShrink: 0, minHeight: '24px' }
                           },
                             isResolving ?
                               React.createElement('div', { className: 'flex items-center gap-1' },
