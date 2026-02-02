@@ -16183,11 +16183,18 @@ ${tracks}
       const response = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/50/songs.json');
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch Apple Music songs charts: ${response.status}`);
+        const errorText = await response.text().catch(() => 'Unable to read error response');
+        console.error(`❌ Apple Music Songs Charts fetch failed: ${response.status} ${response.statusText}`, errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('📊 Apple Music Songs Charts response:', { feedTitle: data?.feed?.title, resultsCount: data?.feed?.results?.length });
+
       const results = data?.feed?.results || [];
+      if (results.length === 0) {
+        console.warn('⚠️ Apple Music Songs Charts returned empty results');
+      }
 
       const parsedTracks = results.map((item, index) => ({
         id: `apple-chart-${index}-${item.name}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
@@ -16208,11 +16215,11 @@ ${tracks}
       setAppleMusicSongsChartsLoaded(true);
 
     } catch (error) {
-      console.error('Failed to load Apple Music Songs Charts:', error);
+      console.error('❌ Failed to load Apple Music Songs Charts:', error.message || error);
       showConfirmDialog({
         type: 'error',
         title: 'Load Failed',
-        message: 'Failed to load Apple Music Songs Charts. Please try again.'
+        message: `Failed to load Apple Music Songs Charts: ${error.message || 'Network error'}. Please try again.`
       });
     } finally {
       setAppleMusicSongsChartsLoading(false);
@@ -30299,7 +30306,7 @@ useEffect(() => {
                       onClick: () => {
                         setChartsTab(tab);
                         // Load charts based on selected source when switching to songs tab
-                        if (tab === 'songs') {
+                        if (tab === 'songs' && cacheLoaded) {
                           if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
                             loadAppleMusicSongsCharts();
                           } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
@@ -30352,7 +30359,7 @@ useEffect(() => {
                       key: tab,
                       onClick: () => {
                         setChartsTab(tab);
-                        if (tab === 'songs') {
+                        if (tab === 'songs' && cacheLoaded) {
                           if (chartsSongsSource === 'apple' && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
                             loadAppleMusicSongsCharts();
                           } else if (chartsSongsSource === 'lastfm' && !lastfmChartsLoaded && !lastfmChartsLoading) {
@@ -30399,7 +30406,7 @@ useEffect(() => {
                       e.stopPropagation();
                       setChartsSongsSource('apple');
                       setChartsSongsSourceDropdownOpen(false);
-                      if (!appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
+                      if (cacheLoaded && !appleMusicSongsChartsLoaded && !appleMusicSongsChartsLoading) {
                         loadAppleMusicSongsCharts();
                       }
                     },
