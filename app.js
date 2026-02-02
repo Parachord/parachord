@@ -10557,8 +10557,9 @@ const Parachord = () => {
             const allArtists = deduped.flatMap(p => p.top_artists);
             const allTracks = deduped.flatMap(p => p.top_tracks);
             console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
+            console.log('🎵 [DEBUG] allArtists is array:', Array.isArray(allArtists), 'first 3:', allArtists.slice(0, 3));
 
-            return {
+            const contextObj = {
               source: 'Last.fm',
               // Backward compatible flat format for existing AI plugins
               window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
@@ -10567,6 +10568,8 @@ const Parachord = () => {
               // Rich structured format for future use
               periods: deduped
             };
+            console.log('🎵 [DEBUG] Returning context with top_artists:', contextObj.top_artists?.length, 'top_tracks:', contextObj.top_tracks?.length);
+            return contextObj;
           }
         } catch (err) {
           console.error('Failed to fetch Last.fm context:', err);
