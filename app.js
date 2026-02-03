@@ -25210,9 +25210,9 @@ useEffect(() => {
               transition: 'opacity 300ms ease-out'
             }
           },
-            // Artist name with star button
+            // Artist name with star button (star positioned absolutely to not affect centering)
             React.createElement('div', {
-              className: 'flex items-center justify-center gap-3'
+              className: 'relative inline-flex items-center'
             },
               React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
@@ -25222,7 +25222,7 @@ useEffect(() => {
                   textTransform: 'uppercase'
                 }
               }, currentArtist.name),
-              // Star button to add/remove artist from collection
+              // Star button to add/remove artist from collection (absolute positioned)
               (() => {
                 const artistId = generateArtistId(currentArtist.name);
                 const isInCollection = collectionData.artists.some(a => a.id === artistId);
@@ -25240,7 +25240,7 @@ useEffect(() => {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
                     },
-                    className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-white/70 hover:text-white'}`,
+                    className: `absolute -right-10 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-white/70 hover:text-white'}`,
                     style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                   },
                     React.createElement('svg', {
