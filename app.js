@@ -36322,19 +36322,31 @@ useEffect(() => {
                         ...(currentTrack.sources || {})
                       };
 
-                      // Find purchasable sources
-                      const purchasableResolvers = ['bandcamp', 'qobuz'];
+                      // Find purchasable sources - use resolver-specific URL fields
                       const purchasableSources = [];
 
-                      for (const [resolverId, sourceData] of Object.entries(effectiveSources)) {
-                        if (purchasableResolvers.includes(resolverId) && sourceData && sourceData.purchaseUrl) {
-                          const resolver = allResolvers.find(r => r.id === resolverId);
-                          purchasableSources.push({
-                            resolverId,
-                            resolverName: resolver ? resolver.name : resolverId,
-                            purchaseUrl: sourceData.purchaseUrl
-                          });
-                        }
+                      // Check Bandcamp - use bandcampUrl which is always present for Bandcamp sources
+                      const bandcampSource = effectiveSources.bandcamp;
+                      const bandcampUrl = bandcampSource?.bandcampUrl || currentTrack.bandcampUrl;
+                      if (bandcampUrl) {
+                        const resolver = allResolvers.find(r => r.id === 'bandcamp');
+                        purchasableSources.push({
+                          resolverId: 'bandcamp',
+                          resolverName: resolver ? resolver.name : 'Bandcamp',
+                          purchaseUrl: bandcampUrl
+                        });
+                      }
+
+                      // Check Qobuz - construct URL from qobuzId
+                      const qobuzSource = effectiveSources.qobuz;
+                      const qobuzId = qobuzSource?.qobuzId || currentTrack.qobuzId;
+                      if (qobuzId) {
+                        const resolver = allResolvers.find(r => r.id === 'qobuz');
+                        purchasableSources.push({
+                          resolverId: 'qobuz',
+                          resolverName: resolver ? resolver.name : 'Qobuz',
+                          purchaseUrl: `https://www.qobuz.com/us-en/track/${qobuzId}`
+                        });
                       }
 
                       if (purchasableSources.length === 0) return null;
