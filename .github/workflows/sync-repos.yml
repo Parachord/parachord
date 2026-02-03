@@ -82,12 +82,7 @@ jobs:
 
           # Stage and commit
           git add -A
-          git commit -m "Sync from parachord monorepo
-
-Source commit: $SOURCE_COMMIT
-Original message: $SOURCE_MSG
-
-Automated sync from https://github.com/Parachord/parachord"
+          git commit -m "Sync from parachord monorepo (${SOURCE_COMMIT}): ${SOURCE_MSG}"
 
           # Push changes
           git push origin main || git push origin master
