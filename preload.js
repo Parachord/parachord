@@ -108,9 +108,9 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Media key handlers
   onMediaKey: (callback) => {
-    ipcRenderer.on('media-key', (event, action) => {
-      callback(action);
-    });
+    const handler = (event, action) => callback(action);
+    ipcRenderer.on('media-key', handler);
+    return () => ipcRenderer.removeListener('media-key', handler);
   },
 
   // Media key settings
@@ -122,9 +122,9 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Menu action handlers
   onMenuAction: (callback) => {
-    ipcRenderer.on('menu-action', (event, action) => {
-      callback(action);
-    });
+    const handler = (event, action) => callback(action);
+    ipcRenderer.on('menu-action', handler);
+    return () => ipcRenderer.removeListener('menu-action', handler);
   },
 
   // Auto-updater
