@@ -3738,13 +3738,25 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
             }
 
-            // Always update/backfill metadata fields (creator, source, syncedFrom)
+            // Recalculate createdAt from existing tracks if available
+            const existingTracks = currentPlaylists[idx].tracks || [];
+            let recalculatedCreatedAt = currentPlaylists[idx].createdAt;
+            if (existingTracks.length > 0) {
+              const trackDates = existingTracks.map(t => t.addedAt || t.syncSources?.spotify?.addedAt).filter(Boolean);
+              if (trackDates.length > 0) {
+                recalculatedCreatedAt = Math.min(...trackDates);
+              }
+            }
+
+            // Always update/backfill metadata fields (creator, source, syncedFrom, createdAt)
             currentPlaylists[idx] = {
               ...currentPlaylists[idx],
               // Backfill creator if not set
               creator: currentPlaylists[idx].creator || remotePlaylist.ownerName || null,
               // Backfill source if not set
               source: currentPlaylists[idx].source || (remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import'),
+              // Update createdAt from track data
+              createdAt: recalculatedCreatedAt,
               // Update/backfill syncedFrom structure
               syncedFrom: {
                 ...currentPlaylists[idx].syncedFrom,
