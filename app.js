@@ -25210,14 +25210,60 @@ useEffect(() => {
               transition: 'opacity 300ms ease-out'
             }
           },
-            React.createElement('h1', {
-              className: 'text-5xl font-light text-white',
-              style: {
-                textShadow: '0 2px 20px rgba(0,0,0,0.5)',
-                letterSpacing: '0.3em',
-                textTransform: 'uppercase'
-              }
-            }, currentArtist.name),
+            // Artist name with star button (star positioned absolutely to not affect centering)
+            React.createElement('div', {
+              className: 'relative inline-flex items-center'
+            },
+              React.createElement('h1', {
+                className: 'text-5xl font-light text-white',
+                style: {
+                  textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.3em',
+                  textTransform: 'uppercase'
+                }
+              }, currentArtist.name),
+              // Star button to add/remove artist from collection (absolute positioned wrapper)
+              (() => {
+                const artistId = generateArtistId(currentArtist.name);
+                const isInCollection = collectionData.artists.some(a => a.id === artistId);
+                return React.createElement('div', {
+                  className: 'absolute -right-10 top-1/2 -translate-y-1/2'
+                },
+                  React.createElement(Tooltip, {
+                    content: isInCollection ? 'Remove from collection' : 'Add to collection',
+                    position: 'top',
+                    variant: 'dark'
+                  },
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        if (!isInCollection) {
+                          addArtistToCollection({ name: currentArtist.name, image: artistImage });
+                        } else {
+                          removeArtistFromCollection({ name: currentArtist.name });
+                        }
+                      },
+                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
+                      style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
+                    },
+                      React.createElement('svg', {
+                        className: 'w-6 h-6',
+                        viewBox: '0 0 24 24',
+                        fill: isInCollection ? 'currentColor' : 'none',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.5,
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round'
+                      },
+                        React.createElement('polygon', {
+                          points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
+                        })
+                      )
+                    )
+                  )
+                );
+              })()
+            ),
             // Navigation tabs (centered)
             React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',
@@ -25283,19 +25329,60 @@ useEffect(() => {
               transition: 'opacity 300ms ease-out'
             }
           },
-            // Left side: Artist name - clickable to expand header
-            React.createElement('h1', {
-              className: 'text-2xl font-light mr-6 text-white flex-shrink-0 cursor-pointer hover:text-purple-300 transition-colors no-drag',
-              style: {
-                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                letterSpacing: '0.2em',
-                textTransform: 'uppercase',
-                maxWidth: '40%',
-                lineHeight: '1.2'
-              },
-              onClick: () => setIsHeaderCollapsed(false),
-              title: 'Click to expand'
-            }, currentArtist.name),
+            // Left side: Artist name with star button - clickable to expand header
+            React.createElement('div', {
+              className: 'flex items-center gap-2 mr-6 flex-shrink-0',
+              style: { maxWidth: '40%' }
+            },
+              React.createElement('h1', {
+                className: 'text-2xl font-light text-white cursor-pointer hover:text-purple-300 transition-colors no-drag',
+                style: {
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  lineHeight: '1.2'
+                },
+                onClick: () => setIsHeaderCollapsed(false),
+                title: 'Click to expand'
+              }, currentArtist.name),
+              // Star button to add/remove artist from collection
+              (() => {
+                const artistId = generateArtistId(currentArtist.name);
+                const isInCollection = collectionData.artists.some(a => a.id === artistId);
+                return React.createElement(Tooltip, {
+                  content: isInCollection ? 'Remove from collection' : 'Add to collection',
+                  position: 'top',
+                  variant: 'dark'
+                },
+                  React.createElement('button', {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      if (!isInCollection) {
+                        addArtistToCollection({ name: currentArtist.name, image: artistImage });
+                      } else {
+                        removeArtistFromCollection({ name: currentArtist.name });
+                      }
+                    },
+                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
+                    style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
+                  },
+                    React.createElement('svg', {
+                      className: 'w-5 h-5',
+                      viewBox: '0 0 24 24',
+                      fill: isInCollection ? 'currentColor' : 'none',
+                      stroke: 'currentColor',
+                      strokeWidth: 1.5,
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round'
+                    },
+                      React.createElement('polygon', {
+                        points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
+                      })
+                    )
+                  )
+                );
+              })()
+            ),
             // Center: Navigation tabs
             React.createElement('div', {
               className: 'flex items-center gap-1',
