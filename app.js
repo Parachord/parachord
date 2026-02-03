@@ -25240,7 +25240,7 @@ useEffect(() => {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
                     },
-                    className: `absolute -right-10 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-white/70 hover:text-white'}`,
+                    className: `absolute -right-10 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
                     style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                   },
                     React.createElement('svg', {
@@ -25359,7 +25359,7 @@ useEffect(() => {
                         removeArtistFromCollection({ name: currentArtist.name });
                       }
                     },
-                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-red-500 hover:text-red-400' : 'text-white/70 hover:text-white'}`,
+                    className: `p-1 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
                     style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                   },
                     React.createElement('svg', {
