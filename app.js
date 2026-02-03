@@ -20186,17 +20186,16 @@ ${tracks}
   };
 
   // Get 4 unique covers for a playlist's 2x2 grid display
-  // Prioritizes album art, falls back to artist images
+  // Prioritizes album art, falls back to artist images (from cache or Spotify)
   // Returns array of up to 4 image URLs, using cache when available
   const getPlaylistCovers = async (playlistId, tracks) => {
-    // Check cache first - only use cache if we have all 4 covers or it's recent
+    // Check cache first - only use cache if we have all 4 covers
     const cached = playlistCoverCache.current[playlistId];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL.playlistCover) {
-      // If cache has 4 covers or is less than 1 day old, use it
-      if (cached.covers.length >= 4 || Date.now() - cached.timestamp < 24 * 60 * 60 * 1000) {
-        return cached.covers;
-      }
+    if (cached && cached.covers.length >= 4 && Date.now() - cached.timestamp < CACHE_TTL.playlistCover) {
+      return cached.covers;
     }
+    // If cache has fewer than 4 covers, always try to get more - artist images may be
+    // available from artistImageCache even if Spotify isn't currently connected
 
     // Collect unique covers from tracks
     const seenAlbums = new Set(); // Albums we've already tried
