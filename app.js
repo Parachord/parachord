@@ -31888,12 +31888,7 @@ useEffect(() => {
                       fontSize: '12px',
                       color: '#9ca3af',
                       marginTop: '8px',
-                      lineHeight: '1.5',
-                      maxWidth: '400px',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
+                      lineHeight: '1.5'
                     }
                   }, album.description)
                 )
