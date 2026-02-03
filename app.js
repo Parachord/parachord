@@ -2093,7 +2093,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
   },
     // Square image container - gray bg while loading, pattern only when no image found
     React.createElement('div', {
-      className: 'aspect-square relative group/art',
+      className: 'aspect-square relative group/art overflow-hidden',
       style: { background: imageUrl === null ? pattern.gradient : '#e5e7eb' }
     },
       // Initials overlay (only show when no image found - imageUrl is null)
@@ -2269,7 +2269,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
   },
     // Square image container - gray bg while loading, pattern only when no image found
     React.createElement('div', {
-      className: 'aspect-square relative group/art',
+      className: 'aspect-square relative group/art overflow-hidden',
       style: { background: imageUrl === null ? pattern.gradient : '#e5e7eb' }
     },
       // Initials overlay (only show when no image found, not while loading)
