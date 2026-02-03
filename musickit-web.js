@@ -434,6 +434,54 @@ class MusicKitWeb {
       throw error;
     }
   }
+
+  /**
+   * Search for an artist and return their image URL
+   * Returns { url, name } or null if not found
+   */
+  async getArtistImage(artistName, size = 500) {
+    if (!this.musicKit) {
+      return null;
+    }
+
+    try {
+      const results = await this.musicKit.api.music(`/v1/catalog/us/search`, {
+        term: artistName,
+        types: 'artists',
+        limit: 5
+      });
+
+      const artists = results.data.results.artists?.data || [];
+      if (artists.length === 0) {
+        return null;
+      }
+
+      // Find exact match (case-insensitive) or use first result
+      const exactMatch = artists.find(a =>
+        a.attributes.name.toLowerCase() === artistName.toLowerCase()
+      );
+      const artist = exactMatch || artists[0];
+
+      const artwork = artist.attributes.artwork;
+      if (!artwork?.url) {
+        return null;
+      }
+
+      // Replace {w} and {h} placeholders with actual size
+      const imageUrl = artwork.url
+        .replace('{w}', String(size))
+        .replace('{h}', String(size));
+
+      return {
+        url: imageUrl,
+        name: artist.attributes.name,
+        id: artist.id
+      };
+    } catch (error) {
+      console.error('[MusicKitWeb] Artist search failed:', error);
+      return null;
+    }
+  }
 }
 
 // Singleton instance
