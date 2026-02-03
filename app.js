@@ -19194,37 +19194,51 @@ ${tracks}
       return artistImageFetchPromises.current[normalizedName];
     }
 
-    // Spotify requires authentication
-    if (!spotifyToken) {
-      console.log('Spotify not connected, cannot fetch artist image');
+    // Check if we have any source available (Spotify or MusicKit)
+    const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+    const musicKitAvailable = musicKitWeb?.isConfigured;
+
+    if (!spotifyToken && !musicKitAvailable) {
+      console.log('No music service connected, cannot fetch artist image');
       return null;
     }
 
     // Create the fetch promise and store it
     const fetchPromise = (async () => {
       try {
-        // Search for the artist on Spotify with exact artist name matching
-        const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
-        const response = await fetch(searchUrl, {
-          headers: { 'Authorization': `Bearer ${spotifyToken}` }
-        });
+        let imageUrl = null;
 
-        if (!response.ok) {
-          console.error('Spotify artist search failed:', response.status);
-          return null;
+        // Try Spotify first if available
+        if (spotifyToken) {
+          const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
+          const response = await fetch(searchUrl, {
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            // Find the artist with exact name match only (case-insensitive)
+            const artists = data.artists?.items || [];
+            const artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase());
+
+            if (artist?.images?.length > 0) {
+              imageUrl = artist.images[0].url;
+            }
+          } else {
+            console.error('Spotify artist search failed:', response.status);
+          }
         }
 
-        const data = await response.json();
+        // Fall back to MusicKit if Spotify didn't find an image
+        if (!imageUrl && musicKitAvailable) {
+          console.log('Trying MusicKit for artist image:', artistName);
+          const musicKitResult = await musicKitWeb.getArtistImage(artistName);
+          if (musicKitResult?.url) {
+            imageUrl = musicKitResult.url;
+          }
+        }
 
-        // Find the artist with exact name match only (case-insensitive)
-        // Don't fall back to first result - this causes wrong images for similar artist names
-        const artists = data.artists?.items || [];
-        const artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase());
-
-        if (artist?.images?.length > 0) {
-          // Spotify returns images sorted by size (largest first)
-          const imageUrl = artist.images[0].url;
-
+        if (imageUrl) {
           // Detect face position for smart cropping
           const facePosition = await detectFacePosition(imageUrl);
 
@@ -19239,7 +19253,7 @@ ${tracks}
 
         return null; // No image available, don't cache failure
       } catch (error) {
-        console.error('Failed to fetch artist image from Spotify:', error);
+        console.error('Failed to fetch artist image:', error);
         return null; // Don't cache failures
       } finally {
         // Clean up the in-flight promise
