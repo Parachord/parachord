@@ -7329,16 +7329,21 @@ const Parachord = () => {
   }, []);
 
   useEffect(() => {
-    // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
+    // Skip progress tracking for streaming tracks (Spotify, Apple Music) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
+    // Skip for SoundCloud - they use HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
-    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
-    const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
+    //
+    // Use _activeResolver to determine the actual playback source, not just what sources exist
+    const activeResolver = currentTrack?._activeResolver;
+    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic';
+    const isLocalFile = activeResolver === 'localfiles';
+    const isSoundCloud = activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -7362,10 +7367,13 @@ const Parachord = () => {
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
-    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
+    // Only run interpolation if we're actually playing via Spotify
+    // Check _activeResolver to avoid interfering with other playback sources (SoundCloud, local files, etc.)
+    // that update progress via their own mechanisms (HTML5 Audio timeupdate events)
+    const isSpotifyActive = currentTrack?._activeResolver === 'spotify';
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && isStreamingTrack && hasValidDuration && !browserPlaybackActive) {
+    if (isPlaying && isSpotifyActive && hasValidDuration && !browserPlaybackActive) {
       const interval = setInterval(() => {
         const baseline = spotifyProgressBaselineRef.current;
 
