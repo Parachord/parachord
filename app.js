@@ -36328,12 +36328,26 @@ useEffect(() => {
                       };
 
                       // Find purchasable sources - use resolver-specific URL fields
+                      // Require minimum confidence (0.8) and artist name match to avoid wrong purchases
+                      const MIN_PURCHASE_CONFIDENCE = 0.8;
                       const purchasableSources = [];
+
+                      // Helper to check if artist names match (case-insensitive, handles "The" prefix)
+                      const artistsMatch = (trackArtist, sourceArtist) => {
+                        if (!trackArtist || !sourceArtist) return false;
+                        const normalize = (s) => s.toLowerCase().replace(/^the\s+/, '').trim();
+                        const a1 = normalize(trackArtist);
+                        const a2 = normalize(sourceArtist);
+                        // Exact match or one contains the other (handles "Artist" vs "Artist feat. Other")
+                        return a1 === a2 || a1.includes(a2) || a2.includes(a1);
+                      };
 
                       // Check Bandcamp - use bandcampUrl which is always present for Bandcamp sources
                       const bandcampSource = effectiveSources.bandcamp;
                       const bandcampUrl = bandcampSource?.bandcampUrl || currentTrack.bandcampUrl;
-                      if (bandcampUrl) {
+                      const bandcampConfidence = bandcampSource?.confidence || 0;
+                      const bandcampArtistMatch = artistsMatch(currentTrack.artist, bandcampSource?.artist);
+                      if (bandcampUrl && bandcampConfidence >= MIN_PURCHASE_CONFIDENCE && bandcampArtistMatch) {
                         const resolver = allResolvers.find(r => r.id === 'bandcamp');
                         purchasableSources.push({
                           resolverId: 'bandcamp',
@@ -36345,7 +36359,9 @@ useEffect(() => {
                       // Check Qobuz - construct URL from qobuzId
                       const qobuzSource = effectiveSources.qobuz;
                       const qobuzId = qobuzSource?.qobuzId || currentTrack.qobuzId;
-                      if (qobuzId) {
+                      const qobuzConfidence = qobuzSource?.confidence || 0;
+                      const qobuzArtistMatch = artistsMatch(currentTrack.artist, qobuzSource?.artist);
+                      if (qobuzId && qobuzConfidence >= MIN_PURCHASE_CONFIDENCE && qobuzArtistMatch) {
                         const resolver = allResolvers.find(r => r.id === 'qobuz');
                         purchasableSources.push({
                           resolverId: 'qobuz',
