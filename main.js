@@ -1915,8 +1915,26 @@ ipcMain.handle('soundcloud-check-token', async () => {
       });
 
       if (!response.ok) {
-        console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
-        throw new Error(`Token refresh failed: ${response.status}`);
+        // Try to get error details from response body
+        let errorDetails = '';
+        try {
+          const errorBody = await response.json();
+          errorDetails = JSON.stringify(errorBody);
+          console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
+          console.error('   Error details:', errorDetails);
+        } catch {
+          console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
+        }
+
+        // On 401, the refresh token is invalid/expired - clear tokens so user can re-auth
+        if (response.status === 401) {
+          console.log('🔒 Clearing invalid SoundCloud tokens (refresh token expired or revoked)');
+          store.delete('soundcloud_token');
+          store.delete('soundcloud_refresh_token');
+          store.delete('soundcloud_token_expiry');
+        }
+
+        throw new Error(`Token refresh failed: ${response.status}${errorDetails ? ' - ' + errorDetails : ''}`);
       }
 
       const data = await response.json();
