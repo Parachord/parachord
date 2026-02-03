@@ -3598,6 +3598,7 @@ const Parachord = () => {
   const [unsavedFriendWarningOpen, setUnsavedFriendWarningOpen] = useState(false); // Warning dialog state
   const [pendingUnpinFriend, setPendingUnpinFriend] = useState(null); // Friend being unpinned (for warning dialog)
   const [rememberQueue, setRememberQueue] = useState(false); // Remember queue on app close/reopen
+  const [showDiscoveryBadges, setShowDiscoveryBadges] = useState(true); // Show unread badges on discovery features
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
@@ -11898,6 +11899,13 @@ const Parachord = () => {
       if (savedRememberQueue !== undefined) {
         setRememberQueue(savedRememberQueue);
         console.log('📦 Loaded remember queue preference:', savedRememberQueue);
+      }
+
+      // Load show discovery badges preference
+      const savedShowDiscoveryBadges = await window.electron.store.get('show_discovery_badges');
+      if (savedShowDiscoveryBadges !== undefined) {
+        setShowDiscoveryBadges(savedShowDiscoveryBadges);
+        console.log('📦 Loaded show discovery badges preference:', savedShowDiscoveryBadges);
       }
 
       // Load playlists view mode preference
@@ -22374,7 +22382,7 @@ useEffect(() => {
               ),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Recommendations",
-                discoveryUnread.recommendations && React.createElement('span', {
+                showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
                   className: 'w-2 h-2 rounded-full bg-purple-500 animate-pulse'
                 })
               )
@@ -22398,7 +22406,7 @@ useEffect(() => {
               ),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Pop of the Tops',
-                discoveryUnread.charts && React.createElement('span', {
+                showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
                   className: 'w-2 h-2 rounded-full bg-pink-500 animate-pulse'
                 })
               )
@@ -22421,7 +22429,7 @@ useEffect(() => {
               ),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Critical Darlings",
-                discoveryUnread.criticsPicks && React.createElement('span', {
+                showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
                   className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
                 })
               )
@@ -29330,7 +29338,7 @@ useEffect(() => {
                       ),
                       React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
                         'For You',
-                        discoveryUnread.recommendations && React.createElement('span', {
+                        showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
                           className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
                         })
                       ),
@@ -29385,7 +29393,7 @@ useEffect(() => {
                       ),
                       React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
                         'Critical Darlings',
-                        discoveryUnread.criticsPicks && React.createElement('span', {
+                        showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
                           className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
                         })
                       ),
@@ -29443,7 +29451,7 @@ useEffect(() => {
                       ),
                       React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
                         'Pop of the Tops',
-                        discoveryUnread.charts && React.createElement('span', {
+                        showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
                           className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
                         })
                       ),
@@ -35361,6 +35369,45 @@ useEffect(() => {
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${rememberQueue ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  )
+                ),
+
+                // Discover Settings Section
+                React.createElement('div', {
+                  className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+                },
+                  React.createElement('div', { className: 'mb-5' },
+                    React.createElement('h3', {
+                      className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+                    }, 'Discover'),
+                    React.createElement('p', {
+                      className: 'text-xs text-gray-500 mt-1'
+                    }, 'Configure discovery feature settings')
+                  ),
+                  // Show unread badges toggle
+                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
+                    React.createElement('div', null,
+                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                        'Show unread badges'
+                      ),
+                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                        'Display badges when Recommendations, Critical Darlings, or Pop of the Tops have new content'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !showDiscoveryBadges;
+                        setShowDiscoveryBadges(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('show_discovery_badges', newValue);
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
