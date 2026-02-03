@@ -169,7 +169,9 @@ const transformPlaylist = (playlist, folderId = null, folderName = null) => {
     folderId,
     folderName,
     isOwnedByUser: playlist.owner?.id === playlist.owner?.id, // Will be set properly during fetch
-    spotifyUri: playlist.uri
+    spotifyUri: playlist.uri,
+    ownerName: playlist.owner?.display_name || playlist.owner?.id || null,
+    ownerId: playlist.owner?.id || null
   };
 };
 

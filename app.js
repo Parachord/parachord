@@ -20503,6 +20503,7 @@ ${tracks}
         creator: parsed.creator,
         tracks: parsed.tracks || [],
         xspf: content,
+        source: 'imported-xspf',
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: Date.now(), // When added to library
         lastModified: Date.now()
@@ -20605,6 +20606,7 @@ ${tracks}
         creator: playlistCreator,
         tracks: parsed.tracks || [],
         xspf: content,
+        source: 'hosted-xspf',
         sourceUrl: url,  // Track the source URL for updates
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
@@ -27153,6 +27155,47 @@ useEffect(() => {
                   : React.createElement('p', {
                       className: 'text-sm text-gray-500'
                     }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
+                // Source info display
+                (() => {
+                  const source = selectedPlaylist.source || selectedPlaylist.syncedFrom?.resolver;
+                  const sourceUrl = selectedPlaylist.sourceUrl;
+
+                  // Determine display text based on source type
+                  let sourceLabel = null;
+                  if (source === 'spotify-sync' || source === 'spotify-import' || source === 'spotify') {
+                    sourceLabel = 'Spotify';
+                  } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
+                    sourceLabel = 'Hosted XSPF';
+                  } else if (source === 'imported-xspf') {
+                    sourceLabel = 'Imported XSPF';
+                  } else if (source === 'web') {
+                    sourceLabel = 'Web';
+                  }
+
+                  if (!sourceLabel) return null;
+
+                  // For sources with URLs, make them clickable
+                  if (sourceUrl) {
+                    return React.createElement('p', {
+                      className: 'text-xs text-gray-400'
+                    },
+                      'Source: ',
+                      React.createElement('a', {
+                        href: sourceUrl,
+                        onClick: (e) => {
+                          e.preventDefault();
+                          window.electron?.shell?.openExternal(sourceUrl);
+                        },
+                        className: 'text-blue-500 hover:text-blue-600 hover:underline cursor-pointer',
+                        title: sourceUrl
+                      }, sourceLabel)
+                    );
+                  }
+
+                  return React.createElement('p', {
+                    className: 'text-xs text-gray-400'
+                  }, `Source: ${sourceLabel}`);
+                })(),
                 // Edit mode: Title input
                 playlistEditMode && editedPlaylistData && React.createElement('input', {
                   type: 'text',

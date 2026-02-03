@@ -3704,10 +3704,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             title: remotePlaylist.name,
             description: remotePlaylist.description,
             tracks: tracks,
+            creator: remotePlaylist.ownerName || null,
+            source: remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import',
             syncedFrom: {
               resolver: providerId,
               externalId: remotePlaylist.externalId,
-              snapshotId: remotePlaylist.snapshotId
+              snapshotId: remotePlaylist.snapshotId,
+              ownerId: remotePlaylist.ownerId
             },
             hasUpdates: false,
             locallyModified: false,
