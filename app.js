@@ -6482,6 +6482,11 @@ const Parachord = () => {
       if (message.type === 'event') {
         switch (message.event) {
           case 'connected':
+            // Ignore browser events when streaming playback (Spotify, Apple Music) is active
+            if (streamingPlaybackActiveRef.current) {
+              console.log('🎬 Browser connected (ignored - streaming active)');
+              break;
+            }
             // Ignore when local file is playing
             if (audioRef.current && !audioRef.current.paused) {
               console.log('🎬 Browser connected (ignored - local file playing)');
