@@ -3547,6 +3547,18 @@ const Parachord = () => {
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
 
+  // Unread badges for discovery features (shows when content has changed since last view)
+  const [discoveryUnread, setDiscoveryUnread] = useState({
+    recommendations: false,
+    criticsPicks: false,
+    charts: false
+  });
+  const discoverySeenHashes = useRef({
+    recommendations: null,
+    criticsPicks: null,
+    charts: null
+  });
+
   // HOME view state
   const [homeData, setHomeData] = useState({
     topAlbumThisWeek: null,        // { album, artist, playCount, albumArt }
@@ -3871,6 +3883,38 @@ const Parachord = () => {
     sidebarBadgeTimeouts.current[item] = setTimeout(() => {
       setSidebarBadges(prev => ({ ...prev, [item]: null }));
     }, 2000);
+  }, []);
+
+  // Generate a simple hash from an array of item IDs for change detection
+  const generateDiscoveryHash = useCallback((items, keyFn = item => item.id) => {
+    if (!items || items.length === 0) return null;
+    // Use first 10 items to detect changes (covers typical feed updates)
+    const ids = items.slice(0, 10).map(keyFn).join('|');
+    return ids;
+  }, []);
+
+  // Mark a discovery feature as seen (user has viewed it)
+  const markDiscoverySeen = useCallback(async (feature, hash) => {
+    if (!hash || !window.electron?.store) return;
+    discoverySeenHashes.current[feature] = hash;
+    setDiscoveryUnread(prev => ({ ...prev, [feature]: false }));
+    await window.electron.store.set(`discovery_seen_${feature}`, hash);
+    console.log(`👁️ Marked ${feature} as seen (hash: ${hash.substring(0, 30)}...)`);
+  }, []);
+
+  // Check if discovery content has changed since last view
+  const checkDiscoveryUnread = useCallback((feature, currentHash) => {
+    if (!currentHash) return;
+    const seenHash = discoverySeenHashes.current[feature];
+    if (seenHash === null) {
+      // First load - don't show as unread
+      return;
+    }
+    const hasNewContent = seenHash !== currentHash;
+    if (hasNewContent) {
+      console.log(`🔔 New content in ${feature}! (was: ${seenHash?.substring(0, 20)}..., now: ${currentHash.substring(0, 20)}...)`);
+    }
+    setDiscoveryUnread(prev => ({ ...prev, [feature]: hasNewContent }));
   }, []);
 
   // Close collection sort dropdown when clicking outside
@@ -11870,6 +11914,17 @@ const Parachord = () => {
         console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
       }
 
+      // Load discovery feature seen hashes (for unread badges)
+      const savedSeenRecommendations = await window.electron.store.get('discovery_seen_recommendations');
+      const savedSeenCriticsPicks = await window.electron.store.get('discovery_seen_criticsPicks');
+      const savedSeenCharts = await window.electron.store.get('discovery_seen_charts');
+      discoverySeenHashes.current = {
+        recommendations: savedSeenRecommendations || null,
+        criticsPicks: savedSeenCriticsPicks || null,
+        charts: savedSeenCharts || null
+      };
+      console.log('📦 Loaded discovery seen hashes');
+
       // Load saved queue if remember queue is enabled
       if (savedRememberQueue) {
         const savedQueue = await window.electron.store.get('saved_queue');
@@ -12168,6 +12223,20 @@ const Parachord = () => {
     window.electron.store.set('last_active_view', viewData);
     console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}${viewData.friendId ? ` (friend: ${viewData.friendId})` : ''}`);
   }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab, selectedPlaylist?.id, currentFriend?.id, friendHistoryTab]);
+
+  // Mark discovery features as seen when user views them (clears unread badge)
+  useEffect(() => {
+    if (activeView === 'recommendations' && recommendations.artists.length > 0) {
+      const hash = generateDiscoveryHash(recommendations.artists, a => a.name);
+      markDiscoverySeen('recommendations', hash);
+    } else if (activeView === 'critics-picks' && criticsPicks.length > 0) {
+      const hash = generateDiscoveryHash(criticsPicks);
+      markDiscoverySeen('criticsPicks', hash);
+    } else if (activeView === 'discover' && charts.length > 0) {
+      const hash = generateDiscoveryHash(charts);
+      markDiscoverySeen('charts', hash);
+    }
+  }, [activeView, recommendations.artists, criticsPicks, charts, generateDiscoveryHash, markDiscoverySeen]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -16156,6 +16225,10 @@ ${tracks}
       setCriticsPicks(albums);
       setCriticsPicksLoaded(true);
 
+      // Check for new content (unread badge)
+      const hash = generateDiscoveryHash(albums);
+      checkDiscoveryUnread('criticsPicks', hash);
+
       // Fetch album art in background
       fetchCriticsPicksAlbumArt(albums);
 
@@ -16192,6 +16265,10 @@ ${tracks}
 
       setCharts(albums);
       setChartsLoaded(true);
+
+      // Check for new content (unread badge)
+      const hash = generateDiscoveryHash(albums);
+      checkDiscoveryUnread('charts', hash);
 
       // Wait for cache to be loaded before fetching album art
       if (cacheLoaded) {
@@ -16664,6 +16741,10 @@ ${tracks}
         error: null
       });
 
+      // Check for new content (unread badge) - use artist names as key
+      const hash = generateDiscoveryHash(artists, a => a.name);
+      checkDiscoveryUnread('recommendations', hash);
+
       // Fetch images for artists not in cache
       const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
       if (artistsNeedingImages.length > 0) {
@@ -16757,6 +16838,10 @@ ${tracks}
         loading: false,
         error: null
       });
+
+      // Check for new content (unread badge) - use artist names as key
+      const hash = generateDiscoveryHash(artists, a => a.name);
+      checkDiscoveryUnread('recommendations', hash);
 
       // Only fetch images for artists not already in cache
       const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
@@ -22287,7 +22372,12 @@ useEffect(() => {
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
               ),
-              "Recommendations"
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                "Recommendations",
+                discoveryUnread.recommendations && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-purple-500 animate-pulse'
+                })
+              )
             ),
             React.createElement('button', {
               onClick: () => {
@@ -22306,7 +22396,12 @@ useEffect(() => {
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
               ),
-              'Pop of the Tops'
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                'Pop of the Tops',
+                discoveryUnread.charts && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-pink-500 animate-pulse'
+                })
+              )
             ),
             React.createElement('button', {
               onClick: () => {
@@ -22324,7 +22419,12 @@ useEffect(() => {
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
               ),
-              "Critical Darlings"
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                "Critical Darlings",
+                discoveryUnread.criticsPicks && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
+                })
+              )
             )
           ),
 
@@ -29228,7 +29328,12 @@ useEffect(() => {
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z' })
                       ),
-                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'For You'),
+                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
+                        'For You',
+                        discoveryUnread.recommendations && React.createElement('span', {
+                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
+                        })
+                      ),
                       React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Personalized recommendations')
                     ),
                     // Top artist preview - clickable to artist page
@@ -29278,7 +29383,12 @@ useEffect(() => {
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
                       ),
-                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'Critical Darlings'),
+                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
+                        'Critical Darlings',
+                        discoveryUnread.criticsPicks && React.createElement('span', {
+                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
+                        })
+                      ),
                       React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'Acclaimed by critics')
                     ),
                     // Most recent album preview - clickable to album page
@@ -29331,7 +29441,12 @@ useEffect(() => {
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' })
                       ),
-                      React.createElement('h3', { className: 'font-semibold text-lg' }, 'Pop of the Tops'),
+                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
+                        'Pop of the Tops',
+                        discoveryUnread.charts && React.createElement('span', {
+                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
+                        })
+                      ),
                       React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'What everyone\'s playing')
                     ),
                     // #1 album preview - clickable to open the album
