@@ -25222,39 +25222,43 @@ useEffect(() => {
                   textTransform: 'uppercase'
                 }
               }, currentArtist.name),
-              // Star button to add/remove artist from collection (absolute positioned)
+              // Star button to add/remove artist from collection (absolute positioned wrapper)
               (() => {
                 const artistId = generateArtistId(currentArtist.name);
                 const isInCollection = collectionData.artists.some(a => a.id === artistId);
-                return React.createElement(Tooltip, {
-                  content: isInCollection ? 'Remove from collection' : 'Add to collection',
-                  position: 'top',
-                  variant: 'dark'
+                return React.createElement('div', {
+                  className: 'absolute -right-10 top-1/2 -translate-y-1/2'
                 },
-                  React.createElement('button', {
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      if (!isInCollection) {
-                        addArtistToCollection({ name: currentArtist.name, image: artistImage });
-                      } else {
-                        removeArtistFromCollection({ name: currentArtist.name });
-                      }
-                    },
-                    className: `absolute -right-10 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
-                    style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
+                  React.createElement(Tooltip, {
+                    content: isInCollection ? 'Remove from collection' : 'Add to collection',
+                    position: 'top',
+                    variant: 'dark'
                   },
-                    React.createElement('svg', {
-                      className: 'w-6 h-6',
-                      viewBox: '0 0 24 24',
-                      fill: isInCollection ? 'currentColor' : 'none',
-                      stroke: 'currentColor',
-                      strokeWidth: 1.5,
-                      strokeLinecap: 'round',
-                      strokeLinejoin: 'round'
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        if (!isInCollection) {
+                          addArtistToCollection({ name: currentArtist.name, image: artistImage });
+                        } else {
+                          removeArtistFromCollection({ name: currentArtist.name });
+                        }
+                      },
+                      className: `p-1.5 rounded-full transition-colors no-drag ${isInCollection ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/70 hover:text-white'}`,
+                      style: { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }
                     },
-                      React.createElement('polygon', {
-                        points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
-                      })
+                      React.createElement('svg', {
+                        className: 'w-6 h-6',
+                        viewBox: '0 0 24 24',
+                        fill: isInCollection ? 'currentColor' : 'none',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.5,
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round'
+                      },
+                        React.createElement('polygon', {
+                          points: '12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'
+                        })
+                      )
                     )
                   )
                 );
