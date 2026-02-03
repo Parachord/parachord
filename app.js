@@ -37827,6 +37827,7 @@ useEffect(() => {
                   stream: 'Stream',
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
+                  purchase: 'Purchase Downloads',
                   recommendations: 'Recommendations',
                   metadata: 'Metadata',
                   generate: 'AI Playlist Generation'
@@ -39882,6 +39883,7 @@ useEffect(() => {
                   stream: 'Stream',
                   browse: 'Browse',
                   urlLookup: 'URL Lookup',
+                  purchase: 'Purchase Downloads',
                   recommendations: 'Recommendations',
                   metadata: 'Metadata',
                   generate: 'AI Playlist Generation'
