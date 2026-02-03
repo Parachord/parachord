@@ -494,6 +494,36 @@ const SpotifySyncProvider = {
   },
 
   /**
+   * Remove albums from Spotify library
+   * @param {string[]} albumIds - Array of Spotify album IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean, removed: number }
+   */
+  async removeAlbums(albumIds, token) {
+    if (!albumIds || albumIds.length === 0) {
+      return { success: true, removed: 0 };
+    }
+
+    // Spotify allows max 50 albums per request
+    const batches = [];
+    for (let i = 0; i < albumIds.length; i += 50) {
+      batches.push(albumIds.slice(i, i + 50));
+    }
+
+    let totalRemoved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/albums', token, {
+        method: 'DELETE',
+        body: { ids: batch }
+      });
+      totalRemoved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, removed: totalRemoved };
+  },
+
+  /**
    * Follow artists on Spotify
    * @param {string[]} artistIds - Array of Spotify artist IDs
    * @param {string} token - Access token

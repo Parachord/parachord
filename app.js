@@ -7550,6 +7550,21 @@ const Parachord = () => {
         return prev;
       }
 
+      const existingTrack = prev.tracks[existingIndex];
+
+      // If track was synced from Spotify, also remove from Spotify
+      if (existingTrack.syncSources?.spotify && existingTrack.spotifyId) {
+        window.electron?.sync?.removeTracks('spotify', [existingTrack.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Removed ${track.title} from Spotify Liked Songs`);
+            } else {
+              console.error(`❌ Failed to remove from Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error removing from Spotify:', err));
+      }
+
       const newTracks = prev.tracks.filter(t => t.id !== trackId);
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
@@ -7744,6 +7759,74 @@ const Parachord = () => {
     });
   }, [saveCollection, showToast, showSidebarBadge]);
 
+  // Remove album from collection
+  const removeAlbumFromCollection = useCallback((album) => {
+    const albumId = generateAlbumId(album.artist, album.title);
+
+    setCollectionData(prev => {
+      const existingIndex = prev.albums.findIndex(a => a.id === albumId);
+      if (existingIndex === -1) {
+        showToast(`${album.title} is not in your collection`);
+        return prev;
+      }
+
+      const existingAlbum = prev.albums[existingIndex];
+
+      // If album was synced from Spotify, also remove from Spotify
+      if (existingAlbum.syncSources?.spotify && existingAlbum.spotifyId) {
+        window.electron?.sync?.removeAlbums('spotify', [existingAlbum.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Removed ${album.title} from Spotify Saved Albums`);
+            } else {
+              console.error(`❌ Failed to remove from Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error removing from Spotify:', err));
+      }
+
+      const newAlbums = prev.albums.filter(a => a.id !== albumId);
+      const newData = { ...prev, albums: newAlbums };
+      saveCollection(newData);
+      showToast(`Removed ${album.title} from Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
+  // Remove artist from collection
+  const removeArtistFromCollection = useCallback((artist) => {
+    const artistId = generateArtistId(artist.name);
+
+    setCollectionData(prev => {
+      const existingIndex = prev.artists.findIndex(a => a.id === artistId);
+      if (existingIndex === -1) {
+        showToast(`${artist.name} is not in your collection`);
+        return prev;
+      }
+
+      const existingArtist = prev.artists[existingIndex];
+
+      // If artist was synced from Spotify, also unfollow on Spotify
+      if (existingArtist.syncSources?.spotify && existingArtist.spotifyId) {
+        window.electron?.sync?.unfollowArtists('spotify', [existingArtist.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Unfollowed ${artist.name} on Spotify`);
+            } else {
+              console.error(`❌ Failed to unfollow on Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error unfollowing on Spotify:', err));
+      }
+
+      const newArtists = prev.artists.filter(a => a.id !== artistId);
+      const newData = { ...prev, artists: newArtists };
+      saveCollection(newData);
+      showToast(`Removed ${artist.name} from Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
@@ -7891,6 +7974,10 @@ const Parachord = () => {
           // Remove from collection based on type
           if (data.type === 'track' && data.track) {
             removeTrackFromCollection(data.track);
+          } else if (data.type === 'album' && data.album) {
+            removeAlbumFromCollection(data.album);
+          } else if (data.type === 'artist' && data.artist) {
+            removeArtistFromCollection(data.artist);
           }
         } else if (data.action === 'view-friend-history' && data.friend) {
           if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
@@ -7911,7 +7998,7 @@ const Parachord = () => {
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {

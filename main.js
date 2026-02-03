@@ -3953,6 +3953,34 @@ ipcMain.handle('sync:remove-tracks', async (event, providerId, trackIds) => {
   }
 });
 
+// Remove albums from sync provider library
+ipcMain.handle('sync:remove-albums', async (event, providerId, albumIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.albums) {
+    return { success: false, error: 'Provider does not support album syncing' };
+  }
+
+  if (!provider.removeAlbums) {
+    return { success: false, error: 'Provider does not support removing albums' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.removeAlbums(albumIds, token);
+    return { success: true, removed: result.removed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Follow artists on sync provider
 ipcMain.handle('sync:follow-artists', async (event, providerId, artistIds) => {
   const provider = SyncEngine.getProvider(providerId);
