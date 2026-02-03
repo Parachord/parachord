@@ -27831,7 +27831,10 @@ useEffect(() => {
 
             // Grid view
             if (playlistsViewMode === 'grid') {
-              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5' },
+              return React.createElement('div', {
+                key: `playlist-grid-${sorted.length}-${playlistsSearch}`,
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'
+              },
                 sorted.map((playlist, index) => {
                   const covers = allPlaylistCovers[playlist.id] || [];
                   const hasCachedCovers = covers.length > 0;
