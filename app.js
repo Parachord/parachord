@@ -23195,7 +23195,7 @@ useEffect(() => {
       React.createElement('div', {
         className: 'loading-wordmark'
       },
-        React.createElement(ParachordWordmark, { fill: '#7c3aed', height: 52 })
+        React.createElement(ParachordWordmark, { fill: '#1f2937', height: 52 })
       ),
       // Animated loading dots
       React.createElement('div', {
