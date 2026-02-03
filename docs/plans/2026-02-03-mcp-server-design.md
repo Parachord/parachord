@@ -1,300 +1,316 @@
-# MCP Server Integration Design
+# Conversational DJ with Pluggable AI Backends
 
 ## Overview
 
-A Model Context Protocol (MCP) server that exposes Parachord's playback state and controls to external AI assistants like Claude Desktop. This enables natural language music control, contextual queries about your library/listening history, and AI-assisted music discovery that goes beyond the existing prompt-based playlist generation.
+An embedded conversational AI assistant within Parachord that can control playback, answer questions about your music, and act as an intelligent DJ. Unlike the existing ChatGPT/Gemini plugins which only generate playlists, this feature provides full bidirectional control with context awareness.
 
-**Key Difference from Existing AI Plugins:**
+**Key Design Principles:**
+- **Pluggable AI backends** — Users choose their provider (local or cloud)
+- **Local-first option** — Ollama support means free, private, offline-capable
+- **Extends existing architecture** — New `chat` capability for `.axe` plugins
+- **Full context awareness** — AI sees now-playing, queue, history, library
+- **Bidirectional control** — AI can read state AND take actions
 
-| Aspect | ChatGPT/Gemini Plugins | MCP Server |
-|--------|------------------------|------------|
-| Direction | One-way (prompt → tracks) | Bidirectional (read + write) |
-| Context | Only what user types | Full access to app state |
-| Control | None — generates lists only | Can control playback |
-| Location | Inside Parachord UI | From any MCP client |
-| Initiation | Click ✨, type prompt | Conversational, ambient |
+## Comparison with Existing AI Plugins
 
-## Problems Solved
-
-### 1. No External AI Access
-Currently, AI assistants like Claude Desktop cannot interact with Parachord at all. Users must manually copy/paste information or use the in-app AI prompt.
-
-### 2. Limited Context for AI
-The existing AI plugins only receive what the user types plus optional listening history. They can't see:
-- What's currently playing
-- The current queue
-- User's playlists
-- Real-time playback state
-
-### 3. No Voice/Conversational Control
-Users can't control Parachord through natural language from external interfaces. Commands like "skip this" or "play something similar" require manual UI interaction.
+| Aspect | Current (generate) | New (chat) |
+|--------|-------------------|------------|
+| Interaction | Single prompt → playlist | Multi-turn conversation |
+| Context | Listening history only | Full app state |
+| Control | None | Play, pause, skip, queue, etc. |
+| Memory | None | Session-based conversation |
+| Interface | Modal prompt | Persistent chat panel |
 
 ## User Flows
 
-### Flow 1: Conversational Playback Control
+### Flow 1: Conversational Control
 
 ```
-User (in Claude Desktop): "What's playing in Parachord right now?"
+User: "What's playing right now?"
     ↓
-Claude reads parachord://now-playing resource
+AI reads now-playing context
     ↓
-Claude: "You're listening to 'Vampire Empire' by Big Thief"
+AI: "You're listening to 'Vampire Empire' by Big Thief
+     from the album Dragon New Warm Mountain."
     ↓
-User: "Nice, queue up more songs like this"
+User: "Nice, play more like this"
     ↓
-Claude uses search tool + queue_add tool
+AI calls search() + queue_add() tools
     ↓
-Claude: "I've added 5 similar indie folk tracks to your queue"
+AI: "I've queued up 5 similar indie folk tracks:
+     - 'Simulation Swarm' by Big Thief
+     - 'Right Back to It' by Waxahatchee
+     - ..."
 ```
 
-### Flow 2: Library Queries
+### Flow 2: Hands-Free Commands
 
 ```
-User: "What have I been listening to most this week?"
+User: "Pause"
     ↓
-Claude reads parachord://history resource
+AI calls control("pause")
     ↓
-Claude: "Your top artists this week are Big Thief, MJ Lenderman,
-         and Waxahatchee. You've played 'Rudolph' 8 times!"
+AI: "Paused."
+    ↓
+User: "Skip to the next one"
+    ↓
+AI calls control("skip")
+    ↓
+AI: "Now playing 'Manning Fireworks' by MJ Lenderman"
 ```
 
-### Flow 3: Hands-Free Control
+### Flow 3: Library Queries
 
 ```
-User: "Pause the music"
+User: "What have I been listening to lately?"
     ↓
-Claude calls control("pause") tool
+AI reads history context
     ↓
-Claude: "Paused."
-    ↓
-User: "Skip to the next track"
-    ↓
-Claude calls control("skip") tool
-    ↓
-Claude: "Now playing 'Manning Fireworks' by MJ Lenderman"
+AI: "This week you've mostly been playing Big Thief (34 plays),
+     MJ Lenderman (28 plays), and Waxahatchee (19 plays).
+     'Rudolph' is your most-played track with 8 plays!"
 ```
 
-### Flow 4: Smart Playlist Creation
+### Flow 4: Smart Requests
 
 ```
-User: "Create a playlist from my queue and save it"
+User: "I'm going for a run, put on something energetic"
     ↓
-Claude reads parachord://queue resource
+AI considers: listening history, time of day, request
     ↓
-Claude calls create_playlist tool with queue tracks
+AI calls queue_clear() + queue_add() with high-energy tracks
     ↓
-Claude: "Created playlist 'Queue Snapshot - Feb 3' with 12 tracks"
+AI: "I've set up a running playlist based on your taste.
+     Starting with 'Running Up That Hill' - enjoy your run!"
 ```
 
 ## Architecture
 
-### Option A: Standalone MCP Server (Recommended)
-
 ```
-┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│  Claude Desktop │────────▶│  MCP Server     │────────▶│  Parachord      │
-│  (MCP Client)   │  stdio  │  (Node process) │   WS    │  (Electron)     │
-└─────────────────┘         └─────────────────┘         └─────────────────┘
-                                    │
-                                    │ Launched by Claude Desktop
-                                    │ via claude_desktop_config.json
-                                    │
-                            ┌───────┴───────┐
-                            │ Resources     │
-                            │ - now-playing │
-                            │ - queue       │
-                            │ - history     │
-                            │ - playlists   │
-                            │ - library     │
-                            ├───────────────┤
-                            │ Tools         │
-                            │ - play        │
-                            │ - control     │
-                            │ - search      │
-                            │ - queue_add   │
-                            │ - create_playlist │
-                            └───────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Parachord                                                      │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Chat Panel (collapsible sidebar or modal)              │    │
+│  │  ┌─────────────────────────────────────────────────┐    │    │
+│  │  │ AI: What would you like to listen to?           │    │    │
+│  │  │ You: Play something chill for working           │    │    │
+│  │  │ AI: I've queued up some ambient tracks...       │    │    │
+│  │  │ You: Skip this one                              │    │    │
+│  │  │ AI: Skipped. Now playing "Outro" by M83        │    │    │
+│  │  └─────────────────────────────────────────────────┘    │    │
+│  │  ┌─────────────────────────────────────────────────┐    │    │
+│  │  │ Type a message...                          [⏎] │    │    │
+│  │  └─────────────────────────────────────────────────┘    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              │                                  │
+│                              ▼                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  AI Provider Layer (pluggable .axe plugins)             │    │
+│  │                                                         │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐        │    │
+│  │  │ Ollama  │ │ OpenAI  │ │ Gemini  │ │ Claude  │ ...    │    │
+│  │  │ (local) │ │ (cloud) │ │ (cloud) │ │ (cloud) │        │    │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘        │    │
+│  │       ▲           ▲           ▲           ▲             │    │
+│  │       └───────────┴───────────┴───────────┘             │    │
+│  │                        │                                │    │
+│  │              Unified Tool Interface                     │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              │                                  │
+│                              ▼                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Context & Tools                                        │    │
+│  │                                                         │    │
+│  │  Context (read-only):     Tools (actions):              │    │
+│  │  • now_playing            • play(artist, title)         │    │
+│  │  • queue                  • control(action)             │    │
+│  │  • history                • search(query)               │    │
+│  │  • playlists              • queue_add(tracks)           │    │
+│  │  • library_stats          • queue_clear()               │    │
+│  │                           • create_playlist(name, tracks)│    │
+│  │                           • shuffle(enabled)            │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              │                                  │
+│                              ▼                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Parachord Core (existing)                              │    │
+│  │  • Playback engine                                      │    │
+│  │  • Queue management                                     │    │
+│  │  • Resolver system                                      │    │
+│  │  • Playlist storage                                     │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Why Standalone:**
-- Claude Desktop launches the MCP server via stdio
-- MCP server connects to Parachord via WebSocket (existing infra)
-- Parachord doesn't need modification to its startup
-- Clean separation: MCP server is optional, doesn't bloat main app
-- Can be developed/tested independently
+## AI Provider Plugins
 
-### Communication Flow
+### New Plugin Capability: `chat`
 
-```
-Claude Desktop                MCP Server                    Parachord
-     │                            │                             │
-     │──── MCP Request ──────────▶│                             │
-     │     (read now-playing)     │                             │
-     │                            │──── WS: getNowPlaying ─────▶│
-     │                            │                             │
-     │                            │◀─── WS: {artist, title} ────│
-     │◀─── MCP Response ──────────│                             │
-     │     (resource content)     │                             │
-     │                            │                             │
-     │──── MCP Tool Call ────────▶│                             │
-     │     (control: pause)       │                             │
-     │                            │──── WS: control(pause) ────▶│
-     │                            │                             │
-     │                            │◀─── WS: {success: true} ────│
-     │◀─── MCP Tool Result ───────│                             │
-     │                            │                             │
-```
-
-## MCP Resources
-
-Resources are read-only data that AI assistants can query.
-
-### `parachord://now-playing`
-
-Current track information.
+Extends the existing `.axe` plugin format with a new capability for conversational AI.
 
 ```json
 {
-  "track": {
-    "title": "Vampire Empire",
-    "artist": "Big Thief",
-    "album": "Dragon New Warm Mountain I Believe in You",
-    "duration": 245,
-    "source": "spotify"
+  "manifest": {
+    "id": "ollama",
+    "name": "Ollama (Local)",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Run AI locally with Ollama. Free, private, works offline."
   },
-  "playback": {
-    "state": "playing",
-    "position": 67,
-    "volume": 0.8
+  "capabilities": {
+    "chat": true
+  },
+  "settings": {
+    "model": {
+      "type": "select",
+      "label": "Model",
+      "options": ["llama3.1", "llama3.1:70b", "mistral", "mixtral", "qwen2.5"],
+      "default": "llama3.1"
+    },
+    "endpoint": {
+      "type": "text",
+      "label": "Ollama URL",
+      "default": "http://localhost:11434"
+    }
+  },
+  "implementation": {
+    "chat": "async function(messages, tools, config) { ... }"
   }
 }
 ```
 
-Returns `null` if nothing is playing.
+### Supported Providers
 
-### `parachord://queue`
+| Provider | Type | Cost | Tool Calling | Notes |
+|----------|------|------|--------------|-------|
+| **Ollama** | Local | Free | Yes (Llama 3.1+) | Requires Ollama installed |
+| **LM Studio** | Local | Free | Varies | Alternative local option |
+| **OpenAI** | Cloud | Paid | Yes | GPT-4o, GPT-4o-mini |
+| **Google Gemini** | Cloud | Free tier | Yes | Gemini 2.0 Flash |
+| **Anthropic Claude** | Cloud | Paid | Yes | Claude 3.5 Sonnet |
+| **Groq** | Cloud | Free tier | Yes | Fast Llama/Mistral inference |
+| **Mistral** | Cloud | Paid | Yes | Mistral Large |
 
-Current playback queue.
+### Plugin Implementation Pattern
 
-```json
-{
-  "currentIndex": 2,
-  "tracks": [
-    { "title": "Simulation Swarm", "artist": "Big Thief", "resolved": true },
-    { "title": "Sparrow", "artist": "Big Thief", "resolved": true },
-    { "title": "Vampire Empire", "artist": "Big Thief", "resolved": true },
-    { "title": "Rudolph", "artist": "MJ Lenderman", "resolved": false },
-    { "title": "Manning Fireworks", "artist": "MJ Lenderman", "resolved": false }
-  ],
-  "shuffle": false,
-  "repeat": "off"
+Each chat provider implements the same interface:
+
+```javascript
+// Implementation signature
+async function chat(messages, tools, config) {
+  // messages: Array of {role: "user"|"assistant"|"system", content: string}
+  // tools: Array of tool definitions (standardized format)
+  // config: Plugin settings (model, apiKey, endpoint, etc.)
+  //
+  // Returns: {
+  //   content: string,           // AI's text response
+  //   tool_calls?: Array<{       // Optional tool calls
+  //     name: string,
+  //     arguments: object
+  //   }>
+  // }
 }
 ```
 
-### `parachord://history`
+### Example: Ollama Plugin
 
-Recent listening history (last 7 days).
+```javascript
+async function chat(messages, tools, config) {
+  const response = await fetch(`${config.endpoint}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.model,
+      messages: messages,
+      tools: tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
+      })),
+      stream: false
+    })
+  });
 
-```json
-{
-  "period": "7d",
-  "totalPlays": 147,
-  "topArtists": [
-    { "name": "Big Thief", "plays": 34 },
-    { "name": "MJ Lenderman", "plays": 28 },
-    { "name": "Waxahatchee", "plays": 19 }
-  ],
-  "topTracks": [
-    { "title": "Rudolph", "artist": "MJ Lenderman", "plays": 8 },
-    { "title": "Vampire Empire", "artist": "Big Thief", "plays": 6 }
-  ],
-  "recentTracks": [
-    { "title": "Vampire Empire", "artist": "Big Thief", "playedAt": "2026-02-03T14:23:00Z" },
-    { "title": "Rudolph", "artist": "MJ Lenderman", "playedAt": "2026-02-03T14:19:00Z" }
-  ]
+  const data = await response.json();
+
+  return {
+    content: data.message.content,
+    tool_calls: data.message.tool_calls?.map(tc => ({
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments)
+    }))
+  };
 }
 ```
 
-### `parachord://playlists`
+### Example: OpenAI Plugin (extends existing)
 
-User's playlists.
-
-```json
-{
-  "playlists": [
-    {
-      "id": "abc123",
-      "name": "Morning Coffee",
-      "trackCount": 24,
-      "createdAt": "2026-01-15T10:00:00Z"
+```javascript
+async function chat(messages, tools, config) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`
     },
-    {
-      "id": "def456",
-      "name": "Workout Mix",
-      "trackCount": 42,
-      "createdAt": "2026-01-20T16:30:00Z"
-    }
-  ]
+    body: JSON.stringify({
+      model: config.model || 'gpt-4o-mini',
+      messages: messages,
+      tools: tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
+      }))
+    })
+  });
+
+  const data = await response.json();
+  const choice = data.choices[0];
+
+  return {
+    content: choice.message.content,
+    tool_calls: choice.message.tool_calls?.map(tc => ({
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments)
+    }))
+  };
 }
 ```
 
-### `parachord://playlists/{id}`
+## Tool Definitions
 
-Specific playlist details (dynamic resource).
-
-```json
-{
-  "id": "abc123",
-  "name": "Morning Coffee",
-  "tracks": [
-    { "title": "Simulation Swarm", "artist": "Big Thief" },
-    { "title": "Right Back to It", "artist": "Waxahatchee" }
-  ]
-}
-```
-
-### `parachord://library/stats`
-
-Local library statistics.
-
-```json
-{
-  "tracks": 4521,
-  "artists": 312,
-  "albums": 489,
-  "totalDuration": 982800,
-  "watchFolders": ["/Users/me/Music", "/Volumes/External/Music"]
-}
-```
-
-## MCP Tools
-
-Tools are actions that AI assistants can execute.
+Tools are defined once and work across all providers. They follow the JSON Schema format that most LLM APIs support.
 
 ### `play`
 
-Play a specific track by searching for it.
+Play a specific track.
 
-**Parameters:**
 ```json
 {
-  "artist": { "type": "string", "description": "Artist name", "required": true },
-  "title": { "type": "string", "description": "Track title", "required": true },
-  "album": { "type": "string", "description": "Album name (optional)", "required": false }
-}
-```
-
-**Behavior:**
-1. Search across all enabled resolvers
-2. Auto-resolve best match
-3. Start playback immediately
-4. Return success/failure
-
-**Response:**
-```json
-{
-  "success": true,
-  "track": { "title": "Vampire Empire", "artist": "Big Thief", "source": "spotify" }
+  "name": "play",
+  "description": "Play a specific track by searching for it and starting playback immediately",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "artist": {
+        "type": "string",
+        "description": "The artist name"
+      },
+      "title": {
+        "type": "string",
+        "description": "The track title"
+      }
+    },
+    "required": ["artist", "title"]
+  }
 }
 ```
 
@@ -302,66 +318,46 @@ Play a specific track by searching for it.
 
 Control playback state.
 
-**Parameters:**
 ```json
 {
-  "action": {
-    "type": "string",
-    "enum": ["pause", "resume", "skip", "previous", "stop"],
-    "required": true
+  "name": "control",
+  "description": "Control music playback - pause, resume, skip to next, go to previous track",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["pause", "resume", "skip", "previous"],
+        "description": "The playback action to perform"
+      }
+    },
+    "required": ["action"]
   }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "newState": "paused"
-}
-```
-
-### `seek`
-
-Seek to a position in the current track.
-
-**Parameters:**
-```json
-{
-  "position": { "type": "number", "description": "Position in seconds", "required": true }
-}
-```
-
-### `volume`
-
-Set playback volume.
-
-**Parameters:**
-```json
-{
-  "level": { "type": "number", "description": "Volume level 0.0-1.0", "required": true }
 }
 ```
 
 ### `search`
 
-Search for tracks across all sources.
+Search for tracks.
 
-**Parameters:**
 ```json
 {
-  "query": { "type": "string", "description": "Search query", "required": true },
-  "limit": { "type": "number", "description": "Max results (default 10)", "required": false }
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    { "title": "Vampire Empire", "artist": "Big Thief", "album": "...", "source": "spotify" },
-    { "title": "Vampire Empire (Live)", "artist": "Big Thief", "source": "youtube" }
-  ]
+  "name": "search",
+  "description": "Search for tracks across all music sources",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query (artist name, track title, or both)"
+      },
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of results (default 10)"
+      }
+    },
+    "required": ["query"]
+  }
 }
 ```
 
@@ -369,35 +365,33 @@ Search for tracks across all sources.
 
 Add tracks to the queue.
 
-**Parameters:**
 ```json
 {
-  "tracks": {
-    "type": "array",
-    "items": {
-      "type": "object",
-      "properties": {
-        "artist": { "type": "string" },
-        "title": { "type": "string" }
+  "name": "queue_add",
+  "description": "Add one or more tracks to the playback queue",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tracks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "artist": { "type": "string" },
+            "title": { "type": "string" }
+          },
+          "required": ["artist", "title"]
+        },
+        "description": "Tracks to add to the queue"
+      },
+      "position": {
+        "type": "string",
+        "enum": ["next", "last"],
+        "description": "Add after current track (next) or at end (last). Default: last"
       }
     },
-    "required": true
-  },
-  "position": {
-    "type": "string",
-    "enum": ["next", "last"],
-    "description": "Add after current track or at end (default: last)",
-    "required": false
+    "required": ["tracks"]
   }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "added": 5,
-  "queueLength": 12
 }
 ```
 
@@ -405,11 +399,10 @@ Add tracks to the queue.
 
 Clear the queue.
 
-**Response:**
 ```json
 {
-  "success": true,
-  "removed": 10
+  "name": "queue_clear",
+  "description": "Clear all tracks from the playback queue"
 }
 ```
 
@@ -417,485 +410,711 @@ Clear the queue.
 
 Create a new playlist.
 
-**Parameters:**
 ```json
 {
-  "name": { "type": "string", "description": "Playlist name", "required": true },
-  "tracks": {
-    "type": "array",
-    "items": {
-      "type": "object",
-      "properties": {
-        "artist": { "type": "string" },
-        "title": { "type": "string" }
+  "name": "create_playlist",
+  "description": "Create a new playlist with the specified tracks",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Name for the new playlist"
+      },
+      "tracks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "artist": { "type": "string" },
+            "title": { "type": "string" }
+          }
+        },
+        "description": "Tracks to include in the playlist"
       }
     },
-    "required": true
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "playlist": {
-    "id": "xyz789",
-    "name": "AI Generated Mix",
-    "trackCount": 15
+    "required": ["name", "tracks"]
   }
 }
 ```
 
 ### `shuffle`
 
-Toggle or set shuffle mode.
+Toggle shuffle mode.
 
-**Parameters:**
 ```json
 {
-  "enabled": { "type": "boolean", "description": "Enable/disable shuffle", "required": false }
+  "name": "shuffle",
+  "description": "Turn shuffle mode on or off",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "true to enable shuffle, false to disable"
+      }
+    },
+    "required": ["enabled"]
+  }
 }
 ```
 
-If `enabled` is omitted, toggles current state.
+## Context Injection
 
-## WebSocket Protocol Extension
+Before each AI request, Parachord injects current state into the system prompt.
 
-Extends the existing WebSocket server (port 21863) used by the browser extension.
-
-### New Message Types
-
-**Request Format:**
-```json
-{
-  "id": "req-123",
-  "type": "mcp",
-  "action": "getNowPlaying" | "getQueue" | "getHistory" | "getPlaylists" | "control" | "search" | ...,
-  "params": { ... }
-}
-```
-
-**Response Format:**
-```json
-{
-  "id": "req-123",
-  "type": "mcp-response",
-  "success": true,
-  "data": { ... }
-}
-```
-
-**Error Format:**
-```json
-{
-  "id": "req-123",
-  "type": "mcp-response",
-  "success": false,
-  "error": { "code": "NOT_PLAYING", "message": "No track is currently playing" }
-}
-```
-
-### MCP Actions
-
-| Action | Description | Params |
-|--------|-------------|--------|
-| `getNowPlaying` | Get current track + playback state | — |
-| `getQueue` | Get queue tracks | — |
-| `getHistory` | Get listening history | `{ period: "7d" }` |
-| `getPlaylists` | List all playlists | — |
-| `getPlaylist` | Get specific playlist | `{ id: "abc123" }` |
-| `getLibraryStats` | Get local library stats | — |
-| `play` | Play a track | `{ artist, title, album? }` |
-| `control` | Playback control | `{ action: "pause" \| "resume" \| ... }` |
-| `seek` | Seek position | `{ position: 120 }` |
-| `volume` | Set volume | `{ level: 0.8 }` |
-| `search` | Search tracks | `{ query, limit? }` |
-| `queueAdd` | Add to queue | `{ tracks: [...], position? }` |
-| `queueClear` | Clear queue | — |
-| `createPlaylist` | Create playlist | `{ name, tracks: [...] }` |
-| `shuffle` | Toggle shuffle | `{ enabled?: boolean }` |
-
-## File Structure
+### System Prompt Template
 
 ```
-parachord/
-├── mcp-server/
-│   ├── package.json           # MCP server dependencies
-│   ├── index.js               # Main MCP server entry point
-│   ├── resources/
-│   │   ├── now-playing.js     # Now playing resource handler
-│   │   ├── queue.js           # Queue resource handler
-│   │   ├── history.js         # History resource handler
-│   │   ├── playlists.js       # Playlists resource handler
-│   │   └── library.js         # Library stats resource handler
-│   ├── tools/
-│   │   ├── playback.js        # play, control, seek, volume tools
-│   │   ├── queue.js           # queue_add, queue_clear tools
-│   │   ├── search.js          # search tool
-│   │   └── playlists.js       # create_playlist tool
-│   └── parachord-client.js    # WebSocket client to connect to Parachord
-├── main.js                    # Add MCP message handlers to existing WS server
-├── app.js                     # Add IPC handlers for MCP actions
-└── preload.js                 # Expose MCP IPC to renderer
+You are a helpful music DJ assistant for Parachord, a multi-source music player.
+You can control playback, search for music, manage the queue, and answer questions
+about the user's music.
+
+CURRENT STATE:
+{{#if nowPlaying}}
+Now Playing: "{{nowPlaying.title}}" by {{nowPlaying.artist}}
+  Album: {{nowPlaying.album}}
+  Source: {{nowPlaying.source}}
+  Position: {{formatTime nowPlaying.position}} / {{formatTime nowPlaying.duration}}
+  State: {{playbackState}}
+{{else}}
+Nothing is currently playing.
+{{/if}}
+
+Queue ({{queue.length}} tracks):
+{{#each queue}}
+  {{@index}}. "{{this.title}}" by {{this.artist}}
+{{/each}}
+
+{{#if history}}
+Recent Listening (last 7 days):
+  Top Artists: {{#each history.topArtists}}{{this.name}} ({{this.plays}}){{#unless @last}}, {{/unless}}{{/each}}
+  Total Plays: {{history.totalPlays}}
+{{/if}}
+
+Respond concisely. When taking actions, confirm what you did. If you need to play
+or queue music, use the search tool first to find tracks, then use play or queue_add.
+```
+
+### Context Data Structure
+
+```javascript
+const context = {
+  nowPlaying: {
+    title: "Vampire Empire",
+    artist: "Big Thief",
+    album: "Dragon New Warm Mountain I Believe in You",
+    source: "spotify",
+    position: 67,      // seconds
+    duration: 245      // seconds
+  },
+  playbackState: "playing", // or "paused"
+  queue: [
+    { title: "Simulation Swarm", artist: "Big Thief" },
+    { title: "Sparrow", artist: "Big Thief" },
+    // ...
+  ],
+  history: {
+    topArtists: [
+      { name: "Big Thief", plays: 34 },
+      { name: "MJ Lenderman", plays: 28 }
+    ],
+    topTracks: [
+      { title: "Rudolph", artist: "MJ Lenderman", plays: 8 }
+    ],
+    totalPlays: 147
+  },
+  shuffle: false,
+  repeat: "off"
+};
+```
+
+## UI Design
+
+### Option A: Chat Sidebar (Recommended)
+
+A collapsible panel on the right side, similar to Spotify's friend activity.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  [Parachord]                                    [≡] [🔍] [💬]       │
+├─────────────────────────────────────────────────┬───────────────────┤
+│                                                 │ AI DJ             │
+│                                                 │ ─────────────────│
+│                                                 │ ○ What would you  │
+│                                                 │   like to listen  │
+│           Main Content Area                     │   to?             │
+│           (Queue, Search, Artist, etc.)         │                   │
+│                                                 │ ● Play something  │
+│                                                 │   chill           │
+│                                                 │                   │
+│                                                 │ ○ I've queued up  │
+│                                                 │   some ambient... │
+│                                                 │                   │
+│                                                 │ ● Skip this one   │
+│                                                 │                   │
+│                                                 │ ○ Skipped. Now    │
+│                                                 │   playing "Outro" │
+│                                                 │                   │
+│                                                 ├───────────────────┤
+│                                                 │ [Type a message...│
+├─────────────────────────────────────────────────┴───────────────────┤
+│   advancement controls                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Behavior:**
+- Toggle with 💬 button in header or keyboard shortcut (Cmd+J?)
+- Persists across navigation
+- Remembers conversation within session
+- Collapses to icon when closed
+
+### Option B: Expanded ✨ Modal
+
+Extend the existing AI prompt modal into a full chat interface.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          AI DJ                              [×]     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ○ What would you like to listen to?                                │
+│                                                                     │
+│  ● I want something upbeat for a morning workout                    │
+│                                                                     │
+│  ○ I've put together an energetic mix for your workout:             │
+│    • "Running Up That Hill" - Kate Bush                             │
+│    • "Physical" - Dua Lipa                                          │
+│    • "Don't Start Now" - Dua Lipa                                   │
+│    • "Levitating" - Dua Lipa                                        │
+│    • "Blinding Lights" - The Weeknd                                 │
+│    Starting playback now!                                           │
+│                                                                     │
+│  ● Perfect! But skip the Kate Bush, not feeling it today            │
+│                                                                     │
+│  ○ Skipped! Now playing "Physical" by Dua Lipa.                     │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Type a message...                                           │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                     │
+│  Provider: [Ollama (Local) ▼]                    [Clear Chat]       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### UI Components
+
+**Message Bubble:**
+```javascript
+const MessageBubble = ({ message, isUser }) => (
+  <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+      isUser
+        ? 'bg-blue-500 text-white'
+        : 'bg-gray-100 text-gray-900'
+    }`}>
+      {message.content}
+      {message.toolResults && (
+        <div className="mt-2 text-xs opacity-75">
+          {message.toolResults.map(r => `✓ ${r.tool}`).join(' ')}
+        </div>
+      )}
+    </div>
+  </div>
+);
+```
+
+**Provider Selector:**
+```javascript
+const ProviderSelector = ({ providers, selected, onChange }) => (
+  <select
+    value={selected}
+    onChange={e => onChange(e.target.value)}
+    className="text-sm bg-transparent border rounded px-2 py-1"
+  >
+    {providers.map(p => (
+      <option key={p.id} value={p.id}>
+        {p.name} {p.isLocal ? '(Local)' : ''}
+      </option>
+    ))}
+  </select>
+);
 ```
 
 ## Implementation
 
-### Phase 1: WebSocket Protocol Extension
+### File Structure
 
-Extend existing WebSocket server in `main.js` to handle MCP messages.
+```
+parachord/
+├── app.js                          # Add chat state, UI, tool execution
+├── components/
+│   └── ChatPanel.js                # Chat UI component (new)
+├── services/
+│   └── ai-chat.js                  # Chat orchestration logic (new)
+├── tools/
+│   └── dj-tools.js                 # Tool definitions and executors (new)
+└── plugins/                        # Downloaded .axe files
+    ├── ollama.axe                  # Ollama chat provider (new)
+    ├── chatgpt.axe                 # Extend with chat capability
+    ├── gemini.axe                  # Extend with chat capability
+    ├── claude.axe                  # Claude chat provider (new)
+    └── groq.axe                    # Groq chat provider (new)
+```
+
+### Chat Orchestration (ai-chat.js)
 
 ```javascript
-// main.js - In WebSocket message handler
-ws.on('message', (data) => {
-  const message = JSON.parse(data);
-
-  // Existing extension handling
-  if (message.type === 'extension') {
-    // ... existing code
+class AIChatService {
+  constructor(provider, tools, getContext) {
+    this.provider = provider;
+    this.tools = tools;
+    this.getContext = getContext;
+    this.messages = [];
   }
 
-  // New MCP handling
-  if (message.type === 'mcp') {
-    handleMcpMessage(ws, message);
-  }
-});
+  async sendMessage(userMessage) {
+    // Add user message to history
+    this.messages.push({ role: 'user', content: userMessage });
 
-async function handleMcpMessage(ws, message) {
-  const { id, action, params } = message;
+    // Build system prompt with current context
+    const context = await this.getContext();
+    const systemPrompt = this.buildSystemPrompt(context);
+
+    // Call AI provider
+    const response = await this.provider.chat(
+      [{ role: 'system', content: systemPrompt }, ...this.messages],
+      this.tools,
+      this.provider.config
+    );
+
+    // Handle tool calls if any
+    if (response.tool_calls?.length > 0) {
+      const toolResults = await this.executeTools(response.tool_calls);
+
+      // Add assistant message with tool calls
+      this.messages.push({
+        role: 'assistant',
+        content: response.content,
+        tool_calls: response.tool_calls
+      });
+
+      // Add tool results
+      this.messages.push({
+        role: 'tool',
+        content: JSON.stringify(toolResults)
+      });
+
+      // Get follow-up response
+      const followUp = await this.provider.chat(
+        [{ role: 'system', content: systemPrompt }, ...this.messages],
+        this.tools,
+        this.provider.config
+      );
+
+      this.messages.push({ role: 'assistant', content: followUp.content });
+      return { content: followUp.content, toolResults };
+    }
+
+    // No tool calls, just return response
+    this.messages.push({ role: 'assistant', content: response.content });
+    return { content: response.content };
+  }
+
+  async executeTools(toolCalls) {
+    const results = [];
+    for (const call of toolCalls) {
+      const tool = this.tools.find(t => t.name === call.name);
+      if (tool) {
+        const result = await tool.execute(call.arguments);
+        results.push({ tool: call.name, result });
+      }
+    }
+    return results;
+  }
+
+  buildSystemPrompt(context) {
+    // Template from earlier in this doc
+    return `You are a helpful music DJ assistant...`;
+  }
+
+  clearHistory() {
+    this.messages = [];
+  }
+}
+```
+
+### Tool Executors (dj-tools.js)
+
+```javascript
+// Tool definitions with executors
+export const djTools = [
+  {
+    name: 'play',
+    description: 'Play a specific track by searching for it and starting playback',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'Artist name' },
+        title: { type: 'string', description: 'Track title' }
+      },
+      required: ['artist', 'title']
+    },
+    execute: async ({ artist, title }, { search, playTrack }) => {
+      const results = await search(`${artist} ${title}`);
+      if (results.length === 0) {
+        return { success: false, error: `Could not find "${title}" by ${artist}` };
+      }
+      await playTrack(results[0]);
+      return { success: true, track: results[0] };
+    }
+  },
+
+  {
+    name: 'control',
+    description: 'Control playback (pause, resume, skip, previous)',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['pause', 'resume', 'skip', 'previous'] }
+      },
+      required: ['action']
+    },
+    execute: async ({ action }, { handlePause, handlePlay, handleNext, handlePrevious }) => {
+      switch (action) {
+        case 'pause': handlePause(); break;
+        case 'resume': handlePlay(); break;
+        case 'skip': handleNext(); break;
+        case 'previous': handlePrevious(); break;
+      }
+      return { success: true, action };
+    }
+  },
+
+  {
+    name: 'search',
+    description: 'Search for tracks across all sources',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        limit: { type: 'number', description: 'Max results (default 10)' }
+      },
+      required: ['query']
+    },
+    execute: async ({ query, limit = 10 }, { search }) => {
+      const results = await search(query);
+      return {
+        success: true,
+        results: results.slice(0, limit).map(r => ({
+          artist: r.artist,
+          title: r.title,
+          album: r.album,
+          source: r.source
+        }))
+      };
+    }
+  },
+
+  {
+    name: 'queue_add',
+    description: 'Add tracks to the queue',
+    parameters: {
+      type: 'object',
+      properties: {
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              artist: { type: 'string' },
+              title: { type: 'string' }
+            }
+          }
+        },
+        position: { type: 'string', enum: ['next', 'last'] }
+      },
+      required: ['tracks']
+    },
+    execute: async ({ tracks, position = 'last' }, { search, addToQueue }) => {
+      const resolved = [];
+      for (const track of tracks) {
+        const results = await search(`${track.artist} ${track.title}`);
+        if (results.length > 0) {
+          resolved.push(results[0]);
+        }
+      }
+      await addToQueue(resolved, position);
+      return { success: true, added: resolved.length };
+    }
+  },
+
+  {
+    name: 'queue_clear',
+    description: 'Clear the playback queue',
+    execute: async (_, { clearQueue }) => {
+      await clearQueue();
+      return { success: true };
+    }
+  },
+
+  {
+    name: 'create_playlist',
+    description: 'Create a new playlist',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Playlist name' },
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              artist: { type: 'string' },
+              title: { type: 'string' }
+            }
+          }
+        }
+      },
+      required: ['name', 'tracks']
+    },
+    execute: async ({ name, tracks }, { createPlaylist }) => {
+      const playlist = await createPlaylist(name, tracks);
+      return { success: true, playlist };
+    }
+  },
+
+  {
+    name: 'shuffle',
+    description: 'Toggle shuffle mode',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' }
+      },
+      required: ['enabled']
+    },
+    execute: async ({ enabled }, { setShuffle }) => {
+      setShuffle(enabled);
+      return { success: true, shuffle: enabled };
+    }
+  }
+];
+```
+
+### Integration with app.js
+
+```javascript
+// New state for chat
+const [chatMessages, setChatMessages] = useState([]);
+const [chatProvider, setChatProvider] = useState(null);
+const [chatOpen, setChatOpen] = useState(false);
+const [chatLoading, setChatLoading] = useState(false);
+
+// Initialize chat service
+const chatServiceRef = useRef(null);
+
+useEffect(() => {
+  if (chatProvider) {
+    chatServiceRef.current = new AIChatService(
+      chatProvider,
+      djTools,
+      () => ({
+        nowPlaying: currentTrack,
+        playbackState: isPlaying ? 'playing' : 'paused',
+        queue: queue,
+        history: listeningHistory,
+        shuffle: shuffleEnabled
+      })
+    );
+  }
+}, [chatProvider]);
+
+// Send message handler
+const handleChatSend = async (message) => {
+  if (!chatServiceRef.current) return;
+
+  setChatMessages(prev => [...prev, { role: 'user', content: message }]);
+  setChatLoading(true);
 
   try {
-    let data;
-
-    switch (action) {
-      case 'getNowPlaying':
-        data = await getNowPlayingFromRenderer();
-        break;
-      case 'getQueue':
-        data = await getQueueFromRenderer();
-        break;
-      case 'control':
-        data = await sendControlToRenderer(params.action);
-        break;
-      // ... etc
-    }
-
-    ws.send(JSON.stringify({
-      id,
-      type: 'mcp-response',
-      success: true,
-      data
-    }));
+    const response = await chatServiceRef.current.sendMessage(message);
+    setChatMessages(prev => [...prev, {
+      role: 'assistant',
+      content: response.content,
+      toolResults: response.toolResults
+    }]);
   } catch (error) {
-    ws.send(JSON.stringify({
-      id,
-      type: 'mcp-response',
-      success: false,
-      error: { code: error.code || 'UNKNOWN', message: error.message }
-    }));
+    setChatMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `Sorry, I encountered an error: ${error.message}`,
+      isError: true
+    }]);
+  } finally {
+    setChatLoading(false);
   }
-}
+};
+
+// Get chat-capable providers
+const getChatProviders = () => {
+  return resolverLoaderRef.current?.getAllResolvers().filter(r =>
+    r.capabilities?.chat && r.enabled
+  ) || [];
+};
 ```
 
-### Phase 2: Renderer IPC Handlers
+## Settings UI
 
-Add IPC handlers in `app.js` to expose state to main process.
+Add a section in Settings for AI DJ configuration.
 
-```javascript
-// app.js - Register IPC handlers for MCP
-useEffect(() => {
-  window.electron.ipcRenderer.on('mcp-get-now-playing', (event, requestId) => {
-    const data = currentTrack ? {
-      track: {
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: currentTrack.album,
-        duration: currentTrack.duration,
-        source: currentTrack.source
-      },
-      playback: {
-        state: isPlaying ? 'playing' : 'paused',
-        position: currentPosition,
-        volume: volume
-      }
-    } : null;
-
-    window.electron.ipcRenderer.send('mcp-response', { requestId, data });
-  });
-
-  window.electron.ipcRenderer.on('mcp-control', (event, requestId, action) => {
-    switch (action) {
-      case 'pause': handlePause(); break;
-      case 'resume': handlePlay(); break;
-      case 'skip': handleNext(); break;
-      case 'previous': handlePrevious(); break;
-    }
-    window.electron.ipcRenderer.send('mcp-response', { requestId, data: { success: true } });
-  });
-
-  // ... more handlers
-}, [currentTrack, isPlaying, ...]);
 ```
-
-### Phase 3: MCP Server
-
-Create standalone MCP server that connects via WebSocket.
-
-```javascript
-// mcp-server/index.js
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ParachordClient } from "./parachord-client.js";
-
-const server = new McpServer({
-  name: "parachord",
-  version: "1.0.0",
-});
-
-const parachord = new ParachordClient("ws://localhost:21863");
-
-// Resources
-server.resource("now-playing", "parachord://now-playing", async () => {
-  const data = await parachord.send({ type: "mcp", action: "getNowPlaying" });
-  return {
-    contents: [{
-      uri: "parachord://now-playing",
-      mimeType: "application/json",
-      text: JSON.stringify(data, null, 2)
-    }]
-  };
-});
-
-server.resource("queue", "parachord://queue", async () => {
-  const data = await parachord.send({ type: "mcp", action: "getQueue" });
-  return {
-    contents: [{
-      uri: "parachord://queue",
-      mimeType: "application/json",
-      text: JSON.stringify(data, null, 2)
-    }]
-  };
-});
-
-// Tools
-server.tool(
-  "play",
-  "Play a track by artist and title",
-  {
-    artist: { type: "string", description: "Artist name" },
-    title: { type: "string", description: "Track title" }
-  },
-  async ({ artist, title }) => {
-    const result = await parachord.send({
-      type: "mcp",
-      action: "play",
-      params: { artist, title }
-    });
-    return {
-      content: [{
-        type: "text",
-        text: result.success
-          ? `Now playing: ${title} by ${artist}`
-          : `Failed to play: ${result.error.message}`
-      }]
-    };
-  }
-);
-
-server.tool(
-  "control",
-  "Control playback (pause, resume, skip, previous)",
-  {
-    action: {
-      type: "string",
-      enum: ["pause", "resume", "skip", "previous", "stop"],
-      description: "Playback action"
-    }
-  },
-  async ({ action }) => {
-    const result = await parachord.send({
-      type: "mcp",
-      action: "control",
-      params: { action }
-    });
-    return {
-      content: [{ type: "text", text: `Executed: ${action}` }]
-    };
-  }
-);
-
-// ... more tools
-
-// Start server
-await parachord.connect();
-const transport = new StdioServerTransport();
-await server.connect(transport);
-```
-
-### Phase 4: Claude Desktop Configuration
-
-User adds to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "parachord": {
-      "command": "node",
-      "args": ["/Applications/Parachord.app/Contents/Resources/mcp-server/index.js"]
-    }
-  }
-}
-```
-
-Or if installed via npm:
-
-```json
-{
-  "mcpServers": {
-    "parachord": {
-      "command": "npx",
-      "args": ["@parachord/mcp-server"]
-    }
-  }
-}
+┌─────────────────────────────────────────────────────────────────────┐
+│  Settings > AI DJ                                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  AI Provider                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ [●] Ollama (Local)                              [Configure] │    │
+│  │     Free, private, runs on your computer                    │    │
+│  │     Status: ✓ Connected (llama3.1)                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ [○] OpenAI                                      [Configure] │    │
+│  │     GPT-4o, requires API key                                │    │
+│  │     Status: Not configured                                  │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ [○] Google Gemini                               [Configure] │    │
+│  │     Free tier available                                     │    │
+│  │     Status: ✓ API key set                                   │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                     │
+│  Keyboard Shortcut                                                  │
+│  Open AI DJ: [Cmd+J]                                                │
+│                                                                     │
+│  Context Sharing                                                    │
+│  [✓] Include listening history                                      │
+│  [✓] Include current queue                                          │
+│  [ ] Include playlist names                                         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Error Handling
 
-### Connection Errors
+### Provider Errors
 
-| Error | Code | Message |
-|-------|------|---------|
-| Parachord not running | `NOT_CONNECTED` | "Parachord is not running. Please start the app." |
-| WebSocket timeout | `TIMEOUT` | "Connection to Parachord timed out." |
-| WebSocket closed | `DISCONNECTED` | "Lost connection to Parachord." |
+| Scenario | User Message |
+|----------|--------------|
+| Ollama not running | "Ollama isn't running. Start it with `ollama serve` or check the connection." |
+| Invalid API key | "Invalid API key. Check your settings." |
+| Rate limit (429) | "Rate limit reached. Try again in a moment, or switch to a local provider." |
+| Model not found | "Model 'llama3.1' not found. Pull it with `ollama pull llama3.1`." |
+| Network error | "Couldn't connect to the AI service. Check your internet connection." |
 
-### Action Errors
+### Tool Execution Errors
 
-| Error | Code | Message |
-|-------|------|---------|
-| Nothing playing | `NOT_PLAYING` | "No track is currently playing." |
-| Track not found | `NOT_FOUND` | "Could not find '{title}' by {artist}." |
-| Queue empty | `QUEUE_EMPTY` | "The queue is empty." |
-| Invalid action | `INVALID_ACTION` | "Unknown action: {action}" |
+| Scenario | AI Should Say |
+|----------|---------------|
+| Track not found | "I couldn't find that track. Would you like me to search for something similar?" |
+| Queue empty | "The queue is already empty." |
+| Playback failed | "I couldn't start playback. The track might not be available on your connected services." |
 
-### MCP Server Startup
+## Privacy Considerations
 
-If Parachord isn't running when the MCP server starts:
-1. Log warning to stderr (visible in Claude Desktop logs)
-2. Retry connection every 5 seconds
-3. Return helpful error messages for requests until connected
+### Local-First
 
-## Security Considerations
+- **Ollama** runs entirely on user's machine — no data leaves the computer
+- Recommended as default for privacy-conscious users
+- No API keys, no cloud dependencies, works offline
 
-### Local-Only Access
+### Cloud Providers
 
-- WebSocket server only binds to `localhost`
-- No authentication needed for local connections
-- MCP server runs locally, spawned by Claude Desktop
+When using cloud providers:
+- Only current context (now playing, queue, history summary) is sent
+- No audio data is transmitted
+- No personal identifiers beyond listening data
+- Users can disable specific context in settings
 
-### Scope of Control
-
-MCP can:
-- Read playback state, queue, playlists, history
-- Control playback (play, pause, skip, volume)
-- Search and queue tracks
-- Create playlists
-
-MCP cannot:
-- Access API keys or credentials
-- Modify resolver settings
-- Access files outside the app's scope
-- Delete playlists (V1 - could add later with confirmation)
-
-## Testing
-
-### Manual Testing
-
-1. Start Parachord
-2. Start MCP server: `node mcp-server/index.js`
-3. Use MCP Inspector or Claude Desktop to test
-
-### Automated Testing
+### Data Sent to AI
 
 ```javascript
-// tests/mcp-server.test.js
-describe('MCP Server', () => {
-  test('getNowPlaying returns current track', async () => {
-    // Mock WebSocket connection
-    // Send getNowPlaying
-    // Verify response shape
-  });
-
-  test('control(pause) pauses playback', async () => {
-    // ...
-  });
-
-  test('search returns results from multiple sources', async () => {
-    // ...
-  });
-});
-```
-
-## Future Enhancements (V2+)
-
-### Additional Resources
-
-- `parachord://friends` - Friend activity (from Last.fm/ListenBrainz)
-- `parachord://recommendations` - AI-generated recommendations based on listening
-- `parachord://artist/{name}` - Artist info and discography
-
-### Additional Tools
-
-- `add_to_playlist` - Add tracks to existing playlist
-- `delete_playlist` - Delete a playlist (with confirmation)
-- `import_playlist` - Import from URL (Spotify, Apple Music, etc.)
-- `scrobble` - Manual scrobble a track
-- `like` / `dislike` - Feedback for recommendations
-
-### Event Subscriptions
-
-MCP 2.0 may support server-sent events. This would enable:
-- Real-time now-playing updates
-- Queue change notifications
-- Track end notifications
-
-### Voice Integration
-
-The MCP server could be extended for voice assistants:
-- Siri Shortcuts integration on macOS
-- Voice-activated commands via system accessibility
-
-### Multi-Instance Support
-
-For users running multiple Parachord instances:
-- Dynamic port selection
-- Instance discovery
-- Named instances in MCP config
-
-## Dependencies
-
-### MCP Server
-
-```json
+// Example of what gets sent (no PII, no credentials)
 {
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "ws": "^8.14.2"
+  "messages": [...],
+  "context": {
+    "nowPlaying": { "artist": "Big Thief", "title": "Vampire Empire" },
+    "queue": [/* track list */],
+    "history": { "topArtists": [...], "totalPlays": 147 }
   }
 }
 ```
 
-### Parachord (main.js)
+## Future Enhancements
 
-No new dependencies - uses existing `ws` package.
+### V2: Voice Input
+
+- Add microphone button for voice commands
+- Use Web Speech API or Whisper for transcription
+- "Hey DJ, play something upbeat"
+
+### V2: Proactive Suggestions
+
+- AI notices queue is almost empty → suggests additions
+- Detects listening patterns → "You usually listen to jazz at this time"
+- End of playlist → "Want me to keep the music going?"
+
+### V3: External MCP Server
+
+For users who want to control Parachord from Claude Desktop or other MCP clients:
+- Expose the same tools via MCP protocol
+- Standalone server that connects via WebSocket
+- See Appendix A for MCP server design
+
+### V3: Learning & Personalization
+
+- Remember user preferences across sessions
+- Learn which suggestions get accepted/skipped
+- Build taste profile for better recommendations
 
 ## Rollout Plan
 
-1. **Phase 1**: WebSocket protocol extension (main.js, app.js)
-2. **Phase 2**: Basic MCP server with now-playing + control
-3. **Phase 3**: Full resource set (queue, history, playlists)
-4. **Phase 4**: Full tool set (search, queue management, playlist creation)
-5. **Phase 5**: Documentation + Claude Desktop config instructions
-6. **Phase 6**: npm package for easy installation
+1. **Phase 1**: Core infrastructure
+   - Tool definitions and executors
+   - Chat orchestration service
+   - Context injection
+
+2. **Phase 2**: Ollama provider
+   - Local-first, no API key needed
+   - Test tool calling with Llama 3.1
+
+3. **Phase 3**: Chat UI
+   - Sidebar panel
+   - Message rendering
+   - Provider selector
+
+4. **Phase 4**: Cloud providers
+   - Extend existing ChatGPT/Gemini with `chat` capability
+   - Add Claude, Groq providers
+
+5. **Phase 5**: Polish
+   - Error handling
+   - Loading states
+   - Keyboard shortcuts
+   - Settings UI
+
+---
+
+## Appendix A: External MCP Server (Future)
+
+For users who want to access Parachord from external MCP clients like Claude Desktop, a standalone MCP server can be added later. This would:
+
+- Run as a separate process
+- Connect to Parachord via WebSocket (port 21863)
+- Expose the same tools via MCP protocol
+- Be launched by Claude Desktop via stdio
+
+This is complementary to the embedded chat — the embedded version is for in-app use, while MCP would allow external AI assistants to control Parachord.
+
+See original MCP server design for implementation details.
