@@ -23189,9 +23189,23 @@ useEffect(() => {
 
     // Show loading state until cache is loaded (prevents flash of default view)
     !cacheLoaded ? React.createElement('div', {
-      className: 'flex-1 flex items-center justify-center bg-white'
+      className: 'flex-1 flex flex-col items-center justify-center loading-screen'
     },
-      React.createElement('div', { className: 'animate-pulse text-gray-400' }, 'Loading...')
+      // Wordmark container with shimmer overlay
+      React.createElement('div', {
+        className: 'loading-wordmark relative'
+      },
+        React.createElement(ParachordWordmark, { fill: '#7c3aed', height: 52 }),
+        React.createElement('div', { className: 'loading-shimmer-overlay' })
+      ),
+      // Animated loading dots
+      React.createElement('div', {
+        className: 'flex items-center gap-2 mt-8'
+      },
+        React.createElement('div', { className: 'loading-dot' }),
+        React.createElement('div', { className: 'loading-dot' }),
+        React.createElement('div', { className: 'loading-dot' })
+      )
     ) :
 
     // Search Page - Full page search view

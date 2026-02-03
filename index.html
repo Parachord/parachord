@@ -90,6 +90,79 @@
       animation: spin 1s linear infinite;
     }
 
+    /* App loading screen - Wordmark reveal animation */
+    @keyframes loadingFadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes loadingDotPulse {
+      0%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes loadingShimmer {
+      0% {
+        background-position: -200% center;
+      }
+      100% {
+        background-position: 200% center;
+      }
+    }
+
+    .loading-screen {
+      background: radial-gradient(circle at center, #ffffff 0%, #f9fafb 70%, #f3f4f6 100%);
+    }
+
+    .loading-wordmark {
+      animation: loadingFadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .loading-wordmark svg {
+      filter: drop-shadow(0 4px 12px rgba(124, 58, 237, 0.15));
+    }
+
+    .loading-shimmer-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.6) 50%,
+        transparent 100%
+      );
+      background-size: 200% 100%;
+      animation: loadingShimmer 2s ease-in-out infinite;
+      animation-delay: 0.7s;
+      pointer-events: none;
+    }
+
+    .loading-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #a78bfa;
+    }
+
+    .loading-dot:nth-child(1) { animation: loadingDotPulse 1.4s ease-in-out infinite; }
+    .loading-dot:nth-child(2) { animation: loadingDotPulse 1.4s ease-in-out 0.15s infinite; }
+    .loading-dot:nth-child(3) { animation: loadingDotPulse 1.4s ease-in-out 0.3s infinite; }
+
     /* Queue icon pulse animation */
     @keyframes queue-pulse {
       0% { transform: scale(1); }
