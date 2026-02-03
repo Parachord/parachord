@@ -36392,7 +36392,8 @@ useEffect(() => {
                               console.error('Failed to open purchase link:', error);
                             }
                           },
-                          className: 'p-1 rounded transition-colors text-gray-400 hover:text-green-400 no-drag',
+                          className: 'flex items-center justify-center rounded transition-colors text-gray-400 hover:text-green-400 no-drag',
+                          style: { width: '16px', height: '16px' },
                           title: `Buy on ${purchaseSource.resolverName}`
                         },
                           // Shopping cart with download arrow icon
