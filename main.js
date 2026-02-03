@@ -3687,7 +3687,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         const remotePlaylist = selectedRemote[i];
         sendProgress({ phase: 'playlists', current: i + 1, total: selectedRemote.length, providerId });
 
-        const localPlaylist = currentPlaylists.find(p => p.syncedFrom?.externalId === remotePlaylist.externalId);
+        // Check for existing playlist by syncedFrom.externalId OR by matching ID pattern
+        // This handles both new sync structure and older playlists that may have been synced before
+        const localPlaylist = currentPlaylists.find(p =>
+          p.syncedFrom?.externalId === remotePlaylist.externalId ||
+          p.id === remotePlaylist.id ||
+          p.id === `spotify-${remotePlaylist.externalId}`
+        );
 
         if (!localPlaylist) {
           // New playlist - fetch tracks and add
