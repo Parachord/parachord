@@ -8276,6 +8276,13 @@ const Parachord = () => {
     }
   }, [pinnedFriendIds, cacheLoaded]);
 
+  // Persist auto-pinned friend IDs to storage (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('autoPinnedFriendIds', autoPinnedFriendIds);
+    }
+  }, [autoPinnedFriendIds, cacheLoaded]);
+
   // Persist AI include history preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -11883,6 +11890,14 @@ const Parachord = () => {
         const dedupedIds = [...new Set(savedPinnedFriendIds)];
         setPinnedFriendIds(dedupedIds);
         console.log(`📌 Loaded ${dedupedIds.length} pinned friends from storage`);
+      }
+
+      const savedAutoPinnedFriendIds = await window.electron.store.get('autoPinnedFriendIds');
+      if (savedAutoPinnedFriendIds && Array.isArray(savedAutoPinnedFriendIds)) {
+        // Dedupe in case duplicates were saved
+        const dedupedIds = [...new Set(savedAutoPinnedFriendIds)];
+        setAutoPinnedFriendIds(dedupedIds);
+        console.log(`📌 Loaded ${dedupedIds.length} auto-pinned friends from storage`);
       }
 
       // Load volume normalization offsets
