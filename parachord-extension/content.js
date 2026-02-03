@@ -743,12 +743,25 @@
             const trackName = titleEl.textContent.trim();
             const trackArtist = artistEl ? artistEl.textContent.trim() : '';
 
+            // Extract duration from playlist item
+            let duration = 0;
+            const durationEl = item.querySelector('.time') ||
+                              item.querySelector('.track_time') ||
+                              item.querySelector('[class*="duration"]') ||
+                              item.querySelector('[class*="time"]');
+            if (durationEl) {
+              const match = durationEl.textContent.trim().match(/(\d+):(\d+)/);
+              if (match) {
+                duration = parseInt(match[1]) * 60 + parseInt(match[2]);
+              }
+            }
+
             if (trackName && trackArtist) {
               tracks.push({
                 title: trackName,
                 artist: trackArtist,
                 album: '',
-                duration: 0,
+                duration: duration,
                 position: index + 1,
                 url: trackUrl // Include Bandcamp URL if found
               });
