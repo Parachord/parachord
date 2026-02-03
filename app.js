@@ -3603,6 +3603,7 @@ const Parachord = () => {
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
   const pollingGenerationRef = useRef(0); // Generation counter to invalidate stale polling callbacks
+  const playbackGenerationRef = useRef(0); // Generation counter to detect superseded play requests (prevents overlapping playback)
   const pollingRecoveryRef = useRef(null); // Recovery interval for when Spotify polling fails
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
@@ -7328,16 +7329,21 @@ const Parachord = () => {
   }, []);
 
   useEffect(() => {
-    // Skip progress tracking for streaming tracks (Spotify) - they have their own polling
+    // Skip progress tracking for streaming tracks (Spotify, Apple Music) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
+    // Skip for SoundCloud - they use HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
-    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
-    const isLocalFile = currentTrack?.filePath || currentTrack?.sources?.localfiles;
+    //
+    // Use _activeResolver to determine the actual playback source, not just what sources exist
+    const activeResolver = currentTrack?._activeResolver;
+    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic';
+    const isLocalFile = activeResolver === 'localfiles';
+    const isSoundCloud = activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -7361,10 +7367,13 @@ const Parachord = () => {
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
-    const isStreamingTrack = currentTrack?.sources?.spotify || currentTrack?.spotifyUri;
+    // Only run interpolation if we're actually playing via Spotify
+    // Check _activeResolver to avoid interfering with other playback sources (SoundCloud, local files, etc.)
+    // that update progress via their own mechanisms (HTML5 Audio timeupdate events)
+    const isSpotifyActive = currentTrack?._activeResolver === 'spotify';
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && isStreamingTrack && hasValidDuration && !browserPlaybackActive) {
+    if (isPlaying && isSpotifyActive && hasValidDuration && !browserPlaybackActive) {
       const interval = setInterval(() => {
         const baseline = spotifyProgressBaselineRef.current;
 
@@ -8419,6 +8428,11 @@ const Parachord = () => {
   };
 
   const handlePlay = async (trackOrSource) => {
+    // Increment playback generation to mark this as the current play request
+    // Any previously-started play request will detect this and abort
+    playbackGenerationRef.current++;
+    const thisGeneration = playbackGenerationRef.current;
+
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
@@ -8450,20 +8464,28 @@ const Parachord = () => {
     // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
     // This handles race conditions where streamingPlaybackActiveRef may already be reset
     // by handleNext but playback is still in progress or loading
+    //
+    // We await these pause operations to ensure they complete before starting new playback.
+    // This prevents race conditions when rapidly switching resolvers.
+    const pausePromises = [];
 
-    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
+    // Always pause Spotify if we have a token
     if (spotifyToken) {
       console.log('⏹️ Pausing Spotify before playing new track');
-      fetch('https://api.spotify.com/v1/me/player/pause', {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${spotifyToken}` }
-      }).catch(() => {}); // Silently ignore - may not be playing
+      pausePromises.push(
+        fetch('https://api.spotify.com/v1/me/player/pause', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${spotifyToken}` }
+        }).catch(() => {}) // Silently ignore - may not be playing
+      );
     }
 
     // Always pause Apple Music native playback (macOS MusicKit)
     if (window.electron?.musicKit) {
       console.log('⏹️ Pausing Apple Music (native) before playing new track');
-      window.electron.musicKit.pause().catch(() => {}); // Silently ignore - may not be playing
+      pausePromises.push(
+        window.electron.musicKit.pause().catch(() => {}) // Silently ignore - may not be playing
+      );
     }
 
     // Always pause Apple Music web playback (MusicKit JS)
@@ -8487,6 +8509,21 @@ const Parachord = () => {
 
     // Reset streaming flag
     streamingPlaybackActiveRef.current = false;
+
+    // Wait for all pause operations to settle (with timeout to prevent indefinite blocking)
+    if (pausePromises.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pausePromises),
+        new Promise(resolve => setTimeout(resolve, 500)) // Max 500ms wait
+      ]);
+    }
+
+    // Check if another play request has superseded this one while we were stopping playback
+    if (playbackGenerationRef.current !== thisGeneration) {
+      console.log('⏹️ Playback request superseded by newer request, aborting');
+      // Don't clear loading state - the newer request will manage it
+      return;
+    }
 
     // Exit spinoff mode if playing a track that isn't from the spinoff pool
     // (unless this is being called FROM spinoff mode's handleNext)
@@ -8519,6 +8556,13 @@ const Parachord = () => {
         console.log('🔄 No sources found, attempting on-demand resolution...');
 
         const sources = await resolveTrack(trackOrSource, trackOrSource.artist, {});
+
+        // Check if another play request superseded this one during resolution
+        if (playbackGenerationRef.current !== thisGeneration) {
+          console.log('⏹️ Playback request superseded during resolution, aborting');
+          return;
+        }
+
         if (sources && Object.keys(sources).length > 0) {
           trackOrSource.sources = sources;
         }
@@ -8947,6 +8991,12 @@ const Parachord = () => {
 
           const audioResponse = await window.electron.proxyFetch(streamUrl, fetchOptions);
 
+          // Check if another play request superseded this one during fetch
+          if (playbackGenerationRef.current !== thisGeneration) {
+            console.log('⏹️ Playback request superseded during SoundCloud fetch, aborting');
+            return;
+          }
+
           if (audioResponse.error) {
             throw new Error(`Proxy fetch failed: ${audioResponse.error}`);
           }
@@ -9151,6 +9201,23 @@ const Parachord = () => {
 
       const success = await resolver.play(sourceToPlay, config);
 
+      // Check if another play request superseded this one during play
+      if (playbackGenerationRef.current !== thisGeneration) {
+        console.log('⏹️ Playback request superseded during resolver.play(), aborting');
+        // If we just started playback on a resolver, we need to stop it
+        if (success && resolver.capabilities.stream) {
+          if (resolverId === 'spotify' && spotifyToken) {
+            fetch('https://api.spotify.com/v1/me/player/pause', {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${spotifyToken}` }
+            }).catch(() => {});
+          } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
+            window.electron.musicKit.pause().catch(() => {});
+          }
+        }
+        return;
+      }
+
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
 
@@ -9219,6 +9286,12 @@ const Parachord = () => {
           console.log('🔄 Spotify playback failed, retrying in 2 seconds...');
           await new Promise(resolve => setTimeout(resolve, 2000));
 
+          // Check if superseded during retry delay
+          if (playbackGenerationRef.current !== thisGeneration) {
+            console.log('⏹️ Playback request superseded during Spotify retry delay, aborting');
+            return;
+          }
+
           // Mark as retried to prevent infinite loop
           const retrySource = { ...sourceToPlay, _spotifyRetried: true };
           const retryTrack = trackOrSource.sources ? {
@@ -9228,6 +9301,18 @@ const Parachord = () => {
 
           console.log('🔄 Retrying Spotify playback...');
           const retrySuccess = await resolver.play(retrySource, config);
+
+          // Check if superseded during retry play
+          if (playbackGenerationRef.current !== thisGeneration) {
+            console.log('⏹️ Playback request superseded during Spotify retry, aborting');
+            if (retrySuccess && spotifyToken) {
+              fetch('https://api.spotify.com/v1/me/player/pause', {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${spotifyToken}` }
+              }).catch(() => {});
+            }
+            return;
+          }
 
           if (retrySuccess) {
             console.log('✅ Spotify retry successful');
