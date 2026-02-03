@@ -193,6 +193,125 @@ Extends the existing `.axe` plugin format with a new capability for conversation
 | **Groq** | Cloud | Free tier | Yes | Fast Llama/Mistral inference |
 | **Mistral** | Cloud | Paid | Yes | Mistral Large |
 
+### Migrating Existing ChatGPT/Gemini Plugins
+
+The existing ChatGPT and Gemini plugins have a `generate` capability for one-shot playlist generation. To support the new conversational DJ, they need to add the `chat` capability alongside `generate`.
+
+**Current structure (generate only):**
+
+```json
+{
+  "manifest": {
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "type": "meta-service"
+  },
+  "capabilities": {
+    "generate": true
+  },
+  "implementation": {
+    "generate": "async function(prompt, config, listeningContext) { ... }"
+  }
+}
+```
+
+**Updated structure (generate + chat):**
+
+```json
+{
+  "manifest": {
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "type": "meta-service"
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true
+  },
+  "implementation": {
+    "generate": "async function(prompt, config, listeningContext) { ... }",
+    "chat": "async function(messages, tools, config) { ... }"
+  }
+}
+```
+
+**Key differences between `generate` and `chat`:**
+
+| Aspect | `generate` | `chat` |
+|--------|-----------|--------|
+| **Purpose** | One-shot playlist generation | Multi-turn conversation with tool use |
+| **Input** | Single prompt + optional listening context | Message history + tool definitions |
+| **Output** | Array of `{artist, title}` tracks | Text response + optional tool calls |
+| **State** | Stateless | Maintains conversation history |
+| **Tools** | None | play, control, search, queue_add, etc. |
+
+**Changes required for chatgpt.axe:**
+
+1. Add `"chat": true` to capabilities
+2. Add `chat` function to implementation that:
+   - Accepts `messages` array (conversation history)
+   - Accepts `tools` array (DJ tool definitions)
+   - Calls OpenAI's chat completions API with `tools` parameter
+   - Returns `{content, tool_calls}` instead of track array
+
+**Changes required for gemini.axe:**
+
+1. Add `"chat": true` to capabilities
+2. Add `chat` function to implementation that:
+   - Converts message format to Gemini's expected structure
+   - Calls Gemini's generateContent API with function declarations
+   - Maps Gemini's function call response to standard `{content, tool_calls}` format
+
+**Backward compatibility:**
+
+- The existing `generate` capability continues to work unchanged
+- The ✨ button in the playbar still uses `generate` for quick playlist creation
+- The new chat panel uses `chat` for conversational interaction
+- Users with existing API keys don't need to reconfigure anything
+
+**Example: Adding chat to existing ChatGPT plugin:**
+
+```javascript
+// Existing generate function (unchanged)
+async function generate(prompt, config, listeningContext) {
+  // ... existing implementation returns [{artist, title}, ...]
+}
+
+// New chat function (added)
+async function chat(messages, tools, config) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify({
+      model: config.model || 'gpt-4o-mini',
+      messages: messages,
+      tools: tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
+      }))
+    })
+  });
+
+  const data = await response.json();
+  const choice = data.choices[0];
+
+  return {
+    content: choice.message.content,
+    tool_calls: choice.message.tool_calls?.map(tc => ({
+      name: tc.function.name,
+      arguments: JSON.parse(tc.function.arguments)
+    }))
+  };
+}
+```
+
 ### Plugin Implementation Pattern
 
 Each chat provider implements the same interface:
