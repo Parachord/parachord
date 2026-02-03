@@ -4228,14 +4228,28 @@ const Parachord = () => {
     const sorted = [...items];
     switch (playlistsSort) {
       case 'added':
-        // Sort by addedAt descending (newest first), fallback to createdAt (not lastModified, to avoid edit-caused reordering)
+        // Sort by addedAt descending (newest first), fallback to createdAt
         return sorted.sort((a, b) => {
           const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
           const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
-          return bTime - aTime; // Descending (newest first)
+          return bTime - aTime;
         });
-      case 'created': return sorted.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
-      case 'modified': return sorted.sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0));
+      case 'created':
+        // Sort by createdAt descending (newest first), fallback to addedAt, then by title for stability
+        return sorted.sort((a, b) => {
+          const aTime = Number(a.createdAt) || Number(a.addedAt) || 0;
+          const bTime = Number(b.createdAt) || Number(b.addedAt) || 0;
+          if (aTime !== bTime) return bTime - aTime;
+          // Tie-breaker: sort by title alphabetically
+          return (a.title || '').localeCompare(b.title || '');
+        });
+      case 'modified':
+        // Sort by lastModified descending, fallback to addedAt
+        return sorted.sort((a, b) => {
+          const aTime = Number(a.lastModified) || Number(a.addedAt) || 0;
+          const bTime = Number(b.lastModified) || Number(b.addedAt) || 0;
+          return bTime - aTime;
+        });
       case 'alpha-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       case 'alpha-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
       default: return sorted;
@@ -6051,11 +6065,13 @@ const Parachord = () => {
     }
 
     const playlistName = playlist.name || 'Scraped Playlist';
-    console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks`);
+    const playlistUrl = playlist.url || null;
+    const playlistOwner = playlist.owner || null;
+    console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks from ${playlistUrl}`);
 
     showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"...`, 'info');
 
-    // Convert scraped tracks to our track format and add to queue
+    // Convert scraped tracks to our track format
     const tracks = playlist.tracks.map((track, index) => ({
       id: `scraped-${Date.now()}-${index}`,
       title: track.title,
@@ -6071,7 +6087,7 @@ const Parachord = () => {
       context: {
         type: 'playlist',
         name: playlistName,
-        url: playlist.url
+        url: playlistUrl
       }
     }));
 
@@ -6086,6 +6102,32 @@ const Parachord = () => {
       const firstTrack = tracks[0];
       setCurrentTrack(firstTrack);
       setPlaybackSource(null);
+    }
+
+    // Save the playlist to the library
+    const playlistId = `web-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: playlistName,
+      creator: playlistOwner,
+      tracks: tracks,
+      source: 'web',
+      sourceUrl: playlistUrl,
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
+    };
+
+    // Save to electron-store
+    const saveResult = await window.electron.playlists.save(newPlaylist);
+    if (saveResult.success) {
+      // Add to state (prepend so it appears at top)
+      setPlaylists(prev => [newPlaylist, ...prev]);
+      // Fetch covers for the 2x2 grid display
+      fetchPlaylistCovers(playlistId, tracks);
+      console.log(`✅ Saved web playlist: ${playlistName} (${tracks.length} tracks)`);
+    } else {
+      console.error(`❌ Failed to save web playlist: ${saveResult.error}`);
     }
 
     showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
@@ -7522,6 +7564,21 @@ const Parachord = () => {
         return prev;
       }
 
+      const existingTrack = prev.tracks[existingIndex];
+
+      // If track was synced from Spotify, also remove from Spotify
+      if (existingTrack.syncSources?.spotify && existingTrack.spotifyId) {
+        window.electron?.sync?.removeTracks('spotify', [existingTrack.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Removed ${track.title} from Spotify Liked Songs`);
+            } else {
+              console.error(`❌ Failed to remove from Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error removing from Spotify:', err));
+      }
+
       const newTracks = prev.tracks.filter(t => t.id !== trackId);
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
@@ -7716,6 +7773,74 @@ const Parachord = () => {
     });
   }, [saveCollection, showToast, showSidebarBadge]);
 
+  // Remove album from collection
+  const removeAlbumFromCollection = useCallback((album) => {
+    const albumId = generateAlbumId(album.artist, album.title);
+
+    setCollectionData(prev => {
+      const existingIndex = prev.albums.findIndex(a => a.id === albumId);
+      if (existingIndex === -1) {
+        showToast(`${album.title} is not in your collection`);
+        return prev;
+      }
+
+      const existingAlbum = prev.albums[existingIndex];
+
+      // If album was synced from Spotify, also remove from Spotify
+      if (existingAlbum.syncSources?.spotify && existingAlbum.spotifyId) {
+        window.electron?.sync?.removeAlbums('spotify', [existingAlbum.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Removed ${album.title} from Spotify Saved Albums`);
+            } else {
+              console.error(`❌ Failed to remove from Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error removing from Spotify:', err));
+      }
+
+      const newAlbums = prev.albums.filter(a => a.id !== albumId);
+      const newData = { ...prev, albums: newAlbums };
+      saveCollection(newData);
+      showToast(`Removed ${album.title} from Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
+  // Remove artist from collection
+  const removeArtistFromCollection = useCallback((artist) => {
+    const artistId = generateArtistId(artist.name);
+
+    setCollectionData(prev => {
+      const existingIndex = prev.artists.findIndex(a => a.id === artistId);
+      if (existingIndex === -1) {
+        showToast(`${artist.name} is not in your collection`);
+        return prev;
+      }
+
+      const existingArtist = prev.artists[existingIndex];
+
+      // If artist was synced from Spotify, also unfollow on Spotify
+      if (existingArtist.syncSources?.spotify && existingArtist.spotifyId) {
+        window.electron?.sync?.unfollowArtists('spotify', [existingArtist.spotifyId])
+          .then(result => {
+            if (result.success) {
+              console.log(`✅ Unfollowed ${artist.name} on Spotify`);
+            } else {
+              console.error(`❌ Failed to unfollow on Spotify: ${result.error}`);
+            }
+          })
+          .catch(err => console.error('Error unfollowing on Spotify:', err));
+      }
+
+      const newArtists = prev.artists.filter(a => a.id !== artistId);
+      const newData = { ...prev, artists: newArtists };
+      saveCollection(newData);
+      showToast(`Removed ${artist.name} from Collection`);
+      return newData;
+    });
+  }, [saveCollection, showToast]);
+
   // Listen for track/playlist context menu actions
   useEffect(() => {
     if (window.electron?.contextMenu?.onAction) {
@@ -7863,6 +7988,10 @@ const Parachord = () => {
           // Remove from collection based on type
           if (data.type === 'track' && data.track) {
             removeTrackFromCollection(data.track);
+          } else if (data.type === 'album' && data.album) {
+            removeAlbumFromCollection(data.album);
+          } else if (data.type === 'artist' && data.artist) {
+            removeArtistFromCollection(data.artist);
           }
         } else if (data.action === 'view-friend-history' && data.friend) {
           if (navigateToFriendRef.current) navigateToFriendRef.current(data.friend);
@@ -7883,7 +8012,7 @@ const Parachord = () => {
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -20503,6 +20632,7 @@ ${tracks}
         creator: parsed.creator,
         tracks: parsed.tracks || [],
         xspf: content,
+        source: 'imported-xspf',
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: Date.now(), // When added to library
         lastModified: Date.now()
@@ -20605,6 +20735,7 @@ ${tracks}
         creator: playlistCreator,
         tracks: parsed.tracks || [],
         xspf: content,
+        source: 'hosted-xspf',
         sourceUrl: url,  // Track the source URL for updates
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
@@ -27153,6 +27284,47 @@ useEffect(() => {
                   : React.createElement('p', {
                       className: 'text-sm text-gray-500'
                     }, `Created by ${selectedPlaylist.creator || 'Unknown'}`),
+                // Source info display
+                (() => {
+                  const source = selectedPlaylist.source || selectedPlaylist.syncedFrom?.resolver;
+                  const sourceUrl = selectedPlaylist.sourceUrl;
+
+                  // Determine display text based on source type
+                  let sourceLabel = null;
+                  if (source === 'spotify-sync' || source === 'spotify-import' || source === 'spotify') {
+                    sourceLabel = 'Spotify';
+                  } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
+                    sourceLabel = 'Hosted XSPF';
+                  } else if (source === 'imported-xspf') {
+                    sourceLabel = 'Imported XSPF';
+                  } else if (source === 'web') {
+                    sourceLabel = 'Web';
+                  }
+
+                  if (!sourceLabel) return null;
+
+                  // For sources with URLs, make them clickable
+                  if (sourceUrl) {
+                    return React.createElement('p', {
+                      className: 'text-xs text-gray-400'
+                    },
+                      'Source: ',
+                      React.createElement('a', {
+                        href: sourceUrl,
+                        onClick: (e) => {
+                          e.preventDefault();
+                          window.electron?.shell?.openExternal(sourceUrl);
+                        },
+                        className: 'text-blue-500 hover:text-blue-600 hover:underline cursor-pointer',
+                        title: sourceUrl
+                      }, sourceLabel)
+                    );
+                  }
+
+                  return React.createElement('p', {
+                    className: 'text-xs text-gray-400'
+                  }, `Source: ${sourceLabel}`);
+                })(),
                 // Edit mode: Title input
                 playlistEditMode && editedPlaylistData && React.createElement('input', {
                   type: 'text',
@@ -27760,7 +27932,10 @@ useEffect(() => {
 
             // Grid view
             if (playlistsViewMode === 'grid') {
-              return React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5' },
+              return React.createElement('div', {
+                key: `playlist-grid-${sorted.length}-${playlistsSearch}`,
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5'
+              },
                 sorted.map((playlist, index) => {
                   const covers = allPlaylistCovers[playlist.id] || [];
                   const hasCachedCovers = covers.length > 0;

@@ -169,7 +169,9 @@ const transformPlaylist = (playlist, folderId = null, folderName = null) => {
     folderId,
     folderName,
     isOwnedByUser: playlist.owner?.id === playlist.owner?.id, // Will be set properly during fetch
-    spotifyUri: playlist.uri
+    spotifyUri: playlist.uri,
+    ownerName: playlist.owner?.display_name || playlist.owner?.id || null,
+    ownerId: playlist.owner?.id || null
   };
 };
 
@@ -481,6 +483,36 @@ const SpotifySyncProvider = {
     let totalRemoved = 0;
     for (const batch of batches) {
       await spotifyRequest('/me/tracks', token, {
+        method: 'DELETE',
+        body: { ids: batch }
+      });
+      totalRemoved += batch.length;
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+
+    return { success: true, removed: totalRemoved };
+  },
+
+  /**
+   * Remove albums from Spotify library
+   * @param {string[]} albumIds - Array of Spotify album IDs
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean, removed: number }
+   */
+  async removeAlbums(albumIds, token) {
+    if (!albumIds || albumIds.length === 0) {
+      return { success: true, removed: 0 };
+    }
+
+    // Spotify allows max 50 albums per request
+    const batches = [];
+    for (let i = 0; i < albumIds.length; i += 50) {
+      batches.push(albumIds.slice(i, i + 50));
+    }
+
+    let totalRemoved = 0;
+    for (const batch of batches) {
+      await spotifyRequest('/me/albums', token, {
         method: 'DELETE',
         body: { ids: batch }
       });

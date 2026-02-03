@@ -3687,7 +3687,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         const remotePlaylist = selectedRemote[i];
         sendProgress({ phase: 'playlists', current: i + 1, total: selectedRemote.length, providerId });
 
-        const localPlaylist = currentPlaylists.find(p => p.syncedFrom?.externalId === remotePlaylist.externalId);
+        // Check for existing playlist by syncedFrom.externalId OR by matching ID pattern
+        // This handles both new sync structure and older playlists that may have been synced before
+        const localPlaylist = currentPlaylists.find(p =>
+          p.syncedFrom?.externalId === remotePlaylist.externalId ||
+          p.id === remotePlaylist.id ||
+          p.id === `spotify-${remotePlaylist.externalId}`
+        );
 
         if (!localPlaylist) {
           // New playlist - fetch tracks and add
@@ -3704,10 +3710,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             title: remotePlaylist.name,
             description: remotePlaylist.description,
             tracks: tracks,
+            creator: remotePlaylist.ownerName || null,
+            source: remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import',
             syncedFrom: {
               resolver: providerId,
               externalId: remotePlaylist.externalId,
-              snapshotId: remotePlaylist.snapshotId
+              snapshotId: remotePlaylist.snapshotId,
+              ownerId: remotePlaylist.ownerId
             },
             hasUpdates: false,
             locallyModified: false,
@@ -3720,20 +3729,52 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
           currentPlaylists.push(newPlaylist);
           playlistsAdded++;
-        } else if (localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId) {
-          // Playlist has updates - mark for user to review
-          console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+        } else {
+          // Existing playlist - update metadata and check for track updates
           const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
           if (idx >= 0) {
+            const hasTrackUpdates = localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+            if (hasTrackUpdates) {
+              console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+            }
+
+            // Recalculate createdAt from existing tracks if available
+            const existingTracks = currentPlaylists[idx].tracks || [];
+            let recalculatedCreatedAt = currentPlaylists[idx].createdAt;
+            if (existingTracks.length > 0) {
+              const trackDates = existingTracks.map(t => t.addedAt || t.syncSources?.spotify?.addedAt).filter(Boolean);
+              if (trackDates.length > 0) {
+                recalculatedCreatedAt = Math.min(...trackDates);
+              }
+            }
+
+            // Always update/backfill metadata fields (creator, source, syncedFrom, createdAt)
             currentPlaylists[idx] = {
               ...currentPlaylists[idx],
-              hasUpdates: true,
+              // Backfill creator if not set
+              creator: currentPlaylists[idx].creator || remotePlaylist.ownerName || null,
+              // Backfill source if not set
+              source: currentPlaylists[idx].source || (remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import'),
+              // Update createdAt from track data
+              createdAt: recalculatedCreatedAt,
+              // Update/backfill syncedFrom structure
+              syncedFrom: {
+                ...currentPlaylists[idx].syncedFrom,
+                resolver: providerId,
+                externalId: remotePlaylist.externalId,
+                snapshotId: hasTrackUpdates ? currentPlaylists[idx].syncedFrom?.snapshotId : remotePlaylist.snapshotId,
+                ownerId: remotePlaylist.ownerId
+              },
+              hasUpdates: hasTrackUpdates ? true : currentPlaylists[idx].hasUpdates,
               syncSources: {
                 ...currentPlaylists[idx].syncSources,
                 [providerId]: { ...currentPlaylists[idx].syncSources?.[providerId], syncedAt: Date.now() }
               }
             };
-            playlistsUpdated++;
+
+            if (hasTrackUpdates) {
+              playlistsUpdated++;
+            }
           }
         }
       }
@@ -3918,6 +3959,34 @@ ipcMain.handle('sync:remove-tracks', async (event, providerId, trackIds) => {
 
   try {
     const result = await provider.removeTracks(trackIds, token);
+    return { success: true, removed: result.removed };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Remove albums from sync provider library
+ipcMain.handle('sync:remove-albums', async (event, providerId, albumIds) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.capabilities.albums) {
+    return { success: false, error: 'Provider does not support album syncing' };
+  }
+
+  if (!provider.removeAlbums) {
+    return { success: false, error: 'Provider does not support removing albums' };
+  }
+
+  let token;
+  if (providerId === 'spotify') {
+    token = store.get('spotify_token');
+  }
+
+  if (!token) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  try {
+    const result = await provider.removeAlbums(albumIds, token);
     return { success: true, removed: result.removed };
   } catch (error) {
     return { success: false, error: error.message };
