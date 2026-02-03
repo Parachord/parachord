@@ -36308,7 +36308,77 @@ useEffect(() => {
                         })
                       ),
                       'external'
-                    )
+                    ),
+                    // Buy button - shows when track has a purchasable source (Bandcamp, Qobuz)
+                    (() => {
+                      // Merge sources from state, cache, and currentTrack (same pattern as Save to Collection)
+                      const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
+                      const stateSources = trackSources[trackSourceKey];
+                      const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
+                      const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
+                      const effectiveSources = {
+                        ...(stateSources || {}),
+                        ...(cachedSources || {}),
+                        ...(currentTrack.sources || {})
+                      };
+
+                      // Find purchasable sources
+                      const purchasableResolvers = ['bandcamp', 'qobuz'];
+                      const purchasableSources = [];
+
+                      for (const [resolverId, sourceData] of Object.entries(effectiveSources)) {
+                        if (purchasableResolvers.includes(resolverId) && sourceData && sourceData.purchaseUrl) {
+                          const resolver = allResolvers.find(r => r.id === resolverId);
+                          purchasableSources.push({
+                            resolverId,
+                            resolverName: resolver ? resolver.name : resolverId,
+                            purchaseUrl: sourceData.purchaseUrl
+                          });
+                        }
+                      }
+
+                      if (purchasableSources.length === 0) return null;
+
+                      const purchaseSource = purchasableSources[0];
+
+                      return React.createElement(Tooltip, {
+                        content: `Buy on ${purchaseSource.resolverName}`,
+                        position: 'top',
+                        variant: 'dark'
+                      },
+                        React.createElement('button', {
+                          onClick: async (e) => {
+                            e.stopPropagation();
+                            try {
+                              if (window.electron?.shell?.openExternal) {
+                                await window.electron.shell.openExternal(purchaseSource.purchaseUrl);
+                              } else {
+                                window.open(purchaseSource.purchaseUrl, '_blank');
+                              }
+                            } catch (error) {
+                              console.error('Failed to open purchase link:', error);
+                            }
+                          },
+                          className: 'p-1 rounded transition-colors text-gray-400 hover:text-green-400 no-drag',
+                          title: `Buy on ${purchaseSource.resolverName}`
+                        },
+                          // Shopping bag icon (smaller for this location)
+                          React.createElement('svg', {
+                            className: 'w-3.5 h-3.5',
+                            viewBox: '0 0 24 24',
+                            fill: 'none',
+                            stroke: 'currentColor',
+                            strokeWidth: 2
+                          },
+                            React.createElement('path', {
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round',
+                              d: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z'
+                            })
+                          )
+                        )
+                      );
+                    })()
                   );
                 }
                 return null;
@@ -36425,66 +36495,6 @@ useEffect(() => {
                     strokeLinecap: 'round',
                     strokeLinejoin: 'round',
                     d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z'
-                  })
-                )
-              )
-            );
-          })(),
-          // Buy button - shows when track has a purchasable source (Bandcamp, Qobuz)
-          (() => {
-            if (!currentTrack || !currentTrack.sources) return null;
-
-            // Find purchasable sources - resolvers with purchase capability and a purchaseUrl
-            const purchasableResolvers = ['bandcamp', 'qobuz']; // Resolvers that support purchases
-            const purchasableSources = [];
-
-            for (const [resolverId, sourceData] of Object.entries(currentTrack.sources)) {
-              if (purchasableResolvers.includes(resolverId) && sourceData && sourceData.purchaseUrl) {
-                const resolver = allResolvers.find(r => r.id === resolverId);
-                purchasableSources.push({
-                  resolverId,
-                  resolverName: resolver ? resolver.name : resolverId,
-                  purchaseUrl: sourceData.purchaseUrl
-                });
-              }
-            }
-
-            if (purchasableSources.length === 0) return null;
-
-            // Use the first purchasable source (could be enhanced to show a dropdown if multiple)
-            const purchaseSource = purchasableSources[0];
-
-            return React.createElement(Tooltip, {
-              content: `Buy on ${purchaseSource.resolverName}`,
-              position: 'top',
-              variant: 'dark'
-            },
-              React.createElement('button', {
-                onClick: async () => {
-                  try {
-                    if (window.electron?.shell?.openExternal) {
-                      await window.electron.shell.openExternal(purchaseSource.purchaseUrl);
-                    } else {
-                      window.open(purchaseSource.purchaseUrl, '_blank');
-                    }
-                  } catch (error) {
-                    console.error('Failed to open purchase link:', error);
-                  }
-                },
-                className: 'p-1.5 rounded-full transition-colors text-gray-400 hover:text-green-400'
-              },
-                // Shopping bag icon
-                React.createElement('svg', {
-                  className: 'w-5 h-5',
-                  viewBox: '0 0 24 24',
-                  fill: 'none',
-                  stroke: 'currentColor',
-                  strokeWidth: 2
-                },
-                  React.createElement('path', {
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round',
-                    d: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z'
                   })
                 )
               )
