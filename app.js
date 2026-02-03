@@ -4228,14 +4228,28 @@ const Parachord = () => {
     const sorted = [...items];
     switch (playlistsSort) {
       case 'added':
-        // Sort by addedAt descending (newest first), fallback to createdAt (not lastModified, to avoid edit-caused reordering)
+        // Sort by addedAt descending (newest first), fallback to createdAt
         return sorted.sort((a, b) => {
           const aTime = Number(a.addedAt) || Number(a.createdAt) || 0;
           const bTime = Number(b.addedAt) || Number(b.createdAt) || 0;
-          return bTime - aTime; // Descending (newest first)
+          return bTime - aTime;
         });
-      case 'created': return sorted.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
-      case 'modified': return sorted.sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0));
+      case 'created':
+        // Sort by createdAt descending (newest first), fallback to addedAt, then by title for stability
+        return sorted.sort((a, b) => {
+          const aTime = Number(a.createdAt) || Number(a.addedAt) || 0;
+          const bTime = Number(b.createdAt) || Number(b.addedAt) || 0;
+          if (aTime !== bTime) return bTime - aTime;
+          // Tie-breaker: sort by title alphabetically
+          return (a.title || '').localeCompare(b.title || '');
+        });
+      case 'modified':
+        // Sort by lastModified descending, fallback to addedAt
+        return sorted.sort((a, b) => {
+          const aTime = Number(a.lastModified) || Number(a.addedAt) || 0;
+          const bTime = Number(b.lastModified) || Number(b.addedAt) || 0;
+          return bTime - aTime;
+        });
       case 'alpha-asc': return sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       case 'alpha-desc': return sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
       default: return sorted;
