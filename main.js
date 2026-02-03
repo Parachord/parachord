@@ -3729,20 +3729,40 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
           currentPlaylists.push(newPlaylist);
           playlistsAdded++;
-        } else if (localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId) {
-          // Playlist has updates - mark for user to review
-          console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+        } else {
+          // Existing playlist - update metadata and check for track updates
           const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
           if (idx >= 0) {
+            const hasTrackUpdates = localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+            if (hasTrackUpdates) {
+              console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+            }
+
+            // Always update/backfill metadata fields (creator, source, syncedFrom)
             currentPlaylists[idx] = {
               ...currentPlaylists[idx],
-              hasUpdates: true,
+              // Backfill creator if not set
+              creator: currentPlaylists[idx].creator || remotePlaylist.ownerName || null,
+              // Backfill source if not set
+              source: currentPlaylists[idx].source || (remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import'),
+              // Update/backfill syncedFrom structure
+              syncedFrom: {
+                ...currentPlaylists[idx].syncedFrom,
+                resolver: providerId,
+                externalId: remotePlaylist.externalId,
+                snapshotId: hasTrackUpdates ? currentPlaylists[idx].syncedFrom?.snapshotId : remotePlaylist.snapshotId,
+                ownerId: remotePlaylist.ownerId
+              },
+              hasUpdates: hasTrackUpdates ? true : currentPlaylists[idx].hasUpdates,
               syncSources: {
                 ...currentPlaylists[idx].syncSources,
                 [providerId]: { ...currentPlaylists[idx].syncSources?.[providerId], syncedAt: Date.now() }
               }
             };
-            playlistsUpdated++;
+
+            if (hasTrackUpdates) {
+              playlistsUpdated++;
+            }
           }
         }
       }
