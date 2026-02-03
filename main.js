@@ -1031,6 +1031,7 @@ async function exchangeSoundCloudCodeForToken(code) {
       store.set('soundcloud_token', data.access_token);
       store.set('soundcloud_refresh_token', data.refresh_token);
       store.set('soundcloud_token_expiry', expiryTime);
+      store.set('soundcloud_last_refresh', Date.now());
       console.log('SoundCloud token saved. Expiry:', new Date(expiryTime).toISOString());
 
       // Verify it was saved
@@ -1880,15 +1881,24 @@ ipcMain.handle('soundcloud-check-token', async () => {
   const token = store.get('soundcloud_token');
   const expiry = store.get('soundcloud_token_expiry');
   const refreshToken = store.get('soundcloud_refresh_token');
+  const lastRefresh = store.get('soundcloud_last_refresh');
 
   console.log('SoundCloud token exists:', !!token);
   console.log('Expiry:', expiry);
   console.log('Refresh token exists:', !!refreshToken);
+  console.log('Last refresh:', lastRefresh ? new Date(lastRefresh).toISOString() : 'never');
   console.log('Current time:', Date.now());
   console.log('Is expired:', expiry && Date.now() >= expiry);
 
-  // If token is valid, return it
-  if (token && expiry && Date.now() < expiry) {
+  // Check if we should proactively refresh (last refresh > 7 days ago)
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const shouldProactiveRefresh = lastRefresh && (Date.now() - lastRefresh) > SEVEN_DAYS_MS;
+  if (shouldProactiveRefresh) {
+    console.log('⏰ Last refresh was over 7 days ago, will proactively refresh to keep refresh token alive');
+  }
+
+  // If token is valid and no proactive refresh needed, return it
+  if (token && expiry && Date.now() < expiry && !shouldProactiveRefresh) {
     console.log('✓ Returning valid SoundCloud token');
     return { token, expiresAt: expiry };
   }
@@ -1896,9 +1906,10 @@ ipcMain.handle('soundcloud-check-token', async () => {
   // Get credentials with fallback chain: user-stored > env
   const { clientId, clientSecret, source } = getSoundCloudCredentials();
 
-  // If token is expired but we have a refresh token, try to refresh
+  // If token is expired (or proactive refresh needed) and we have a refresh token, try to refresh
   if (refreshToken && clientId && clientSecret) {
-    console.log('🔄 SoundCloud token expired, attempting automatic refresh using', source, 'credentials...');
+    const reason = shouldProactiveRefresh ? 'proactive refresh (keeping refresh token alive)' : 'token expired';
+    console.log(`🔄 SoundCloud ${reason}, attempting automatic refresh using`, source, 'credentials...');
 
     try {
       const response = await fetch('https://api.soundcloud.com/oauth2/token', {
@@ -1915,8 +1926,27 @@ ipcMain.handle('soundcloud-check-token', async () => {
       });
 
       if (!response.ok) {
-        console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
-        throw new Error(`Token refresh failed: ${response.status}`);
+        // Try to get error details from response body
+        let errorDetails = '';
+        try {
+          const errorBody = await response.json();
+          errorDetails = JSON.stringify(errorBody);
+          console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
+          console.error('   Error details:', errorDetails);
+        } catch {
+          console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
+        }
+
+        // On 401, the refresh token is invalid/expired - clear tokens so user can re-auth
+        if (response.status === 401) {
+          console.log('🔒 Clearing invalid SoundCloud tokens (refresh token expired or revoked)');
+          store.delete('soundcloud_token');
+          store.delete('soundcloud_refresh_token');
+          store.delete('soundcloud_token_expiry');
+          store.delete('soundcloud_last_refresh');
+        }
+
+        throw new Error(`Token refresh failed: ${response.status}${errorDetails ? ' - ' + errorDetails : ''}`);
       }
 
       const data = await response.json();
@@ -1926,9 +1956,10 @@ ipcMain.handle('soundcloud-check-token', async () => {
       const expiresIn = data.expires_in || 3600; // Default to 1 hour
       const newExpiry = Date.now() + (expiresIn * 1000);
 
-      // Save new token
+      // Save new token and track refresh time
       store.set('soundcloud_token', data.access_token);
       store.set('soundcloud_token_expiry', newExpiry);
+      store.set('soundcloud_last_refresh', Date.now());
 
       // Update refresh token if a new one was provided
       if (data.refresh_token) {
@@ -1936,6 +1967,7 @@ ipcMain.handle('soundcloud-check-token', async () => {
       }
 
       console.log('New SoundCloud token expiry:', new Date(newExpiry).toISOString());
+      console.log('Last refresh timestamp updated');
 
       return { token: data.access_token, expiresAt: newExpiry };
     } catch (error) {
@@ -1954,6 +1986,7 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   store.delete('soundcloud_token');
   store.delete('soundcloud_refresh_token');
   store.delete('soundcloud_token_expiry');
+  store.delete('soundcloud_last_refresh');
   console.log('SoundCloud tokens cleared');
   return { success: true };
 });
