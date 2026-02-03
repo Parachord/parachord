@@ -23191,12 +23191,11 @@ useEffect(() => {
     !cacheLoaded ? React.createElement('div', {
       className: 'flex-1 flex flex-col items-center justify-center loading-screen'
     },
-      // Wordmark container with shimmer overlay
+      // Wordmark container
       React.createElement('div', {
-        className: 'loading-wordmark relative'
+        className: 'loading-wordmark'
       },
-        React.createElement(ParachordWordmark, { fill: '#7c3aed', height: 52 }),
-        React.createElement('div', { className: 'loading-shimmer-overlay' })
+        React.createElement(ParachordWordmark, { fill: '#7c3aed', height: 52 })
       ),
       // Animated loading dots
       React.createElement('div', {
