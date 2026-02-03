@@ -6822,64 +6822,89 @@ const Parachord = () => {
 
   // Application menu action handlers
   useEffect(() => {
-    if (window.electron?.onMenuAction) {
-      window.electron.onMenuAction((action) => {
-        console.log('📋 Menu action:', action);
-        switch (action) {
-          case 'new-playlist':
-            // Open new playlist form and navigate to playlists view
-            setActiveView('playlists');
-            setNewPlaylistFormOpen(true);
-            setNewPlaylistName('');
-            break;
-          case 'open-settings':
-            setActiveView('settings');
-            break;
-          case 'add-friend':
-            setAddFriendModalOpen(true);
-            setAddFriendInput('');
-            break;
-          case 'import-playlist':
-            // Open Import Playlist dialog (URL or file import)
-            setShowUrlImportDialog(true);
-            setUrlImportValue('');
-            break;
-          case 'export-playlist':
-            // Open save queue dialog with a default name
-            const tracksToExport = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
-            if (tracksToExport.length === 0) {
-              showToast('Queue is empty');
-            } else {
-              const firstTrack = tracksToExport[0];
-              const defaultName = firstTrack?.artist ? `${firstTrack.artist} Mix` : 'My Queue';
-              setQueueSavePlaylistName(defaultName);
-              setQueueSaveDialogOpen(true);
-            }
-            break;
-          case 'focus-search':
-            searchInputRef.current?.focus();
-            break;
-          case 'play-pause':
-            if (isPlaying) {
-              handlePause();
-            } else if (currentTrack) {
-              handlePlay(currentTrack);
-            }
-            break;
-          case 'next-track':
-            handleNext(true);
-            break;
-          case 'toggle-shuffle':
-            setShuffleMode(prev => !prev);
-            break;
-          case 'check-for-updates':
-            showToast('Checking for updates...');
-            window.electron.updater?.check();
-            break;
-        }
-      });
-    }
-  }, [isPlaying, currentTrack]);
+    if (!window.electron?.onMenuAction) return;
+
+    const cleanup = window.electron.onMenuAction((action) => {
+      console.log('📋 Menu action:', action);
+      switch (action) {
+        case 'new-playlist':
+          // Open new playlist form and navigate to playlists view
+          setActiveView('playlists');
+          setNewPlaylistFormOpen(true);
+          setNewPlaylistName('');
+          break;
+        case 'open-settings':
+          setActiveView('settings');
+          break;
+        case 'add-friend':
+          setAddFriendModalOpen(true);
+          setAddFriendInput('');
+          break;
+        case 'import-playlist':
+          // Open Import Playlist dialog (URL or file import)
+          setShowUrlImportDialog(true);
+          setUrlImportValue('');
+          break;
+        case 'export-playlist':
+          // Open save queue dialog with a default name (use refs for current values)
+          const track = currentTrackRef.current;
+          const queue = currentQueueRef.current;
+          const tracksToExport = track ? [track, ...queue] : queue;
+          if (tracksToExport.length === 0) {
+            showToast('Queue is empty');
+          } else {
+            const firstTrack = tracksToExport[0];
+            const defaultName = firstTrack?.artist ? `${firstTrack.artist} Mix` : 'My Queue';
+            setQueueSavePlaylistName(defaultName);
+            setQueueSaveDialogOpen(true);
+          }
+          break;
+        case 'focus-search':
+          searchInputRef.current?.focus();
+          break;
+        case 'play-pause':
+          if (handlePlayPauseRef.current) handlePlayPauseRef.current();
+          break;
+        case 'previous-track':
+          if (handlePreviousRef.current) handlePreviousRef.current();
+          break;
+        case 'next-track':
+          if (handleNextRef.current) handleNextRef.current();
+          break;
+        case 'toggle-shuffle':
+          setShuffleMode(prev => !prev);
+          break;
+        case 'check-for-updates':
+          showToast('Checking for updates...');
+          window.electron.updater?.check();
+          break;
+      }
+    });
+
+    return cleanup;
+  }, []);
+
+  // Hardware media key handlers (keyboard media keys)
+  useEffect(() => {
+    if (!window.electron?.onMediaKey) return;
+
+    const cleanup = window.electron.onMediaKey((action) => {
+      console.log('🎹 Media key:', action);
+      switch (action) {
+        case 'playpause':
+          if (handlePlayPauseRef.current) handlePlayPauseRef.current();
+          break;
+        case 'next':
+          if (handleNextRef.current) handleNextRef.current();
+          break;
+        case 'previous':
+          if (handlePreviousRef.current) handlePreviousRef.current();
+          break;
+      }
+    });
+
+    return cleanup;
+  }, []);
 
   // Auto-updater status listener
   useEffect(() => {

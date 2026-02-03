@@ -1240,6 +1240,11 @@ app.whenReady().then(() => {
           click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
         },
         {
+          label: 'Previous Track',
+          accelerator: 'CmdOrCtrl+Left',
+          click: () => mainWindow?.webContents.send('menu-action', 'previous-track')
+        },
+        {
           label: 'Next Track',
           accelerator: 'CmdOrCtrl+Right',
           click: () => mainWindow?.webContents.send('menu-action', 'next-track')
