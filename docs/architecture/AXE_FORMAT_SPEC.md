@@ -71,6 +71,7 @@ Boolean flags indicating what the resolver can do:
 - **stream**: Can stream audio directly
 - **browse**: Can browse catalog
 - **urlLookup**: Can parse and open service URLs
+- **purchase**: Supports purchasing tracks (shows "Buy" button in playbar)
 
 ## Settings
 
@@ -104,7 +105,12 @@ async function search(query, config) {
     album: 'Album Name',
     duration: 180,
     sources: ['spotify'],
-    // Resolver-specific fields...
+    // Resolver-specific fields (examples):
+    spotifyId: '...',        // Spotify track ID
+    bandcampUrl: '...',      // Bandcamp track URL (also used for purchase)
+    qobuzId: '...',          // Qobuz track ID (used to construct purchase URL)
+    youtubeId: '...',        // YouTube video ID
+    soundcloudId: '...',     // SoundCloud track ID
   }];
 }
 

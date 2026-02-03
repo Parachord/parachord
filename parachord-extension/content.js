@@ -125,82 +125,7 @@
     }
   });
 
-  // Auto-play for Bandcamp tracks
-  function autoPlayBandcamp(retryCount = 0) {
-    console.log('[Parachord] Attempting Bandcamp auto-play, attempt:', retryCount + 1);
-
-    // Bandcamp has several play button variants:
-    // 1. Big play button on track/album pages: .playbutton or .play-btn inside inline_player
-    // 2. The play button is often a div inside an anchor with role="button"
-    const playButton = document.querySelector('.inline_player .playbutton') ||
-                       document.querySelector('.inline_player .play-btn') ||
-                       document.querySelector('.playbutton') ||
-                       document.querySelector('.play_button.playing') || // Already has playing class but paused
-                       document.querySelector('.play_button') ||
-                       document.querySelector('[role="button"][aria-label*="Play"]') ||
-                       document.querySelector('.play-btn') ||
-                       document.querySelector('a.play-button') ||
-                       document.querySelector('button.play');
-
-    if (playButton) {
-      console.log('[Parachord] Found Bandcamp play button:', playButton.className);
-
-      // Try multiple click approaches
-      playButton.click();
-
-      // Try dispatching mouse events (sometimes more effective)
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      playButton.dispatchEvent(clickEvent);
-
-      // Also try clicking any child div (Bandcamp sometimes has the listener on child)
-      const childDiv = playButton.querySelector('div');
-      if (childDiv) {
-        childDiv.click();
-        childDiv.dispatchEvent(clickEvent);
-      }
-
-      // If play button has "busy" class, it means it's trying to load - that's good
-      if (playButton.classList.contains('busy')) {
-        console.log('[Parachord] Play button is loading (busy state)');
-        return true;
-      }
-
-      return true;
-    }
-
-    // Try the big album art play overlay
-    const bigPlayButton = document.querySelector('.play-button') ||
-                          document.querySelector('.tralbum-play-button') ||
-                          document.querySelector('#big_play_button');
-    if (bigPlayButton) {
-      console.log('[Parachord] Found Bandcamp big play button');
-      bigPlayButton.click();
-      return true;
-    }
-
-    // Fallback: try to play the audio element directly
-    const audio = document.querySelector('audio');
-    if (audio && audio.src) {
-      console.log('[Parachord] Auto-playing Bandcamp audio element directly');
-      audio.play().catch(err => {
-        console.log('[Parachord] Auto-play blocked:', err.message);
-      });
-      return true;
-    }
-
-    // Retry a few times since Bandcamp loads dynamically
-    if (retryCount < 5) {
-      setTimeout(() => autoPlayBandcamp(retryCount + 1), 500);
-    } else {
-      console.log('[Parachord] Could not find Bandcamp play button after retries');
-    }
-
-    return false;
-  }
+  // NOTE: Bandcamp auto-play removed - now using embedded player in Electron window
 
   // YouTube Ad Skipper - automatically clicks "Skip Ad" button when it appears
   // Also handles end-of-video ads to ensure proper track advancement
@@ -440,33 +365,8 @@
     } else {
       window.addEventListener('load', setupYouTubeAdSkipper);
     }
-  } else if (site === 'bandcamp') {
-    // For Bandcamp, start auto-play attempt after page is ready
-    // The audio element may not exist until play is clicked
-    console.log('[Parachord] Bandcamp detected, scheduling auto-play...');
-
-    // Try multiple approaches since timing can vary
-    setTimeout(() => {
-      console.log('[Parachord] First auto-play attempt (1s)');
-      autoPlayBandcamp();
-    }, 1000);
-
-    setTimeout(() => {
-      console.log('[Parachord] Second auto-play attempt (2s)');
-      autoPlayBandcamp();
-    }, 2000);
-
-    // Also try when DOM is fully ready
-    if (document.readyState === 'complete') {
-      console.log('[Parachord] DOM already complete, trying auto-play now');
-      setTimeout(() => autoPlayBandcamp(), 100);
-    } else {
-      window.addEventListener('load', () => {
-        console.log('[Parachord] Window load event, trying auto-play');
-        setTimeout(() => autoPlayBandcamp(), 500);
-      });
-    }
   }
+  // NOTE: Bandcamp auto-play removed - now using embedded player in Electron window
 
   waitForMedia((media) => {
     setupMediaListeners(media);
