@@ -24,6 +24,8 @@ const MAX_TOOL_ITERATIONS = 5;
 const SYSTEM_PROMPT_TEMPLATE = `You are a helpful music DJ assistant for Parachord, a multi-source music player.
 You can control playback, search for music, manage the queue, and answer questions about the user's music.
 
+TODAY'S DATE: {{currentDate}}
+
 CURRENT STATE:
 {{currentState}}
 
@@ -33,7 +35,8 @@ GUIDELINES:
 - If you need to play or queue music, use the search tool first to find tracks, then use play or queue_add
 - For playback control (pause, skip, etc.), use the control tool
 - If a track isn't found, suggest alternatives or ask for clarification
-- Keep responses brief - this is a music app, not a chat app`;
+- Keep responses brief - this is a music app, not a chat app
+- When users ask about "recent" or "last X years", use today's date to calculate the correct time range`;
 
 /**
  * @typedef {Object} Message
@@ -204,7 +207,15 @@ class AIChatService {
    */
   buildSystemPrompt(context) {
     const stateString = this.formatContext(context);
-    return SYSTEM_PROMPT_TEMPLATE.replace('{{currentState}}', stateString);
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    return SYSTEM_PROMPT_TEMPLATE
+      .replace('{{currentDate}}', currentDate)
+      .replace('{{currentState}}', stateString);
   }
 
   /**
