@@ -9349,6 +9349,13 @@ const Parachord = () => {
     let resolverId;
     let sourceToPlay = trackOrSource;
 
+    // Handle tracks without sources property (e.g., AI-added queue tracks that haven't been resolved yet)
+    // Initialize empty sources object so they go through on-demand resolution
+    if (!trackOrSource.sources && trackOrSource.artist && trackOrSource.title) {
+      console.log('🔄 Track has no sources, initializing for on-demand resolution:', trackOrSource.title);
+      trackOrSource = { ...trackOrSource, sources: {} };
+    }
+
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
       // Merge in resolved sources from trackSources state if available
       // This ensures we have all available sources including those resolved in background
