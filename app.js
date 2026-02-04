@@ -3920,19 +3920,39 @@ class AIChatService {
     }
 
     // Add listening history for personalization
-    if (context.listeningHistory && context.listeningHistory.length > 0) {
-      lines.push('\nLISTENING HISTORY (from scrobbling):');
-      for (const period of context.listeningHistory) {
-        const periodLabel = period.window.replace(/_/g, ' ');
-        if (period.top_artists && period.top_artists.length > 0) {
-          period.top_artists.forEach(a => knownArtists.add(a));
-          lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
+    const history = context.listeningHistory;
+    if (history) {
+      lines.push(`\nLISTENING HISTORY (from ${history.source || 'scrobbling'}):`);
+
+      // Show data by time period if available
+      if (history.periods && history.periods.length > 0) {
+        for (const period of history.periods) {
+          const periodLabel = period.window.replace(/_/g, ' ');
+          if (period.top_artists && period.top_artists.length > 0) {
+            period.top_artists.forEach(a => knownArtists.add(a));
+            lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
+          }
+          if (period.top_tracks && period.top_tracks.length > 0) {
+            period.top_tracks.forEach(t => knownArtists.add(t.artist));
+            const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+            lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
+          }
+          if (period.top_albums && period.top_albums.length > 0) {
+            period.top_albums.forEach(a => {
+              knownArtists.add(a.artist);
+              knownAlbums.add(`${a.title} by ${a.artist}`);
+            });
+            const albumList = period.top_albums.slice(0, 5).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+            lines.push(`  Top albums (${periodLabel}): ${albumList}`);
+          }
         }
-        if (period.top_tracks && period.top_tracks.length > 0) {
-          period.top_tracks.forEach(t => knownArtists.add(t.artist));
-          const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
-          lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
-        }
+      }
+
+      // Add recently played section
+      if (history.recently_played && history.recently_played.length > 0) {
+        history.recently_played.forEach(t => knownArtists.add(t.artist));
+        const recentList = history.recently_played.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+        lines.push(`\n  Recently played: ${recentList}`);
       }
     }
 
@@ -11466,13 +11486,25 @@ const Parachord = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
+    // Check if we have cached recently played data (from History page)
+    const now = Date.now();
+    const recentCacheValid = listeningHistoryCache.current.tracks &&
+                             (now - listeningHistoryCache.current.timestamp) < (10 * 60 * 1000);
+    const cachedRecentlyPlayed = recentCacheValid
+      ? listeningHistoryCache.current.tracks.slice(0, 50).map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || ''
+        }))
+      : null;
+
     // Time periods to fetch for richer context (fetch more than needed, will dedupe)
-    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit }
+    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit, albumLimit }
     const periods = [
-      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15 },
-      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15 }
+      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15, albumLimit: 10 }
     ];
 
     // Deduplicate results across time periods for maximum variety
@@ -11480,75 +11512,105 @@ const Parachord = () => {
     const deduplicateResults = (results) => {
       const seenArtists = new Set();
       const seenTracks = new Set();
+      const seenAlbums = new Set();
 
       return results.map(period => {
-        const uniqueArtists = period.top_artists.filter(artist => {
+        const uniqueArtists = (period.top_artists || []).filter(artist => {
           const key = artist.toLowerCase();
           if (seenArtists.has(key)) return false;
           seenArtists.add(key);
           return true;
         });
 
-        const uniqueTracks = period.top_tracks.filter(track => {
+        const uniqueTracks = (period.top_tracks || []).filter(track => {
           const key = `${track.artist.toLowerCase()}|${track.title.toLowerCase()}`;
           if (seenTracks.has(key)) return false;
           seenTracks.add(key);
           return true;
         });
 
+        const uniqueAlbums = (period.top_albums || []).filter(album => {
+          const key = `${album.artist.toLowerCase()}|${album.title.toLowerCase()}`;
+          if (seenAlbums.has(key)) return false;
+          seenAlbums.add(key);
+          return true;
+        });
+
         return {
           ...period,
           top_artists: uniqueArtists,
-          top_tracks: uniqueTracks
+          top_tracks: uniqueTracks,
+          top_albums: uniqueAlbums
         };
-      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0);
+      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0 || period.top_albums.length > 0);
     };
 
-    // Try Last.fm first
+    // Fetch from Last.fm (store in variable, don't return yet)
+    let lastfmData = null;
     if (lastfmConfig?.username) {
       const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
           console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
 
-          // Fetch all periods in parallel
+          // Fetch all periods in parallel (artists, tracks, albums)
           const periodPromises = periods.map(async (period) => {
-            const [artistsRes, tracksRes] = await Promise.all([
+            const [artistsRes, tracksRes, albumsRes] = await Promise.all([
               fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`)
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
             ]);
 
-            if (artistsRes.ok && tracksRes.ok) {
-              const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+            if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
+              const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
               return {
                 window: period.label,
                 top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
                 top_tracks: (tracksData.toptracks?.track || []).map(t => ({
                   artist: t.artist?.name || 'Unknown',
                   title: t.name
+                })),
+                top_albums: (albumsData.topalbums?.album || []).map(a => ({
+                  artist: a.artist?.name || 'Unknown',
+                  title: a.name
                 }))
               };
             }
             return null;
           });
 
+          // Use cached recently played if available, otherwise fetch
+          let recentlyPlayed = cachedRecentlyPlayed || [];
+          if (!cachedRecentlyPlayed) {
+            const recentRes = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
+            if (recentRes.ok) {
+              const recentData = await recentRes.json();
+              recentlyPlayed = (recentData.recenttracks?.track || [])
+                .filter(t => !t['@attr']?.nowplaying) // Exclude currently playing
+                .map(t => ({
+                  artist: t.artist?.['#text'] || t.artist?.name || 'Unknown',
+                  title: t.name,
+                  album: t.album?.['#text'] || ''
+                }));
+            }
+          }
+
           const results = await Promise.all(periodPromises);
           const validResults = results.filter(r => r !== null);
 
-          if (validResults.length > 0) {
+          if (validResults.length > 0 || recentlyPlayed.length > 0) {
             const deduped = deduplicateResults(validResults);
-            // Flatten for backward compatibility with AI plugins
             const allArtists = deduped.flatMap(p => p.top_artists);
             const allTracks = deduped.flatMap(p => p.top_tracks);
-            console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
+            const allAlbums = deduped.flatMap(p => p.top_albums || []);
+            console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${recentlyPlayed.length} recently played from Last.fm`);
 
-            return {
+            lastfmData = {
               source: 'Last.fm',
-              // Backward compatible flat format for existing AI plugins
-              window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
               top_artists: allArtists,
               top_tracks: allTracks,
-              // Rich structured format for future use
+              top_albums: allAlbums,
+              recently_played: recentlyPlayed,
               periods: deduped
             };
           }
@@ -11558,54 +11620,75 @@ const Parachord = () => {
       }
     }
 
-    // Fall back to ListenBrainz
+    // Also fetch from ListenBrainz (not just fallback - merge both sources)
+    let listenbrainzData = null;
     if (listenbrainzConfig?.username) {
       try {
         console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
 
-        // Fetch all periods in parallel
+        // Fetch all periods in parallel (artists, tracks, releases/albums)
         const periodPromises = periods.map(async (period) => {
-          const [artistsRes, tracksRes] = await Promise.all([
+          const [artistsRes, tracksRes, releasesRes] = await Promise.all([
             fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`)
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
           ]);
 
-          // Handle 204 No Content
-          if (artistsRes.status === 204 || tracksRes.status === 204) {
-            return null;
-          }
+          // Handle 204 No Content for any
+          const artistsOk = artistsRes.ok && artistsRes.status !== 204;
+          const tracksOk = tracksRes.ok && tracksRes.status !== 204;
+          const releasesOk = releasesRes.ok && releasesRes.status !== 204;
 
-          if (artistsRes.ok && tracksRes.ok) {
-            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
-            return {
-              window: period.label,
-              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
-              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
-                artist: t.artist_name || 'Unknown',
-                title: t.track_name
-              }))
-            };
-          }
-          return null;
+          if (!artistsOk && !tracksOk && !releasesOk) return null;
+
+          const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
+          const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
+          const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
+
+          return {
+            window: period.label,
+            top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
+            top_tracks: (tracksData.payload?.recordings || []).map(t => ({
+              artist: t.artist_name || 'Unknown',
+              title: t.track_name
+            })),
+            top_albums: (releasesData.payload?.releases || []).map(r => ({
+              artist: r.artist_name || 'Unknown',
+              title: r.release_name
+            }))
+          };
         });
+
+        // Use cached recently played if available, otherwise fetch
+        let lbRecentlyPlayed = cachedRecentlyPlayed || [];
+        if (!cachedRecentlyPlayed) {
+          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`);
+          if (recentRes.ok) {
+            const recentData = await recentRes.json();
+            lbRecentlyPlayed = (recentData.payload?.listens || []).map(l => ({
+              artist: l.track_metadata?.artist_name || 'Unknown',
+              title: l.track_metadata?.track_name || 'Unknown',
+              album: l.track_metadata?.release_name || ''
+            }));
+          }
+        }
 
         const results = await Promise.all(periodPromises);
         const validResults = results.filter(r => r !== null);
 
-        if (validResults.length > 0) {
+        if (validResults.length > 0 || lbRecentlyPlayed.length > 0) {
           const deduped = deduplicateResults(validResults);
-          // Flatten for backward compatibility with AI plugins
           const allArtists = deduped.flatMap(p => p.top_artists);
           const allTracks = deduped.flatMap(p => p.top_tracks);
-          console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from ListenBrainz across ${deduped.length} time periods`);
+          const allAlbums = deduped.flatMap(p => p.top_albums || []);
+          console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${lbRecentlyPlayed.length} recently played from ListenBrainz`);
 
-          return {
+          listenbrainzData = {
             source: 'ListenBrainz',
-            // Backward compatible flat format for existing AI plugins
-            window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
             top_artists: allArtists,
             top_tracks: allTracks,
-            // Rich structured format for future use
+            top_albums: allAlbums,
+            recently_played: lbRecentlyPlayed,
             periods: deduped
           };
         }
@@ -11614,6 +11697,61 @@ const Parachord = () => {
       }
     }
 
+    // Merge data from both sources with deduplication
+    if (lastfmData || listenbrainzData) {
+      // Helper to dedupe arrays by key function
+      const dedupeArray = (arr, keyFn) => {
+        const seen = new Set();
+        return arr.filter(item => {
+          const key = keyFn(item);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      };
+
+      // Merge artists (simple strings, lowercase key)
+      const allArtists = dedupeArray(
+        [...(lastfmData?.top_artists || []), ...(listenbrainzData?.top_artists || [])],
+        a => a.toLowerCase()
+      );
+
+      // Merge tracks (objects with artist/title)
+      const allTracks = dedupeArray(
+        [...(lastfmData?.top_tracks || []), ...(listenbrainzData?.top_tracks || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge albums (objects with artist/title)
+      const allAlbums = dedupeArray(
+        [...(lastfmData?.top_albums || []), ...(listenbrainzData?.top_albums || [])],
+        a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`
+      );
+
+      // Merge recently played (objects with artist/title), keeping order
+      const allRecent = dedupeArray(
+        [...(lastfmData?.recently_played || []), ...(listenbrainzData?.recently_played || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge periods (keep both sources' structured data)
+      const allPeriods = [...(lastfmData?.periods || []), ...(listenbrainzData?.periods || [])];
+
+      const sources = [lastfmData?.source, listenbrainzData?.source].filter(Boolean).join(' + ');
+      console.log(`🎵 Combined listening context from ${sources}: ${allArtists.length} artists, ${allTracks.length} tracks, ${allAlbums.length} albums, ${allRecent.length} recent plays`);
+
+      return {
+        source: sources,
+        window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
+        top_artists: allArtists,
+        top_tracks: allTracks,
+        top_albums: allAlbums,
+        recently_played: allRecent,
+        periods: allPeriods
+      };
+    }
+
+    // No data from either source
     return null;
   };
 
