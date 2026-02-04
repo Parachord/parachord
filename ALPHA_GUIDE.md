@@ -54,7 +54,7 @@ Send songs to Parachord directly from your browser:
 ### 5. Add Friends
 
 See what others are listening to in real-time:
-1. Go to **Settings > Social**
+1. Go to **Collection > Friends > Add Friend**
 2. Add friends by Last.fm username:
    - `jherskowitz`
    - *(add other testers)*
