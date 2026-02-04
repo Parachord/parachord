@@ -83,6 +83,7 @@
       "icon": "assets/icons/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "notarize": false,
       "target": [
         "dmg",
         "zip"
