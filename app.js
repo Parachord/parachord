@@ -38106,14 +38106,17 @@ useEffect(() => {
                     setSelectedChatProvider(newProvider);
                     // Clear current chat service so it recreates with new provider
                     aiChatServiceRef.current = null;
-                    // Update sidebar subtitle
+                    // Clear chat history since new provider doesn't have context
+                    setAiChatMessages([]);
+                    // Update sidebar with new provider and clear messages
                     const chatServices = getChatServices();
                     const provider = chatServices.find(s => s.id === newProvider);
                     if (provider) {
                       setResultsSidebar(prev => ({
                         ...prev,
                         subtitle: provider.name || provider.manifest?.name,
-                        provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon }
+                        provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
+                        messages: [] // Clear messages for new provider
                       }));
                     }
                   },
