@@ -12192,8 +12192,8 @@ const Parachord = () => {
         }
 
         try {
-          // Use the app's existing getAlbumArt function which handles caching and fetching
-          const artUrl = await getAlbumArt(artist, albumName);
+          // Use fast iTunes-based lookup for ChatCards (much faster than MusicBrainz)
+          const artUrl = await getAlbumArtFast(artist, albumName);
           if (!cancelled && artUrl) {
             setImageUrl(artUrl);
           }
@@ -20687,6 +20687,66 @@ ${tracks}
 
   // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
   const albumToReleaseIdCache = useRef({});
+
+  // Cache for fast iTunes album art lookups
+  const itunesArtCache = useRef({});
+
+  // Fast album art lookup using iTunes Search API (for ChatCards and other quick lookups)
+  // Much faster than MusicBrainz - typically returns in <500ms
+  const getAlbumArtFast = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    const cacheKey = `${artist}-${album}`.toLowerCase();
+
+    // Check cache first
+    if (itunesArtCache.current[cacheKey]) {
+      return itunesArtCache.current[cacheKey];
+    }
+
+    // Also check the main albumArtCache
+    const cachedArt = getCachedAlbumArt(artist, album);
+    if (cachedArt) {
+      itunesArtCache.current[cacheKey] = cachedArt;
+      return cachedArt;
+    }
+
+    try {
+      // Search iTunes for the album
+      const query = `${artist} ${album}`;
+      const response = await window.iTunesRateLimiter.fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=5`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) return null;
+
+      // Find best match - prefer exact album name match
+      const normalizedAlbum = album.toLowerCase();
+      const normalizedArtist = artist.toLowerCase();
+
+      const bestMatch = data.results.find(r =>
+        r.collectionName?.toLowerCase() === normalizedAlbum &&
+        r.artistName?.toLowerCase() === normalizedArtist
+      ) || data.results.find(r =>
+        r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
+        normalizedAlbum.includes(r.collectionName?.toLowerCase())
+      ) || data.results[0];
+
+      if (bestMatch?.artworkUrl100) {
+        // Scale up artwork URL (iTunes supports various sizes)
+        const artUrl = bestMatch.artworkUrl100.replace('100x100', '500x500');
+        itunesArtCache.current[cacheKey] = artUrl;
+        return artUrl;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Fast album art lookup failed:', err);
+      return null;
+    }
+  };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
   const getAlbumArt = async (artist, album) => {
