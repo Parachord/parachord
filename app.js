@@ -12026,9 +12026,11 @@ const Parachord = () => {
     return service;
   };
 
-  // ChatCard component - stable reference, defined outside renderChatContent
-  // Fetches album art from MusicBrainz if not cached
-  const ChatCard = React.memo(({ type, title, artist, album }) => {
+  // ChatCard component - stable reference using ref to prevent re-creation on every render
+  // Without the ref, React.memo() would be called on every App render, creating a new component type
+  const chatCardRef = useRef(null);
+  if (!chatCardRef.current) {
+    chatCardRef.current = React.memo(({ type, title, artist, album }) => {
     const [imageUrl, setImageUrl] = useState(null);
     const [loading, setLoading] = useState(true); // Start true for shimmer
 
@@ -12234,6 +12236,8 @@ const Parachord = () => {
       }, type)
     );
   });
+  }
+  const ChatCard = chatCardRef.current;
 
   // Render chat message content with markdown formatting
   // Supports: **bold**, *italic*, `code`, [links](url), numbered lists
