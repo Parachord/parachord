@@ -768,25 +768,49 @@ app.on('second-instance', (event, argv) => {
 
 **Documentation:** `docs/protocol-schema.md` (new)
 
-Define URL formats for all DJ commands:
+#### Playback Control Commands
 
 | Command | URL Format | Example |
 |---------|------------|---------|
 | Play track | `parachord://play?artist={}&title={}` | `parachord://play?artist=Big%20Thief&title=Vampire%20Empire` |
 | Control | `parachord://control/{action}` | `parachord://control/pause` |
-| Search | `parachord://search?q={}` | `parachord://search?q=big%20thief` |
 | Queue add | `parachord://queue/add?artist={}&title={}` | `parachord://queue/add?artist=Big%20Thief&title=Sparrow` |
 | Queue clear | `parachord://queue/clear` | `parachord://queue/clear` |
 | Shuffle | `parachord://shuffle/{on\|off}` | `parachord://shuffle/on` |
-| Open chat | `parachord://chat?prompt={}` | `parachord://chat?prompt=play%20something%20chill` |
 | Volume | `parachord://volume/{0-100}` | `parachord://volume/75` |
+
+#### Navigation Commands (Open Pages/Views)
+
+| Command | URL Format | Example |
+|---------|------------|---------|
+| Search | `parachord://search?q={}` | `parachord://search?q=big%20thief` |
+| Artist page | `parachord://artist/{name}` | `parachord://artist/Big%20Thief` |
+| Album page | `parachord://album?artist={}&title={}` | `parachord://album?artist=Big%20Thief&title=Dragon%20New%20Warm%20Mountain` |
+| Artist bio | `parachord://bio/{artist}` | `parachord://bio/Big%20Thief` |
+| Related artists | `parachord://related/{artist}` | `parachord://related/Big%20Thief` |
+| Playlist | `parachord://playlist/{id}` | `parachord://playlist/abc123` |
+| Discover | `parachord://discover` | `parachord://discover` |
+| Recommendations | `parachord://recommendations` | `parachord://recommendations` |
+| History | `parachord://history` | `parachord://history` |
+| Library | `parachord://library` | `parachord://library` |
+| Settings | `parachord://settings` | `parachord://settings` |
+| Now Playing | `parachord://now-playing` | `parachord://now-playing` |
+
+#### AI Chat Commands
+
+| Command | URL Format | Example |
+|---------|------------|---------|
+| Open chat | `parachord://chat` | `parachord://chat` |
+| Chat with prompt | `parachord://chat?prompt={}` | `parachord://chat?prompt=play%20something%20chill` |
 
 **Query parameters:**
 - All text parameters are URL-encoded
 - Multiple tracks: `parachord://queue/add?tracks=[{...},{...}]` (JSON array)
+- Optional source filter: `parachord://search?q=big%20thief&source=spotify`
 
 **Subtasks:**
-- [ ] Define URL schema for all DJ tools
+- [ ] Define URL schema for all playback commands
+- [ ] Define URL schema for all navigation commands
 - [ ] Document in `docs/protocol-schema.md`
 - [ ] Include examples for each command
 - [ ] Define error responses (via notification)
@@ -835,28 +859,28 @@ export function validateProtocolCommand(parsed) {
 
 ---
 
-### Task 6.4: Connect Protocol to DJ Tools
+### Task 6.4: Connect Protocol to DJ Tools and Navigation
 
 **File:** `app.js` or `services/protocol-handler.js`
 
-Reuse the DJ tools from Phase 1 to execute protocol commands.
+Reuse the DJ tools from Phase 1 for playback commands, and existing navigation functions for page commands.
 
 ```javascript
 // In renderer, handle IPC from main process
 window.electron.onProtocolUrl(async (url) => {
   const { command, action, params } = parseProtocolUrl(url);
 
+  // Focus the app window
+  window.electron.focusWindow();
+
   try {
     switch (command) {
+      // === Playback Control ===
       case 'play':
         await djTools.play.execute(params, toolContext);
         break;
       case 'control':
         await djTools.control.execute({ action }, toolContext);
-        break;
-      case 'search':
-        await djTools.search.execute({ query: params.q }, toolContext);
-        // Open search results in UI
         break;
       case 'queue':
         if (action === 'add') {
@@ -865,15 +889,72 @@ window.electron.onProtocolUrl(async (url) => {
           await djTools.queue_clear.execute({}, toolContext);
         }
         break;
+      case 'shuffle':
+        djTools.shuffle.execute({ enabled: action === 'on' }, toolContext);
+        break;
+      case 'volume':
+        setVolume(parseInt(action) / 100);
+        break;
+
+      // === Navigation (Open Pages/Views) ===
+      case 'search':
+        setSearchQuery(params.q);
+        setActiveView('search');
+        performSearch(params.q);
+        break;
+      case 'artist':
+        loadArtistPage(decodeURIComponent(action));
+        setActiveView('artist');
+        break;
+      case 'album':
+        loadAlbumPage(params.artist, params.title);
+        setActiveView('album');
+        break;
+      case 'bio':
+        loadArtistPage(decodeURIComponent(action));
+        setActiveView('artist');
+        setArtistTab('bio');
+        break;
+      case 'related':
+        loadArtistPage(decodeURIComponent(action));
+        setActiveView('artist');
+        setArtistTab('related');
+        break;
+      case 'playlist':
+        loadPlaylist(action);
+        setActiveView('playlist-view');
+        break;
+      case 'discover':
+        setActiveView('discover');
+        break;
+      case 'recommendations':
+        setActiveView('recommendations');
+        break;
+      case 'history':
+        setActiveView('history');
+        break;
+      case 'library':
+        setActiveView('library');
+        break;
+      case 'settings':
+        setActiveView('settings');
+        break;
+      case 'now-playing':
+        // Show now-playing view or expand player
+        setActiveView('now-playing');
+        break;
+
+      // === AI Chat ===
       case 'chat':
         setChatOpen(true);
         if (params.prompt) {
           handleChatSend(params.prompt);
         }
         break;
-      // ...
+
+      default:
+        console.warn(`Unknown protocol command: ${command}`);
     }
-    showNotification(`✓ ${command} executed`);
   } catch (error) {
     showNotification(`✗ ${command} failed: ${error.message}`);
   }
@@ -883,6 +964,7 @@ window.electron.onProtocolUrl(async (url) => {
 **Subtasks:**
 - [ ] Add IPC handler in preload.js for protocol URLs
 - [ ] Map protocol commands to DJ tool executors
+- [ ] Map navigation commands to existing view/page handlers
 - [ ] Show toast notifications for success/failure
 - [ ] Focus app window when protocol URL received
 
