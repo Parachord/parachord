@@ -4150,6 +4150,7 @@ const Parachord = () => {
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
+  const [sidebarClosing, setSidebarClosing] = useState(false); // Tracks closing animation state
   // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
   // For chat mode: { mode: 'chat', title, messages: [], provider }
 
@@ -6390,6 +6391,7 @@ const Parachord = () => {
 
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
+  const artistFetchId = useRef(0);  // Incremented on each new fetch to detect stale async callbacks
 
   // Cache for MusicBrainz search results (query -> { artists, albums, tracks, timestamp })
   // TTL: 5 minutes - cached results shown instantly while fresh search runs in background
@@ -11938,7 +11940,7 @@ const Parachord = () => {
       console.error('AI generation error:', error);
       setAiError(error.message || 'Failed to generate playlist');
       // Close sidebar on error, reopen prompt
-      setResultsSidebar(null);
+      closeSidebarAnimated();
       setAiPromptOpen(true);
     } finally {
       setAiLoading(false);
@@ -11951,7 +11953,7 @@ const Parachord = () => {
     // Use aiPlaylist context type (not navigable, unlike recommendations page)
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     addToQueue(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
 
@@ -11960,7 +11962,7 @@ const Parachord = () => {
     if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     playTrackCollection(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
 
   // Handle adding AI results to existing/new playlist
@@ -11972,7 +11974,7 @@ const Parachord = () => {
       sourceName: resultsSidebar.prompt || 'AI Playlist',
       sourceType: 'playlist'
     });
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
 
   // ============================================
@@ -12647,10 +12649,20 @@ const Parachord = () => {
     });
   };
 
+  // Close sidebar with animation
+  const closeSidebarAnimated = () => {
+    if (sidebarClosing) return; // Already closing
+    setSidebarClosing(true);
+    setTimeout(() => {
+      setResultsSidebar(null);
+      setSidebarClosing(false);
+    }, 200); // Match animation duration
+  };
+
   // Close AI Chat
   const closeAiChat = () => {
     setAiChatOpen(false);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
 
   // Send message in AI Chat
@@ -14227,6 +14239,10 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
 
+    // Increment fetch ID to invalidate any in-flight requests for previous artists
+    artistFetchId.current++;
+    const thisFetchId = artistFetchId.current;
+
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
 
@@ -14387,6 +14403,12 @@ const Parachord = () => {
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
 
+      // Check if this fetch is still current (user may have navigated to another artist)
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
+
       // Set artist name immediately so header shows while releases load
       setCurrentArtist({
         name: artist.name,
@@ -14400,6 +14422,7 @@ const Parachord = () => {
       (async () => {
         // Try Spotify first
         const spotifyResult = await getArtistImage(artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (spotifyResult) {
           setArtistImage(spotifyResult.url);
           setArtistImagePosition(spotifyResult.facePosition || 'center 25%');
@@ -14408,6 +14431,7 @@ const Parachord = () => {
 
         // Try Wikipedia fallback
         const wikiImage = await getWikipediaArtistImage(artist.id);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (wikiImage) {
           setArtistImage(wikiImage);
           setArtistImagePosition('center 25%');
@@ -14416,6 +14440,7 @@ const Parachord = () => {
 
         // Try Discogs fallback
         const discogsImage = await getDiscogsArtistImage(artist.id, artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (discogsImage) {
           setArtistImage(discogsImage);
           setArtistImagePosition('center 25%');
@@ -14501,6 +14526,12 @@ const Parachord = () => {
         cacheVersion: 2
       };
       console.log('💾 Cached artist data for:', artistName);
+
+      // Check if this fetch is still current before updating state
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
 
       // Pre-populate releases with cached album art
       const releasesWithCache = uniqueReleases.map(release => ({
@@ -17854,7 +17885,7 @@ ${tracks}
 
     // Close dialogs
     setAiSaveDialogOpen(false);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
   };
 
@@ -38909,7 +38940,7 @@ useEffect(() => {
       React.createElement('div', {
         className: 'flex-1',
         style: { backgroundColor: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(4px)' },
-        onClick: () => setResultsSidebar(null)
+        onClick: closeSidebarAnimated
       }),
 
       // Sidebar panel
@@ -38919,7 +38950,7 @@ useEffect(() => {
           backgroundColor: 'rgba(17, 24, 39, 0.98)',
           borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
           boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.3)',
-          animation: 'slideInRight 0.2s ease-out'
+          animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
         }
       },
         // Header
@@ -38938,7 +38969,7 @@ useEffect(() => {
                 if (resultsSidebar.mode === 'chat') {
                   closeAiChat();
                 } else {
-                  setResultsSidebar(null);
+                  closeSidebarAnimated();
                 }
               },
               className: 'transition-colors',
