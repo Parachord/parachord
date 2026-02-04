@@ -12348,6 +12348,8 @@ const Parachord = () => {
 
     const hasImage = imageUrl && imageUrl.trim();
 
+    const [isHovered, setIsHovered] = useState(false);
+
     return React.createElement('div', {
       onClick: handleClick,
       style: {
@@ -12361,45 +12363,94 @@ const Parachord = () => {
         cursor: 'pointer',
         transition: 'background-color 0.15s'
       },
-      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+      onMouseEnter: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        setIsHovered(true);
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+        setIsHovered(false);
+      }
     },
-      // Thumbnail with shimmer loading state or placeholder
+      // Thumbnail wrapper with hover play button
       React.createElement('div', {
-        className: loading ? 'animate-shimmer' : '',
         style: {
+          position: 'relative',
           width: '40px',
           height: '40px',
-          borderRadius: type === 'artist' ? '50%' : '4px',
-          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          backgroundImage: loading
-            ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
-            : hasImage ? `url(${imageUrl})` : 'none',
-          backgroundSize: loading ? '200% 100%' : 'cover',
-          backgroundPosition: 'center',
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
+          flexShrink: 0
         }
       },
-        // Music note placeholder when no image
-        !loading && !hasImage && React.createElement('svg', {
+        // Thumbnail with shimmer loading state or placeholder
+        React.createElement('div', {
+          className: loading ? 'animate-shimmer' : '',
           style: {
-            width: '20px',
-            height: '20px',
-            color: 'rgba(255, 255, 255, 0.3)'
-          },
-          fill: 'none',
-          viewBox: '0 0 24 24',
-          stroke: 'currentColor',
-          strokeWidth: 1.5
+            width: '40px',
+            height: '40px',
+            borderRadius: type === 'artist' ? '50%' : '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundImage: loading
+              ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
+              : hasImage ? `url(${imageUrl})` : 'none',
+            backgroundSize: loading ? '200% 100%' : 'cover',
+            backgroundPosition: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }
         },
-          React.createElement('path', {
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-            d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-          })
+          // Music note placeholder when no image
+          !loading && !hasImage && React.createElement('svg', {
+            style: {
+              width: '20px',
+              height: '20px',
+              color: 'rgba(255, 255, 255, 0.3)'
+            },
+            fill: 'none',
+            viewBox: '0 0 24 24',
+            stroke: 'currentColor',
+            strokeWidth: 1.5
+          },
+            React.createElement('path', {
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+            })
+          )
+        ),
+        // Hover overlay with play button (only for tracks and albums)
+        (type === 'track' || type === 'album') && React.createElement('div', {
+          style: {
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '4px',
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isHovered ? 1 : 0,
+            transition: 'opacity 0.15s'
+          }
+        },
+          React.createElement('div', {
+            style: {
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              backgroundColor: '#9333ea',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '12px', height: '12px', marginLeft: '2px' },
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M8 5v14l11-7z' })
+            )
+          )
         )
       ),
       // Text content
