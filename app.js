@@ -4045,6 +4045,7 @@ class AIChatService {
   }
 
   clearHistory() { this.messages = []; }
+  restoreHistory(messages) { this.messages = messages || []; }
   getHistory() { return [...this.messages]; }
 }
 
@@ -9017,6 +9018,31 @@ const Parachord = () => {
     }
   }, [playlistsViewMode, cacheLoaded]);
 
+  // Persist AI chat history per provider (only after cache is loaded to avoid overwriting)
+  const aiChatHistoriesRef = useRef({}); // Store histories for all providers
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store && selectedChatProvider) {
+      // Update the history for current provider
+      aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+      window.electron.store.set('ai_chat_histories', aiChatHistoriesRef.current);
+    }
+  }, [aiChatMessages, cacheLoaded, selectedChatProvider]);
+
+  // Load chat history when provider changes
+  const prevProviderRef = useRef(null);
+  useEffect(() => {
+    if (cacheLoaded && selectedChatProvider && selectedChatProvider !== prevProviderRef.current) {
+      prevProviderRef.current = selectedChatProvider;
+      const history = aiChatHistoriesRef.current[selectedChatProvider] || [];
+      setAiChatMessages(history);
+      // Also restore to service if it exists
+      if (aiChatServiceRef.current) {
+        aiChatServiceRef.current.restoreHistory(history);
+      }
+      console.log('💬 Loaded chat history for provider:', selectedChatProvider, '-', history.length, 'messages');
+    }
+  }, [selectedChatProvider, cacheLoaded]);
+
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
     prefetchedReleasesRef.current = prefetchedReleases;
@@ -12022,6 +12048,11 @@ const Parachord = () => {
     // Create the service using the inlined function
     const service = createChatServiceFromPlugin(provider, config, toolContext, getContext);
 
+    // Restore chat history if we have persisted messages
+    if (aiChatMessages.length > 0) {
+      service.restoreHistory(aiChatMessages);
+    }
+
     aiChatServiceRef.current = service;
     return service;
   };
@@ -13582,6 +13613,13 @@ const Parachord = () => {
       if (savedAiIncludeHistory !== undefined) {
         setAiIncludeHistory(savedAiIncludeHistory);
         console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
+      }
+
+      // Load AI chat histories (per-provider)
+      const savedAiChatHistories = await window.electron.store.get('ai_chat_histories');
+      if (savedAiChatHistories && typeof savedAiChatHistories === 'object') {
+        aiChatHistoriesRef.current = savedAiChatHistories;
+        console.log('📦 Loaded AI chat histories for providers:', Object.keys(savedAiChatHistories).join(', '));
       }
 
       // Load discovery feature seen hashes (for unread badges)
