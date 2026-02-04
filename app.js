@@ -3452,6 +3452,15 @@ const Parachord = () => {
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
   // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
+  // For chat mode: { mode: 'chat', title, messages: [], provider }
+
+  // Conversational DJ (AI Chat) state
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiChatMessages, setAiChatMessages] = useState([]);
+  const [aiChatInput, setAiChatInput] = useState('');
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [selectedChatProvider, setSelectedChatProvider] = useState(null);
+  const aiChatServiceRef = useRef(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -5738,6 +5747,14 @@ const Parachord = () => {
     if (!resolverLoaderRef.current) return [];
     return resolverLoaderRef.current.getAllResolvers().filter(r =>
       r.capabilities?.generate
+    );
+  };
+
+  // Get AI services with chat capability (for Conversational DJ)
+  const getChatServices = () => {
+    if (!resolverLoaderRef.current) return [];
+    return resolverLoaderRef.current.getAllResolvers().filter(r =>
+      r.capabilities?.chat
     );
   };
 
@@ -11042,6 +11059,212 @@ const Parachord = () => {
     });
     setResultsSidebar(null);
   };
+
+  // ============================================
+  // Conversational DJ (AI Chat) Functions
+  // ============================================
+
+  // Search across all active resolvers (for AI chat tools)
+  const searchResolvers = async (query) => {
+    const resolvers = loadedResolversRef.current || [];
+    const activeIds = activeResolversRef.current || [];
+    const results = [];
+
+    for (const resolver of resolvers) {
+      if (!activeIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current
+          ? await getResolverConfigRef.current(resolver.id)
+          : {};
+        const tracks = await resolver.search(query, config);
+        if (Array.isArray(tracks)) {
+          results.push(...tracks.map(t => ({
+            ...t,
+            source: resolver.id,
+            resolverName: resolver.name || resolver.manifest?.name
+          })));
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    return results;
+  };
+
+  // Create a playlist from AI chat
+  const createPlaylistFromChat = async (name, tracks) => {
+    const playlistId = `ai-chat-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: name,
+      creator: 'AI DJ',
+      tracks: tracks,
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
+    };
+
+    const saveResult = await window.electron.playlists.save(newPlaylist);
+    if (saveResult.success) {
+      setPlaylists(prev => [newPlaylist, ...prev]);
+      fetchPlaylistCovers(playlistId, tracks);
+    }
+
+    return newPlaylist;
+  };
+
+  // Initialize or get AI chat service
+  const getOrCreateChatService = (provider) => {
+    // If we already have a service for this provider, return it
+    if (aiChatServiceRef.current?.provider?.id === provider.id) {
+      return aiChatServiceRef.current;
+    }
+
+    // Dynamic import - services are bundled with the app
+    const { initializeChatService } = require('./services/ai-chat-integration');
+
+    const config = metaServiceConfigs[provider.id] || {};
+
+    const service = initializeChatService({
+      plugin: provider,
+      pluginConfig: config,
+      appHandlers: {
+        searchResolvers,
+        playTrack: handlePlayRef.current,
+        addToQueue,
+        clearQueue,
+        handlePause: handlePlayPauseRef.current,
+        handlePlay: handlePlayRef.current,
+        handleNext: handleNextRef.current,
+        handlePrevious: handlePreviousRef.current,
+        setShuffle: setShuffleMode,
+        createPlaylist: createPlaylistFromChat,
+        getCurrentTrack: () => currentTrackRef.current,
+        getQueue: () => currentQueueRef.current || [],
+        getIsPlaying: () => isPlayingRef.current
+      },
+      stateGetters: {
+        getCurrentTrack: () => currentTrackRef.current,
+        getQueue: () => currentQueueRef.current || [],
+        getIsPlaying: () => isPlayingRef.current,
+        getShuffleMode: () => shuffleModeRef.current,
+        getListeningHistory: fetchListeningContext
+      }
+    });
+
+    aiChatServiceRef.current = service;
+    return service;
+  };
+
+  // Open AI Chat
+  const openAiChat = () => {
+    const chatServices = getChatServices();
+    // Filter to only enabled services with required config
+    const enabledServices = chatServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      // Ollama doesn't need API key, others do
+      if (s.id === 'ollama') return config.enabled !== false;
+      return config.enabled && config.apiKey;
+    });
+
+    if (enabledServices.length === 0) {
+      showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
+      return;
+    }
+
+    // Use selected provider or first available
+    const provider = selectedChatProvider
+      ? enabledServices.find(s => s.id === selectedChatProvider) || enabledServices[0]
+      : enabledServices[0];
+
+    setSelectedChatProvider(provider.id);
+    setAiChatOpen(true);
+    setResultsSidebar({
+      mode: 'chat',
+      title: 'AI DJ',
+      subtitle: provider.name || provider.manifest?.name,
+      messages: aiChatMessages,
+      provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
+      loading: false
+    });
+  };
+
+  // Close AI Chat
+  const closeAiChat = () => {
+    setAiChatOpen(false);
+    setResultsSidebar(null);
+  };
+
+  // Send message in AI Chat
+  const handleAiChatSend = async (message) => {
+    if (!message.trim() || aiChatLoading) return;
+
+    const chatServices = getChatServices();
+    const provider = chatServices.find(s => s.id === selectedChatProvider);
+
+    if (!provider) {
+      showToast('Chat provider not found', 'error');
+      return;
+    }
+
+    // Add user message to UI immediately
+    const userMessage = { role: 'user', content: message.trim() };
+    const updatedMessages = [...aiChatMessages, userMessage];
+    setAiChatMessages(updatedMessages);
+    setAiChatInput('');
+    setAiChatLoading(true);
+
+    // Update sidebar with user message
+    setResultsSidebar(prev => ({
+      ...prev,
+      messages: updatedMessages,
+      loading: true
+    }));
+
+    try {
+      const service = getOrCreateChatService(provider);
+      const response = await service.sendMessage(message.trim());
+
+      // Add assistant response
+      const assistantMessage = { role: 'assistant', content: response.content };
+      const finalMessages = [...updatedMessages, assistantMessage];
+      setAiChatMessages(finalMessages);
+
+      // Update sidebar
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false,
+        lastToolResults: response.toolResults
+      }));
+    } catch (error) {
+      console.error('AI chat error:', error);
+      const errorMessage = { role: 'assistant', content: `Error: ${error.message}` };
+      const finalMessages = [...updatedMessages, errorMessage];
+      setAiChatMessages(finalMessages);
+
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false
+      }));
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  // Clear chat history
+  const clearAiChatHistory = () => {
+    setAiChatMessages([]);
+    if (aiChatServiceRef.current) {
+      aiChatServiceRef.current.clearHistory();
+    }
+    setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
+  };
+
   const addToQueue = (tracks, context = null) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
@@ -36018,27 +36241,58 @@ useEffect(() => {
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
-          // AI Playlist Generation button (sparkle icon) - with tooltip
+          // AI Playlist/DJ button (sparkle icon) - opens chat if available, else prompt
           (() => {
             const aiResolvers = getAiServices();
-            const hasEnabledAi = aiResolvers.some(s => {
+            const chatServices = getChatServices();
+
+            // Check if chat providers are enabled
+            const hasEnabledChat = chatServices.some(s => {
+              const config = metaServiceConfigs[s.id] || {};
+              // Ollama doesn't require API key
+              if (s.id === 'ollama') return config.enabled !== false;
+              return config.enabled && config.apiKey;
+            });
+
+            // Check if generate providers are enabled (fallback)
+            const hasEnabledGenerate = aiResolvers.some(s => {
               const config = metaServiceConfigs[s.id] || {};
               return config.enabled && config.apiKey;
             });
+
+            const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
+            const isActive = aiChatOpen || aiPromptOpen;
+
+            const handleClick = () => {
+              if (hasEnabledChat) {
+                // Prefer chat interface
+                if (aiChatOpen) {
+                  closeAiChat();
+                } else {
+                  openAiChat();
+                }
+              } else if (hasEnabledGenerate) {
+                // Fall back to one-shot prompt
+                setAiPromptOpen(!aiPromptOpen);
+              }
+            };
+
             return React.createElement(Tooltip, {
-              content: hasEnabledAi
-                ? 'AI Playlist'
-                : 'Enable AI in Settings',
+              content: hasEnabledChat
+                ? 'AI DJ'
+                : hasEnabledGenerate
+                  ? 'AI Playlist'
+                  : 'Enable AI in Settings',
               position: 'top',
               variant: 'dark'
             },
               React.createElement('button', {
-                onClick: () => setAiPromptOpen(!aiPromptOpen),
-                disabled: !hasEnabledAi,
+                onClick: handleClick,
+                disabled: !hasAnyAi,
                 className: `p-2 ml-1 rounded transition-colors ${
-                  aiPromptOpen
+                  isActive
                     ? 'bg-purple-500/30 text-purple-300'
-                    : hasEnabledAi
+                    : hasAnyAi
                       ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                       : 'text-gray-600 cursor-not-allowed'
                 }`
@@ -37080,11 +37334,19 @@ useEffect(() => {
         },
           React.createElement('div', { className: 'flex items-center justify-between' },
             React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('span', { style: { color: '#c4b5fd' } }, '✨'),
+              React.createElement('span', { style: { color: '#c4b5fd' } },
+                resultsSidebar.mode === 'chat' ? '🎧' : '✨'
+              ),
               React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: '#f3f4f6' } }, resultsSidebar.title)
             ),
             React.createElement('button', {
-              onClick: () => setResultsSidebar(null),
+              onClick: () => {
+                if (resultsSidebar.mode === 'chat') {
+                  closeAiChat();
+                } else {
+                  setResultsSidebar(null);
+                }
+              },
               className: 'transition-colors',
               style: { padding: '6px', color: '#6b7280', borderRadius: '8px' },
               onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
@@ -37100,142 +37362,282 @@ useEffect(() => {
           }, resultsSidebar.subtitle)
         ),
 
-        // Track list or loading skeletons
-        React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
-          // Loading skeletons
-          resultsSidebar.loading
-            ? Array.from({ length: 12 }).map((_, index) =>
-                React.createElement('div', {
-                  key: `skeleton-${index}`,
-                  className: 'flex items-center gap-3',
-                  style: { padding: '8px' }
+        // Content area - Chat mode vs Track list mode
+        resultsSidebar.mode === 'chat'
+          // ========== CHAT MODE ==========
+          ? React.createElement(React.Fragment, null,
+              // Chat messages area
+              React.createElement('div', {
+                className: 'flex-1 overflow-y-auto',
+                style: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }
+              },
+                // Welcome message if no messages
+                (!resultsSidebar.messages || resultsSidebar.messages.length === 0) && React.createElement('div', {
+                  style: { textAlign: 'center', padding: '24px 16px', color: '#6b7280' }
                 },
-                  // Skeleton track number
+                  React.createElement('div', { style: { fontSize: '32px', marginBottom: '12px' } }, '🎵'),
+                  React.createElement('p', { style: { fontSize: '14px', marginBottom: '8px' } }, 'Hi! I\'m your AI DJ.'),
+                  React.createElement('p', { style: { fontSize: '12px' } }, 'Ask me to play music, manage your queue, or discover new tracks.')
+                ),
+
+                // Chat messages
+                resultsSidebar.messages && resultsSidebar.messages.map((msg, index) =>
                   React.createElement('div', {
-                    className: 'animate-pulse',
-                    style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
-                  }),
-                  // Skeleton track info
-                  React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
-                    }),
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
-                    })
-                  )
-                )
-              )
-            : resultsSidebar.tracks.map((track, index) =>
-                React.createElement('div', {
-                  key: track.id || index,
-                  className: 'group flex items-center gap-3 transition-colors',
-                  style: { padding: '8px', borderRadius: '8px' },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                },
-                  // Track number
-                  React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
-
-                  // Track info
-                  React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
-                    React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
-                  ),
-
-                  // Remove button
-                  React.createElement('button', {
-                    onClick: () => {
-                      setResultsSidebar(prev => ({
-                        ...prev,
-                        tracks: prev.tracks.filter((_, i) => i !== index)
-                      }));
-                    },
-                    className: 'opacity-0 group-hover:opacity-100 transition-all',
-                    style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
-                    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
-                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                    key: index,
+                    style: {
+                      display: 'flex',
+                      justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                    }
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                    React.createElement('div', {
+                      style: {
+                        maxWidth: '85%',
+                        padding: '10px 14px',
+                        borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                        backgroundColor: msg.role === 'user' ? '#7c3aed' : 'rgba(255, 255, 255, 0.08)',
+                        color: msg.role === 'user' ? '#ffffff' : '#e5e7eb',
+                        fontSize: '14px',
+                        lineHeight: '1.5',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                      }
+                    }, msg.content)
+                  )
+                ),
+
+                // Loading indicator
+                resultsSidebar.loading && React.createElement('div', {
+                  style: { display: 'flex', justifyContent: 'flex-start' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      padding: '12px 16px',
+                      borderRadius: '16px 16px 16px 4px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      gap: '4px'
+                    }
+                  },
+                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '150ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '300ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } })
+                  )
+                )
+              ),
+
+              // Chat input area
+              React.createElement('div', {
+                style: { padding: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
+              },
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: aiChatInput,
+                    onChange: (e) => setAiChatInput(e.target.value),
+                    onKeyDown: (e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
+                        handleAiChatSend(aiChatInput);
+                      }
+                    },
+                    placeholder: 'Ask your AI DJ...',
+                    disabled: aiChatLoading,
+                    style: {
+                      flex: 1,
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '20px',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      color: '#f3f4f6',
+                      outline: 'none'
+                    },
+                    onFocus: (e) => { e.target.style.borderColor = 'rgba(124, 58, 237, 0.5)'; },
+                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }
+                  }),
+                  React.createElement('button', {
+                    onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
+                    disabled: !aiChatInput.trim() || aiChatLoading,
+                    style: {
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: !aiChatInput.trim() || aiChatLoading ? 'rgba(124, 58, 237, 0.3)' : '#7c3aed',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }
+                  },
+                    aiChatLoading
+                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
+                          React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
+                        )
+                      : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
+                        )
+                  )
+                ),
+                // Clear chat button
+                resultsSidebar.messages && resultsSidebar.messages.length > 0 && React.createElement('button', {
+                  onClick: clearAiChatHistory,
+                  style: {
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 8px'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
+                  onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+                }, 'Clear conversation')
+              )
+            )
+
+          // ========== TRACK LIST MODE (Original) ==========
+          : React.createElement(React.Fragment, null,
+              // Track list or loading skeletons
+              React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
+                // Loading skeletons
+                resultsSidebar.loading
+                  ? Array.from({ length: 12 }).map((_, index) =>
+                      React.createElement('div', {
+                        key: `skeleton-${index}`,
+                        className: 'flex items-center gap-3',
+                        style: { padding: '8px' }
+                      },
+                        // Skeleton track number
+                        React.createElement('div', {
+                          className: 'animate-pulse',
+                          style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
+                        }),
+                        // Skeleton track info
+                        React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                          }),
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                          })
+                        )
+                      )
                     )
+                  : (resultsSidebar.tracks || []).map((track, index) =>
+                      React.createElement('div', {
+                        key: track.id || index,
+                        className: 'group flex items-center gap-3 transition-colors',
+                        style: { padding: '8px', borderRadius: '8px' },
+                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
+                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                      },
+                        // Track number
+                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
+
+                        // Track info
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
+                          React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
+                        ),
+
+                        // Remove button
+                        React.createElement('button', {
+                          onClick: () => {
+                            setResultsSidebar(prev => ({
+                              ...prev,
+                              tracks: prev.tracks.filter((_, i) => i !== index)
+                            }));
+                          },
+                          className: 'opacity-0 group-hover:opacity-100 transition-all',
+                          style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
+                          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
+                          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                          )
+                        )
+                      )
+                    )
+              ),
+
+              // Empty state (only show when not loading and no tracks)
+              !resultsSidebar.loading && (!resultsSidebar.tracks || resultsSidebar.tracks.length === 0) && React.createElement('div', {
+                className: 'flex-1 flex items-center justify-center',
+                style: { padding: '16px' }
+              },
+                React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
+              ),
+
+              // Actions - Three circular buttons
+              React.createElement('div', {
+                style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
+              },
+                // Add to Playlist button
+                React.createElement('button', {
+                  onClick: handleAiAddToPlaylist,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Playlist'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                  )
+                ),
+                // Play button (center, larger)
+                React.createElement('button', {
+                  onClick: handleAiPlay,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
+                  title: 'Play Now'
+                },
+                  React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
+                ),
+                // Add to Queue button
+                React.createElement('button', {
+                  onClick: handleAiAddToQueue,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Queue'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                   )
                 )
               )
-        ),
-
-        // Empty state (only show when not loading and no tracks)
-        !resultsSidebar.loading && resultsSidebar.tracks.length === 0 && React.createElement('div', {
-          className: 'flex-1 flex items-center justify-center',
-          style: { padding: '16px' }
-        },
-          React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
-        ),
-
-        // Actions - Three circular buttons
-        React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
-        },
-          // Add to Playlist button
-          React.createElement('button', {
-            onClick: handleAiAddToPlaylist,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Playlist'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
             )
-          ),
-          // Play button (center, larger)
-          React.createElement('button', {
-            onClick: handleAiPlay,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-            style: {
-              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
-            title: 'Play Now'
-          },
-            React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
-          ),
-          // Add to Queue button
-          React.createElement('button', {
-            onClick: handleAiAddToQueue,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Queue'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-            )
-          )
-        )
       )
     ),
 
