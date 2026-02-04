@@ -12126,6 +12126,7 @@ const Parachord = () => {
               r.artist?.toLowerCase() === artist?.toLowerCase() &&
               r.title?.toLowerCase() === title?.toLowerCase()
             ) || results[0];
+            clearQueue();
             await handlePlayRef.current(bestMatch);
           } else {
             // Fallback to search if no results from resolvers
