@@ -3784,6 +3784,12 @@ class AIChatService {
 
     // Model not found
     if (message.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('does not exist')) {
+      // Check if this is Ollama
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        const model = this.provider.config?.model || 'llama3.1';
+        return `Model "${model}" not installed. Run: ollama pull ${model}`;
+      }
       return "AI model not found. Check your settings or try a different model.";
     }
 
