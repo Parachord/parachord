@@ -3387,7 +3387,366 @@ const ReleasePage = ({
         )
     )
   );
+;
+
+// =============================================================================
+// AI Chat Service - Inlined for browser compatibility
+// =============================================================================
+
+// DJ Tools definitions
+const djTools = [
+  {
+    name: 'play',
+    description: 'Play a specific track by searching for it and starting playback immediately',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'The artist name' },
+        title: { type: 'string', description: 'The track title' }
+      },
+      required: ['artist', 'title']
+    }
+  },
+  {
+    name: 'control',
+    description: 'Control music playback - pause, resume, skip to next, go to previous track',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['pause', 'resume', 'skip', 'previous'],
+          description: 'The playback action to perform'
+        }
+      },
+      required: ['action']
+    }
+  },
+  {
+    name: 'search',
+    description: 'Search for tracks across all music sources. Returns a list of matching tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (artist name, track title, or both)' },
+        limit: { type: 'number', description: 'Maximum number of results to return (default 10)' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'queue_add',
+    description: 'Add one or more tracks to the playback queue',
+    parameters: {
+      type: 'object',
+      properties: {
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to add to the queue'
+        },
+        position: {
+          type: 'string',
+          enum: ['next', 'last'],
+          description: 'Add after current track (next) or at end of queue (last). Default: last'
+        }
+      },
+      required: ['tracks']
+    }
+  },
+  {
+    name: 'queue_clear',
+    description: 'Clear all tracks from the playback queue',
+    parameters: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'create_playlist',
+    description: 'Create a new playlist with the specified tracks',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the new playlist' },
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to include in the playlist'
+        }
+      },
+      required: ['name', 'tracks']
+    }
+  },
+  {
+    name: 'shuffle',
+    description: 'Turn shuffle mode on or off',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'true to enable shuffle, false to disable' }
+      },
+      required: ['enabled']
+    }
+  }
+];
+
+// Execute a DJ tool
+const executeDjTool = async (name, args, context) => {
+  try {
+    switch (name) {
+      case 'play': {
+        const query = `${args.artist} ${args.title}`;
+        const results = await context.search(query);
+        if (!results || results.length === 0) {
+          return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
+        }
+        const bestMatch = results.find(r =>
+          r.artist?.toLowerCase() === args.artist.toLowerCase() &&
+          r.title?.toLowerCase() === args.title.toLowerCase()
+        ) || results[0];
+        await context.playTrack(bestMatch);
+        return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
+      }
+      case 'control': {
+        switch (args.action) {
+          case 'pause': context.handlePause(); return { success: true, action: 'paused' };
+          case 'resume': context.handlePlay(); return { success: true, action: 'resumed' };
+          case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
+          case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
+          default: return { success: false, error: `Unknown action: ${args.action}` };
+        }
+      }
+      case 'search': {
+        const results = await context.search(args.query);
+        const limit = args.limit || 10;
+        return {
+          success: true,
+          results: (results || []).slice(0, limit).map(r => ({ artist: r.artist, title: r.title, album: r.album })),
+          total: results?.length || 0
+        };
+      }
+      case 'queue_add': {
+        const resolved = [];
+        for (const track of args.tracks) {
+          const results = await context.search(`${track.artist} ${track.title}`);
+          if (results && results.length > 0) {
+            resolved.push(results.find(r =>
+              r.artist?.toLowerCase() === track.artist.toLowerCase() &&
+              r.title?.toLowerCase() === track.title.toLowerCase()
+            ) || results[0]);
+          }
+        }
+        if (resolved.length > 0) {
+          await context.addToQueue(resolved, args.position || 'last');
+        }
+        return { success: resolved.length > 0, added: resolved.length };
+      }
+      case 'queue_clear': {
+        context.clearQueue();
+        return { success: true };
+      }
+      case 'create_playlist': {
+        const resolved = [];
+        for (const track of args.tracks) {
+          const results = await context.search(`${track.artist} ${track.title}`);
+          if (results && results.length > 0) resolved.push(results[0]);
+        }
+        if (resolved.length === 0) return { success: false, error: 'Could not find any tracks' };
+        const playlist = await context.createPlaylist(args.name, resolved);
+        return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: resolved.length } };
+      }
+      case 'shuffle': {
+        context.setShuffle(args.enabled);
+        return { success: true, shuffle: args.enabled };
+      }
+      default:
+        return { success: false, error: `Unknown tool: ${name}` };
+    }
+  } catch (error) {
+    console.error(`Tool execution error (${name}):`, error);
+    return { success: false, error: error.message || 'Tool execution failed' };
+  }
 };
+
+// Get simple tool definitions for LLM APIs
+const getSimpleToolDefinitions = () => djTools.map(t => ({
+  name: t.name,
+  description: t.description,
+  parameters: t.parameters
+}));
+
+// AI Chat Service class
+const AI_CHAT_SYSTEM_PROMPT = `You are a helpful music DJ assistant for Parachord, a multi-source music player.
+You can control playback, search for music, manage the queue, and answer questions about the user's music.
+
+CURRENT STATE:
+{{currentState}}
+
+GUIDELINES:
+- Be concise and helpful
+- When taking actions, confirm what you did
+- If you need to play or queue music, use the search tool first to find tracks, then use play or queue_add
+- For playback control (pause, skip, etc.), use the control tool
+- If a track isn't found, suggest alternatives or ask for clarification
+- Keep responses brief - this is a music app, not a chat app`;
+
+class AIChatService {
+  constructor(provider, toolContext, getContext) {
+    this.provider = provider;
+    this.toolContext = toolContext;
+    this.getContext = getContext;
+    this.messages = [];
+    this.tools = getSimpleToolDefinitions();
+  }
+
+  async sendMessage(userMessage) {
+    this.messages.push({ role: 'user', content: userMessage });
+    if (this.messages.length > 50) {
+      this.messages = [this.messages[0], ...this.messages.slice(-49)];
+    }
+
+    const context = await this.getContext();
+    const systemPrompt = this.buildSystemPrompt(context);
+    const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+
+    let response;
+    try {
+      response = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+    } catch (error) {
+      console.error('AI provider error:', error);
+      const errorMessage = this.formatProviderError(error);
+      this.messages.push({ role: 'assistant', content: errorMessage });
+      return { content: errorMessage, error: true };
+    }
+
+    // Handle tool calls - check both toolCalls and tool_calls
+    const toolCalls = response.toolCalls || response.tool_calls;
+    if (toolCalls && toolCalls.length > 0) {
+      return await this.handleToolCalls({ ...response, tool_calls: toolCalls }, systemPrompt);
+    }
+
+    this.messages.push({ role: 'assistant', content: response.content });
+    return { content: response.content };
+  }
+
+  async handleToolCalls(response, systemPrompt) {
+    let toolResults = [];
+    let iterations = 0;
+    let currentResponse = response;
+
+    while ((currentResponse.tool_calls || currentResponse.toolCalls) && iterations < 5) {
+      iterations++;
+      const calls = currentResponse.tool_calls || currentResponse.toolCalls;
+
+      this.messages.push({
+        role: 'assistant',
+        content: currentResponse.content || '',
+        tool_calls: calls
+      });
+
+      for (const call of calls) {
+        const result = await executeDjTool(call.name, call.arguments, this.toolContext);
+        toolResults.push({ tool: call.name, arguments: call.arguments, result });
+        this.messages.push({
+          role: 'tool',
+          tool_call_id: call.id || call.name,
+          content: JSON.stringify(result)
+        });
+      }
+
+      const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+      try {
+        currentResponse = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+        // Normalize tool calls
+        if (currentResponse.toolCalls && !currentResponse.tool_calls) {
+          currentResponse.tool_calls = currentResponse.toolCalls;
+        }
+      } catch (error) {
+        console.error('AI provider error during tool follow-up:', error);
+        this.messages.push({ role: 'assistant', content: 'I encountered an error while processing.' });
+        return { content: 'I encountered an error while processing.', toolResults, error: true };
+      }
+    }
+
+    const finalContent = currentResponse.content || this.summarizeToolResults(toolResults);
+    this.messages.push({ role: 'assistant', content: finalContent });
+    return { content: finalContent, toolResults };
+  }
+
+  buildSystemPrompt(context) {
+    const lines = [];
+    if (context.nowPlaying) {
+      lines.push(`Now Playing: "${context.nowPlaying.title}" by ${context.nowPlaying.artist}`);
+      lines.push(`  State: ${context.playbackState || 'unknown'}`);
+    } else {
+      lines.push('Nothing is currently playing.');
+    }
+    if (context.queue && context.queue.length > 0) {
+      lines.push(`\nQueue (${context.queue.length} tracks):`);
+      context.queue.slice(0, 10).forEach((t, i) => lines.push(`  ${i + 1}. "${t.title}" by ${t.artist}`));
+    }
+    if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
+    return AI_CHAT_SYSTEM_PROMPT.replace('{{currentState}}', lines.join('\n'));
+  }
+
+  summarizeToolResults(toolResults) {
+    if (!toolResults || toolResults.length === 0) return 'Done.';
+    return toolResults.map(({ tool, result }) => {
+      if (!result.success) return `Failed to ${tool}: ${result.error}`;
+      switch (tool) {
+        case 'play': return result.track ? `Now playing "${result.track.title}" by ${result.track.artist}` : 'Started playback';
+        case 'control': return `Playback ${result.action}`;
+        case 'search': return `Found ${result.results?.length || 0} results`;
+        case 'queue_add': return `Added ${result.added} track(s) to queue`;
+        case 'queue_clear': return 'Queue cleared';
+        case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
+        case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
+        default: return `${tool} completed`;
+      }
+    }).join('. ') + '.';
+  }
+
+  formatProviderError(error) {
+    const message = error.message || '';
+    if (message.includes('ECONNREFUSED') || message.includes('fetch failed')) {
+      if (this.provider.config?.endpoint?.includes('localhost:11434')) {
+        return "I can't connect to Ollama. Make sure it's running with `ollama serve`.";
+      }
+      return "I couldn't connect to the AI service. Please check your connection.";
+    }
+    if (message.includes('401') || message.includes('Unauthorized')) return 'Invalid API key. Please check your settings.';
+    if (message.includes('429')) return 'Rate limit reached. Please try again in a moment.';
+    if (message.includes('404')) return "The AI model wasn't found. Please check your settings.";
+    return `Sorry, I encountered an error: ${message}`;
+  }
+
+  clearHistory() { this.messages = []; }
+  getHistory() { return [...this.messages]; }
+}
+
+// Create chat service from plugin
+const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) => {
+  if (!plugin || !plugin.chat) {
+    throw new Error('Plugin does not have chat capability');
+  }
+  const provider = {
+    chat: plugin.chat,
+    config: config,
+    id: plugin.id || plugin.manifest?.id,
+    name: plugin.name || plugin.manifest?.name
+  };
+  return new AIChatService(provider, toolContext, getContext);
+};
+
+// =============================================================================
+// End AI Chat Service
+// =============================================================================
 
 const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -8431,8 +8790,18 @@ const Parachord = () => {
   }, [activeView, playlists]);
 
   // Keyboard shortcuts - Escape navigates back from search view
+  // Ignore shortcuts when typing in input fields
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in input fields
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      );
+      if (isTyping) return;
+
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
       }
@@ -11133,37 +11502,53 @@ const Parachord = () => {
       return aiChatServiceRef.current;
     }
 
-    // Dynamic import - services are bundled with the app
-    const { initializeChatService } = require('./services/ai-chat-integration');
-
     const config = metaServiceConfigs[provider.id] || {};
 
-    const service = initializeChatService({
-      plugin: provider,
-      pluginConfig: config,
-      appHandlers: {
-        searchResolvers,
-        playTrack: handlePlayRef.current,
-        addToQueue,
-        clearQueue,
-        handlePause: handlePlayPauseRef.current,
-        handlePlay: handlePlayRef.current,
-        handleNext: handleNextRef.current,
-        handlePrevious: handlePreviousRef.current,
-        setShuffle: setShuffleMode,
-        createPlaylist: createPlaylistFromChat,
-        getCurrentTrack: () => currentTrackRef.current,
-        getQueue: () => currentQueueRef.current || [],
-        getIsPlaying: () => isPlayingRef.current
+    // Create tool context for DJ tools
+    const toolContext = {
+      search: async (query) => {
+        const results = await searchResolvers(query);
+        return results || [];
       },
-      stateGetters: {
-        getCurrentTrack: () => currentTrackRef.current,
-        getQueue: () => currentQueueRef.current || [],
-        getIsPlaying: () => isPlayingRef.current,
-        getShuffleMode: () => shuffleModeRef.current,
-        getListeningHistory: fetchListeningContext
-      }
-    });
+      playTrack: async (track) => {
+        await handlePlayRef.current(track);
+      },
+      addToQueue: async (tracks, position) => {
+        addToQueue(tracks, { type: 'aiPlaylist', name: 'AI DJ' });
+      },
+      clearQueue: () => clearQueue(),
+      handlePause: () => handlePlayPauseRef.current(),
+      handlePlay: () => handlePlayRef.current(),
+      handleNext: () => handleNextRef.current(),
+      handlePrevious: () => handlePreviousRef.current(),
+      setShuffle: (enabled) => setShuffleMode(enabled),
+      createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+      getCurrentTrack: () => currentTrackRef.current,
+      getQueue: () => currentQueueRef.current || [],
+      getIsPlaying: () => isPlayingRef.current
+    };
+
+    // Create context getter for system prompt
+    const getContext = async () => {
+      const nowPlaying = currentTrackRef.current;
+      const queue = currentQueueRef.current || [];
+      const isPlaying = isPlayingRef.current;
+      const shuffle = shuffleModeRef.current;
+      return {
+        nowPlaying: nowPlaying ? {
+          title: nowPlaying.title,
+          artist: nowPlaying.artist,
+          album: nowPlaying.album,
+          source: nowPlaying.source || nowPlaying.resolverId
+        } : null,
+        playbackState: isPlaying ? 'playing' : 'paused',
+        queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
+        shuffle: shuffle
+      };
+    };
+
+    // Create the service using the inlined function
+    const service = createChatServiceFromPlugin(provider, config, toolContext, getContext);
 
     aiChatServiceRef.current = service;
     return service;
@@ -37367,9 +37752,55 @@ useEffect(() => {
               )
             )
           ),
-          resultsSidebar.subtitle && React.createElement('p', {
-            style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-          }, resultsSidebar.subtitle)
+          // Provider selector for chat mode, subtitle for other modes
+          resultsSidebar.mode === 'chat'
+            ? React.createElement('div', { style: { marginTop: '8px' } },
+                React.createElement('select', {
+                  value: selectedChatProvider || '',
+                  onChange: (e) => {
+                    const newProvider = e.target.value;
+                    setSelectedChatProvider(newProvider);
+                    // Clear current chat service so it recreates with new provider
+                    aiChatServiceRef.current = null;
+                    // Update sidebar subtitle
+                    const chatServices = getChatServices();
+                    const provider = chatServices.find(s => s.id === newProvider);
+                    if (provider) {
+                      setResultsSidebar(prev => ({
+                        ...prev,
+                        subtitle: provider.name || provider.manifest?.name,
+                        provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon }
+                      }));
+                    }
+                  },
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    fontSize: '13px',
+                    color: '#e5e7eb',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    width: '100%'
+                  }
+                },
+                  getChatServices().filter(s => {
+                    const config = metaServiceConfigs[s.id] || {};
+                    if (s.id === 'ollama') return config.enabled !== false;
+                    return config.enabled && config.apiKey;
+                  }).map(service =>
+                    React.createElement('option', {
+                      key: service.id,
+                      value: service.id,
+                      style: { backgroundColor: '#1f2937', color: '#e5e7eb' }
+                    }, `${service.icon || service.manifest?.icon || '🤖'} ${service.name || service.manifest?.name}`)
+                  )
+                )
+              )
+            : (resultsSidebar.subtitle && React.createElement('p', {
+                style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              }, resultsSidebar.subtitle))
         ),
 
         // Content area - Chat mode vs Track list mode
@@ -37448,6 +37879,12 @@ useEffect(() => {
                       e.stopPropagation();
                       if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
                         handleAiChatSend(aiChatInput);
+                      } else if (e.key === 'Escape') {
+                        if (!aiChatInput.trim()) {
+                          closeAiChat();
+                        } else {
+                          setAiChatInput('');
+                        }
                       }
                     },
                     placeholder: 'Ask your AI DJ...',
