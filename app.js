@@ -5870,8 +5870,12 @@ const Parachord = () => {
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate
         );
+        // Meta services with chat capability (Conversational DJ)
+        const metaServicesWithChat = metaServiceAxes.filter(axe =>
+          axe.capabilities?.chat && axe.implementation?.chat
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -5889,6 +5893,12 @@ const Parachord = () => {
         if (metaServicesWithGenerate.length > 0) {
           const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
           console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
+        }
+
+        // Load meta services with chat capability (Conversational DJ)
+        if (metaServicesWithChat.length > 0) {
+          const loadedChatServices = await resolverLoader.current.loadResolvers(metaServicesWithChat);
+          console.log(`💬 Loaded ${loadedChatServices.length} chat service(s):`, loadedChatServices.map(s => s.name).join(', '));
         }
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
