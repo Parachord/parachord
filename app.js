@@ -7025,11 +7025,43 @@ const Parachord = () => {
         }
       });
 
-      // Handle progress updates (for potential UI sync)
+      // Handle progress updates from native MusicKit
       window.electron.musicKit.polling.onProgress((data) => {
-        console.log(`▶️ [Main→Renderer] Apple Music progress: ${data.percentComplete?.toFixed(1)}%`);
+        // Only update progress if Apple Music is the active resolver
+        const track = currentTrackRef.current;
+        if (track?._activeResolver === 'applemusic' && typeof data.position === 'number') {
+          setProgress(data.position);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(data.position);
+          }
+        }
       });
     }
+  }, []);
+
+  // Listen for MusicKit JS time updates (web-based Apple Music playback)
+  // MusicKit JS fires playbackTimeDidChange events which we need to capture for progress updates
+  useEffect(() => {
+    const handleMusicKitTimeUpdate = (event) => {
+      const track = currentTrackRef.current;
+      // Only update if Apple Music is the active resolver
+      if (track?._activeResolver === 'applemusic') {
+        const { currentTime } = event.detail;
+        if (typeof currentTime === 'number') {
+          setProgress(currentTime);
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager) {
+            window.scrobbleManager.onProgressUpdate(currentTime);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('musickit-time-update', handleMusicKitTimeUpdate);
+    return () => {
+      window.removeEventListener('musickit-time-update', handleMusicKitTimeUpdate);
+    };
   }, []);
 
   // Listen for context menu actions (only set up once)
