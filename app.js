@@ -3409,14 +3409,14 @@ const djTools = [
   },
   {
     name: 'control',
-    description: 'Control music playback - pause, resume, skip to next, go to previous track',
+    description: 'Control music playback. Use "start" to begin playing the queue, "resume" to unpause, "pause" to pause, "skip" for next track, "previous" for previous track.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['pause', 'resume', 'skip', 'previous'],
-          description: 'The playback action to perform'
+          enum: ['pause', 'resume', 'start', 'skip', 'previous'],
+          description: 'start=play queue from beginning, resume=unpause, pause=pause, skip=next track, previous=previous track'
         }
       },
       required: ['action']
@@ -3528,7 +3528,21 @@ const executeDjTool = async (name, args, context) => {
       case 'control': {
         switch (args.action) {
           case 'pause': context.handlePause(); return { success: true, action: 'paused' };
-          case 'resume': context.handlePlay(); return { success: true, action: 'resumed' };
+          case 'resume':
+          case 'start': {
+            // If nothing is playing and there's a queue, play the first queue item
+            const isPlaying = context.getIsPlaying();
+            const queue = context.getQueue();
+            if (!isPlaying && queue.length > 0) {
+              // Play first track from queue
+              const firstTrack = queue[0];
+              await context.playTrack(firstTrack);
+              return { success: true, action: 'started', track: { artist: firstTrack.artist, title: firstTrack.title } };
+            }
+            // Otherwise toggle play/pause (resume)
+            context.handleResume();
+            return { success: true, action: 'resumed' };
+          }
           case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
           case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
           default: return { success: false, error: `Unknown action: ${args.action}` };
@@ -11709,7 +11723,8 @@ const Parachord = () => {
       clearQueue: () => clearQueue(),
       removeFromQueue: (trackId) => removeFromQueue(trackId),
       handlePause: () => handlePlayPauseRef.current(),
-      handlePlay: () => handlePlayRef.current(),
+      handleResume: () => handlePlayPauseRef.current(), // Toggle play/pause
+      playTrack: async (track) => await handlePlayRef.current(track), // Play specific track
       handleNext: () => handleNextRef.current(),
       handlePrevious: () => handlePreviousRef.current(),
       setShuffle: (enabled) => setShuffleMode(enabled),
