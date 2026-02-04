@@ -1237,7 +1237,8 @@ app.whenReady().then(() => {
       submenu: [
         {
           label: 'Play/Pause',
-          accelerator: 'Space',
+          // Note: Space accelerator removed - conflicts with text input in chat
+          // Use media keys or click the playbar button instead
           click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
         },
         {

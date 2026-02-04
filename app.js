@@ -3692,6 +3692,22 @@ class AIChatService {
       context.queue.slice(0, 10).forEach((t, i) => lines.push(`  ${i + 1}. "${t.title}" by ${t.artist}`));
     }
     if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
+
+    // Add listening history for personalization
+    if (context.listeningHistory && context.listeningHistory.length > 0) {
+      lines.push('\nUSER LISTENING HISTORY (use this to personalize recommendations):');
+      for (const period of context.listeningHistory) {
+        const periodLabel = period.window.replace(/_/g, ' ');
+        if (period.top_artists && period.top_artists.length > 0) {
+          lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
+        }
+        if (period.top_tracks && period.top_tracks.length > 0) {
+          const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+          lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
+        }
+      }
+    }
+
     return AI_CHAT_SYSTEM_PROMPT.replace('{{currentState}}', lines.join('\n'));
   }
 
@@ -3714,16 +3730,43 @@ class AIChatService {
 
   formatProviderError(error) {
     const message = error.message || '';
-    if (message.includes('ECONNREFUSED') || message.includes('fetch failed')) {
-      if (this.provider.config?.endpoint?.includes('localhost:11434')) {
-        return "I can't connect to Ollama. Make sure it's running with `ollama serve`.";
+    const lowerMessage = message.toLowerCase();
+
+    // Connection errors (Ollama, network issues)
+    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused') || lowerMessage.includes('network')) {
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        return "Can't connect to Ollama. Make sure it's running with `ollama serve`.";
       }
-      return "I couldn't connect to the AI service. Please check your connection.";
+      return "Can't connect to the AI service. Check your internet connection.";
     }
-    if (message.includes('401') || message.includes('Unauthorized')) return 'Invalid API key. Please check your settings.';
-    if (message.includes('429')) return 'Rate limit reached. Please try again in a moment.';
-    if (message.includes('404')) return "The AI model wasn't found. Please check your settings.";
-    return `Sorry, I encountered an error: ${message}`;
+
+    // Quota/rate limit errors (Gemini, OpenAI)
+    if (lowerMessage.includes('quota') || lowerMessage.includes('exceeded')) {
+      return "API quota exceeded. Check your plan limits or try again later.";
+    }
+    if (message.includes('429') || lowerMessage.includes('rate limit')) {
+      return "Rate limit reached. Please wait a moment and try again.";
+    }
+
+    // Auth errors
+    if (message.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key')) {
+      return "Invalid API key. Please check your settings.";
+    }
+
+    // Model not found
+    if (message.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('does not exist')) {
+      return "AI model not found. Check your settings or try a different model.";
+    }
+
+    // Content policy errors
+    if (lowerMessage.includes('content policy') || lowerMessage.includes('safety')) {
+      return "Request was blocked by content policy. Try rephrasing.";
+    }
+
+    // Generic error - truncate long messages
+    const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
+    return `Error: ${shortMessage}`;
   }
 
   clearHistory() { this.messages = []; }
@@ -11534,6 +11577,15 @@ const Parachord = () => {
       const queue = currentQueueRef.current || [];
       const isPlaying = isPlayingRef.current;
       const shuffle = shuffleModeRef.current;
+
+      // Fetch listening history for personalization
+      let listeningHistory = null;
+      try {
+        listeningHistory = await fetchListeningContext();
+      } catch (e) {
+        console.log('Could not fetch listening history:', e.message);
+      }
+
       return {
         nowPlaying: nowPlaying ? {
           title: nowPlaying.title,
@@ -11543,7 +11595,8 @@ const Parachord = () => {
         } : null,
         playbackState: isPlaying ? 'playing' : 'paused',
         queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
-        shuffle: shuffle
+        shuffle: shuffle,
+        listeningHistory: listeningHistory
       };
     };
 
