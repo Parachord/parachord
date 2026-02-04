@@ -12466,33 +12466,38 @@ const Parachord = () => {
           )
         ),
         // Hover overlay with play button (only for tracks and albums)
+        // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
         (type === 'track' || type === 'album') && React.createElement('div', {
           style: {
             position: 'absolute',
             inset: 0,
             borderRadius: '4px',
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isHovered ? 1 : 0,
-            transition: 'opacity 0.15s'
+            transition: 'opacity 0.2s',
+            pointerEvents: isHovered ? 'auto' : 'none'
           }
         },
           React.createElement('div', {
             style: {
-              width: '24px',
-              height: '24px',
+              width: '28px',
+              height: '28px',
               borderRadius: '50%',
-              backgroundColor: '#9333ea',
+              backgroundColor: 'white',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+              transform: isHovered ? 'scale(1)' : 'scale(0.9)',
+              transition: 'transform 0.2s'
             }
           },
             React.createElement('svg', {
-              style: { width: '12px', height: '12px', marginLeft: '2px' },
-              fill: 'white',
+              style: { width: '14px', height: '14px', marginLeft: '2px', color: '#111827' },
+              fill: 'currentColor',
               viewBox: '0 0 24 24'
             },
               React.createElement('path', { d: 'M8 5v14l11-7z' })
@@ -39321,6 +39326,7 @@ useEffect(() => {
                   React.createElement('button', {
                     onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
                     disabled: !aiChatInput.trim() || aiChatLoading,
+                    className: 'transition-transform hover:scale-105',
                     style: {
                       width: '40px',
                       height: '40px',
@@ -39331,7 +39337,8 @@ useEffect(() => {
                       cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      flexShrink: 0
                     }
                   },
                     aiChatLoading
