@@ -677,14 +677,18 @@ AI DJ: What would you like to listen to? I can:
 ```
 Phase 1: Core Infrastructure (no dependencies)
     ↓
-Phase 2: Ollama Provider (depends on Phase 1)
-    ↓
-Phase 3: Chat UI (depends on Phase 1, can parallel Phase 2)
-    ↓
-Phase 4: Cloud Providers (depends on Phase 1)
-    ↓
-Phase 5: Polish (depends on all above)
+    ├──→ Phase 2: Ollama Provider (depends on Phase 1)
+    │        ↓
+    ├──→ Phase 3: Chat UI (depends on Phase 1, can parallel Phase 2)
+    │        ↓
+    ├──→ Phase 4: Cloud Providers (depends on Phase 1)
+    │        ↓
+    └──→ Phase 6: External Protocol (depends on Phase 1, can parallel 2-5)
+             ↓
+         Phase 5: Polish (depends on all above)
 ```
+
+**Note:** Phase 6 (External Protocol) can be developed in parallel with Phases 2-4 since it only depends on Phase 1's DJ tools.
 
 ---
 
@@ -700,6 +704,295 @@ Phase 5: Polish (depends on all above)
 
 ---
 
+## Phase 6: External Control Protocol
+
+**Goal:** Expose DJ tools via `parachord:` URL scheme for external apps (browser extension, Raycast, Alfred, Shortcuts, etc.)
+
+### Context
+
+The existing infrastructure includes:
+- WebSocket server on port 9876 for browser extension (`docs/plans/2026-01-18-browser-extension-design.md`)
+- `local-audio://` protocol for local file playback
+- `parachord://` mentioned in mobile docs for OAuth callbacks
+
+This phase extends `parachord:` to support control commands, complementing:
+- **Embedded chat** (Phase 1-5) — for in-app AI conversations
+- **External MCP Server** (future) — for AI tool calling from Claude Desktop, etc.
+- **`parachord:` protocol** (this phase) — for simple URL-based commands from any app
+
+### Task 6.1: Register parachord: Protocol Handler
+
+**File:** `main.js`
+
+Register the custom URL scheme with Electron.
+
+```javascript
+// Add to protocol.registerSchemesAsPrivileged (before app.whenReady)
+{
+  scheme: 'parachord',
+  privileges: {
+    secure: true,
+    supportFetchAPI: false,
+    standard: true
+  }
+}
+
+// In app.whenReady():
+app.setAsDefaultProtocolClient('parachord');
+
+// Handle protocol URLs
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
+// Windows/Linux: handle via second-instance
+app.on('second-instance', (event, argv) => {
+  const url = argv.find(arg => arg.startsWith('parachord://'));
+  if (url) handleProtocolUrl(url);
+});
+```
+
+**Subtasks:**
+- [ ] Register `parachord` scheme as privileged
+- [ ] Set app as default protocol client
+- [ ] Handle `open-url` event (macOS)
+- [ ] Handle `second-instance` for Windows/Linux
+- [ ] Forward protocol URLs to renderer via IPC
+
+**Estimated complexity:** Medium
+
+---
+
+### Task 6.2: Define Protocol URL Schema
+
+**Documentation:** `docs/protocol-schema.md` (new)
+
+Define URL formats for all DJ commands:
+
+| Command | URL Format | Example |
+|---------|------------|---------|
+| Play track | `parachord://play?artist={}&title={}` | `parachord://play?artist=Big%20Thief&title=Vampire%20Empire` |
+| Control | `parachord://control/{action}` | `parachord://control/pause` |
+| Search | `parachord://search?q={}` | `parachord://search?q=big%20thief` |
+| Queue add | `parachord://queue/add?artist={}&title={}` | `parachord://queue/add?artist=Big%20Thief&title=Sparrow` |
+| Queue clear | `parachord://queue/clear` | `parachord://queue/clear` |
+| Shuffle | `parachord://shuffle/{on\|off}` | `parachord://shuffle/on` |
+| Open chat | `parachord://chat?prompt={}` | `parachord://chat?prompt=play%20something%20chill` |
+| Volume | `parachord://volume/{0-100}` | `parachord://volume/75` |
+
+**Query parameters:**
+- All text parameters are URL-encoded
+- Multiple tracks: `parachord://queue/add?tracks=[{...},{...}]` (JSON array)
+
+**Subtasks:**
+- [ ] Define URL schema for all DJ tools
+- [ ] Document in `docs/protocol-schema.md`
+- [ ] Include examples for each command
+- [ ] Define error responses (via notification)
+
+**Estimated complexity:** Low
+
+---
+
+### Task 6.3: Implement Protocol URL Parser
+
+**File:** `services/protocol-handler.js` (new)
+
+Parse incoming URLs and dispatch to appropriate handlers.
+
+```javascript
+export function parseProtocolUrl(url) {
+  const parsed = new URL(url);
+  const path = parsed.pathname.replace(/^\/+/, '');
+  const params = Object.fromEntries(parsed.searchParams);
+
+  // parachord://control/pause → { command: 'control', action: 'pause' }
+  // parachord://play?artist=X&title=Y → { command: 'play', artist: 'X', title: 'Y' }
+
+  const [command, ...rest] = path.split('/');
+
+  return {
+    command,
+    action: rest[0],
+    params
+  };
+}
+
+export function validateProtocolCommand(parsed) {
+  // Validate required params exist
+  // Return { valid: true } or { valid: false, error: '...' }
+}
+```
+
+**Subtasks:**
+- [ ] Create URL parser function
+- [ ] Add validation for each command type
+- [ ] Handle malformed URLs gracefully
+- [ ] Return structured command objects
+
+**Estimated complexity:** Medium
+
+---
+
+### Task 6.4: Connect Protocol to DJ Tools
+
+**File:** `app.js` or `services/protocol-handler.js`
+
+Reuse the DJ tools from Phase 1 to execute protocol commands.
+
+```javascript
+// In renderer, handle IPC from main process
+window.electron.onProtocolUrl(async (url) => {
+  const { command, action, params } = parseProtocolUrl(url);
+
+  try {
+    switch (command) {
+      case 'play':
+        await djTools.play.execute(params, toolContext);
+        break;
+      case 'control':
+        await djTools.control.execute({ action }, toolContext);
+        break;
+      case 'search':
+        await djTools.search.execute({ query: params.q }, toolContext);
+        // Open search results in UI
+        break;
+      case 'queue':
+        if (action === 'add') {
+          await djTools.queue_add.execute({ tracks: [params] }, toolContext);
+        } else if (action === 'clear') {
+          await djTools.queue_clear.execute({}, toolContext);
+        }
+        break;
+      case 'chat':
+        setChatOpen(true);
+        if (params.prompt) {
+          handleChatSend(params.prompt);
+        }
+        break;
+      // ...
+    }
+    showNotification(`✓ ${command} executed`);
+  } catch (error) {
+    showNotification(`✗ ${command} failed: ${error.message}`);
+  }
+});
+```
+
+**Subtasks:**
+- [ ] Add IPC handler in preload.js for protocol URLs
+- [ ] Map protocol commands to DJ tool executors
+- [ ] Show toast notifications for success/failure
+- [ ] Focus app window when protocol URL received
+
+**Estimated complexity:** Medium
+
+---
+
+### Task 6.5: Browser Extension Integration
+
+**File:** `parachord-extension/popup.js` (modify)
+
+Update browser extension to use `parachord:` URLs as fallback when WebSocket is unavailable.
+
+```javascript
+// If WebSocket not connected, fall back to protocol URL
+function sendToParachord(command) {
+  if (wsConnected) {
+    ws.send(JSON.stringify(command));
+  } else {
+    // Fall back to protocol URL
+    const url = buildProtocolUrl(command);
+    window.location.href = url;
+  }
+}
+```
+
+**Subtasks:**
+- [ ] Add protocol URL fallback in extension
+- [ ] Test extension → protocol → app flow
+- [ ] Document when fallback is used
+
+**Estimated complexity:** Low
+
+---
+
+### Task 6.6: External App Examples
+
+**File:** `docs/integrations/` (new directory)
+
+Create documentation and examples for external integrations.
+
+**Raycast extension:**
+```typescript
+// raycast-parachord/src/pause.ts
+import { open } from "@raycast/api";
+
+export default async function Command() {
+  await open("parachord://control/pause");
+}
+```
+
+**Alfred workflow:**
+```bash
+# Play a song
+open "parachord://play?artist={query}&title={query2}"
+```
+
+**macOS Shortcuts:**
+- "Open URL" action with `parachord://control/pause`
+
+**Subtasks:**
+- [ ] Create Raycast extension template
+- [ ] Create Alfred workflow example
+- [ ] Document macOS Shortcuts integration
+- [ ] Document Stream Deck integration
+- [ ] Add examples to README or docs
+
+**Estimated complexity:** Low (documentation only)
+
+---
+
+### Task 6.7: Security Considerations
+
+**File:** `main.js`, `services/protocol-handler.js`
+
+Prevent abuse of protocol URLs.
+
+**Mitigations:**
+- Rate limiting: Max 10 commands per second
+- Validate all input parameters
+- No arbitrary code execution
+- Log protocol URL usage for debugging
+
+```javascript
+const rateLimiter = {
+  lastCall: 0,
+  callCount: 0,
+
+  check() {
+    const now = Date.now();
+    if (now - this.lastCall > 1000) {
+      this.callCount = 0;
+      this.lastCall = now;
+    }
+    this.callCount++;
+    return this.callCount <= 10;
+  }
+};
+```
+
+**Subtasks:**
+- [ ] Add rate limiting
+- [ ] Sanitize all URL parameters
+- [ ] Add logging for debugging
+- [ ] Test with malformed URLs
+
+**Estimated complexity:** Low
+
+---
+
 ## Success Criteria
 
 ### MVP (Phases 1-3)
@@ -710,12 +1003,13 @@ Phase 5: Polish (depends on all above)
 - [ ] Chat panel opens/closes smoothly
 - [ ] Basic error handling works
 
-### Full Release (Phases 4-5)
+### Full Release (Phases 4-6)
 
 - [ ] Multiple providers work (Ollama, ChatGPT, Gemini, Claude)
 - [ ] Settings UI allows provider configuration
 - [ ] Polished error messages
 - [ ] Keyboard shortcuts work
+- [ ] `parachord:` protocol works from external apps
 - [ ] No major bugs or crashes
 
 ---
@@ -728,18 +1022,25 @@ Phase 5: Polish (depends on all above)
 |------|-------------|
 | `tools/dj-tools.js` | Tool definitions and executors |
 | `services/ai-chat.js` | Chat orchestration service |
+| `services/protocol-handler.js` | `parachord:` URL parser and validator |
 | `plugins/ollama.axe` | Ollama chat provider |
 | `plugins/claude.axe` | Claude chat provider |
 | `plugins/groq.axe` | Groq chat provider |
+| `docs/protocol-schema.md` | `parachord:` URL scheme documentation |
+| `docs/integrations/raycast.md` | Raycast integration example |
+| `docs/integrations/alfred.md` | Alfred workflow example |
 
 ### Modified Files
 
 | File | Changes |
 |------|---------|
+| `main.js` | Register `parachord:` protocol handler |
+| `preload.js` | Add IPC for protocol URLs |
 | `resolver-loader.js` | Add `getChatProviders()` method |
-| `app.js` | Add chat state, ChatPanel component, settings UI |
+| `app.js` | Add chat state, ChatPanel component, settings UI, protocol handling |
 | `plugins/chatgpt.axe` | Add `chat` capability and function |
 | `plugins/gemini.axe` | Add `chat` capability and function |
+| `parachord-extension/popup.js` | Add protocol URL fallback |
 
 ---
 
