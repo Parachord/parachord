@@ -3671,6 +3671,14 @@ IMPORTANT: To play music or control the player, you MUST call the appropriate to
 CURRENT STATE:
 {{currentState}}
 
+PERSONALIZATION - CRITICAL:
+When making recommendations, you MUST base them on the user's data above:
+- Their favorite artists, albums, and tracks show their taste - recommend similar artists/genres
+- Their listening history shows what they actually play - match that style
+- If they like indie rock, don't recommend pop. If they like electronic, don't recommend country.
+- Recommend artists similar to their favorites, not generic popular music
+- If you don't have user data, ASK what genres/artists they like before recommending
+
 AVAILABLE ACTIONS (use these tools):
 - play: Play a specific track immediately (requires artist and title)
 - queue_add: Add tracks to queue (use this for multiple songs)
