@@ -3891,6 +3891,7 @@ const Parachord = () => {
   const [aiChatLoading, setAiChatLoading] = useState(false);
   const [selectedChatProvider, setSelectedChatProvider] = useState(null);
   const aiChatServiceRef = useRef(null);
+  const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -11782,6 +11783,13 @@ const Parachord = () => {
     }
     setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
   };
+
+  // Auto-scroll chat messages to bottom when new messages arrive
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [resultsSidebar?.messages, resultsSidebar?.loading]);
 
   const addToQueue = (tracks, context = null) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
@@ -37932,7 +37940,8 @@ useEffect(() => {
           ? React.createElement(React.Fragment, null,
               // Chat messages area
               React.createElement('div', {
-                className: 'flex-1 overflow-y-auto',
+                ref: chatMessagesRef,
+                className: 'flex-1 overflow-y-auto chat-messages-scroll',
                 style: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }
               },
                 // Welcome message if no messages
