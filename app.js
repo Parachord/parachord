@@ -11889,13 +11889,22 @@ const Parachord = () => {
           return;
         }
 
-        // Not in cache - fetch from MusicBrainz
+        // Not in cache - fetch from appropriate source
         if (type === 'artist') {
-          // Artist images come from other sources - just stop loading
+          // Fetch artist image using the app's getArtistImage function
+          try {
+            const result = await getArtistImage(title);
+            if (!cancelled && result?.url) {
+              setImageUrl(result.url);
+            }
+          } catch (err) {
+            // Silently fail
+          }
           if (!cancelled) setLoading(false);
           return;
         }
 
+        // For tracks and albums, use the app's getAlbumArt function
         const albumName = type === 'album' ? title : album;
         if (!albumName || !artist) {
           if (!cancelled) setLoading(false);
@@ -11903,52 +11912,15 @@ const Parachord = () => {
         }
 
         try {
-          // Search MusicBrainz for the release
-          const query = encodeURIComponent(`artist:"${artist}" AND release:"${albumName}"`);
-          const searchUrl = `https://musicbrainz.org/ws/2/release?query=${query}&fmt=json&limit=1`;
-
-          const response = await fetch(searchUrl, {
-            headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
-          });
-
-          if (!response.ok || cancelled) {
-            if (!cancelled) setLoading(false);
-            return;
-          }
-
-          const data = await response.json();
-          const release = data.releases?.[0];
-          if (!release) {
-            if (!cancelled) setLoading(false);
-            return;
-          }
-
-          // Fetch cover art from Cover Art Archive
-          const artResponse = await fetch(`https://coverartarchive.org/release/${release.id}`, {
-            headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
-          });
-
-          if (!artResponse.ok || cancelled) {
-            if (!cancelled) setLoading(false);
-            return;
-          }
-
-          const artData = await artResponse.json();
-          const frontCover = artData.images?.find(img => img.front) || artData.images?.[0];
-          const artUrl = frontCover?.thumbnails?.['250'] || frontCover?.thumbnails?.small || frontCover?.image;
-
-          if (!cancelled) {
-            if (artUrl) {
-              setImageUrl(artUrl);
-              // Cache it for future use
-              albumArtCache.current[release.id] = { url: artUrl, timestamp: Date.now() };
-            }
-            setLoading(false);
+          // Use the app's existing getAlbumArt function which handles caching and fetching
+          const artUrl = await getAlbumArt(artist, albumName);
+          if (!cancelled && artUrl) {
+            setImageUrl(artUrl);
           }
         } catch (err) {
           // Silently fail - will show placeholder
-          if (!cancelled) setLoading(false);
         }
+        if (!cancelled) setLoading(false);
       };
 
       fetchArt();
