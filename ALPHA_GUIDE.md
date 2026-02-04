@@ -6,6 +6,8 @@ Welcome to the Parachord alpha! Thanks for helping us test. This guide will get 
 
 Download the latest release for your platform:
 - **macOS**: `.dmg` (Apple Silicon)
+
+In theory, Windows and Linux builds work too - but I've never tried either. So good luck and let me know how it goes!
 - **Windows**: `Parachord.Setup.x.x.x.exe` (installer) or `Parachord.x.x.x.exe` (portable)
 - **Linux**: `.AppImage`, `.deb`, or `.rpm`
 
