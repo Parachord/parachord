@@ -3726,22 +3726,24 @@ DEFINITIONS:
 Do NOT recommend albums when user asks for artists. Do NOT recommend tracks when user asks for albums.
 Limit to 1 recommendation per artist unless user asks for more.
 
-RICH CONTENT: ALWAYS use card format when listing music (images load automatically):
-- For tracks: {{track|Title|Artist|Album}}
-- For artists: {{artist|Name|}}
-- For albums: {{album|Title|Artist|}}
+FORMATTING - CRITICAL:
+Do NOT use markdown headers (no #, ##, ###, ####). Just use bold text **like this** for section titles.
+ALWAYS use the card syntax for tracks/albums/artists - they render as clickable cards with artwork.
 
-Examples:
+CARD SYNTAX (required for all music recommendations):
+- Track: {{track|Song Title|Artist Name|Album Name}}
+- Album: {{album|Album Title|Artist Name|}}
+- Artist: {{artist|Artist Name|}}
+
+EXAMPLES:
+**Recommendations for you:**
 {{track|Certainty|Big Thief|Two Hands}}
+{{track|Not|Big Thief|Two Hands}}
 {{album|Two Hands|Big Thief|}}
-{{artist|Big Thief|}}
+{{artist|Phoebe Bridgers|}}
 
-Use ### headers to group recommendations:
-### Artist Name
-{{album|Album 1|Artist Name|}}
-{{album|Album 2|Artist Name|}}
-
-For inline artist links in text: [Artist Name](parachord://artist/Artist%20Name)`;
+The Album field is REQUIRED for tracks - it enables album artwork to display.
+For inline artist links: [Artist Name](parachord://artist/Artist%20Name)`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
@@ -12068,7 +12070,27 @@ const Parachord = () => {
         }
 
         // For tracks and albums, use the app's getAlbumArt function
-        const albumName = type === 'album' ? title : album;
+        let albumName = type === 'album' ? title : album;
+
+        // If no album name provided for a track, try to find it via search
+        if (!albumName && type === 'track' && artist && title) {
+          try {
+            const query = `${artist} ${title}`;
+            const results = await searchResolvers(query);
+            if (results && results.length > 0) {
+              const match = results.find(r =>
+                r.artist?.toLowerCase() === artist?.toLowerCase() &&
+                r.title?.toLowerCase() === title?.toLowerCase()
+              ) || results[0];
+              if (match?.album) {
+                albumName = match.album;
+              }
+            }
+          } catch (err) {
+            // Search failed, continue without album
+          }
+        }
+
         if (!albumName || !artist) {
           if (!cancelled) setLoading(false);
           return;
@@ -12316,11 +12338,11 @@ const Parachord = () => {
     };
 
     lines.forEach((line, lineIdx) => {
-      // Check for headers: ###, ##, #
-      const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+      // Check for headers: #, ##, ###, ####, #####, ######
+      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
       if (headerMatch) {
-        const level = headerMatch[1].length;
-        const sizes = { 1: '18px', 2: '16px', 3: '14px' };
+        const level = Math.min(headerMatch[1].length, 6);
+        const sizes = { 1: '18px', 2: '16px', 3: '15px', 4: '14px', 5: '13px', 6: '13px' };
         elements.push(
           React.createElement('div', {
             key: `header-${keyCounter++}`,
