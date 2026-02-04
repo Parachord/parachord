@@ -11829,21 +11829,9 @@ const Parachord = () => {
 
   // ChatCard component - stable reference, defined outside renderChatContent
   // Fetches album art from MusicBrainz if not cached
-  const ChatCard = React.memo(({ type, parts }) => {
+  const ChatCard = React.memo(({ type, title, artist, album }) => {
     const [imageUrl, setImageUrl] = useState(null);
-    const [loading, setLoading] = useState(false);
-
-    // Parse parts based on type
-    let title, artist, album;
-    if (type === 'track') {
-      [title, artist, album] = parts;
-    } else if (type === 'artist') {
-      [title] = parts;
-      artist = null;
-    } else if (type === 'album') {
-      [title, artist] = parts;
-      album = title; // For albums, the title IS the album name
-    }
+    const [loading, setLoading] = useState(true); // Start true for shimmer
 
     // Fetch album art on mount if not cached
     useEffect(() => {
@@ -11860,62 +11848,77 @@ const Parachord = () => {
         } else {
           // For tracks and albums
           const albumName = type === 'album' ? title : album;
-          const artistName = artist;
-          if (albumName && artistName) {
-            cachedUrl = getCachedAlbumArt(artistName, albumName);
+          if (albumName && artist) {
+            cachedUrl = getCachedAlbumArt(artist, albumName);
           }
         }
 
         if (cachedUrl) {
-          setImageUrl(cachedUrl);
+          if (!cancelled) {
+            setImageUrl(cachedUrl);
+            setLoading(false);
+          }
           return;
         }
 
         // Not in cache - fetch from MusicBrainz
         if (type === 'artist') {
-          // Fetch artist image - skip for now, artist images come from other sources
+          // Artist images come from other sources - just stop loading
+          if (!cancelled) setLoading(false);
           return;
         }
 
         const albumName = type === 'album' ? title : album;
-        const artistName = artist;
-        if (!albumName || !artistName) return;
+        if (!albumName || !artist) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
 
-        setLoading(true);
         try {
           // Search MusicBrainz for the release
-          const query = encodeURIComponent(`artist:"${artistName}" AND release:"${albumName}"`);
+          const query = encodeURIComponent(`artist:"${artist}" AND release:"${albumName}"`);
           const searchUrl = `https://musicbrainz.org/ws/2/release?query=${query}&fmt=json&limit=1`;
 
           const response = await fetch(searchUrl, {
             headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
           });
 
-          if (!response.ok || cancelled) return;
+          if (!response.ok || cancelled) {
+            if (!cancelled) setLoading(false);
+            return;
+          }
 
           const data = await response.json();
           const release = data.releases?.[0];
-          if (!release) return;
+          if (!release) {
+            if (!cancelled) setLoading(false);
+            return;
+          }
 
           // Fetch cover art from Cover Art Archive
           const artResponse = await fetch(`https://coverartarchive.org/release/${release.id}`, {
             headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
           });
 
-          if (!artResponse.ok || cancelled) return;
+          if (!artResponse.ok || cancelled) {
+            if (!cancelled) setLoading(false);
+            return;
+          }
 
           const artData = await artResponse.json();
           const frontCover = artData.images?.find(img => img.front) || artData.images?.[0];
           const artUrl = frontCover?.thumbnails?.['250'] || frontCover?.thumbnails?.small || frontCover?.image;
 
-          if (artUrl && !cancelled) {
-            setImageUrl(artUrl);
-            // Cache it for future use
-            albumArtCache.current[release.id] = { url: artUrl, timestamp: Date.now() };
+          if (!cancelled) {
+            if (artUrl) {
+              setImageUrl(artUrl);
+              // Cache it for future use
+              albumArtCache.current[release.id] = { url: artUrl, timestamp: Date.now() };
+            }
+            setLoading(false);
           }
         } catch (err) {
           // Silently fail - will show placeholder
-        } finally {
           if (!cancelled) setLoading(false);
         }
       };
@@ -11973,24 +11976,22 @@ const Parachord = () => {
       onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
       onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
     },
-      // Thumbnail
+      // Thumbnail with shimmer loading state
       React.createElement('div', {
+        className: loading ? 'animate-shimmer' : '',
         style: {
           width: '40px',
           height: '40px',
           borderRadius: type === 'artist' ? '50%' : '4px',
           backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          backgroundImage: hasImage ? `url(${imageUrl})` : 'none',
-          backgroundSize: 'cover',
+          backgroundImage: loading
+            ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
+            : hasImage ? `url(${imageUrl})` : 'none',
+          backgroundSize: loading ? '200% 100%' : 'cover',
           backgroundPosition: 'center',
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '16px',
-          color: '#6b7280'
+          flexShrink: 0
         }
-      }, loading ? '⏳' : (!hasImage && (type === 'track' ? '🎵' : type === 'artist' ? '👤' : '💿'))),
+      }),
       // Text content
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
         React.createElement('div', {
@@ -12136,7 +12137,19 @@ const Parachord = () => {
 
     // Helper to render a card - wraps ChatCard component (defined outside renderChatContent for stability)
     const renderCard = (type, parts, key) => {
-      return React.createElement(ChatCard, { key, type, parts });
+      // Parse parts based on type and pass as individual props to prevent array reference changes
+      let title, artist, album;
+      if (type === 'track') {
+        [title, artist, album] = parts;
+      } else if (type === 'artist') {
+        [title] = parts;
+        artist = null;
+        album = null;
+      } else if (type === 'album') {
+        [title, artist] = parts;
+        album = title; // For albums, the title IS the album name
+      }
+      return React.createElement(ChatCard, { key, type, title, artist, album });
     };
 
     lines.forEach((line, lineIdx) => {
