@@ -3686,19 +3686,23 @@ RULES:
 - Always confirm what you did AFTER the tool executes
 - Keep responses brief
 
-RICH CONTENT: When listing tracks, artists, or albums, use these card formats to show thumbnails:
+RICH CONTENT: ALWAYS use card format when listing tracks, artists, or albums:
 - For tracks: {{track|Title|Artist|albumArt_url}}
 - For artists: {{artist|Name|image_url}}
 - For albums: {{album|Title|Artist|albumArt_url}}
 
-When the search tool returns results with albumArt URLs, use those URLs in your cards.
-Example: Found these tracks:
-{{track|Certainty|Big Thief|https://example.com/art.jpg}}
-{{track|Masterpiece|Big Thief|https://example.com/art2.jpg}}
+IMPORTANT: When recommending music or answering questions about albums/tracks, use the search tool first to get results with artwork. Then format those results as cards.
 
-For simple text links to artists (without images):
-[Artist Name](parachord://artist/Artist%20Name)
-URL-encode spaces as %20 in names.`;
+If you don't have an image URL, use empty string: {{track|Title|Artist|}}
+Example with images:
+{{track|Certainty|Big Thief|https://example.com/art.jpg}}
+{{album|Two Hands|Big Thief|https://example.com/album.jpg}}
+
+Example without images:
+{{track|Song Title|Artist Name|}}
+{{album|Album Name|Artist Name|}}
+
+For inline artist links in text: [Artist Name](parachord://artist/Artist%20Name)`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
