@@ -1,6 +1,6 @@
 # Parachord Alpha Quick Start Guide
 
-Welcome to the Parachord alpha! Thanks for helping us test. This guide will get you set up and explain what we're looking for feedback on.
+Welcome to the [Parachord](https://parachord.com) alpha! Thanks for helping us test. This guide will get you set up and explain what we're looking for feedback on.
 
 ## Download
 
@@ -67,11 +67,13 @@ We're especially interested in feedback on:
 - Does playback work reliably across different sources?
 - Any audio glitches, gaps, or sync issues?
 - Does source switching work smoothly in mixed queues?
+- Do you ever get in scenarios where multiple songs are playing at the same time?
 - Volume normalization between sources?
 
 ### Performance
 - How does the app feel on your machine?
 - Any lag or slowness in the UI?
+- Do you find yourself waiting too long for things to become playable?
 - Memory usage over time?
 - Large library handling (1000+ tracks)?
 
@@ -103,13 +105,14 @@ Please include:
 ## Join the Discussion
 
 Have ideas, questions, or want to chat?
-https://github.com/Parachord/parachord/discussions
+- https://github.com/Parachord/parachord/discussions
+- https://parachord.slack.com
 
 ## Known Limitations (Alpha)
 
 - **Apple Music**: macOS only, playback support (no library sync yet)
-- **Spotify**: Requires Premium for playback
-- **YouTube**: Audio-only, quality varies
+- **Spotify**: Requires Spotify to be open on desktop (can be in background)
+- **YouTube**: Audio-only, quality varies - add the browser extension to improve the experience
 - **Auto-updates**: Not yet enabled - check releases manually
 
 ## Keyboard Shortcuts
