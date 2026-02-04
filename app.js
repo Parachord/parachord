@@ -5720,11 +5720,15 @@ const Parachord = () => {
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
-    recommendations: 60 * 60 * 1000         // 1 hour (recommendations change based on listening)
+    recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
+    charts: 24 * 60 * 60 * 1000             // 24 hours (charts update daily)
   };
 
   // Cache for recommendations data (tracks from API)
   const recommendationsCache = useRef({ tracks: null, timestamp: 0 });
+
+  // Cache for charts data (keyed by source-country, e.g., 'apple-us', 'lastfm-us')
+  const chartsCache = useRef({});
 
   // Cache for listening history data
   const listeningHistoryCache = useRef({ tracks: null, timestamp: 0 });
@@ -11962,6 +11966,18 @@ const Parachord = () => {
         console.log(`📦 Loaded ${validEntries.length} playlist cover entries from cache`);
       }
 
+      // Load charts cache
+      const chartsData = await window.electron.store.get('cache_charts');
+      if (chartsData) {
+        // Filter out expired entries
+        const now = Date.now();
+        const validEntries = Object.entries(chartsData).filter(
+          ([_, entry]) => entry && entry.timestamp && (now - entry.timestamp) < CACHE_TTL.charts
+        );
+        chartsCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -12296,6 +12312,9 @@ const Parachord = () => {
 
       // Save playlist cover cache
       await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
+
+      // Save charts cache
+      await window.electron.store.set('cache_charts', chartsCache.current);
 
       // Save resolver settings (use refs to ensure we have current values, not stale closure)
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
@@ -16528,6 +16547,20 @@ ${tracks}
       return;
     }
 
+    // Cache key based on country (or 'global' for no country)
+    const cacheKey = `lastfm-${country || 'global'}`;
+    const cached = chartsCache.current[cacheKey];
+    const now = Date.now();
+
+    // Check cache first (unless force reload)
+    if (!forceReload && cached && (now - cached.timestamp) < CACHE_TTL.charts) {
+      const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
+      console.log(`📦 Using cached Last.fm Charts (${country || 'global'}, ${cacheAgeHours}h old)`);
+      setLastfmCharts(cached.tracks);
+      setLastfmChartsLoaded(true);
+      return;
+    }
+
     setLastfmChartsLoading(true);
     setLastfmChartsLoaded(false);
     setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
@@ -16582,6 +16615,9 @@ ${tracks}
 
       console.log(`📊 Parsed ${parsedTracks.length} tracks from Last.fm Charts`);
 
+      // Save to cache
+      chartsCache.current[cacheKey] = { tracks: parsedTracks, timestamp: Date.now() };
+
       setLastfmCharts(parsedTracks);
       setLastfmChartsLoaded(true);
 
@@ -16590,11 +16626,24 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Last.fm Charts:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load Last.fm Charts. Please try again.'
-      });
+      // If we have stale cache data, use it as fallback
+      if (cached && cached.tracks) {
+        const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
+        console.log(`📦 Using stale cache as fallback (${cacheAgeHours}h old)`);
+        setLastfmCharts(cached.tracks);
+        setLastfmChartsLoaded(true);
+        showConfirmDialog({
+          type: 'info',
+          title: 'Using Cached Data',
+          message: `Could not refresh Last.fm charts. Showing cached data from ${cacheAgeHours} hours ago.`
+        });
+      } else {
+        showConfirmDialog({
+          type: 'error',
+          title: 'Load Failed',
+          message: 'Failed to load Last.fm Charts. Please try again.'
+        });
+      }
     } finally {
       setLastfmChartsLoading(false);
     }
@@ -16628,13 +16677,25 @@ ${tracks}
     if (appleMusicSongsChartsLoading) return;
     if (appleMusicSongsChartsLoaded && !forceReload) return;
 
-    setAppleMusicSongsChartsLoading(true);
-    setAppleMusicSongsChartsLoaded(false);
-    setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
-
     // Apple Music uses country codes (us, gb, de, etc.) - default to 'us' if empty
     const countryCode = country || 'us';
     const countryName = CHARTS_COUNTRIES.find(c => c.code === countryCode)?.name || 'United States';
+    const cacheKey = `apple-${countryCode}`;
+
+    // Check cache first (unless force reload)
+    const cached = chartsCache.current[cacheKey];
+    const now = Date.now();
+    if (!forceReload && cached && (now - cached.timestamp) < CACHE_TTL.charts) {
+      const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
+      console.log(`📦 Using cached Apple Music Songs Charts (${countryName}, ${cacheAgeHours}h old)`);
+      setAppleMusicSongsCharts(cached.tracks);
+      setAppleMusicSongsChartsLoaded(true);
+      return;
+    }
+
+    setAppleMusicSongsChartsLoading(true);
+    setAppleMusicSongsChartsLoaded(false);
+    setLastfmChartsScrollContainerReady(false); // Reset to re-trigger observer setup
 
     try {
       console.log(`📊 Loading Apple Music Songs Charts (${countryName})...`);
@@ -16669,16 +16730,32 @@ ${tracks}
 
       console.log(`📊 Parsed ${parsedTracks.length} tracks from Apple Music Songs Charts (${countryName})`);
 
+      // Save to cache
+      chartsCache.current[cacheKey] = { tracks: parsedTracks, timestamp: Date.now() };
+
       setAppleMusicSongsCharts(parsedTracks);
       setAppleMusicSongsChartsLoaded(true);
 
     } catch (error) {
       console.error('❌ Failed to load Apple Music Songs Charts:', error.message || error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: `Failed to load Apple Music Songs Charts: ${error.message || 'Network error'}. Please try again.`
-      });
+      // If we have stale cache data, use it as fallback
+      if (cached && cached.tracks) {
+        const cacheAgeHours = Math.round((now - cached.timestamp) / (60 * 60 * 1000));
+        console.log(`📦 Using stale cache as fallback (${cacheAgeHours}h old)`);
+        setAppleMusicSongsCharts(cached.tracks);
+        setAppleMusicSongsChartsLoaded(true);
+        showConfirmDialog({
+          type: 'info',
+          title: 'Using Cached Data',
+          message: `Could not refresh Apple Music charts. Showing cached data from ${cacheAgeHours} hours ago.`
+        });
+      } else {
+        showConfirmDialog({
+          type: 'error',
+          title: 'Load Failed',
+          message: `Failed to load Apple Music Songs Charts: ${error.message || 'Network error'}. Please try again.`
+        });
+      }
     } finally {
       setAppleMusicSongsChartsLoading(false);
     }
