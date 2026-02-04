@@ -3751,20 +3751,37 @@ Limit to 1 recommendation per artist unless user asks for more.
 
 FORMATTING - CRITICAL:
 Do NOT use markdown headers (no #, ##, ###, ####). Just use bold text **like this** for section titles.
-ALWAYS use the card syntax for tracks/albums/artists - they render as clickable cards with artwork.
 
-CARD SYNTAX (required for all music recommendations):
+CARD SYNTAX - MANDATORY FOR ALL MUSIC MENTIONS:
+You MUST use card syntax for EVERY mention of a track, album, artist, or playlist - no exceptions!
+Cards render as clickable items with artwork. NEVER use plain text like "Song Title" by Artist Name.
+
+Card formats:
 - Track: {{track|Song Title|Artist Name|Album Name}}
 - Album: {{album|ALBUM TITLE|ARTIST NAME|}} ← Album title FIRST, then artist name
 - Artist: {{artist|Artist Name|}}
 - Playlist: {{playlist|Playlist Name|playlist-id|track-count}} ← Use AFTER creating a playlist with create_playlist tool
 
-EXAMPLES:
+INLINE CARD USAGE - VERY IMPORTANT:
+Cards can and SHOULD be used inline within sentences. They will render properly anywhere in your response.
+
+CORRECT (uses inline cards):
+"For post-rock, I recommend {{track|Storm|Godspeed You! Black Emperor|Lift Your Skinny Fists}} and {{track|Your Hand in Mine|Explosions in the Sky|The Earth Is Not a Cold Dead Place}}. You might also enjoy {{artist|Mogwai|}} or {{artist|Sigur Rós|}}."
+
+WRONG (plain text - NEVER do this):
+"For post-rock, I recommend 'Storm' by Godspeed You! Black Emperor and 'Your Hand in Mine' by Explosions in the Sky."
+
+Cards work in lists too:
+1. {{track|Certainty|Big Thief|Two Hands}} - a beautiful acoustic track
+2. {{album|In Rainbows|Radiohead|}} - a landmark album
+3. {{artist|Phoebe Bridgers|}} - an incredible songwriter
+
+EXAMPLES OF PROPER RESPONSES:
 **Recommendations for you:**
 {{track|Certainty|Big Thief|Two Hands}}
 {{track|Not|Big Thief|Two Hands}}
-{{album|Two Hands|Big Thief|}} ← "Two Hands" is the album, "Big Thief" is the artist
-{{album|In Rainbows|Radiohead|}} ← "In Rainbows" is the album, "Radiohead" is the artist
+{{album|Two Hands|Big Thief|}}
+{{album|In Rainbows|Radiohead|}}
 {{artist|Phoebe Bridgers|}}
 {{playlist|Rainy Day Vibes|ai-chat-1234567890|15}}
 
@@ -3773,11 +3790,14 @@ When you create a playlist using the create_playlist tool, ALWAYS include a play
 Example: If you create a playlist called "Chill Vibes" and the tool returns id "ai-chat-1706789012345" with 12 tracks, respond with:
 {{playlist|Chill Vibes|ai-chat-1706789012345|12}}
 
-COMMON MISTAKE - DO NOT DO THIS:
-{{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
+COMMON MISTAKES - DO NOT DO THESE:
+1. {{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
+2. "Motion Sickness" by Phoebe Bridgers ← WRONG! Use card syntax instead: {{track|Motion Sickness|Phoebe Bridgers|Stranger in the Alps}}
+3. Check out Radiohead ← WRONG! Use: {{artist|Radiohead|}}
+4. The album "Kid A" is great ← WRONG! Use: {{album|Kid A|Radiohead|}}
 
-The Album field is REQUIRED for tracks - it enables album artwork to display.
-For inline artist links: [Artist Name](parachord://artist/Artist%20Name)`;
+REMEMBER: The Album field is REQUIRED for tracks - it enables album artwork to display.
+NEVER output plain text music references. ALWAYS use {{type|...}} card syntax.`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
