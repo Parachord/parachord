@@ -3570,39 +3570,42 @@ const executeDjTool = async (name, args, context) => {
         };
       }
       case 'queue_add': {
-        const resolved = [];
-        let startedPlaying = false;
         const nothingPlaying = !context.getCurrentTrack();
+        let startedPlaying = false;
+        let tracksToQueue = args.tracks;
 
-        for (const track of args.tracks) {
-          // Use earlyReturn for faster per-track search
-          const results = await context.search(`${track.artist} ${track.title}`, {
+        // If nothing is playing, resolve and play the first track immediately
+        if (nothingPlaying && args.tracks.length > 0) {
+          const firstTrack = args.tracks[0];
+          const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
             earlyReturn: true,
-            targetArtist: track.artist,
-            targetTitle: track.title
+            targetArtist: firstTrack.artist,
+            targetTitle: firstTrack.title
           });
           if (results && results.length > 0) {
             const match = results.find(r =>
-              r.artist?.toLowerCase() === track.artist.toLowerCase() &&
-              r.title?.toLowerCase() === track.title.toLowerCase()
+              r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
+              r.title?.toLowerCase() === firstTrack.title.toLowerCase()
             ) || results[0];
-
-            // If nothing is playing and this is the first track, play it immediately
-            if (nothingPlaying && !startedPlaying) {
-              await context.playTrack(match);
-              startedPlaying = true;
-            } else {
-              resolved.push(match);
-            }
+            await context.playTrack(match);
+            startedPlaying = true;
           }
+          // Remaining tracks go to queue
+          tracksToQueue = args.tracks.slice(1);
         }
 
-        // Add remaining tracks to queue
-        if (resolved.length > 0) {
-          await context.addToQueue(resolved, args.position || 'last');
+        // Add remaining tracks to queue as unresolved metadata
+        // The queue's ResolutionScheduler will resolve them in priority order
+        if (tracksToQueue.length > 0) {
+          const metadataTracks = tracksToQueue.map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: t.album || null
+          }));
+          await context.addToQueue(metadataTracks, args.position || 'last');
         }
 
-        const totalAdded = resolved.length + (startedPlaying ? 1 : 0);
+        const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
         return {
           success: totalAdded > 0,
           added: totalAdded,
@@ -3646,14 +3649,18 @@ const executeDjTool = async (name, args, context) => {
         return { success: true };
       }
       case 'create_playlist': {
-        const resolved = [];
-        for (const track of args.tracks) {
-          const results = await context.search(`${track.artist} ${track.title}`);
-          if (results && results.length > 0) resolved.push(results[0]);
+        if (!args.tracks || args.tracks.length === 0) {
+          return { success: false, error: 'No tracks specified for playlist' };
         }
-        if (resolved.length === 0) return { success: false, error: 'Could not find any tracks' };
-        const playlist = await context.createPlaylist(args.name, resolved);
-        return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: resolved.length } };
+        // Create playlist with track metadata - no need to resolve
+        // Tracks will be resolved when played from the playlist
+        const metadataTracks = args.tracks.map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || null
+        }));
+        const playlist = await context.createPlaylist(args.name, metadataTracks);
+        return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
       }
       case 'shuffle': {
         context.setShuffle(args.enabled);

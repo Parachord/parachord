@@ -219,40 +219,45 @@ const queueAddTool = {
     required: ['tracks']
   },
   execute: async ({ tracks, position = 'last' }, context) => {
-    const resolved = [];
-    const failed = [];
+    const nothingPlaying = !context.getCurrentTrack?.();
+    let startedPlaying = false;
+    let tracksToQueue = tracks;
 
-    for (const track of tracks) {
-      const query = `${track.artist} ${track.title}`;
-      // Use earlyReturn for faster per-track search
-      const results = await context.search(query, {
+    // If nothing is playing, resolve and play the first track immediately
+    if (nothingPlaying && tracks.length > 0) {
+      const firstTrack = tracks[0];
+      const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
         earlyReturn: true,
-        targetArtist: track.artist,
-        targetTitle: track.title
+        targetArtist: firstTrack.artist,
+        targetTitle: firstTrack.title
       });
-
       if (results && results.length > 0) {
-        // Find best match
-        const bestMatch = results.find(r =>
-          r.artist?.toLowerCase() === track.artist.toLowerCase() &&
-          r.title?.toLowerCase() === track.title.toLowerCase()
+        const match = results.find(r =>
+          r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
+          r.title?.toLowerCase() === firstTrack.title.toLowerCase()
         ) || results[0];
-
-        resolved.push(bestMatch);
-      } else {
-        failed.push(track);
+        await context.playTrack(match);
+        startedPlaying = true;
       }
+      tracksToQueue = tracks.slice(1);
     }
 
-    if (resolved.length > 0) {
-      await context.addToQueue(resolved, position);
+    // Add remaining tracks to queue as unresolved metadata
+    // The queue's ResolutionScheduler will resolve them in priority order
+    if (tracksToQueue.length > 0) {
+      const metadataTracks = tracksToQueue.map(t => ({
+        artist: t.artist,
+        title: t.title,
+        album: t.album || null
+      }));
+      await context.addToQueue(metadataTracks, position);
     }
 
+    const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
     return {
-      success: resolved.length > 0,
-      added: resolved.length,
-      failed: failed.length,
-      failedTracks: failed.length > 0 ? failed : undefined
+      success: totalAdded > 0,
+      added: totalAdded,
+      nowPlaying: startedPlaying
     };
   }
 };
@@ -305,43 +310,29 @@ const createPlaylistTool = {
     required: ['name', 'tracks']
   },
   execute: async ({ name, tracks }, context) => {
-    // Resolve tracks first
-    const resolved = [];
-
-    for (const track of tracks) {
-      const query = `${track.artist} ${track.title}`;
-      // Use earlyReturn for faster per-track search
-      const results = await context.search(query, {
-        earlyReturn: true,
-        targetArtist: track.artist,
-        targetTitle: track.title
-      });
-
-      if (results && results.length > 0) {
-        const bestMatch = results.find(r =>
-          r.artist?.toLowerCase() === track.artist.toLowerCase() &&
-          r.title?.toLowerCase() === track.title.toLowerCase()
-        ) || results[0];
-
-        resolved.push(bestMatch);
-      }
-    }
-
-    if (resolved.length === 0) {
+    if (!tracks || tracks.length === 0) {
       return {
         success: false,
-        error: 'Could not find any of the specified tracks'
+        error: 'No tracks specified for playlist'
       };
     }
 
-    const playlist = await context.createPlaylist(name, resolved);
+    // Create playlist with track metadata - no need to resolve
+    // Tracks will be resolved when played from the playlist
+    const metadataTracks = tracks.map(t => ({
+      artist: t.artist,
+      title: t.title,
+      album: t.album || null
+    }));
+
+    const playlist = await context.createPlaylist(name, metadataTracks);
 
     return {
       success: true,
       playlist: {
         id: playlist.id,
         name: playlist.title || name,
-        trackCount: resolved.length
+        trackCount: metadataTracks.length
       }
     };
   }
