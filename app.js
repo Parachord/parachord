@@ -12159,11 +12159,12 @@ const Parachord = () => {
       const finalMessages = [...updatedMessages, assistantMessage];
       setAiChatMessages(finalMessages);
 
-      // Update sidebar
+      // Update sidebar - clear progress status when done
       setResultsSidebar(prev => ({
         ...prev,
         messages: finalMessages,
         loading: false,
+        progressStatus: null,
         lastToolResults: response.toolResults
       }));
     } catch (error) {
@@ -12175,7 +12176,8 @@ const Parachord = () => {
       setResultsSidebar(prev => ({
         ...prev,
         messages: finalMessages,
-        loading: false
+        loading: false,
+        progressStatus: null
       }));
     } finally {
       setAiChatLoading(false);
