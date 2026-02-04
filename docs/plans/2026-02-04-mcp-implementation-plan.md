@@ -781,16 +781,20 @@ app.on('second-instance', (event, argv) => {
 
 #### Navigation Commands (Open Pages/Views)
 
+**Home** — `parachord://home`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://home` | Home page |
+
 **Artist Pages** — `parachord://artist/{name}/{tab?}`
 
 | URL | Opens |
 |-----|-------|
-| `parachord://artist/Big%20Thief` | Artist overview (default tab) |
-| `parachord://artist/Big%20Thief/bio` | Artist biography |
-| `parachord://artist/Big%20Thief/discography` | Discography |
+| `parachord://artist/Big%20Thief` | Artist page (music tab) |
+| `parachord://artist/Big%20Thief/music` | Artist discography/music |
+| `parachord://artist/Big%20Thief/biography` | Artist biography |
 | `parachord://artist/Big%20Thief/related` | Related/similar artists |
-| `parachord://artist/Big%20Thief/appears-on` | Appears on compilations |
-| `parachord://artist/Big%20Thief/credits` | Production credits |
 
 **Album Pages** — `parachord://album/{artist}/{title}`
 
@@ -798,29 +802,62 @@ app.on('second-instance', (event, argv) => {
 |-----|-------|
 | `parachord://album/Big%20Thief/Dragon%20New%20Warm%20Mountain` | Album page |
 
-**Collection** — `parachord://collection/{tab?}?sort={field}&order={asc|desc}`
+**Library** — `parachord://library/{tab?}?sort={field}&order={asc|desc}`
 
 | URL | Opens |
 |-----|-------|
-| `parachord://collection` | Collection overview (default tab) |
-| `parachord://collection/artists` | Artists in collection |
-| `parachord://collection/albums` | Albums in collection |
-| `parachord://collection/songs` | Songs/tracks in collection |
-| `parachord://collection/friends` | Friends activity |
-| `parachord://collection/artists?sort=recent` | Artists sorted by recently played |
-| `parachord://collection/albums?sort=added&order=desc` | Albums sorted by date added |
+| `parachord://library` | Library (default: tracks) |
+| `parachord://library/tracks` | Tracks in library |
+| `parachord://library/albums` | Albums in library |
+| `parachord://library/artists` | Artists in library |
+| `parachord://library/friends` | Friends list |
+| `parachord://library/tracks?sort=recent` | Tracks sorted by recently played |
+| `parachord://library/albums?sort=added&order=desc` | Albums sorted by date added |
 
-**History** — `parachord://history/{tab?}?sort={field}&order={asc|desc}&period={range}`
+**History** — `parachord://history/{tab?}?period={range}`
 
 | URL | Opens |
 |-----|-------|
-| `parachord://history` | History overview |
-| `parachord://history/tracks` | Track history |
-| `parachord://history/artists` | Artist play counts |
-| `parachord://history/albums` | Album play counts |
-| `parachord://history/tracks?period=week` | This week's tracks |
-| `parachord://history/artists?sort=plays&order=desc` | Top artists by play count |
-| `parachord://history/tracks?period=month&sort=recent` | This month, most recent first |
+| `parachord://history` | History (default: top tracks) |
+| `parachord://history/top-tracks` | Top tracks |
+| `parachord://history/top-albums` | Top albums |
+| `parachord://history/top-artists` | Top artists |
+| `parachord://history/recent` | Recent listening |
+| `parachord://history/top-tracks?period=week` | Top tracks this week |
+| `parachord://history/top-artists?period=month` | Top artists this month |
+| `parachord://history/recent?period=year` | Recent plays this year |
+
+**Friend Pages** — `parachord://friend/{id}/{tab?}?period={range}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://friend/abc123` | Friend's history (default tab) |
+| `parachord://friend/abc123/recent` | Friend's recent listening |
+| `parachord://friend/abc123/top-tracks` | Friend's top tracks |
+| `parachord://friend/abc123/top-artists` | Friend's top artists |
+| `parachord://friend/abc123/top-tracks?period=month` | Friend's top tracks this month |
+
+**Recommendations** — `parachord://recommendations/{tab?}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://recommendations` | Recommendations (default: artists) |
+| `parachord://recommendations/artists` | Recommended artists |
+| `parachord://recommendations/songs` | Recommended songs |
+
+**Charts** — `parachord://charts/{tab?}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://charts` | Charts page (default: albums) |
+| `parachord://charts/albums` | iTunes top albums |
+| `parachord://charts/songs` | Last.fm top songs |
+
+**Critics Picks** — `parachord://critics-picks`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://critics-picks` | Critics picks page |
 
 **Search** — `parachord://search?q={query}`
 
@@ -833,20 +870,19 @@ Supports boolean operators in query:
 | `parachord://search?q=album:Dragon%20New%20Warm` | Album only |
 | `parachord://search?q=track:Vampire%20Empire` | Track only |
 | `parachord://search?q=artist:Big%20Thief%20track:Vampire` | Artist + track |
-| `parachord://search?q=label:4AD` | By record label |
 | `parachord://search?q=year:2022` | By release year |
-| `parachord://search?q=genre:indie%20folk` | By genre |
 | `parachord://search?q=artist:Big%20Thief&source=spotify` | Filter by source |
 
 **Other Navigation**
 
 | URL | Opens |
 |-----|-------|
-| `parachord://playlist/{id}` | Playlist view |
-| `parachord://discover` | Discover page |
-| `parachord://recommendations` | Recommendations |
-| `parachord://settings` | Settings |
-| `parachord://settings/{section}` | Settings section (e.g., `/settings/ai-dj`) |
+| `parachord://playlists` | Playlists list |
+| `parachord://playlist/{id}` | Specific playlist |
+| `parachord://settings` | Settings (default: plugins) |
+| `parachord://settings/plugins` | Plugin settings |
+| `parachord://settings/general` | General settings |
+| `parachord://settings/about` | About page |
 | `parachord://now-playing` | Now playing view |
 
 #### AI Chat Commands
@@ -966,14 +1002,20 @@ window.electron.onProtocolUrl(async (url) => {
         setVolume(parseInt(segments[0]) / 100);
         break;
 
-      // === Artist Pages (hierarchical) ===
+      // === Home ===
+      case 'home':
+        setActiveView('home');
+        break;
+
+      // === Artist Pages ===
       // parachord://artist/{name}/{tab?}
+      // tabs: music, biography, related
       case 'artist': {
         const [artistName, tab] = segments;
         await loadArtistPage(artistName);
         setActiveView('artist');
         if (tab) {
-          setArtistTab(tab); // 'bio', 'discography', 'related', 'appears-on', 'credits'
+          setArtistPageTab(tab); // 'music', 'biography', 'related'
         }
         break;
       }
@@ -987,13 +1029,14 @@ window.electron.onProtocolUrl(async (url) => {
         break;
       }
 
-      // === Collection (hierarchical with sort) ===
-      // parachord://collection/{tab?}?sort={field}&order={asc|desc}
-      case 'collection': {
-        const [tab] = segments; // 'artists', 'albums', 'songs', 'friends'
-        setActiveView('collection');
+      // === Library ===
+      // parachord://library/{tab?}?sort={field}&order={asc|desc}
+      // tabs: tracks, albums, artists, friends
+      case 'library': {
+        const [tab] = segments;
+        setActiveView('library');
         if (tab) {
-          setCollectionTab(tab);
+          setCollectionTab(tab); // 'tracks', 'albums', 'artists', 'friends'
         }
         if (params.sort) {
           setCollectionSort(params.sort, params.order || 'desc');
@@ -1001,52 +1044,110 @@ window.electron.onProtocolUrl(async (url) => {
         break;
       }
 
-      // === History (hierarchical with sort and period) ===
-      // parachord://history/{tab?}?sort={field}&order={asc|desc}&period={range}
+      // === History ===
+      // parachord://history/{tab?}?period={range}
+      // tabs: top-tracks, top-albums, top-artists, recent
       case 'history': {
-        const [tab] = segments; // 'tracks', 'artists', 'albums'
+        const [tab] = segments;
         setActiveView('history');
         if (tab) {
-          setHistoryTab(tab);
+          // Map URL-friendly names to internal tab names
+          const tabMap = {
+            'top-tracks': 'topTracks',
+            'top-albums': 'topAlbums',
+            'top-artists': 'topArtists',
+            'recent': 'recent'
+          };
+          setHistoryTab(tabMap[tab] || tab);
         }
         if (params.period) {
           setHistoryPeriod(params.period); // 'week', 'month', 'year', 'all'
         }
-        if (params.sort) {
-          setHistorySort(params.sort, params.order || 'desc');
+        break;
+      }
+
+      // === Friend History ===
+      // parachord://friend/{id}/{tab?}?period={range}
+      // tabs: recent, top-tracks, top-artists
+      case 'friend': {
+        const [friendId, tab] = segments;
+        await loadFriendHistory(friendId);
+        setActiveView('friendHistory');
+        if (tab) {
+          const tabMap = {
+            'top-tracks': 'topTracks',
+            'top-artists': 'topArtists',
+            'recent': 'recent'
+          };
+          setFriendHistoryTab(tabMap[tab] || tab);
+        }
+        if (params.period) {
+          setFriendHistoryPeriod(params.period);
         }
         break;
       }
 
-      // === Search (with boolean operators) ===
+      // === Recommendations ===
+      // parachord://recommendations/{tab?}
+      // tabs: artists, songs
+      case 'recommendations': {
+        const [tab] = segments;
+        setActiveView('recommendations');
+        if (tab) {
+          setRecommendationsTab(tab); // 'artists', 'songs'
+        }
+        break;
+      }
+
+      // === Charts (discover) ===
+      // parachord://charts/{tab?}
+      // tabs: albums (iTunes), songs (Last.fm)
+      case 'charts': {
+        const [tab] = segments;
+        setActiveView('discover');
+        if (tab) {
+          setChartsTab(tab); // 'albums', 'songs'
+        }
+        break;
+      }
+
+      // === Critics Picks ===
+      case 'critics-picks':
+        setActiveView('critics-picks');
+        break;
+
+      // === Search ===
       // parachord://search?q={query}&source={source?}
       case 'search': {
         const query = params.q;
         setSearchQuery(query);
         setActiveView('search');
-        // Parse boolean operators (artist:, album:, track:, etc.)
+        // Parse boolean operators (artist:, album:, track:, year:)
         performSearch(query, { source: params.source });
         break;
       }
 
-      // === Other Navigation ===
+      // === Playlists ===
+      case 'playlists':
+        setActiveView('playlists');
+        break;
       case 'playlist':
         await loadPlaylist(segments[0]);
         setActiveView('playlist-view');
         break;
-      case 'discover':
-        setActiveView('discover');
-        break;
-      case 'recommendations':
-        setActiveView('recommendations');
-        break;
+
+      // === Settings ===
+      // parachord://settings/{tab?}
+      // tabs: plugins, general, about
       case 'settings': {
         setActiveView('settings');
         if (segments[0]) {
-          setSettingsSection(segments[0]); // e.g., 'ai-dj', 'sources', 'scrobblers'
+          setSettingsTab(segments[0]); // 'plugins', 'general', 'about'
         }
         break;
       }
+
+      // === Now Playing ===
       case 'now-playing':
         setActiveView('now-playing');
         break;
