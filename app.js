@@ -3516,7 +3516,12 @@ const executeDjTool = async (name, args, context) => {
     switch (name) {
       case 'play': {
         const query = `${args.artist} ${args.title}`;
-        const results = await context.search(query);
+        // Use earlyReturn for faster single-track search
+        const results = await context.search(query, {
+          earlyReturn: true,
+          targetArtist: args.artist,
+          targetTitle: args.title
+        });
         if (!results || results.length === 0) {
           return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
         }
@@ -3570,7 +3575,12 @@ const executeDjTool = async (name, args, context) => {
         const nothingPlaying = !context.getCurrentTrack();
 
         for (const track of args.tracks) {
-          const results = await context.search(`${track.artist} ${track.title}`);
+          // Use earlyReturn for faster per-track search
+          const results = await context.search(`${track.artist} ${track.title}`, {
+            earlyReturn: true,
+            targetArtist: track.artist,
+            targetTitle: track.title
+          });
           if (results && results.length > 0) {
             const match = results.find(r =>
               r.artist?.toLowerCase() === track.artist.toLowerCase() &&
@@ -11908,26 +11918,59 @@ const Parachord = () => {
   // ============================================
 
   // Search across all active resolvers (for AI chat tools)
-  const searchResolvers = async (query) => {
-    const resolvers = loadedResolversRef.current || [];
+  // Options:
+  //   earlyReturn: if true, returns as soon as the first resolver finds results (faster for single track play)
+  //   targetArtist/targetTitle: if provided with earlyReturn, returns early only if an exact match is found
+  const searchResolvers = async (query, options = {}) => {
+    const { earlyReturn = false, targetArtist, targetTitle } = options;
+    const allResolvers = loadedResolversRef.current || [];
     const activeIds = activeResolversRef.current || [];
+    const resolverOrder = resolverOrderRef.current || [];
     const results = [];
 
-    for (const resolver of resolvers) {
-      if (!activeIds.includes(resolver.id)) continue;
-      if (!resolver.search) continue;
+    // Sort resolvers by user-configured priority order
+    const sortedResolvers = [...resolverOrder]
+      .filter(id => activeIds.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(r => r && r.search);
 
+    // Add any active resolvers not in the order list (fallback)
+    for (const resolver of allResolvers) {
+      if (activeIds.includes(resolver.id) && resolver.search && !sortedResolvers.find(r => r.id === resolver.id)) {
+        sortedResolvers.push(resolver);
+      }
+    }
+
+    for (const resolver of sortedResolvers) {
       try {
         const config = getResolverConfigRef.current
           ? await getResolverConfigRef.current(resolver.id)
           : {};
         const tracks = await resolver.search(query, config);
-        if (Array.isArray(tracks)) {
-          results.push(...tracks.map(t => ({
+        if (Array.isArray(tracks) && tracks.length > 0) {
+          const taggedTracks = tracks.map(t => ({
             ...t,
             source: resolver.id,
             resolverName: resolver.name || resolver.manifest?.name
-          })));
+          }));
+          results.push(...taggedTracks);
+
+          // Early return optimization: if we found results from highest-priority resolver
+          if (earlyReturn) {
+            // If target artist/title provided, only return early on exact match
+            if (targetArtist && targetTitle) {
+              const hasExactMatch = taggedTracks.some(t =>
+                t.artist?.toLowerCase() === targetArtist.toLowerCase() &&
+                t.title?.toLowerCase() === targetTitle.toLowerCase()
+              );
+              if (hasExactMatch) {
+                return results;
+              }
+            } else {
+              // No target specified, return early with any results
+              return results;
+            }
+          }
         }
       } catch (err) {
         console.error(`Resolver ${resolver.id} search error:`, err);
@@ -11978,15 +12021,16 @@ const Parachord = () => {
 
     // Create tool context for DJ tools
     const toolContext = {
-      search: async (query) => {
-        const results = await searchResolvers(query);
+      search: async (query, options = {}) => {
+        const results = await searchResolvers(query, options);
         return results || [];
       },
       playTrack: async (track) => {
         await handlePlayRef.current(track);
       },
       addToQueue: async (tracks, position) => {
-        addToQueue(tracks, { type: 'aiPlaylist', name: 'Shuffleupagus' });
+        // skipAutoPlay: true because queue_add tool handles auto-play itself
+        addToQueue(tracks, { type: 'aiPlaylist', name: 'Shuffleupagus' }, { skipAutoPlay: true });
       },
       clearQueue: () => clearQueue(),
       removeFromQueue: (trackId) => removeFromQueue(trackId),
@@ -12115,7 +12159,12 @@ const Parachord = () => {
         if (!albumName && type === 'track' && artist && title) {
           try {
             const query = `${artist} ${title}`;
-            const results = await searchResolvers(query);
+            // Use earlyReturn for faster album name lookup
+            const results = await searchResolvers(query, {
+              earlyReturn: true,
+              targetArtist: artist,
+              targetTitle: title
+            });
             if (results && results.length > 0) {
               const match = results.find(r =>
                 r.artist?.toLowerCase() === artist?.toLowerCase() &&
@@ -12155,10 +12204,14 @@ const Parachord = () => {
       closeAiChat();
 
       if (type === 'track') {
-        // Search and play the track
+        // Search and play the track - use earlyReturn for faster response
         try {
           const query = `${artist} ${title}`;
-          const results = await searchResolvers(query);
+          const results = await searchResolvers(query, {
+            earlyReturn: true,
+            targetArtist: artist,
+            targetTitle: title
+          });
           if (results && results.length > 0) {
             // Find best match (prefer exact artist/title match)
             const bestMatch = results.find(r =>
@@ -12605,7 +12658,8 @@ const Parachord = () => {
     }
   }, [resultsSidebar?.messages, resultsSidebar?.loading]);
 
-  const addToQueue = (tracks, context = null) => {
+  const addToQueue = (tracks, context = null, options = {}) => {
+    const { skipAutoPlay = false } = options;
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
     // Tag tracks with context if provided
@@ -12661,8 +12715,8 @@ const Parachord = () => {
 
     // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
-    // If nothing is playing, auto-start the first track
-    if (nothingPlaying && taggedTracks.length > 0) {
+    // If nothing is playing, auto-start the first track (unless skipAutoPlay is set)
+    if (nothingPlaying && taggedTracks.length > 0 && !skipAutoPlay) {
       const firstTrack = taggedTracks[0];
       console.log(`▶️ Auto-starting playback: "${firstTrack.title}" by ${firstTrack.artist}`);
       // Remove from queue and play

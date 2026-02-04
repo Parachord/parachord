@@ -57,7 +57,12 @@ const playTool = {
   },
   execute: async ({ artist, title }, context) => {
     const query = `${artist} ${title}`;
-    const results = await context.search(query);
+    // Use earlyReturn for faster single-track search
+    const results = await context.search(query, {
+      earlyReturn: true,
+      targetArtist: artist,
+      targetTitle: title
+    });
 
     if (!results || results.length === 0) {
       return {
@@ -219,7 +224,12 @@ const queueAddTool = {
 
     for (const track of tracks) {
       const query = `${track.artist} ${track.title}`;
-      const results = await context.search(query);
+      // Use earlyReturn for faster per-track search
+      const results = await context.search(query, {
+        earlyReturn: true,
+        targetArtist: track.artist,
+        targetTitle: track.title
+      });
 
       if (results && results.length > 0) {
         // Find best match
@@ -300,7 +310,12 @@ const createPlaylistTool = {
 
     for (const track of tracks) {
       const query = `${track.artist} ${track.title}`;
-      const results = await context.search(query);
+      // Use earlyReturn for faster per-track search
+      const results = await context.search(query, {
+        earlyReturn: true,
+        targetArtist: track.artist,
+        targetTitle: track.title
+      });
 
       if (results && results.length > 0) {
         const bestMatch = results.find(r =>
