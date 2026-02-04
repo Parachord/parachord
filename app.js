@@ -3672,11 +3672,11 @@ CURRENT STATE:
 {{currentState}}
 
 PERSONALIZATION - CRITICAL:
-When making recommendations, you MUST base them on the user's data above:
-- Their favorite artists, albums, and tracks show their taste - recommend similar artists/genres
-- Their listening history shows what they actually play - match that style
-- If they like indie rock, don't recommend pop. If they like electronic, don't recommend country.
-- Recommend artists similar to their favorites, not generic popular music
+When making recommendations, you MUST follow these rules:
+- NEVER recommend albums/artists already in their collection or listening history - they already know those!
+- Recommend NEW music similar to their taste, not music they already listen to
+- Match their style/genre - if they like indie, recommend indie. If electronic, recommend electronic.
+- STRICTLY limit to 1 album/track per artist - never multiple from same artist
 - If you don't have user data, ASK what genres/artists they like before recommending
 
 AVAILABLE ACTIONS (use these tools):
@@ -11975,9 +11975,10 @@ const Parachord = () => {
         // {{album|Title|Artist|}}
         [title, artist] = parts;
         clickAction = () => {
-          // Navigate to artist page which will show their albums
+          // Search for album - user can click result to view it
+          const query = `${artist} ${title}`;
           closeAiChat();
-          fetchArtistData(artist);
+          handleSearchInput(query);
         };
         // Try to get cached album art
         imageUrl = getCachedAlbumArt(artist, title);
