@@ -3387,7 +3387,7 @@ const ReleasePage = ({
         )
     )
   );
-;
+};
 
 // =============================================================================
 // AI Chat Service - Inlined for browser compatibility
