@@ -3708,10 +3708,17 @@ PLAYING ALBUMS vs TRACKS:
 PERSONALIZATION - CRITICAL:
 When making recommendations, you MUST follow these rules:
 - NEVER recommend albums/artists already in their collection or listening history - they already know those!
+- NEVER recommend anything in the user's BLOCKLIST (shown in CURRENT STATE) - they explicitly asked not to see these!
 - Recommend NEW music similar to their taste, not music they already listen to
 - When user asks for "new" music, only suggest releases from 2024-2026
 - STRICTLY limit to 1 album/track per artist - never multiple from same artist
 - If you don't have user data, ASK what genres/artists they like before recommending
+
+BLOCKLIST - USER PREFERENCES:
+When user says "don't recommend X", "I don't like X", "stop suggesting X", "never play X again", etc.:
+- Call the block_recommendation tool IMMEDIATELY to save their preference
+- Confirm you've blocked it: "Got it, I won't recommend [X] again."
+- The blocklist persists across sessions - you'll see it in CURRENT STATE
 
 RECOMMENDATION BASIS - CRITICAL:
 - Base ALL recommendations on GENRE, STYLE, SONIC QUALITIES, and what music critics/publications compare artists to
@@ -3728,6 +3735,7 @@ AVAILABLE ACTIONS (use these tools):
 - control: pause, resume, skip, previous
 - search: Find tracks (returns results you can then play/queue)
 - shuffle: Enable/disable shuffle mode
+- block_recommendation: Block an artist/album/track from future recommendations
 
 "PLAY" vs "ADD TO QUEUE" - CRITICAL DISTINCTION:
 - "Play X" / "Put on X" = Use play tool → Immediately starts playing, clears existing queue
@@ -4176,6 +4184,8 @@ const Parachord = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
+  const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
+  const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
   const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
@@ -5383,6 +5393,7 @@ const Parachord = () => {
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
+  useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -9067,6 +9078,13 @@ const Parachord = () => {
     }
   }, [aiIncludeHistory, cacheLoaded]);
 
+  // Persist recommendation blocklist (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('recommendation_blocklist', recommendationBlocklist);
+    }
+  }, [recommendationBlocklist, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -12154,7 +12172,24 @@ const Parachord = () => {
       createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
       getCurrentTrack: () => currentTrackRef.current,
       getQueue: () => currentQueueRef.current || [],
-      getIsPlaying: () => isPlayingRef.current
+      getIsPlaying: () => isPlayingRef.current,
+      blockRecommendation: (type, item) => {
+        // Add item to the recommendation blocklist
+        // type: 'artist' | 'album' | 'track'
+        // item: { name } for artist, { title, artist } for album/track
+        setRecommendationBlocklist(prev => {
+          const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
+          // Check if already blocked (avoid duplicates)
+          const exists = prev[key].some(existing => {
+            if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
+            return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
+                   existing.artist?.toLowerCase() === item.artist?.toLowerCase();
+          });
+          if (exists) return prev;
+          return { ...prev, [key]: [...prev[key], item] };
+        });
+      },
+      getBlocklist: () => recommendationBlocklistRef.current
     };
 
     // Create context getter for system prompt
@@ -12185,6 +12220,9 @@ const Parachord = () => {
         }))
       };
 
+      // Get recommendation blocklist
+      const blocklist = recommendationBlocklistRef.current || { artists: [], albums: [], tracks: [] };
+
       return {
         nowPlaying: nowPlaying ? {
           title: nowPlaying.title,
@@ -12196,7 +12234,8 @@ const Parachord = () => {
         queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
         shuffle: shuffle,
         listeningHistory: listeningHistory,
-        collection: collection
+        collection: collection,
+        blocklist: blocklist
       };
     };
 
@@ -13965,6 +14004,14 @@ const Parachord = () => {
       if (savedAiIncludeHistory !== undefined) {
         setAiIncludeHistory(savedAiIncludeHistory);
         console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
+      }
+
+      // Load recommendation blocklist
+      const savedBlocklist = await window.electron.store.get('recommendation_blocklist');
+      if (savedBlocklist && typeof savedBlocklist === 'object') {
+        setRecommendationBlocklist(savedBlocklist);
+        const totalBlocked = (savedBlocklist.artists?.length || 0) + (savedBlocklist.albums?.length || 0) + (savedBlocklist.tracks?.length || 0);
+        console.log('📦 Loaded recommendation blocklist:', totalBlocked, 'items');
       }
 
       // Load AI chat histories (per-provider)

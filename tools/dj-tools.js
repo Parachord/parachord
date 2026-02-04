@@ -365,6 +365,72 @@ const shuffleTool = {
 };
 
 /**
+ * Block an artist, album, or track from future recommendations
+ * @type {Tool}
+ */
+const blockRecommendationTool = {
+  name: 'block_recommendation',
+  description: 'Block an artist, album, or track from future AI recommendations. Use when user says "don\'t recommend X", "I don\'t like X", "stop suggesting X", etc.',
+  parameters: {
+    type: 'object',
+    properties: {
+      type: {
+        type: 'string',
+        enum: ['artist', 'album', 'track'],
+        description: 'What to block: artist (blocks all their music), album, or track'
+      },
+      name: {
+        type: 'string',
+        description: 'For artists: the artist name. Not used for albums/tracks.'
+      },
+      title: {
+        type: 'string',
+        description: 'For albums/tracks: the album or track title'
+      },
+      artist: {
+        type: 'string',
+        description: 'For albums/tracks: the artist name'
+      }
+    },
+    required: ['type']
+  },
+  execute: async ({ type, name, title, artist }, context) => {
+    if (type === 'artist') {
+      if (!name) {
+        return { success: false, error: 'Artist name is required' };
+      }
+      context.blockRecommendation('artist', { name });
+      return {
+        success: true,
+        blocked: { type: 'artist', name },
+        message: `I won't recommend ${name} again.`
+      };
+    } else if (type === 'album') {
+      if (!title || !artist) {
+        return { success: false, error: 'Album title and artist are required' };
+      }
+      context.blockRecommendation('album', { title, artist });
+      return {
+        success: true,
+        blocked: { type: 'album', title, artist },
+        message: `I won't recommend the album "${title}" by ${artist} again.`
+      };
+    } else if (type === 'track') {
+      if (!title || !artist) {
+        return { success: false, error: 'Track title and artist are required' };
+      }
+      context.blockRecommendation('track', { title, artist });
+      return {
+        success: true,
+        blocked: { type: 'track', title, artist },
+        message: `I won't recommend "${title}" by ${artist} again.`
+      };
+    }
+    return { success: false, error: 'Invalid type. Use artist, album, or track.' };
+  }
+};
+
+/**
  * All DJ tools as an array
  * @type {Tool[]}
  */
@@ -375,7 +441,8 @@ const djTools = [
   queueAddTool,
   queueClearTool,
   createPlaylistTool,
-  shuffleTool
+  shuffleTool,
+  blockRecommendationTool
 ];
 
 /**

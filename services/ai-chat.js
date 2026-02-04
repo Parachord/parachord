@@ -277,6 +277,25 @@ class AIChatService {
       lines.push(`Shuffle: ${context.shuffle ? 'On' : 'Off'}`);
     }
 
+    // Recommendation blocklist
+    if (context.blocklist) {
+      const { artists = [], albums = [], tracks = [] } = context.blocklist;
+      const totalBlocked = artists.length + albums.length + tracks.length;
+      if (totalBlocked > 0) {
+        lines.push('');
+        lines.push(`Blocked from Recommendations (${totalBlocked} items):`);
+        if (artists.length > 0) {
+          lines.push(`  Artists: ${artists.map(a => a.name).join(', ')}`);
+        }
+        if (albums.length > 0) {
+          lines.push(`  Albums: ${albums.map(a => `"${a.title}" by ${a.artist}`).join(', ')}`);
+        }
+        if (tracks.length > 0) {
+          lines.push(`  Tracks: ${tracks.map(t => `"${t.title}" by ${t.artist}`).join(', ')}`);
+        }
+      }
+    }
+
     return lines.join('\n');
   }
 
