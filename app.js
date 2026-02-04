@@ -3545,19 +3545,38 @@ const executeDjTool = async (name, args, context) => {
       }
       case 'queue_add': {
         const resolved = [];
+        let startedPlaying = false;
+        const nothingPlaying = !context.getCurrentTrack();
+
         for (const track of args.tracks) {
           const results = await context.search(`${track.artist} ${track.title}`);
           if (results && results.length > 0) {
-            resolved.push(results.find(r =>
+            const match = results.find(r =>
               r.artist?.toLowerCase() === track.artist.toLowerCase() &&
               r.title?.toLowerCase() === track.title.toLowerCase()
-            ) || results[0]);
+            ) || results[0];
+
+            // If nothing is playing and this is the first track, play it immediately
+            if (nothingPlaying && !startedPlaying) {
+              await context.playTrack(match);
+              startedPlaying = true;
+            } else {
+              resolved.push(match);
+            }
           }
         }
+
+        // Add remaining tracks to queue
         if (resolved.length > 0) {
           await context.addToQueue(resolved, args.position || 'last');
         }
-        return { success: resolved.length > 0, added: resolved.length };
+
+        const totalAdded = resolved.length + (startedPlaying ? 1 : 0);
+        return {
+          success: totalAdded > 0,
+          added: totalAdded,
+          nowPlaying: startedPlaying
+        };
       }
       case 'queue_remove': {
         const queue = context.getQueue();
@@ -3647,6 +3666,17 @@ class AIChatService {
     this.getContext = getContext;
     this.messages = [];
     this.tools = getSimpleToolDefinitions();
+    this.onProgress = null; // Callback for tool execution progress
+  }
+
+  setProgressCallback(callback) {
+    this.onProgress = callback;
+  }
+
+  _reportProgress(status) {
+    if (this.onProgress) {
+      try { this.onProgress(status); } catch (e) { console.error('Progress callback error:', e); }
+    }
   }
 
   async sendMessage(userMessage) {
@@ -3700,6 +3730,19 @@ class AIChatService {
       });
 
       for (const call of calls) {
+        // Report progress to UI
+        const toolLabels = {
+          search: 'Searching...',
+          play: 'Playing track...',
+          queue_add: 'Adding to queue...',
+          queue_remove: 'Removing from queue...',
+          queue_clear: 'Clearing queue...',
+          control: call.arguments?.action === 'pause' ? 'Pausing...' : call.arguments?.action === 'skip' ? 'Skipping...' : 'Controlling playback...',
+          create_playlist: 'Creating playlist...',
+          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...'
+        };
+        this._reportProgress(toolLabels[call.name] || `Running ${call.name}...`);
+
         const result = await executeDjTool(call.name, call.arguments, this.toolContext);
         toolResults.push({ tool: call.name, arguments: call.arguments, result });
         this.messages.push({
@@ -3939,6 +3982,7 @@ const Parachord = () => {
   const [aiChatMessages, setAiChatMessages] = useState([]);
   const [aiChatInput, setAiChatInput] = useState('');
   const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [aiChatProgress, setAiChatProgress] = useState(null); // Tool execution progress message
   const [selectedChatProvider, setSelectedChatProvider] = useState(null);
   const aiChatServiceRef = useRef(null);
   const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
@@ -11768,7 +11812,16 @@ const Parachord = () => {
 
     try {
       const service = getOrCreateChatService(provider);
+
+      // Set up progress callback
+      service.setProgressCallback((status) => {
+        setAiChatProgress(status);
+        setResultsSidebar(prev => prev ? { ...prev, progressStatus: status } : null);
+      });
+
+      setAiChatProgress(null);
       let response = await service.sendMessage(message.trim());
+      setAiChatProgress(null);
 
       // If Ollama is unavailable, try to auto-start it
       if (response.ollamaUnavailable && window.electron?.ollama) {
@@ -38029,7 +38082,7 @@ useEffect(() => {
                   )
                 ),
 
-                // Loading indicator
+                // Loading indicator with progress status
                 resultsSidebar.loading && React.createElement('div', {
                   style: { display: 'flex', justifyContent: 'flex-start' }
                 },
@@ -38039,12 +38092,20 @@ useEffect(() => {
                       borderRadius: '16px 16px 16px 4px',
                       backgroundColor: 'rgba(255, 255, 255, 0.08)',
                       display: 'flex',
-                      gap: '4px'
+                      alignItems: 'center',
+                      gap: '8px'
                     }
                   },
-                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
-                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '150ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
-                    React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '300ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } })
+                    // Show progress status text if available, otherwise show bouncing dots
+                    resultsSidebar.progressStatus
+                      ? React.createElement('span', {
+                          style: { fontSize: '13px', color: '#9ca3af' }
+                        }, resultsSidebar.progressStatus)
+                      : React.createElement(React.Fragment, null,
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '150ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '300ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } })
+                        )
                   )
                 )
               ),
