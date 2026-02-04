@@ -3883,13 +3883,26 @@ class AIChatService {
     }
     if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
 
+    // Build exclusion list from collection and listening history
+    const knownArtists = new Set();
+    const knownAlbums = new Set();
+
     // Add collection (user's explicit favorites)
     if (context.collection) {
       const { favoriteArtists, favoriteAlbums, favoriteTracks } = context.collection;
+
+      // Add to known sets
+      favoriteArtists?.forEach(a => knownArtists.add(a));
+      favoriteAlbums?.forEach(a => {
+        knownArtists.add(a.artist);
+        knownAlbums.add(`${a.title} by ${a.artist}`);
+      });
+      favoriteTracks?.forEach(t => knownArtists.add(t.artist));
+
       const hasCollection = (favoriteArtists?.length > 0) || (favoriteAlbums?.length > 0) || (favoriteTracks?.length > 0);
 
       if (hasCollection) {
-        lines.push('\nUSER COLLECTION (their saved favorites - use for personalized recommendations):');
+        lines.push('\nUSER COLLECTION (their saved favorites - use for style matching):');
         if (favoriteArtists?.length > 0) {
           lines.push(`  Favorite artists: ${favoriteArtists.slice(0, 10).join(', ')}`);
         }
@@ -3906,17 +3919,27 @@ class AIChatService {
 
     // Add listening history for personalization
     if (context.listeningHistory && context.listeningHistory.length > 0) {
-      lines.push('\nLISTENING HISTORY (from scrobbling - recent play patterns):');
+      lines.push('\nLISTENING HISTORY (from scrobbling):');
       for (const period of context.listeningHistory) {
         const periodLabel = period.window.replace(/_/g, ' ');
         if (period.top_artists && period.top_artists.length > 0) {
+          period.top_artists.forEach(a => knownArtists.add(a));
           lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
         }
         if (period.top_tracks && period.top_tracks.length > 0) {
+          period.top_tracks.forEach(t => knownArtists.add(t.artist));
           const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
           lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
         }
       }
+    }
+
+    // Add explicit exclusion list for "new music" requests
+    if (knownArtists.size > 0) {
+      const sortedArtists = Array.from(knownArtists).sort().slice(0, 30);
+      lines.push('\n⛔ DO NOT RECOMMEND (user already knows these artists):');
+      lines.push(`  ${sortedArtists.join(', ')}`);
+      lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
     }
 
     const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
