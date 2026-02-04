@@ -3479,7 +3479,7 @@ const djTools = [
   },
   {
     name: 'create_playlist',
-    description: 'Create a new playlist with the specified tracks',
+    description: 'Create a new playlist with the specified tracks. IMPORTANT: After creating, include the playlist card in your response using {{playlist|name|id|trackCount}} with the returned ID.',
     parameters: {
       type: 'object',
       properties: {
@@ -3757,6 +3757,7 @@ CARD SYNTAX (required for all music recommendations):
 - Track: {{track|Song Title|Artist Name|Album Name}}
 - Album: {{album|ALBUM TITLE|ARTIST NAME|}} ← Album title FIRST, then artist name
 - Artist: {{artist|Artist Name|}}
+- Playlist: {{playlist|Playlist Name|playlist-id|track-count}} ← Use AFTER creating a playlist with create_playlist tool
 
 EXAMPLES:
 **Recommendations for you:**
@@ -3765,6 +3766,12 @@ EXAMPLES:
 {{album|Two Hands|Big Thief|}} ← "Two Hands" is the album, "Big Thief" is the artist
 {{album|In Rainbows|Radiohead|}} ← "In Rainbows" is the album, "Radiohead" is the artist
 {{artist|Phoebe Bridgers|}}
+{{playlist|Rainy Day Vibes|ai-chat-1234567890|15}}
+
+AFTER CREATING A PLAYLIST:
+When you create a playlist using the create_playlist tool, ALWAYS include a playlist card in your response using the ID returned by the tool.
+Example: If you create a playlist called "Chill Vibes" and the tool returns id "ai-chat-1706789012345" with 12 tracks, respond with:
+{{playlist|Chill Vibes|ai-chat-1706789012345|12}}
 
 COMMON MISTAKE - DO NOT DO THIS:
 {{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
@@ -12499,7 +12506,7 @@ const Parachord = () => {
       // Combined regex for all inline patterns
       // Order matters: cards first, then links, then bold, then italic, then code
       const patterns = [
-        { regex: /\{\{(track|artist|album)\|([^}]+)\}\}/g, type: 'card' },
+        { regex: /\{\{(track|artist|album|playlist)\|([^}]+)\}\}/g, type: 'card' },
         { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
         { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
         { regex: /\*([^*]+)\*/g, type: 'italic' },
@@ -12611,6 +12618,81 @@ const Parachord = () => {
       } else if (type === 'album') {
         [title, artist] = parts;
         album = title; // For albums, the title IS the album name
+      } else if (type === 'playlist') {
+        // Playlist card: {{playlist|name|id|trackCount}}
+        const [playlistName, playlistId, trackCount] = parts;
+        const handlePlaylistCardClick = () => {
+          closeAiChat();
+          const playlist = playlists.find(p => p.id === playlistId);
+          if (playlist) {
+            loadPlaylist(playlist);
+          }
+        };
+        return React.createElement('div', {
+          key,
+          onClick: handlePlaylistCardClick,
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '8px',
+            marginTop: '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            transition: 'background-color 0.15s'
+          },
+          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+        },
+          // Playlist icon
+          React.createElement('div', {
+            style: {
+              width: '40px',
+              height: '40px',
+              borderRadius: '4px',
+              background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '20px', height: '20px' },
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z' })
+            )
+          ),
+          // Text content
+          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+            React.createElement('div', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#f3f4f6',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, playlistName),
+            React.createElement('div', {
+              style: {
+                fontSize: '12px',
+                color: '#9ca3af',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, `${trackCount || '?'} tracks`)
+          ),
+          // Type indicator
+          React.createElement('div', {
+            style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+          }, 'playlist')
+        );
       }
       return React.createElement(ChatCard, { key, type, title, artist, album });
     };
@@ -12635,8 +12717,8 @@ const Parachord = () => {
         );
       }
       // Check for card syntax: {{type|field1|field2|...}}
-      else if (/^\{\{(track|artist|album)\|(.+)\}\}$/.test(line)) {
-        const cardMatch = line.match(/^\{\{(track|artist|album)\|(.+)\}\}$/);
+      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(line)) {
+        const cardMatch = line.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
         const cardType = cardMatch[1];
         const cardParts = cardMatch[2].split('|');
         elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
