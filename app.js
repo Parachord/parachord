@@ -40372,7 +40372,7 @@ useEffect(() => {
                     ] : selectedResolver.id === 'gemini' ? [
                       React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
                       React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
-                ]
+                    ] : []
               )
             ),
             // Connection status
