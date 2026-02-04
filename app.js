@@ -3809,9 +3809,20 @@ COMMON MISTAKES - DO NOT DO THESE:
 2. "Motion Sickness" by Phoebe Bridgers ← WRONG! Use card syntax instead: {{track|Motion Sickness|Phoebe Bridgers|Stranger in the Alps}}
 3. Check out Radiohead ← WRONG! Use: {{artist|Radiohead|}}
 4. The album "Kid A" is great ← WRONG! Use: {{album|Kid A|Radiohead|}}
+5. ![Artist Name](url) ← WRONG! Never use image markdown. Use card syntax or plain [text](url) links.
+6. Putting cards on separate lines in lists:
+   WRONG:
+   1. Here's a track
+   {{track|Song|Artist|Album}}
 
-REMEMBER: The Album field is REQUIRED for tracks - it enables album artwork to display.
-NEVER output plain text music references. ALWAYS use {{type|...}} card syntax.`;
+   CORRECT:
+   1. {{track|Song|Artist|Album}} - great track!
+
+FORMATTING RULES:
+- NEVER use image markdown syntax (![text](url)) - it doesn't render correctly
+- Keep cards INLINE with list numbers, not on separate lines
+- The Album field is REQUIRED for tracks - it enables album artwork to display
+- NEVER output plain text music references. ALWAYS use {{type|...}} card syntax.`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
@@ -12588,9 +12599,10 @@ const Parachord = () => {
     const parseInlineMarkdown = (text, baseKey) => {
       const result = [];
       // Combined regex for all inline patterns
-      // Order matters: cards first, then links, then bold, then italic, then code
+      // Order matters: cards first, then image links (![]()), then regular links, then bold, then italic, then code
       const patterns = [
         { regex: /\{\{(track|artist|album|playlist)\|([^}]+)\}\}/g, type: 'card' },
+        { regex: /!\[([^\]]*)\]\(([^)]+)\)/g, type: 'imagelink' }, // Handle ![text](url) - treat as regular link
         { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
         { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
         { regex: /\*([^*]+)\*/g, type: 'italic' },
@@ -12640,8 +12652,9 @@ const Parachord = () => {
           const cardType = r.match[1];
           const cardParts = r.match[2].split('|');
           result.push(renderCard(cardType, cardParts, key));
-        } else if (r.type === 'link') {
-          const linkText = r.match[1];
+        } else if (r.type === 'link' || r.type === 'imagelink') {
+          // Handle both [text](url) and ![text](url) - treat image links as regular links
+          const linkText = r.match[1] || r.match[2].split('/').pop(); // Use alt text or extract from URL
           const url = r.match[2];
           result.push(
             React.createElement('a', {
