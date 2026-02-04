@@ -11688,7 +11688,7 @@ const Parachord = () => {
     const newPlaylist = {
       id: playlistId,
       title: name,
-      creator: 'AI DJ',
+      creator: 'Shuffleupagus',
       tracks: tracks,
       createdAt: Date.now(),
       addedAt: Date.now(),
@@ -11731,7 +11731,7 @@ const Parachord = () => {
         await handlePlayRef.current(track);
       },
       addToQueue: async (tracks, position) => {
-        addToQueue(tracks, { type: 'aiPlaylist', name: 'AI DJ' });
+        addToQueue(tracks, { type: 'aiPlaylist', name: 'Shuffleupagus' });
       },
       clearQueue: () => clearQueue(),
       removeFromQueue: (trackId) => removeFromQueue(trackId),
@@ -11957,7 +11957,7 @@ const Parachord = () => {
     setAiChatOpen(true);
     setResultsSidebar({
       mode: 'chat',
-      title: 'AI DJ',
+      title: 'Shuffleupagus',
       subtitle: provider.name || provider.manifest?.name,
       messages: aiChatMessages,
       provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
@@ -37097,7 +37097,7 @@ useEffect(() => {
 
             return React.createElement(Tooltip, {
               content: hasEnabledChat
-                ? 'AI DJ'
+                ? 'Shuffleupagus'
                 : hasEnabledGenerate
                   ? 'AI Playlist'
                   : 'Enable AI in Settings',
@@ -38244,7 +38244,7 @@ useEffect(() => {
                   style: { textAlign: 'center', padding: '24px 16px', color: '#6b7280' }
                 },
                   React.createElement('div', { style: { fontSize: '32px', marginBottom: '12px' } }, '🎵'),
-                  React.createElement('p', { style: { fontSize: '14px', marginBottom: '8px' } }, 'Hi! I\'m your AI DJ.'),
+                  React.createElement('p', { style: { fontSize: '14px', marginBottom: '8px' } }, 'Hi! I\'m Shuffleupagus, your AI DJ.'),
                   React.createElement('p', { style: { fontSize: '12px' } }, 'Ask me to play music, manage your queue, or discover new tracks.')
                 ),
 
@@ -38322,7 +38322,7 @@ useEffect(() => {
                         }
                       }
                     },
-                    placeholder: 'Ask your AI DJ...',
+                    placeholder: 'Ask Shuffleupagus...',
                     disabled: aiChatLoading,
                     style: {
                       flex: 1,
