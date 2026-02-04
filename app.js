@@ -11706,12 +11706,20 @@ const Parachord = () => {
 
   // Initialize or get AI chat service
   const getOrCreateChatService = (provider) => {
-    // If we already have a service for this provider, return it
-    if (aiChatServiceRef.current?.provider?.id === provider.id) {
-      return aiChatServiceRef.current;
-    }
-
     const config = metaServiceConfigs[provider.id] || {};
+
+    // Check if we have a service for this provider with same config
+    // Recreate if model or other settings changed
+    if (aiChatServiceRef.current?.provider?.id === provider.id) {
+      const currentConfig = aiChatServiceRef.current.provider.config || {};
+      const configChanged = currentConfig.model !== config.model ||
+                           currentConfig.endpoint !== config.endpoint;
+      if (!configChanged) {
+        return aiChatServiceRef.current;
+      }
+      // Config changed - will recreate service below
+      console.log('🔄 AI config changed, recreating chat service');
+    }
 
     // Create tool context for DJ tools
     const toolContext = {
