@@ -35576,6 +35576,7 @@ useEffect(() => {
                   ),
                   // Category filter pills
                   [
+                    { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
