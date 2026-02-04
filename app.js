@@ -9069,6 +9069,13 @@ const Parachord = () => {
       if (aiChatServiceRef.current) {
         aiChatServiceRef.current.restoreHistory(history);
       }
+      // Update resultsSidebar with loaded history if chat is open
+      setResultsSidebar(prev => {
+        if (prev?.mode === 'chat') {
+          return { ...prev, messages: history };
+        }
+        return prev;
+      });
       console.log('💬 Loaded chat history for provider:', selectedChatProvider, '-', history.length, 'messages');
     }
   }, [selectedChatProvider, cacheLoaded]);
@@ -39125,9 +39132,10 @@ useEffect(() => {
                     setSelectedChatProvider(newProvider);
                     // Clear current chat service so it recreates with new provider
                     aiChatServiceRef.current = null;
-                    // Clear chat history since new provider doesn't have context
-                    setAiChatMessages([]);
-                    // Update sidebar with new provider and clear messages
+                    // Load saved chat history for this provider (or empty if none)
+                    const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                    setAiChatMessages(savedHistory);
+                    // Update sidebar with new provider and loaded messages
                     const chatServices = getChatServices();
                     const provider = chatServices.find(s => s.id === newProvider);
                     if (provider) {
@@ -39135,7 +39143,7 @@ useEffect(() => {
                         ...prev,
                         subtitle: provider.name || provider.manifest?.name,
                         provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
-                        messages: [] // Clear messages for new provider
+                        messages: savedHistory // Load saved messages for this provider
                       }));
                     }
                   },
