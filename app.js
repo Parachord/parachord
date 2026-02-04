@@ -11828,8 +11828,9 @@ const Parachord = () => {
     const parseInlineMarkdown = (text, baseKey) => {
       const result = [];
       // Combined regex for all inline patterns
-      // Order matters: links first, then bold, then italic, then code
+      // Order matters: cards first, then links, then bold, then italic, then code
       const patterns = [
+        { regex: /\{\{(track|artist|album)\|([^}]+)\}\}/g, type: 'card' },
         { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
         { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
         { regex: /\*([^*]+)\*/g, type: 'italic' },
@@ -11874,7 +11875,12 @@ const Parachord = () => {
         }
 
         const key = `${baseKey}-${idx}`;
-        if (r.type === 'link') {
+        if (r.type === 'card') {
+          // Card format: {{type|field1|field2|field3}}
+          const cardType = r.match[1];
+          const cardParts = r.match[2].split('|');
+          result.push(renderCard(cardType, cardParts, key));
+        } else if (r.type === 'link') {
           const linkText = r.match[1];
           const url = r.match[2];
           result.push(
