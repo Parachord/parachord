@@ -3553,7 +3553,12 @@ const executeDjTool = async (name, args, context) => {
         const limit = args.limit || 10;
         return {
           success: true,
-          results: (results || []).slice(0, limit).map(r => ({ artist: r.artist, title: r.title, album: r.album })),
+          results: (results || []).slice(0, limit).map(r => ({
+            artist: r.artist,
+            title: r.title,
+            album: r.album,
+            albumArt: r.albumArt || null
+          })),
           total: results?.length || 0
         };
       }
@@ -3681,10 +3686,19 @@ RULES:
 - Always confirm what you did AFTER the tool executes
 - Keep responses brief
 
-LINKS: When mentioning artists, you can link to their Parachord page using markdown:
+RICH CONTENT: When listing tracks, artists, or albums, use these card formats to show thumbnails:
+- For tracks: {{track|Title|Artist|albumArt_url}}
+- For artists: {{artist|Name|image_url}}
+- For albums: {{album|Title|Artist|albumArt_url}}
+
+When the search tool returns results with albumArt URLs, use those URLs in your cards.
+Example: Found these tracks:
+{{track|Certainty|Big Thief|https://example.com/art.jpg}}
+{{track|Masterpiece|Big Thief|https://example.com/art2.jpg}}
+
+For simple text links to artists (without images):
 [Artist Name](parachord://artist/Artist%20Name)
-Example: Check out [Big Thief](parachord://artist/Big%20Thief) - they have great albums!
-URL-encode spaces as %20 in the artist name.`;
+URL-encode spaces as %20 in names.`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
@@ -11869,7 +11883,7 @@ const Parachord = () => {
                   const path = url.replace('parachord://', '');
                   const [type, ...rest] = path.split('/');
                   const value = decodeURIComponent(rest.join('/'));
-                  if (type === 'artist' && value) handleArtistClick(value);
+                  if (type === 'artist' && value) fetchArtistData(value);
                 } else {
                   window.electron?.shell?.openExternal(url);
                 }
@@ -11905,10 +11919,112 @@ const Parachord = () => {
       return result.length > 0 ? result : [text];
     };
 
+    // Helper to render a card with thumbnail
+    const renderCard = (type, parts, key) => {
+      let title, artist, imageUrl, clickAction;
+
+      if (type === 'track') {
+        // {{track|Title|Artist|imageUrl}}
+        [title, artist, imageUrl] = parts;
+        clickAction = () => {
+          // Search for this track - close chat and trigger search
+          const query = `${artist} ${title}`;
+          closeAiChat();
+          handleSearchInput(query);
+        };
+      } else if (type === 'artist') {
+        // {{artist|Name|imageUrl}}
+        [title, imageUrl] = parts;
+        artist = null;
+        clickAction = () => fetchArtistData(title);
+      } else if (type === 'album') {
+        // {{album|Title|Artist|imageUrl}}
+        [title, artist, imageUrl] = parts;
+        clickAction = () => {
+          // Search for this album - close chat and trigger search
+          const query = `${artist} ${title}`;
+          closeAiChat();
+          handleSearchInput(query);
+        };
+      }
+
+      const hasImage = imageUrl && imageUrl.trim() && imageUrl !== 'null' && imageUrl !== 'undefined';
+
+      return React.createElement('div', {
+        key,
+        onClick: clickAction,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px',
+          marginTop: '4px',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          transition: 'background-color 0.15s'
+        },
+        onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+        onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+      },
+        // Thumbnail
+        React.createElement('div', {
+          style: {
+            width: '40px',
+            height: '40px',
+            borderRadius: type === 'artist' ? '50%' : '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundImage: hasImage ? `url(${imageUrl})` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+            color: '#6b7280'
+          }
+        }, !hasImage && (type === 'track' ? '🎵' : type === 'artist' ? '👤' : '💿')),
+        // Text content
+        React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+          React.createElement('div', {
+            style: {
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#f3f4f6',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }
+          }, title),
+          artist && React.createElement('div', {
+            style: {
+              fontSize: '12px',
+              color: '#9ca3af',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }
+          }, artist)
+        ),
+        // Type indicator
+        React.createElement('div', {
+          style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+        }, type)
+      );
+    };
+
     lines.forEach((line, lineIdx) => {
+      // Check for card syntax: {{type|field1|field2|...}}
+      const cardMatch = line.match(/^\{\{(track|artist|album)\|(.+)\}\}$/);
+      if (cardMatch) {
+        const cardType = cardMatch[1];
+        const cardParts = cardMatch[2].split('|');
+        elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
+      }
       // Check for numbered list items: "1. ", "2. ", etc.
-      const listMatch = line.match(/^(\d+)\.\s+(.+)$/);
-      if (listMatch) {
+      else if (/^(\d+)\.\s+(.+)$/.test(line)) {
+        const listMatch = line.match(/^(\d+)\.\s+(.+)$/);
         elements.push(
           React.createElement('div', {
             key: `line-${keyCounter++}`,
