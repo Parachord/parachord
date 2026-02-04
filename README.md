@@ -2,7 +2,7 @@
 
 A modern multi-source music player inspired by [Tomahawk](https://github.com/tomahawk-player/tomahawk). Play music from Spotify, YouTube, Bandcamp, SoundCloud, local files, and more - all in one unified interface.
 
-![Parachord Screenshot](assets/screenshot.png)
+![Parachord Screenshot](assets/artist-page.png)
 
 ## Features
 
