@@ -3693,9 +3693,15 @@ When making recommendations, you MUST follow these rules:
 - NEVER recommend albums/artists already in their collection or listening history - they already know those!
 - Recommend NEW music similar to their taste, not music they already listen to
 - When user asks for "new" music, only suggest releases from 2024-2026
-- Match their style/genre - if they like indie, recommend indie. If electronic, recommend electronic.
 - STRICTLY limit to 1 album/track per artist - never multiple from same artist
 - If you don't have user data, ASK what genres/artists they like before recommending
+
+RECOMMENDATION BASIS - CRITICAL:
+- Base ALL recommendations on GENRE, STYLE, SONIC QUALITIES, and what music critics/publications compare artists to
+- NEVER base recommendations on text similarities, name similarities, or title similarities
+- Consider: production style, instrumentation, tempo, mood, era, scene, influences
+- Example: If user likes Radiohead, recommend artists with similar sonic experimentation, not artists with similar band names
+- Use your knowledge of music criticism and what the internet/publications say about artist comparisons
 
 AVAILABLE ACTIONS (use these tools):
 - play: Play a specific track immediately (requires artist and title)
@@ -12162,7 +12168,7 @@ const Parachord = () => {
       onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
       onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
     },
-      // Thumbnail with shimmer loading state
+      // Thumbnail with shimmer loading state or placeholder
       React.createElement('div', {
         className: loading ? 'animate-shimmer' : '',
         style: {
@@ -12175,9 +12181,31 @@ const Parachord = () => {
             : hasImage ? `url(${imageUrl})` : 'none',
           backgroundSize: loading ? '200% 100%' : 'cover',
           backgroundPosition: 'center',
-          flexShrink: 0
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }
-      }),
+      },
+        // Music note placeholder when no image
+        !loading && !hasImage && React.createElement('svg', {
+          style: {
+            width: '20px',
+            height: '20px',
+            color: 'rgba(255, 255, 255, 0.3)'
+          },
+          fill: 'none',
+          viewBox: '0 0 24 24',
+          stroke: 'currentColor',
+          strokeWidth: 1.5
+        },
+          React.createElement('path', {
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+          })
+        )
+      ),
       // Text content
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
         React.createElement('div', {
