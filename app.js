@@ -10238,6 +10238,9 @@ const Parachord = () => {
 
       if (queue.length === 0) {
         console.log('No queue set, cannot go to next track');
+        // Reset play button when queue is exhausted
+        setIsPlaying(false);
+        isPlayingRef.current = false;
         return;
       }
 
@@ -10249,6 +10252,9 @@ const Parachord = () => {
 
       if (nextTrackIndex === -1) {
         console.log('⚠️ No playable tracks in queue');
+        // Reset play button when no playable tracks remain
+        setIsPlaying(false);
+        isPlayingRef.current = false;
         return;
       }
 
