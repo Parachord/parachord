@@ -93,7 +93,7 @@ npm start
 
 ### Spotify Setup
 1. Create a Spotify app at https://developer.spotify.com/dashboard
-2. Copy `env.example` to `.env`
+2. Copy `.env.example` to `.env`
 3. Add your Spotify Client ID and Secret
 4. Add `http://localhost:8888/callback` to your Redirect URIs
 5. Restart the app and connect via Settings > Installed Plug-Ins > Spotify
