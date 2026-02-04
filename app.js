@@ -11941,54 +11941,121 @@ const Parachord = () => {
       return result.length > 0 ? result : [text];
     };
 
-    // Helper to render a card with thumbnail
-    const renderCard = (type, parts, key) => {
-      let title, artist, album, imageUrl, clickAction;
+    // ChatCard component - fetches album art from MusicBrainz if not cached
+    const ChatCard = ({ type, parts }) => {
+      const [imageUrl, setImageUrl] = useState(null);
+      const [loading, setLoading] = useState(false);
 
+      // Parse parts based on type
+      let title, artist, album;
       if (type === 'track') {
-        // {{track|Title|Artist|Album}} or {{track|Title|Artist|}}
         [title, artist, album] = parts;
-        clickAction = () => {
-          // Search for this track
-          const query = `${artist} ${title}`;
-          closeAiChat();
-          handleSearchInput(query);
-        };
-        // Try to get cached album art
-        if (album && album.trim()) {
-          imageUrl = getCachedAlbumArt(artist, album);
-        }
       } else if (type === 'artist') {
-        // {{artist|Name|}}
         [title] = parts;
         artist = null;
-        clickAction = () => {
-          closeAiChat();
-          fetchArtistData(title);
-        };
-        // Try to get cached artist image
-        const normalizedName = title?.trim().toLowerCase();
-        if (normalizedName && artistImageCache.current[normalizedName]) {
-          imageUrl = artistImageCache.current[normalizedName].url;
-        }
       } else if (type === 'album') {
-        // {{album|Title|Artist|}}
         [title, artist] = parts;
-        clickAction = () => {
-          // Search for album - user can click result to view it
+        album = title; // For albums, the title IS the album name
+      }
+
+      // Fetch album art on mount if not cached
+      useEffect(() => {
+        let cancelled = false;
+
+        const fetchArt = async () => {
+          // Check cache first
+          let cachedUrl = null;
+          if (type === 'artist') {
+            const normalizedName = title?.trim().toLowerCase();
+            if (normalizedName && artistImageCache.current[normalizedName]) {
+              cachedUrl = artistImageCache.current[normalizedName].url;
+            }
+          } else {
+            // For tracks and albums
+            const albumName = type === 'album' ? title : album;
+            const artistName = artist;
+            if (albumName && artistName) {
+              cachedUrl = getCachedAlbumArt(artistName, albumName);
+            }
+          }
+
+          if (cachedUrl) {
+            setImageUrl(cachedUrl);
+            return;
+          }
+
+          // Not in cache - fetch from MusicBrainz
+          if (type === 'artist') {
+            // Fetch artist image - skip for now, artist images come from other sources
+            return;
+          }
+
+          const albumName = type === 'album' ? title : album;
+          const artistName = artist;
+          if (!albumName || !artistName) return;
+
+          setLoading(true);
+          try {
+            // Search MusicBrainz for the release
+            const query = encodeURIComponent(`artist:"${artistName}" AND release:"${albumName}"`);
+            const searchUrl = `https://musicbrainz.org/ws/2/release?query=${query}&fmt=json&limit=1`;
+
+            const response = await fetch(searchUrl, {
+              headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
+            });
+
+            if (!response.ok || cancelled) return;
+
+            const data = await response.json();
+            const release = data.releases?.[0];
+            if (!release) return;
+
+            // Fetch cover art from Cover Art Archive
+            const artResponse = await fetch(`https://coverartarchive.org/release/${release.id}`, {
+              headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/parachord)' }
+            });
+
+            if (!artResponse.ok || cancelled) return;
+
+            const artData = await artResponse.json();
+            const frontCover = artData.images?.find(img => img.front) || artData.images?.[0];
+            const artUrl = frontCover?.thumbnails?.['250'] || frontCover?.thumbnails?.small || frontCover?.image;
+
+            if (artUrl && !cancelled) {
+              setImageUrl(artUrl);
+              // Cache it for future use
+              albumArtCache.current[release.id] = { url: artUrl, timestamp: Date.now() };
+            }
+          } catch (err) {
+            // Silently fail - will show placeholder
+          } finally {
+            if (!cancelled) setLoading(false);
+          }
+        };
+
+        fetchArt();
+        return () => { cancelled = true; };
+      }, [type, title, artist, album]);
+
+      const handleClick = () => {
+        if (type === 'track') {
           const query = `${artist} ${title}`;
           closeAiChat();
           handleSearchInput(query);
-        };
-        // Try to get cached album art
-        imageUrl = getCachedAlbumArt(artist, title);
-      }
+        } else if (type === 'artist') {
+          closeAiChat();
+          fetchArtistData(title);
+        } else if (type === 'album') {
+          const query = `${artist} ${title}`;
+          closeAiChat();
+          handleSearchInput(query);
+        }
+      };
 
-      const hasImage = imageUrl && imageUrl.trim() && imageUrl !== 'null' && imageUrl !== 'undefined';
+      const hasImage = imageUrl && imageUrl.trim();
 
       return React.createElement('div', {
-        key,
-        onClick: clickAction,
+        onClick: handleClick,
         style: {
           display: 'flex',
           alignItems: 'center',
@@ -12020,7 +12087,7 @@ const Parachord = () => {
             fontSize: '16px',
             color: '#6b7280'
           }
-        }, !hasImage && (type === 'track' ? '🎵' : type === 'artist' ? '👤' : '💿')),
+        }, loading ? '⏳' : (!hasImage && (type === 'track' ? '🎵' : type === 'artist' ? '👤' : '💿'))),
         // Text content
         React.createElement('div', { style: { flex: 1, minWidth: 0 } },
           React.createElement('div', {
@@ -12048,6 +12115,11 @@ const Parachord = () => {
           style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
         }, type)
       );
+    };
+
+    // Helper to render a card - wraps ChatCard component
+    const renderCard = (type, parts, key) => {
+      return React.createElement(ChatCard, { key, type, parts });
     };
 
     lines.forEach((line, lineIdx) => {
