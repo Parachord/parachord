@@ -3693,9 +3693,30 @@ class AIChatService {
     }
     if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
 
+    // Add collection (user's explicit favorites)
+    if (context.collection) {
+      const { favoriteArtists, favoriteAlbums, favoriteTracks } = context.collection;
+      const hasCollection = (favoriteArtists?.length > 0) || (favoriteAlbums?.length > 0) || (favoriteTracks?.length > 0);
+
+      if (hasCollection) {
+        lines.push('\nUSER COLLECTION (their saved favorites - use for personalized recommendations):');
+        if (favoriteArtists?.length > 0) {
+          lines.push(`  Favorite artists: ${favoriteArtists.slice(0, 10).join(', ')}`);
+        }
+        if (favoriteAlbums?.length > 0) {
+          const albumList = favoriteAlbums.slice(0, 8).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+          lines.push(`  Favorite albums: ${albumList}`);
+        }
+        if (favoriteTracks?.length > 0) {
+          const trackList = favoriteTracks.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+          lines.push(`  Favorite tracks: ${trackList}`);
+        }
+      }
+    }
+
     // Add listening history for personalization
     if (context.listeningHistory && context.listeningHistory.length > 0) {
-      lines.push('\nUSER LISTENING HISTORY (use this to personalize recommendations):');
+      lines.push('\nLISTENING HISTORY (from scrobbling - recent play patterns):');
       for (const period of context.listeningHistory) {
         const periodLabel = period.window.replace(/_/g, ' ');
         if (period.top_artists && period.top_artists.length > 0) {
@@ -11586,6 +11607,19 @@ const Parachord = () => {
         console.log('Could not fetch listening history:', e.message);
       }
 
+      // Get collection (user's favorites)
+      const collection = {
+        favoriteArtists: (collectionData?.artists || []).slice(0, 20).map(a => a.name || a.artist),
+        favoriteAlbums: (collectionData?.albums || []).slice(0, 15).map(a => ({
+          title: a.title || a.album,
+          artist: a.artist
+        })),
+        favoriteTracks: (collectionData?.tracks || []).slice(0, 20).map(t => ({
+          title: t.title,
+          artist: t.artist
+        }))
+      };
+
       return {
         nowPlaying: nowPlaying ? {
           title: nowPlaying.title,
@@ -11596,7 +11630,8 @@ const Parachord = () => {
         playbackState: isPlaying ? 'playing' : 'paused',
         queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
         shuffle: shuffle,
-        listeningHistory: listeningHistory
+        listeningHistory: listeningHistory,
+        collection: collection
       };
     };
 
