@@ -14975,10 +14975,26 @@ const Parachord = () => {
         return;
       }
 
-      // Find best match (prefer exact artist match)
-      const match = results.find(r =>
+      // Find best match - prefer studio albums over singles/live/compilations
+      const isStudioAlbum = (r) => {
+        const primaryType = r['primary-type']?.toLowerCase();
+        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+        // Must be an album (not single, EP, etc)
+        if (primaryType !== 'album') return false;
+        // Must not be live, compilation, remix, etc
+        const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+        return !secondaryTypes.some(t => nonStudioTypes.includes(t));
+      };
+
+      const artistMatches = results.filter(r =>
         r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
-      ) || results[0];
+      );
+
+      // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
+      const match = artistMatches.find(isStudioAlbum)
+        || artistMatches[0]
+        || results.find(isStudioAlbum)
+        || results[0];
 
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
       fetchReleaseData({
