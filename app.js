@@ -9316,10 +9316,45 @@ const Parachord = () => {
       let availableResolvers = Object.keys(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
-        // No sources available - try resolving on-demand using shared resolution
-        console.log('🔄 No sources found, attempting on-demand resolution...');
+        // No sources available - show track immediately, then resolve
+        console.log('🔄 No sources found, showing track and resolving...');
 
-        const sources = await resolveTrack(trackOrSource, trackOrSource.artist, {});
+        // Immediately set as current track so user sees feedback
+        const placeholderTrack = {
+          ...trackOrSource,
+          status: 'resolving'
+        };
+        setCurrentTrack(placeholderTrack);
+
+        // Resolve across all enabled resolvers in parallel (like ChatCard does)
+        const currentResolvers = loadedResolversRef.current;
+        const currentActiveResolvers = activeResolversRef.current;
+        const currentResolverOrder = resolverOrderRef.current;
+        const enabledResolvers = currentResolverOrder
+          .filter(id => currentActiveResolvers.includes(id))
+          .map(id => currentResolvers.find(r => r.id === id))
+          .filter(r => r && r.capabilities?.resolve);
+
+        const freshSources = {};
+        const resolvePromises = enabledResolvers.map(async (resolver) => {
+          try {
+            const config = getResolverConfigRef.current
+              ? await getResolverConfigRef.current(resolver.id)
+              : {};
+            const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
+            if (result) {
+              freshSources[resolver.id] = {
+                ...result,
+                confidence: result.confidence || 0.9,
+                resolvedAt: Date.now()
+              };
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name || resolver.id} resolve error:`, error);
+          }
+        });
+
+        await Promise.all(resolvePromises);
 
         // Check if another play request superseded this one during resolution
         if (playbackGenerationRef.current !== thisGeneration) {
@@ -9327,8 +9362,15 @@ const Parachord = () => {
           return;
         }
 
-        if (sources && Object.keys(sources).length > 0) {
-          trackOrSource.sources = sources;
+        if (Object.keys(freshSources).length > 0) {
+          trackOrSource.sources = freshSources;
+          // Update trackSources state so resolver dropdown shows all options
+          if (trackOrSource.id) {
+            setTrackSources(prev => ({
+              ...prev,
+              [trackOrSource.id]: freshSources
+            }));
+          }
         }
 
         // Update availableResolvers after resolution
@@ -9336,6 +9378,7 @@ const Parachord = () => {
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
+          setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -9343,6 +9386,14 @@ const Parachord = () => {
           });
           return;
         }
+
+        // Update current track with resolved sources
+        setCurrentTrack(prev => {
+          if (prev?.id === placeholderTrack.id || prev?.title === placeholderTrack.title) {
+            return { ...trackOrSource, status: 'resolved' };
+          }
+          return prev;
+        });
       }
 
       // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
