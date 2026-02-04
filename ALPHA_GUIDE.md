@@ -1,11 +1,13 @@
 # Parachord Alpha Quick Start Guide
 
-Welcome to the Parachord alpha! Thanks for helping us test. This guide will get you set up and explain what we're looking for feedback on.
+Welcome to the [Parachord](https://parachord.com) alpha! Thanks for helping us test. This guide will get you set up and explain what we're looking for feedback on.
 
 ## Download
 
 Download the latest release for your platform:
 - **macOS**: `.dmg` (Apple Silicon)
+
+In theory, Windows and Linux builds work too - but I've never tried either. So good luck and let me know how it goes!
 - **Windows**: `Parachord.Setup.x.x.x.exe` (installer) or `Parachord.x.x.x.exe` (portable)
 - **Linux**: `.AppImage`, `.deb`, or `.rpm`
 
@@ -52,7 +54,7 @@ Send songs to Parachord directly from your browser:
 ### 5. Add Friends
 
 See what others are listening to in real-time:
-1. Go to **Settings > Social**
+1. Go to **Collection > Friends > Add Friend**
 2. Add friends by Last.fm username:
    - `jherskowitz`
    - *(add other testers)*
@@ -65,11 +67,13 @@ We're especially interested in feedback on:
 - Does playback work reliably across different sources?
 - Any audio glitches, gaps, or sync issues?
 - Does source switching work smoothly in mixed queues?
+- Do you ever get in scenarios where multiple songs are playing at the same time?
 - Volume normalization between sources?
 
 ### Performance
 - How does the app feel on your machine?
 - Any lag or slowness in the UI?
+- Do you find yourself waiting too long for things to become playable?
 - Memory usage over time?
 - Large library handling (1000+ tracks)?
 
@@ -109,8 +113,8 @@ https://github.com/Parachord/parachord/discussions
 ## Known Limitations (Alpha)
 
 - **Apple Music**: macOS only, playback support (no library sync yet)
-- **Spotify**: Requires Premium for playback
-- **YouTube**: Audio-only, quality varies
+- **Spotify**: Requires Spotify to be open on desktop (can be in background)
+- **YouTube**: Audio-only, quality varies - add the browser extension to improve the experience
 - **Auto-updates**: Not yet enabled - check releases manually
 
 ## Keyboard Shortcuts
