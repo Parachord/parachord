@@ -3694,21 +3694,25 @@ RULES:
 - Always confirm what you did AFTER the tool executes
 - Keep responses brief
 
-RICH CONTENT: ALWAYS use card format when listing tracks, artists, or albums:
-- For tracks: {{track|Title|Artist|albumArt_url}}
-- For artists: {{artist|Name|image_url}}
-- For albums: {{album|Title|Artist|albumArt_url}}
+CONTENT TYPE: When user asks for albums, recommend ALBUMS. When user asks for tracks/songs, recommend TRACKS.
+- Albums = full releases, EPs, LPs
+- Tracks = individual songs
+- Limit to 1 recommendation per artist unless user asks for more
 
-IMPORTANT: When recommending music or answering questions about albums/tracks, use the search tool first to get results with artwork. Then format those results as cards.
+RICH CONTENT: ALWAYS use card format when listing music (images load automatically):
+- For tracks: {{track|Title|Artist|Album}}
+- For artists: {{artist|Name|}}
+- For albums: {{album|Title|Artist|}}
 
-If you don't have an image URL, use empty string: {{track|Title|Artist|}}
-Example with images:
-{{track|Certainty|Big Thief|https://example.com/art.jpg}}
-{{album|Two Hands|Big Thief|https://example.com/album.jpg}}
+Examples:
+{{track|Certainty|Big Thief|Two Hands}}
+{{album|Two Hands|Big Thief|}}
+{{artist|Big Thief|}}
 
-Example without images:
-{{track|Song Title|Artist Name|}}
-{{album|Album Name|Artist Name|}}
+Use ### headers to group recommendations:
+### Artist Name
+{{album|Album 1|Artist Name|}}
+{{album|Album 2|Artist Name|}}
 
 For inline artist links in text: [Artist Name](parachord://artist/Artist%20Name)`;
 
@@ -11939,31 +11943,44 @@ const Parachord = () => {
 
     // Helper to render a card with thumbnail
     const renderCard = (type, parts, key) => {
-      let title, artist, imageUrl, clickAction;
+      let title, artist, album, imageUrl, clickAction;
 
       if (type === 'track') {
-        // {{track|Title|Artist|imageUrl}}
-        [title, artist, imageUrl] = parts;
+        // {{track|Title|Artist|Album}} or {{track|Title|Artist|}}
+        [title, artist, album] = parts;
         clickAction = () => {
-          // Search for this track - close chat and trigger search
+          // Search for this track
           const query = `${artist} ${title}`;
           closeAiChat();
           handleSearchInput(query);
         };
+        // Try to get cached album art
+        if (album && album.trim()) {
+          imageUrl = getCachedAlbumArt(artist, album);
+        }
       } else if (type === 'artist') {
-        // {{artist|Name|imageUrl}}
-        [title, imageUrl] = parts;
+        // {{artist|Name|}}
+        [title] = parts;
         artist = null;
-        clickAction = () => fetchArtistData(title);
-      } else if (type === 'album') {
-        // {{album|Title|Artist|imageUrl}}
-        [title, artist, imageUrl] = parts;
         clickAction = () => {
-          // Search for this album - close chat and trigger search
-          const query = `${artist} ${title}`;
           closeAiChat();
-          handleSearchInput(query);
+          fetchArtistData(title);
         };
+        // Try to get cached artist image
+        const normalizedName = title?.trim().toLowerCase();
+        if (normalizedName && artistImageCache.current[normalizedName]) {
+          imageUrl = artistImageCache.current[normalizedName].url;
+        }
+      } else if (type === 'album') {
+        // {{album|Title|Artist|}}
+        [title, artist] = parts;
+        clickAction = () => {
+          // Navigate to artist page which will show their albums
+          closeAiChat();
+          fetchArtistData(artist);
+        };
+        // Try to get cached album art
+        imageUrl = getCachedAlbumArt(artist, title);
       }
 
       const hasImage = imageUrl && imageUrl.trim() && imageUrl !== 'null' && imageUrl !== 'undefined';
@@ -12033,9 +12050,27 @@ const Parachord = () => {
     };
 
     lines.forEach((line, lineIdx) => {
+      // Check for headers: ###, ##, #
+      const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+      if (headerMatch) {
+        const level = headerMatch[1].length;
+        const sizes = { 1: '18px', 2: '16px', 3: '14px' };
+        elements.push(
+          React.createElement('div', {
+            key: `header-${keyCounter++}`,
+            style: {
+              fontSize: sizes[level],
+              fontWeight: '600',
+              color: '#f3f4f6',
+              marginTop: lineIdx > 0 ? '12px' : '0',
+              marginBottom: '4px'
+            }
+          }, headerMatch[2])
+        );
+      }
       // Check for card syntax: {{type|field1|field2|...}}
-      const cardMatch = line.match(/^\{\{(track|artist|album)\|(.+)\}\}$/);
-      if (cardMatch) {
+      else if (/^\{\{(track|artist|album)\|(.+)\}\}$/.test(line)) {
+        const cardMatch = line.match(/^\{\{(track|artist|album)\|(.+)\}\}$/);
         const cardType = cardMatch[1];
         const cardParts = cardMatch[2].split('|');
         elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
