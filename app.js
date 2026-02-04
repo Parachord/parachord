@@ -3755,15 +3755,19 @@ ALWAYS use the card syntax for tracks/albums/artists - they render as clickable 
 
 CARD SYNTAX (required for all music recommendations):
 - Track: {{track|Song Title|Artist Name|Album Name}}
-- Album: {{album|Album Title|Artist Name|}}
+- Album: {{album|ALBUM TITLE|ARTIST NAME|}} ← Album title FIRST, then artist name
 - Artist: {{artist|Artist Name|}}
 
 EXAMPLES:
 **Recommendations for you:**
 {{track|Certainty|Big Thief|Two Hands}}
 {{track|Not|Big Thief|Two Hands}}
-{{album|Two Hands|Big Thief|}}
+{{album|Two Hands|Big Thief|}} ← "Two Hands" is the album, "Big Thief" is the artist
+{{album|In Rainbows|Radiohead|}} ← "In Rainbows" is the album, "Radiohead" is the artist
 {{artist|Phoebe Bridgers|}}
+
+COMMON MISTAKE - DO NOT DO THIS:
+{{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
 
 The Album field is REQUIRED for tracks - it enables album artwork to display.
 For inline artist links: [Artist Name](parachord://artist/Artist%20Name)`;
@@ -20827,8 +20831,16 @@ ${tracks}
         r.collectionName?.toLowerCase() === normalizedAlbum &&
         r.artistName?.toLowerCase() === normalizedArtist
       ) || data.results.find(r =>
+        // Also check if artist/album might be swapped (common AI mistake)
+        r.collectionName?.toLowerCase() === normalizedArtist &&
+        r.artistName?.toLowerCase() === normalizedAlbum
+      ) || data.results.find(r =>
         r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
         normalizedAlbum.includes(r.collectionName?.toLowerCase())
+      ) || data.results.find(r =>
+        // Check partial match with swapped values too
+        r.collectionName?.toLowerCase().includes(normalizedArtist) ||
+        normalizedArtist.includes(r.collectionName?.toLowerCase())
       ) || data.results[0];
 
       if (bestMatch?.artworkUrl100) {
