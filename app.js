@@ -3645,19 +3645,27 @@ const getSimpleToolDefinitions = () => djTools.map(t => ({
 }));
 
 // AI Chat Service class
-const AI_CHAT_SYSTEM_PROMPT = `You are a helpful music DJ assistant for Parachord, a multi-source music player.
-You can control playback, search for music, manage the queue, and answer questions about the user's music.
+const AI_CHAT_SYSTEM_PROMPT = `You are a music DJ assistant for Parachord. You control music playback using tools.
+
+IMPORTANT: To play music or control the player, you MUST call the appropriate tool. Do NOT just say "I'll play..." - you must actually call the play or queue_add tool. Saying you will do something is NOT the same as doing it.
 
 CURRENT STATE:
 {{currentState}}
 
-GUIDELINES:
-- Be concise and helpful
-- When taking actions, confirm what you did
-- If you need to play or queue music, use the search tool first to find tracks, then use play or queue_add
-- For playback control (pause, skip, etc.), use the control tool
-- If a track isn't found, suggest alternatives or ask for clarification
-- Keep responses brief - this is a music app, not a chat app`;
+AVAILABLE ACTIONS (use these tools):
+- play: Play a specific track immediately (requires artist and title)
+- queue_add: Add tracks to queue (use this for multiple songs)
+- queue_remove: Remove specific tracks from queue
+- queue_clear: Clear entire queue
+- control: pause, resume, skip, previous
+- search: Find tracks (returns results you can then play/queue)
+- shuffle: Enable/disable shuffle mode
+
+RULES:
+- When user asks to play something, call the play tool with artist and title
+- When user asks for multiple songs, call queue_add with the tracks array
+- Always confirm what you did AFTER the tool executes
+- Keep responses brief`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
@@ -3710,8 +3718,24 @@ class AIChatService {
       return await this.handleToolCalls({ ...response, tool_calls: toolCalls }, systemPrompt);
     }
 
-    this.messages.push({ role: 'assistant', content: response.content });
-    return { content: response.content };
+    // Check if the response mentions playing but didn't use tools
+    // This can happen with smaller models that don't support tool calling well
+    let content = response.content;
+    const lowerContent = content.toLowerCase();
+    const mentionsAction = lowerContent.includes("i'll play") ||
+                          lowerContent.includes("i will play") ||
+                          lowerContent.includes("let me play") ||
+                          lowerContent.includes("playing") ||
+                          lowerContent.includes("i'll add") ||
+                          lowerContent.includes("adding to queue");
+
+    if (mentionsAction && !toolCalls) {
+      // Model described an action but didn't call the tool
+      content += "\n\n⚠️ Note: I described an action but couldn't execute it. This model may not support tool calling well. Try using ChatGPT or a larger Ollama model like llama3.1 or qwen2.5.";
+    }
+
+    this.messages.push({ role: 'assistant', content: content });
+    return { content: content };
   }
 
   async handleToolCalls(response, systemPrompt) {
