@@ -39815,8 +39815,8 @@ useEffect(() => {
                 )
           ),
 
-          // AI Service configuration (ChatGPT and Gemini)
-          (selectedResolver.id === 'chatgpt' || selectedResolver.id === 'gemini') && React.createElement('div', {
+          // AI Service configuration - generic based on plugin settings
+          (selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') && React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
@@ -39837,11 +39837,7 @@ useEffect(() => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }
-            },
-              selectedResolver.id === 'chatgpt'
-                ? 'Enter your OpenAI API key to enable AI playlist generation.'
-                : 'Enter your Google API key to enable AI playlist generation.'
-            ),
+            }, selectedResolver.settings?.configurable?.apiKey?.description || `Enter your API key to enable ${selectedResolver.name}.`),
             // API Key input
             React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
@@ -39852,7 +39848,7 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'API Key'),
+              }, selectedResolver.settings?.configurable?.apiKey?.label || 'API Key'),
               React.createElement('input', {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
@@ -39863,7 +39859,7 @@ useEffect(() => {
                     enabled: !!e.target.value
                   });
                 },
-                placeholder: selectedResolver.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                placeholder: selectedResolver.settings?.configurable?.apiKey?.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
                 style: {
                   width: '100%',
                   padding: '10px 12px',
@@ -39875,14 +39871,16 @@ useEffect(() => {
                   outline: 'none'
                 }
               }),
-              React.createElement('a', {
+              selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
                   e.preventDefault();
-                  const url = selectedResolver.id === 'chatgpt'
-                    ? 'https://platform.openai.com/api-keys'
-                    : 'https://aistudio.google.com/app/apikey';
-                  window.electron?.shell?.openExternal?.(url);
+                  const urls = {
+                    chatgpt: 'https://platform.openai.com/api-keys',
+                    gemini: 'https://aistudio.google.com/app/apikey',
+                    claude: 'https://console.anthropic.com/settings/keys'
+                  };
+                  window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
                   display: 'inline-block',
@@ -39894,8 +39892,8 @@ useEffect(() => {
                 }
               }, 'Get your API key →')
             ),
-            // Model selector
-            React.createElement('div', { style: { marginBottom: '16px' } },
+            // Model selector - use options from plugin settings if available
+            selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
                 style: {
                   display: 'block',
@@ -39904,9 +39902,9 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'Model'),
+              }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
               React.createElement('select', {
-                value: metaServiceConfigs[selectedResolver.id]?.model || (selectedResolver.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                value: metaServiceConfigs[selectedResolver.id]?.model || selectedResolver.settings?.configurable?.model?.default || '',
                 onChange: (e) => {
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
@@ -39925,13 +39923,18 @@ useEffect(() => {
                   cursor: 'pointer'
                 }
               },
-                selectedResolver.id === 'chatgpt' ? [
-                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
-                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
-                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
-                ] : [
-                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
-                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                // Use options from plugin settings, or fall back to hardcoded for backward compat
+                selectedResolver.settings?.configurable?.model?.options
+                  ? selectedResolver.settings.configurable.model.options.map(opt =>
+                      React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                    )
+                  : selectedResolver.id === 'chatgpt' ? [
+                      React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                      React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                      React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                    ] : selectedResolver.id === 'gemini' ? [
+                      React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                      React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
                 ]
               )
             ),
@@ -39941,6 +39944,145 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'API key configured')
+            )
+          ),
+
+          // Ollama configuration (no API key, but has endpoint and model)
+          selectedResolver.id === 'ollama' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#1f2937'
+              }
+            }, 'Ollama Configuration'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: '4px',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            }, 'Run AI locally with Ollama. Make sure Ollama is running on your machine.'),
+            // Endpoint URL input
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Ollama URL'),
+              React.createElement('input', {
+                type: 'text',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    endpoint: e.target.value,
+                    enabled: true
+                  });
+                },
+                placeholder: 'http://localhost:11434',
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                }
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  window.electron?.shell?.openExternal?.('https://ollama.ai');
+                },
+                style: {
+                  display: 'inline-block',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: '#7c3aed',
+                  fontWeight: '500',
+                  textDecoration: 'none'
+                }
+              }, 'Download Ollama →')
+            ),
+            // Model selector for Ollama
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Model'),
+              React.createElement('select', {
+                value: metaServiceConfigs[selectedResolver.id]?.model || 'llama3.1',
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    model: e.target.value
+                  });
+                },
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }
+              },
+                React.createElement('option', { value: 'llama3.1' }, 'Llama 3.1 (8B)'),
+                React.createElement('option', { value: 'llama3.1:70b' }, 'Llama 3.1 (70B)'),
+                React.createElement('option', { value: 'llama3.2' }, 'Llama 3.2 (3B)'),
+                React.createElement('option', { value: 'mistral' }, 'Mistral (7B)'),
+                React.createElement('option', { value: 'mixtral' }, 'Mixtral (8x7B)'),
+                React.createElement('option', { value: 'qwen2.5' }, 'Qwen 2.5 (7B)'),
+                React.createElement('option', { value: 'gemma2' }, 'Gemma 2 (9B)')
+              )
+            ),
+            // Enable toggle
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, 'Enable Ollama'),
+              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: metaServiceConfigs[selectedResolver.id]?.enabled !== false,
+                  onChange: (e) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: e.target.checked
+                    });
+                  },
+                  className: 'sr-only peer'
+                }),
+                React.createElement('div', {
+                  className: 'w-full h-full rounded-full transition-colors',
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? '#7c3aed' : 'rgba(0, 0, 0, 0.15)' }
+                }),
+                React.createElement('div', {
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? 'translateX(20px)' : 'translateX(0)' }
+                })
+              )
             )
           ),
 
