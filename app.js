@@ -11789,68 +11789,139 @@ const Parachord = () => {
     return service;
   };
 
-  // Render chat message content with clickable links
-  // Supports markdown links: [text](url) and parachord:// URLs
+  // Render chat message content with markdown formatting
+  // Supports: **bold**, *italic*, `code`, [links](url), numbered lists
   const renderChatContent = (content, isUserMessage) => {
     if (!content) return null;
 
-    // Parse markdown links: [text](url)
-    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
+    // Process content line by line for better list handling
+    const lines = content.split('\n');
+    const elements = [];
+    let keyCounter = 0;
 
-    while ((match = linkRegex.exec(content)) !== null) {
-      // Add text before the link
-      if (match.index > lastIndex) {
-        parts.push(content.slice(lastIndex, match.index));
+    const parseInlineMarkdown = (text, baseKey) => {
+      const result = [];
+      // Combined regex for all inline patterns
+      // Order matters: links first, then bold, then italic, then code
+      const patterns = [
+        { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
+        { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
+        { regex: /\*([^*]+)\*/g, type: 'italic' },
+        { regex: /`([^`]+)`/g, type: 'code' }
+      ];
+
+      // Simple approach: process patterns in order
+      let processed = text;
+      const replacements = [];
+
+      // Find all matches for all patterns
+      patterns.forEach(({ regex, type }) => {
+        let match;
+        const r = new RegExp(regex.source, 'g');
+        while ((match = r.exec(text)) !== null) {
+          replacements.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            type,
+            match: match
+          });
+        }
+      });
+
+      // Sort by position and filter overlaps
+      replacements.sort((a, b) => a.start - b.start);
+      const filtered = [];
+      let lastEnd = 0;
+      for (const r of replacements) {
+        if (r.start >= lastEnd) {
+          filtered.push(r);
+          lastEnd = r.end;
+        }
       }
 
-      const linkText = match[1];
-      const url = match[2];
+      // Build result
+      let pos = 0;
+      filtered.forEach((r, idx) => {
+        // Add text before this match
+        if (r.start > pos) {
+          result.push(text.slice(pos, r.start));
+        }
 
-      // Create clickable link
-      parts.push(
-        React.createElement('a', {
-          key: `link-${match.index}`,
-          href: url,
-          onClick: (e) => {
-            e.preventDefault();
-            if (url.startsWith('parachord://')) {
-              // Handle internal parachord:// links
-              const path = url.replace('parachord://', '');
-              const [type, ...rest] = path.split('/');
-              const value = decodeURIComponent(rest.join('/'));
-
-              if (type === 'artist' && value) {
-                // Navigate to artist page
-                handleArtistClick(value);
-              } else if (type === 'album' && value) {
-                // Could add album navigation here
-                console.log('Album link:', value);
-              }
-            } else {
-              // External link - open in browser
-              window.electron?.shell?.openExternal(url);
+        const key = `${baseKey}-${idx}`;
+        if (r.type === 'link') {
+          const linkText = r.match[1];
+          const url = r.match[2];
+          result.push(
+            React.createElement('a', {
+              key,
+              href: url,
+              onClick: (e) => {
+                e.preventDefault();
+                if (url.startsWith('parachord://')) {
+                  const path = url.replace('parachord://', '');
+                  const [type, ...rest] = path.split('/');
+                  const value = decodeURIComponent(rest.join('/'));
+                  if (type === 'artist' && value) handleArtistClick(value);
+                } else {
+                  window.electron?.shell?.openExternal(url);
+                }
+              },
+              style: { color: isUserMessage ? '#c4b5fd' : '#a78bfa', textDecoration: 'underline', cursor: 'pointer' }
+            }, linkText)
+          );
+        } else if (r.type === 'bold') {
+          result.push(React.createElement('strong', { key }, r.match[1]));
+        } else if (r.type === 'italic') {
+          result.push(React.createElement('em', { key }, r.match[1]));
+        } else if (r.type === 'code') {
+          result.push(React.createElement('code', {
+            key,
+            style: {
+              backgroundColor: isUserMessage ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
+              padding: '2px 5px',
+              borderRadius: '3px',
+              fontFamily: 'monospace',
+              fontSize: '0.9em'
             }
+          }, r.match[1]));
+        }
+
+        pos = r.end;
+      });
+
+      // Add remaining text
+      if (pos < text.length) {
+        result.push(text.slice(pos));
+      }
+
+      return result.length > 0 ? result : [text];
+    };
+
+    lines.forEach((line, lineIdx) => {
+      // Check for numbered list items: "1. ", "2. ", etc.
+      const listMatch = line.match(/^(\d+)\.\s+(.+)$/);
+      if (listMatch) {
+        elements.push(
+          React.createElement('div', {
+            key: `line-${keyCounter++}`,
+            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '4px' : 0 }
           },
-          style: {
-            color: isUserMessage ? '#c4b5fd' : '#a78bfa',
-            textDecoration: 'underline',
-            cursor: 'pointer'
-          }
-        }, linkText)
-      );
+            React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px' } }, `${listMatch[1]}.`),
+            React.createElement('span', { style: { flex: 1 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
+          )
+        );
+      } else if (line.trim() === '') {
+        // Empty line - add spacing
+        elements.push(React.createElement('div', { key: `line-${keyCounter++}`, style: { height: '8px' } }));
+      } else {
+        // Regular line
+        elements.push(
+          React.createElement('div', { key: `line-${keyCounter++}` }, parseInlineMarkdown(line, `text-${lineIdx}`))
+        );
+      }
+    });
 
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Add remaining text
-    if (lastIndex < content.length) {
-      parts.push(content.slice(lastIndex));
-    }
-
-    return parts.length > 0 ? parts : content;
+    return elements;
   };
 
   // Open AI Chat
