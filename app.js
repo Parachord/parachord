@@ -3459,8 +3459,20 @@ const djTools = [
     }
   },
   {
+    name: 'queue_remove',
+    description: 'Remove specific tracks from the queue by artist name, track title, or both. Use this instead of queue_clear when you only want to remove some tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'Remove all tracks by this artist (case-insensitive)' },
+        title: { type: 'string', description: 'Remove tracks with this title (case-insensitive)' }
+      },
+      required: []
+    }
+  },
+  {
     name: 'queue_clear',
-    description: 'Clear all tracks from the playback queue',
+    description: 'Clear ALL tracks from the playback queue. Only use this when the user explicitly wants to clear everything.',
     parameters: { type: 'object', properties: {}, required: [] }
   },
   {
@@ -3546,6 +3558,38 @@ const executeDjTool = async (name, args, context) => {
           await context.addToQueue(resolved, args.position || 'last');
         }
         return { success: resolved.length > 0, added: resolved.length };
+      }
+      case 'queue_remove': {
+        const queue = context.getQueue();
+        const toRemove = [];
+        const filterArtist = args.artist?.toLowerCase();
+        const filterTitle = args.title?.toLowerCase();
+
+        if (!filterArtist && !filterTitle) {
+          return { success: false, error: 'Must specify artist or title to remove' };
+        }
+
+        for (const track of queue) {
+          const matchesArtist = filterArtist && track.artist?.toLowerCase().includes(filterArtist);
+          const matchesTitle = filterTitle && track.title?.toLowerCase().includes(filterTitle);
+
+          // If both filters specified, both must match. Otherwise, match either.
+          if (filterArtist && filterTitle) {
+            if (matchesArtist && matchesTitle) toRemove.push(track);
+          } else if (matchesArtist || matchesTitle) {
+            toRemove.push(track);
+          }
+        }
+
+        for (const track of toRemove) {
+          context.removeFromQueue(track.id);
+        }
+
+        return {
+          success: true,
+          removed: toRemove.length,
+          tracks: toRemove.map(t => ({ artist: t.artist, title: t.title }))
+        };
       }
       case 'queue_clear': {
         context.clearQueue();
@@ -11595,6 +11639,7 @@ const Parachord = () => {
         addToQueue(tracks, { type: 'aiPlaylist', name: 'AI DJ' });
       },
       clearQueue: () => clearQueue(),
+      removeFromQueue: (trackId) => removeFromQueue(trackId),
       handlePause: () => handlePlayPauseRef.current(),
       handlePlay: () => handlePlayRef.current(),
       handleNext: () => handleNextRef.current(),
