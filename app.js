@@ -12211,24 +12211,70 @@ const Parachord = () => {
       closeAiChat();
 
       if (type === 'track') {
-        // Search and play the track - use earlyReturn for faster response
+        // Immediately show track metadata and clear queue
+        const placeholderId = `chat-track-${Date.now()}`;
+        const placeholder = {
+          id: placeholderId,
+          title: title,
+          artist: artist,
+          album: album || null,
+          sources: {},
+          status: 'loading',
+          _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+        };
+
+        // Clear queue and set placeholder as current track immediately
+        clearQueue();
+        setCurrentTrack(placeholder);
+        setTrackLoading(true);
+
         try {
-          const query = `${artist} ${title}`;
-          const results = await searchResolvers(query, {
-            earlyReturn: true,
-            targetArtist: artist,
-            targetTitle: title
+          // Resolve across ALL enabled resolvers (not earlyReturn) to get all sources
+          const currentResolvers = loadedResolversRef.current;
+          const currentActiveResolvers = activeResolversRef.current;
+          const currentResolverOrder = resolverOrderRef.current;
+          const enabledResolvers = currentResolverOrder
+            .filter(id => currentActiveResolvers.includes(id))
+            .map(id => currentResolvers.find(r => r.id === id))
+            .filter(r => r && r.capabilities?.resolve);
+
+          const resolvedTrack = { ...placeholder, sources: {}, status: 'resolved' };
+
+          // Resolve in parallel across all enabled resolvers
+          const resolvePromises = enabledResolvers.map(async (resolver) => {
+            try {
+              const config = getResolverConfigRef.current
+                ? await getResolverConfigRef.current(resolver.id)
+                : {};
+              const result = await resolver.resolve(artist, title, album, config);
+              if (result) {
+                resolvedTrack.sources[resolver.id] = {
+                  ...result,
+                  confidence: result.confidence || 0.9,
+                  resolvedAt: Date.now()
+                };
+              }
+            } catch (error) {
+              console.error(`ChatCard resolve error for ${resolver.id}:`, error);
+            }
           });
-          if (results && results.length > 0) {
-            // Find best match (prefer exact artist/title match)
-            const bestMatch = results.find(r =>
-              r.artist?.toLowerCase() === artist?.toLowerCase() &&
-              r.title?.toLowerCase() === title?.toLowerCase()
-            ) || results[0];
-            clearQueue();
-            await handlePlayRef.current(bestMatch);
+
+          await Promise.all(resolvePromises);
+
+          // Check if we found any sources
+          if (Object.keys(resolvedTrack.sources).length > 0) {
+            // Update current track with resolved data
+            setCurrentTrack(prev => {
+              if (prev?.id === placeholderId) {
+                return resolvedTrack;
+              }
+              return prev;
+            });
+            // Play the resolved track
+            await handlePlayRef.current(resolvedTrack);
           } else {
-            // Fallback to search if no results from resolvers
+            // No sources found - fallback to search
+            console.log('No sources found via resolution, falling back to search');
             handleSearchInput(`${artist} ${title}`);
           }
         } catch (err) {
