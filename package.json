@@ -72,7 +72,9 @@
       "!npm-debug.log",
       "!dist",
       "!**/*.md",
-      "!collection.json"
+      "!collection.json",
+      "!native/**/.build",
+      "!native/**/.swiftpm"
     ],
     "asar": false,
     "afterSign": "scripts/notarize.js",
