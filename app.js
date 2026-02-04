@@ -3679,7 +3679,12 @@ RULES:
 - When user asks to play something, call the play tool with artist and title
 - When user asks for multiple songs, call queue_add with the tracks array
 - Always confirm what you did AFTER the tool executes
-- Keep responses brief`;
+- Keep responses brief
+
+LINKS: When mentioning artists, you can link to their Parachord page using markdown:
+[Artist Name](parachord://artist/Artist%20Name)
+Example: Check out [Big Thief](parachord://artist/Big%20Thief) - they have great albums!
+URL-encode spaces as %20 in the artist name.`;
 
 class AIChatService {
   constructor(provider, toolContext, getContext) {
@@ -11782,6 +11787,70 @@ const Parachord = () => {
 
     aiChatServiceRef.current = service;
     return service;
+  };
+
+  // Render chat message content with clickable links
+  // Supports markdown links: [text](url) and parachord:// URLs
+  const renderChatContent = (content, isUserMessage) => {
+    if (!content) return null;
+
+    // Parse markdown links: [text](url)
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = linkRegex.exec(content)) !== null) {
+      // Add text before the link
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index));
+      }
+
+      const linkText = match[1];
+      const url = match[2];
+
+      // Create clickable link
+      parts.push(
+        React.createElement('a', {
+          key: `link-${match.index}`,
+          href: url,
+          onClick: (e) => {
+            e.preventDefault();
+            if (url.startsWith('parachord://')) {
+              // Handle internal parachord:// links
+              const path = url.replace('parachord://', '');
+              const [type, ...rest] = path.split('/');
+              const value = decodeURIComponent(rest.join('/'));
+
+              if (type === 'artist' && value) {
+                // Navigate to artist page
+                handleArtistClick(value);
+              } else if (type === 'album' && value) {
+                // Could add album navigation here
+                console.log('Album link:', value);
+              }
+            } else {
+              // External link - open in browser
+              window.electron?.shell?.openExternal(url);
+            }
+          },
+          style: {
+            color: isUserMessage ? '#c4b5fd' : '#a78bfa',
+            textDecoration: 'underline',
+            cursor: 'pointer'
+          }
+        }, linkText)
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : content;
   };
 
   // Open AI Chat
@@ -38118,7 +38187,7 @@ useEffect(() => {
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word'
                       }
-                    }, msg.content)
+                    }, renderChatContent(msg.content, msg.role === 'user'))
                   )
                 ),
 
