@@ -100,7 +100,10 @@ Please include:
 
 ## Join the Discussion
 
-Have ideas, questions, or want to chat?
+**Slack** (preferred for quick chat):
+https://parachord.slack.com
+
+**GitHub Discussions** (for longer-form ideas/questions):
 https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
