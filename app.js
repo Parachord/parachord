@@ -1359,12 +1359,9 @@ const VirtualizedQueueList = React.memo(({
       },
       onClick: () => {
         if (isLoading || isError) return;
-        setDroppingFromIndex(index);
-        setTimeout(() => {
-          setCurrentQueue(prev => prev.slice(index + 1));
-          handlePlay(track);
-          setDroppingFromIndex(null);
-        }, 300);
+        // Play the clicked track without removing it or preceding tracks from queue
+        // Just start playing this track - the queue remains intact
+        handlePlay(track);
       },
       onMouseEnter: () => {
         if (onTrackHover) onTrackHover(track.id);
