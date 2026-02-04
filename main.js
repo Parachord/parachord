@@ -2486,39 +2486,60 @@ ipcMain.handle('resolvers-load-builtin', async () => {
   const pluginsDir = getPluginsCacheDir();
   console.log('Plugins cache directory:', pluginsDir);
 
-  try {
-    // Ensure cache directory exists
-    await fs.mkdir(pluginsDir, { recursive: true });
+  // Also check app's local plugins directory (for development)
+  const appPluginsDir = path.join(__dirname, 'plugins');
 
-    // Load cached plugins first (for offline support)
-    const files = await fs.readdir(pluginsDir);
-    const axeFiles = files.filter(f => f.endsWith('.axe'));
+  // Helper to load plugins from a directory
+  const loadPluginsFromDir = async (dir, source) => {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      const files = await fs.readdir(dir);
+      const axeFiles = files.filter(f => f.endsWith('.axe'));
 
-    for (const filename of axeFiles) {
-      const filepath = path.join(pluginsDir, filename);
-      try {
-        const content = await fs.readFile(filepath, 'utf8');
-        const axe = JSON.parse(content);
+      for (const filename of axeFiles) {
+        const filepath = path.join(dir, filename);
+        try {
+          const content = await fs.readFile(filepath, 'utf8');
+          const axe = JSON.parse(content);
 
-        // Check for duplicates
-        if (plugins.find(p => p.manifest.id === axe.manifest.id)) {
-          console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
-          continue;
+          // Check for duplicates - app plugins take priority
+          const existingIdx = plugins.findIndex(p => p.manifest.id === axe.manifest.id);
+          if (existingIdx !== -1) {
+            if (source === 'app') {
+              // App plugins override cached plugins
+              plugins[existingIdx] = axe;
+              axe._filename = filename;
+              axe._source = source;
+              console.log(`  🔄 Override ${axe.manifest.name} from ${source}`);
+            } else {
+              console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
+            }
+            continue;
+          }
+
+          axe._filename = filename;
+          axe._source = source;
+          plugins.push(axe);
+          console.log(`  ✅ Loaded (${source}) ${axe.manifest.name} v${axe.manifest.version}`);
+        } catch (error) {
+          console.error(`  ❌ Failed to load ${filename}:`, error.message);
         }
-
-        axe._filename = filename;
-        axe._cached = true;
-        plugins.push(axe);
-        console.log(`  ✅ Loaded (cached) ${axe.manifest.name} v${axe.manifest.version}`);
-      } catch (error) {
-        console.error(`  ❌ Failed to load ${filename}:`, error.message);
+      }
+    } catch (error) {
+      // Directory may not exist, that's ok
+      if (error.code !== 'ENOENT') {
+        console.error(`  ❌ Failed to read ${source} plugins:`, error.message);
       }
     }
-  } catch (error) {
-    console.error('  ❌ Failed to read plugins cache:', error.message);
-  }
+  };
 
-  console.log(`✅ Loaded ${plugins.length} plugin(s) from cache`);
+  // Load from cache first
+  await loadPluginsFromDir(pluginsDir, 'cache');
+
+  // Then load from app's plugins directory (overrides cache)
+  await loadPluginsFromDir(appPluginsDir, 'app');
+
+  console.log(`✅ Loaded ${plugins.length} plugin(s) total`);
   return plugins;
 });
 
