@@ -1361,9 +1361,8 @@ const VirtualizedQueueList = React.memo(({
         if (isLoading || isError) return;
         setDroppingFromIndex(index);
         setTimeout(() => {
-          // Keep the clicked track and everything after it (remove tracks before it)
-          // Note: slice(index) keeps the clicked track, slice(index+1) would remove it too
-          setCurrentQueue(prev => prev.slice(index));
+          // Clicked track plays, remove it and tracks before it, keep tracks after
+          setCurrentQueue(prev => prev.slice(index + 1));
           handlePlay(track);
           setDroppingFromIndex(null);
         }, 300);
@@ -1433,8 +1432,8 @@ const VirtualizedQueueList = React.memo(({
           if (spinoffMode) exitSpinoff();
           setDroppingFromIndex(index);
           setTimeout(() => {
-            // Keep the clicked track and everything after it
-            setCurrentQueue(prev => prev.slice(index));
+            // Clicked track plays, remove it and tracks before it, keep tracks after
+            setCurrentQueue(prev => prev.slice(index + 1));
             handlePlay(track);
             setDroppingFromIndex(null);
           }, 300);
