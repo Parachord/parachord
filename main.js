@@ -4305,8 +4305,108 @@ ipcMain.handle('musickit:set-volume', async (event, volume) => {
   }
 });
 
+// Ollama process management
+let ollamaProcess = null;
+
+ipcMain.handle('ollama:start', async () => {
+  // Check if already running
+  if (ollamaProcess && !ollamaProcess.killed) {
+    return { success: true, message: 'Ollama is already running' };
+  }
+
+  try {
+    // First check if ollama is available
+    const { spawn, execSync } = require('child_process');
+
+    // Try to find ollama executable
+    let ollamaPath = 'ollama';
+    try {
+      if (process.platform === 'win32') {
+        execSync('where ollama', { stdio: 'ignore' });
+      } else {
+        execSync('which ollama', { stdio: 'ignore' });
+      }
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Ollama is not installed. Please install it from https://ollama.ai'
+      };
+    }
+
+    // Try to connect first - maybe it's already running
+    try {
+      const response = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(2000)
+      });
+      if (response.ok) {
+        return { success: true, message: 'Ollama is already running' };
+      }
+    } catch (e) {
+      // Not running, proceed to start it
+    }
+
+    // Start ollama serve in background
+    ollamaProcess = spawn(ollamaPath, ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      shell: process.platform === 'win32'
+    });
+
+    ollamaProcess.unref();
+
+    // Wait a bit for it to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Verify it started
+    try {
+      const response = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (response.ok) {
+        return { success: true, message: 'Ollama started successfully' };
+      }
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Ollama started but is not responding. Please try again.'
+      };
+    }
+
+    return { success: true, message: 'Ollama started' };
+  } catch (error) {
+    return { success: false, error: error.message || 'Failed to start Ollama' };
+  }
+});
+
+ipcMain.handle('ollama:check', async () => {
+  try {
+    const response = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        running: true,
+        models: (data.models || []).map(m => m.name)
+      };
+    }
+    return { running: false };
+  } catch (e) {
+    return { running: false };
+  }
+});
+
 // Stop MusicKit helper on app quit
 app.on('will-quit', () => {
   const bridge = getMusicKitBridge();
   bridge.stop();
+
+  // Clean up Ollama process if we started it
+  if (ollamaProcess && !ollamaProcess.killed) {
+    try {
+      ollamaProcess.kill();
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+  }
 });

@@ -3620,9 +3620,14 @@ class AIChatService {
       response = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
     } catch (error) {
       console.error('AI provider error:', error);
+      this._lastErrorType = null; // Reset before formatting
       const errorMessage = this.formatProviderError(error);
       this.messages.push({ role: 'assistant', content: errorMessage });
-      return { content: errorMessage, error: true };
+      const result = { content: errorMessage, error: true };
+      if (this._lastErrorType === 'ollama_connection') {
+        result.ollamaUnavailable = true;
+      }
+      return result;
     }
 
     // Handle tool calls - check both toolCalls and tool_calls
@@ -3757,7 +3762,9 @@ class AIChatService {
     if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused') || lowerMessage.includes('network')) {
       const endpoint = this.provider.config?.endpoint || '';
       if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
-        return "Can't connect to Ollama. Make sure it's running with `ollama serve`.";
+        // Mark this as an Ollama connection error for auto-start handling
+        this._lastErrorType = 'ollama_connection';
+        return "Can't connect to Ollama. Attempting to start it...";
       }
       return "Can't connect to the AI service. Check your internet connection.";
     }
@@ -11709,7 +11716,35 @@ const Parachord = () => {
 
     try {
       const service = getOrCreateChatService(provider);
-      const response = await service.sendMessage(message.trim());
+      let response = await service.sendMessage(message.trim());
+
+      // If Ollama is unavailable, try to auto-start it
+      if (response.ollamaUnavailable && window.electron?.ollama) {
+        // Update UI to show we're trying to start Ollama
+        setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama...' }]);
+
+        try {
+          const startResult = await window.electron.ollama.start();
+          if (startResult.success) {
+            // Retry the message after Ollama starts
+            // Remove the user message from history since we'll re-send it
+            service.messages.pop(); // Remove the "Starting Ollama..." assistant message
+            service.messages.pop(); // Remove the user message
+            response = await service.sendMessage(message.trim());
+          } else {
+            // Couldn't start Ollama
+            response = {
+              content: `Couldn't start Ollama: ${startResult.error || 'Unknown error'}. Make sure Ollama is installed from https://ollama.ai`,
+              error: true
+            };
+          }
+        } catch (startError) {
+          response = {
+            content: `Error starting Ollama: ${startError.message}. Make sure Ollama is installed.`,
+            error: true
+          };
+        }
+      }
 
       // Add assistant response
       const assistantMessage = { role: 'assistant', content: response.content };
