@@ -781,20 +781,73 @@ app.on('second-instance', (event, argv) => {
 
 #### Navigation Commands (Open Pages/Views)
 
-| Command | URL Format | Example |
-|---------|------------|---------|
-| Search | `parachord://search?q={}` | `parachord://search?q=big%20thief` |
-| Artist page | `parachord://artist/{name}` | `parachord://artist/Big%20Thief` |
-| Album page | `parachord://album?artist={}&title={}` | `parachord://album?artist=Big%20Thief&title=Dragon%20New%20Warm%20Mountain` |
-| Artist bio | `parachord://bio/{artist}` | `parachord://bio/Big%20Thief` |
-| Related artists | `parachord://related/{artist}` | `parachord://related/Big%20Thief` |
-| Playlist | `parachord://playlist/{id}` | `parachord://playlist/abc123` |
-| Discover | `parachord://discover` | `parachord://discover` |
-| Recommendations | `parachord://recommendations` | `parachord://recommendations` |
-| History | `parachord://history` | `parachord://history` |
-| Library | `parachord://library` | `parachord://library` |
-| Settings | `parachord://settings` | `parachord://settings` |
-| Now Playing | `parachord://now-playing` | `parachord://now-playing` |
+**Artist Pages** — `parachord://artist/{name}/{tab?}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://artist/Big%20Thief` | Artist overview (default tab) |
+| `parachord://artist/Big%20Thief/bio` | Artist biography |
+| `parachord://artist/Big%20Thief/discography` | Discography |
+| `parachord://artist/Big%20Thief/related` | Related/similar artists |
+| `parachord://artist/Big%20Thief/appears-on` | Appears on compilations |
+| `parachord://artist/Big%20Thief/credits` | Production credits |
+
+**Album Pages** — `parachord://album/{artist}/{title}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://album/Big%20Thief/Dragon%20New%20Warm%20Mountain` | Album page |
+
+**Collection** — `parachord://collection/{tab?}?sort={field}&order={asc|desc}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://collection` | Collection overview (default tab) |
+| `parachord://collection/artists` | Artists in collection |
+| `parachord://collection/albums` | Albums in collection |
+| `parachord://collection/songs` | Songs/tracks in collection |
+| `parachord://collection/friends` | Friends activity |
+| `parachord://collection/artists?sort=recent` | Artists sorted by recently played |
+| `parachord://collection/albums?sort=added&order=desc` | Albums sorted by date added |
+
+**History** — `parachord://history/{tab?}?sort={field}&order={asc|desc}&period={range}`
+
+| URL | Opens |
+|-----|-------|
+| `parachord://history` | History overview |
+| `parachord://history/tracks` | Track history |
+| `parachord://history/artists` | Artist play counts |
+| `parachord://history/albums` | Album play counts |
+| `parachord://history/tracks?period=week` | This week's tracks |
+| `parachord://history/artists?sort=plays&order=desc` | Top artists by play count |
+| `parachord://history/tracks?period=month&sort=recent` | This month, most recent first |
+
+**Search** — `parachord://search?q={query}`
+
+Supports boolean operators in query:
+
+| URL | Searches For |
+|-----|--------------|
+| `parachord://search?q=big%20thief` | General search |
+| `parachord://search?q=artist:Big%20Thief` | Artist only |
+| `parachord://search?q=album:Dragon%20New%20Warm` | Album only |
+| `parachord://search?q=track:Vampire%20Empire` | Track only |
+| `parachord://search?q=artist:Big%20Thief%20track:Vampire` | Artist + track |
+| `parachord://search?q=label:4AD` | By record label |
+| `parachord://search?q=year:2022` | By release year |
+| `parachord://search?q=genre:indie%20folk` | By genre |
+| `parachord://search?q=artist:Big%20Thief&source=spotify` | Filter by source |
+
+**Other Navigation**
+
+| URL | Opens |
+|-----|-------|
+| `parachord://playlist/{id}` | Playlist view |
+| `parachord://discover` | Discover page |
+| `parachord://recommendations` | Recommendations |
+| `parachord://settings` | Settings |
+| `parachord://settings/{section}` | Settings section (e.g., `/settings/ai-dj`) |
+| `parachord://now-playing` | Now playing view |
 
 #### AI Chat Commands
 
@@ -866,9 +919,26 @@ export function validateProtocolCommand(parsed) {
 Reuse the DJ tools from Phase 1 for playback commands, and existing navigation functions for page commands.
 
 ```javascript
+// Enhanced parser for hierarchical URLs
+// parachord://artist/Big%20Thief/bio → { command: 'artist', segments: ['Big Thief', 'bio'], params: {} }
+// parachord://collection/albums?sort=added → { command: 'collection', segments: ['albums'], params: { sort: 'added' } }
+export function parseProtocolUrl(url) {
+  const parsed = new URL(url);
+  const pathSegments = parsed.pathname
+    .replace(/^\/+/, '')
+    .split('/')
+    .map(s => decodeURIComponent(s))
+    .filter(Boolean);
+
+  const [command, ...segments] = pathSegments;
+  const params = Object.fromEntries(parsed.searchParams);
+
+  return { command, segments, params };
+}
+
 // In renderer, handle IPC from main process
 window.electron.onProtocolUrl(async (url) => {
-  const { command, action, params } = parseProtocolUrl(url);
+  const { command, segments, params } = parseProtocolUrl(url);
 
   // Focus the app window
   window.electron.focusWindow();
@@ -880,48 +950,88 @@ window.electron.onProtocolUrl(async (url) => {
         await djTools.play.execute(params, toolContext);
         break;
       case 'control':
-        await djTools.control.execute({ action }, toolContext);
+        await djTools.control.execute({ action: segments[0] }, toolContext);
         break;
       case 'queue':
-        if (action === 'add') {
+        if (segments[0] === 'add') {
           await djTools.queue_add.execute({ tracks: [params] }, toolContext);
-        } else if (action === 'clear') {
+        } else if (segments[0] === 'clear') {
           await djTools.queue_clear.execute({}, toolContext);
         }
         break;
       case 'shuffle':
-        djTools.shuffle.execute({ enabled: action === 'on' }, toolContext);
+        djTools.shuffle.execute({ enabled: segments[0] === 'on' }, toolContext);
         break;
       case 'volume':
-        setVolume(parseInt(action) / 100);
+        setVolume(parseInt(segments[0]) / 100);
         break;
 
-      // === Navigation (Open Pages/Views) ===
-      case 'search':
-        setSearchQuery(params.q);
-        setActiveView('search');
-        performSearch(params.q);
-        break;
-      case 'artist':
-        loadArtistPage(decodeURIComponent(action));
+      // === Artist Pages (hierarchical) ===
+      // parachord://artist/{name}/{tab?}
+      case 'artist': {
+        const [artistName, tab] = segments;
+        await loadArtistPage(artistName);
         setActiveView('artist');
+        if (tab) {
+          setArtistTab(tab); // 'bio', 'discography', 'related', 'appears-on', 'credits'
+        }
         break;
-      case 'album':
-        loadAlbumPage(params.artist, params.title);
+      }
+
+      // === Album Pages ===
+      // parachord://album/{artist}/{title}
+      case 'album': {
+        const [artistName, albumTitle] = segments;
+        await loadAlbumPage(artistName, albumTitle);
         setActiveView('album');
         break;
-      case 'bio':
-        loadArtistPage(decodeURIComponent(action));
-        setActiveView('artist');
-        setArtistTab('bio');
+      }
+
+      // === Collection (hierarchical with sort) ===
+      // parachord://collection/{tab?}?sort={field}&order={asc|desc}
+      case 'collection': {
+        const [tab] = segments; // 'artists', 'albums', 'songs', 'friends'
+        setActiveView('collection');
+        if (tab) {
+          setCollectionTab(tab);
+        }
+        if (params.sort) {
+          setCollectionSort(params.sort, params.order || 'desc');
+        }
         break;
-      case 'related':
-        loadArtistPage(decodeURIComponent(action));
-        setActiveView('artist');
-        setArtistTab('related');
+      }
+
+      // === History (hierarchical with sort and period) ===
+      // parachord://history/{tab?}?sort={field}&order={asc|desc}&period={range}
+      case 'history': {
+        const [tab] = segments; // 'tracks', 'artists', 'albums'
+        setActiveView('history');
+        if (tab) {
+          setHistoryTab(tab);
+        }
+        if (params.period) {
+          setHistoryPeriod(params.period); // 'week', 'month', 'year', 'all'
+        }
+        if (params.sort) {
+          setHistorySort(params.sort, params.order || 'desc');
+        }
         break;
+      }
+
+      // === Search (with boolean operators) ===
+      // parachord://search?q={query}&source={source?}
+      case 'search': {
+        const query = params.q;
+        setSearchQuery(query);
+        setActiveView('search');
+        // Parse boolean operators (artist:, album:, track:, etc.)
+        performSearch(query, { source: params.source });
+        break;
+      }
+
+      // === Other Navigation ===
       case 'playlist':
-        loadPlaylist(action);
+        await loadPlaylist(segments[0]);
         setActiveView('playlist-view');
         break;
       case 'discover':
@@ -930,17 +1040,14 @@ window.electron.onProtocolUrl(async (url) => {
       case 'recommendations':
         setActiveView('recommendations');
         break;
-      case 'history':
-        setActiveView('history');
-        break;
-      case 'library':
-        setActiveView('library');
-        break;
-      case 'settings':
+      case 'settings': {
         setActiveView('settings');
+        if (segments[0]) {
+          setSettingsSection(segments[0]); // e.g., 'ai-dj', 'sources', 'scrobblers'
+        }
         break;
+      }
       case 'now-playing':
-        // Show now-playing view or expand player
         setActiveView('now-playing');
         break;
 
@@ -963,8 +1070,11 @@ window.electron.onProtocolUrl(async (url) => {
 
 **Subtasks:**
 - [ ] Add IPC handler in preload.js for protocol URLs
+- [ ] Implement hierarchical URL parser with segment support
 - [ ] Map protocol commands to DJ tool executors
 - [ ] Map navigation commands to existing view/page handlers
+- [ ] Support query params for sort/order/period filters
+- [ ] Parse boolean search operators (artist:, album:, track:, etc.)
 - [ ] Show toast notifications for success/failure
 - [ ] Focus app window when protocol URL received
 
