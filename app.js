@@ -9782,9 +9782,6 @@ const Parachord = () => {
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
-    // Clear the pausedByUser flag since user is explicitly starting new playback
-    pausedByUserRef.current = false;
-
     // Stop all local audio sources (HTML5 Audio, Qobuz) - do this first to prevent overlap
     // Always stop regardless of paused state to handle edge cases
     stopAllLocalAudio();
