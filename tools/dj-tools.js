@@ -221,7 +221,7 @@ const queueAddTool = {
   execute: async ({ tracks, position = 'last' }, context) => {
     const nothingPlaying = !context.getCurrentTrack?.();
     let startedPlaying = false;
-    let tracksToQueue = tracks;
+    let playedTrack = null;
 
     // If nothing is playing, resolve and play the first track immediately
     if (nothingPlaying && tracks.length > 0) {
@@ -238,12 +238,17 @@ const queueAddTool = {
         ) || results[0];
         await context.playTrack(match);
         startedPlaying = true;
+        playedTrack = firstTrack;
       }
-      tracksToQueue = tracks.slice(1);
     }
 
     // Add remaining tracks to queue as unresolved metadata
+    // Filter out the track we just played to prevent duplicates
     // The queue's ResolutionScheduler will resolve them in priority order
+    const tracksToQueue = playedTrack
+      ? tracks.filter(t => !(t.artist === playedTrack.artist && t.title === playedTrack.title))
+      : tracks;
+
     if (tracksToQueue.length > 0) {
       const metadataTracks = tracksToQueue.map(t => ({
         artist: t.artist,

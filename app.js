@@ -12972,10 +12972,11 @@ const Parachord = () => {
     };
 
     lines.forEach((line, lineIdx) => {
-      // Strip leading punctuation if previous line was a card (e.g., ". They are..." becomes "They are...")
+      // Strip leading punctuation and whitespace if previous line was a card
+      // (e.g., ". They are..." becomes "They are...", " and queued" becomes "and queued")
       let processedLine = line;
       if (previousLineWasCard) {
-        processedLine = line.replace(/^[.,!?;:]\s*/, '');
+        processedLine = line.replace(/^[\s.,!?;:]+/, '');
       }
       previousLineWasCard = false; // Reset for this iteration
 
