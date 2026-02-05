@@ -5271,6 +5271,7 @@ const Parachord = () => {
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
+  const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   // Friend function refs (for use in early useEffects before functions are defined)
@@ -12563,100 +12564,34 @@ const Parachord = () => {
 
       if (type === 'album') {
         closeAiChat();
-        // Search for the album and play all its tracks
         console.log(`ChatCard: Playing album "${title}" by "${artist}"`);
-
-        // Create placeholder immediately
-        const placeholderId = `chat-album-${Date.now()}`;
-        const placeholder = {
-          id: placeholderId,
-          title: `Loading ${title}...`,
-          artist: artist,
-          album: title,
-          sources: {},
-          status: 'loading',
-          _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
-        };
-
-        clearQueue();
-        setCurrentTrack(placeholder);
         setTrackLoading(true);
 
         try {
-          // Search for the album using resolvers
-          const query = `${artist} ${title}`;
-          const results = await searchResolvers(query);
+          // Fetch album tracks from MusicBrainz (same as album view)
+          const tracks = await fetchAlbumTracksByNameRef.current(artist, title, imageUrl);
 
-          if (results && results.length > 0) {
-            // Find tracks from this album
-            const albumTracks = results.filter(r =>
-              r.album?.toLowerCase() === title.toLowerCase() &&
-              r.artist?.toLowerCase() === artist.toLowerCase()
-            );
+          if (tracks && tracks.length > 0) {
+            // Use same pattern as onAlbumPlay - let handlePlay resolve via scheduler
+            const context = { type: 'album', name: title, artist: artist };
+            const [firstTrack, ...remainingTracks] = tracks;
+            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
 
-            // Deduplicate by track title (multiple resolvers may return same tracks)
-            const seenTitles = new Set();
-            const uniqueAlbumTracks = albumTracks.filter(t => {
-              const normalizedTitle = t.title?.toLowerCase().trim();
-              if (seenTitles.has(normalizedTitle)) return false;
-              seenTitles.add(normalizedTitle);
-              return true;
-            });
-
-            const tracksToPlay = uniqueAlbumTracks.length > 0 ? uniqueAlbumTracks : [results[0]];
-
-            if (tracksToPlay.length > 0) {
-              // Prepare first track with placeholder structure for resolution
-              const firstTrackData = {
-                ...tracksToPlay[0],
-                id: `${placeholderId}-0`,
-                _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
-              };
-
-              // Resolve the first track to get playable sources
-              console.log(`ChatCard: Resolving first album track "${firstTrackData.title}" by "${firstTrackData.artist}"`);
-              const sources = await resolveTrackRef.current(firstTrackData, firstTrackData.artist);
-
-              if (sources && Object.keys(sources).length > 0) {
-                const resolvedFirstTrack = { ...firstTrackData, sources, status: 'resolved' };
-
-                // Update current track and play
-                setCurrentTrack(resolvedFirstTrack);
-                await handlePlayRef.current(resolvedFirstTrack);
-
-                // Add remaining tracks to queue (they'll be resolved when played)
-                if (tracksToPlay.length > 1) {
-                  const queueTracks = tracksToPlay.slice(1).map((t, i) => ({
-                    ...t,
-                    id: `${placeholderId}-${i + 1}`,
-                    _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
-                  }));
-                  setCurrentQueue(prev => [...prev, ...queueTracks]);
-                }
-              } else {
-                // Resolution failed
-                setTrackLoading(false);
-                setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
-                showConfirmDialog({
-                  type: 'error',
-                  title: 'Album Not Found',
-                  message: `Could not find playable sources for "${title}" by ${artist}.`
-                });
-              }
-            }
+            // Set queue with remaining tracks, then play first track
+            // handlePlay will resolve the track through the proper pipeline
+            setQueueWithContext(remainingTracks, context, true);
+            await handlePlayRef.current(taggedFirstTrack);
           } else {
             setTrackLoading(false);
-            setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
             showConfirmDialog({
               type: 'error',
               title: 'Album Not Found',
-              message: `Could not find "${title}" by ${artist} on any of your enabled music services.`
+              message: `Could not find "${title}" by ${artist} on MusicBrainz.`
             });
           }
         } catch (err) {
           console.error('Error playing album from chat card:', err);
           setTrackLoading(false);
-          setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
@@ -21110,6 +21045,11 @@ ${tracks}
       return [];
     }
   };
+
+  // Keep fetchAlbumTracksByNameRef in sync for ChatCard
+  useEffect(() => {
+    fetchAlbumTracksByNameRef.current = fetchAlbumTracksByName;
+  }, []);
 
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
