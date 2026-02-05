@@ -8017,11 +8017,11 @@ const Parachord = () => {
             break;
 
           case 'chat': {
-            setChatOpen(true);
+            setAiChatOpen(true);
             if (params.prompt) {
               // Trigger chat with prompt
               setTimeout(() => {
-                handleChatSend(params.prompt);
+                handleAiChatSend(params.prompt);
               }, 100);
             }
             break;
