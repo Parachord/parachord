@@ -112,7 +112,7 @@ https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
 
-- **Apple Music**: Playback support (no library sync yet)
+- **Apple Music**: Full playback and library sync on all platforms (macOS, Windows, Linux) via MusicKit
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
 - **YouTube**: Audio-only, quality varies - add the browser extension to improve the experience
 - **Auto-updates**: Not yet enabled - check releases manually
