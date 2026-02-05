@@ -19,6 +19,7 @@ console.log('SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? '✅ L
 console.log('SPOTIFY_REDIRECT_URI:', process.env.SPOTIFY_REDIRECT_URI || 'Using default');
 console.log('SOUNDCLOUD_CLIENT_ID:', process.env.SOUNDCLOUD_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
 console.log('SOUNDCLOUD_CLIENT_SECRET:', process.env.SOUNDCLOUD_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
+console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? '✅ Loaded' : '⚪ Will generate from .p8 key');
 if (!process.env.SPOTIFY_CLIENT_ID) {
   console.error('');
   console.error('⚠️  WARNING: .env file not found or SPOTIFY_CLIENT_ID not set!');
@@ -1240,6 +1241,11 @@ app.whenReady().then(() => {
     }
   });
 
+  // Generate MusicKit developer token from .p8 key (non-blocking)
+  generateMusicKitDeveloperToken().catch(err => {
+    console.error('🍎 MusicKit: Token generation error:', err.message);
+  });
+
   createWindow();
   startAuthServer();
   startExtensionServer();
@@ -1637,6 +1643,85 @@ const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
 const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
 const FALLBACK_SPOTIFY_CLIENT_SECRET = '6290dd3f9ddd45e2be725b80b884db6e';
 
+// MusicKit developer token - generated from .p8 private key at startup
+const MUSICKIT_TEAM_ID = 'YR3XETE537';
+const MUSICKIT_KEY_ID = '7CLCZTCCQ6';
+let generatedMusicKitToken = null;
+
+/**
+ * Generate a MusicKit developer token from the bundled .p8 private key.
+ * Called at app startup. The token is cached for the process lifetime.
+ * Users auth with their own Apple Music subscription via MusicKit JS.
+ */
+async function generateMusicKitDeveloperToken() {
+  // If user set a token via env, skip generation
+  if (process.env.MUSICKIT_DEVELOPER_TOKEN) {
+    console.log('🍎 MusicKit: Using developer token from environment');
+    generatedMusicKitToken = process.env.MUSICKIT_DEVELOPER_TOKEN;
+    return generatedMusicKitToken;
+  }
+
+  const keyFileName = `AuthKey_${MUSICKIT_KEY_ID}.p8`;
+
+  // Search for .p8 key in known locations
+  const searchPaths = [
+    path.join(__dirname, 'resources', 'keys', keyFileName),
+    path.join(__dirname, 'resources', 'keys'),
+    path.join(process.resourcesPath || __dirname, 'keys', keyFileName),
+    path.join(process.resourcesPath || __dirname, 'keys'),
+  ];
+
+  let keyPath = null;
+  for (const searchPath of searchPaths) {
+    try {
+      const stat = fs.statSync(searchPath);
+      if (stat.isFile() && searchPath.endsWith('.p8')) {
+        keyPath = searchPath;
+        break;
+      }
+      if (stat.isDirectory()) {
+        const files = fs.readdirSync(searchPath);
+        const p8File = files.find(f => f.endsWith('.p8'));
+        if (p8File) {
+          keyPath = path.join(searchPath, p8File);
+          break;
+        }
+      }
+    } catch (e) {
+      // Path doesn't exist, skip
+    }
+  }
+
+  if (!keyPath) {
+    console.log('🍎 MusicKit: No .p8 private key found — MusicKit JS will require manual token config');
+    console.log('🍎 Place your AuthKey_*.p8 file in resources/keys/ for automatic token generation');
+    return null;
+  }
+
+  try {
+    const jose = await import('jose');
+    const privateKeyContent = fs.readFileSync(keyPath, 'utf8');
+    const privateKey = await jose.importPKCS8(privateKeyContent, 'ES256');
+
+    const now = Math.floor(Date.now() / 1000);
+    const expiryDays = 180;
+
+    const token = await new jose.SignJWT({})
+      .setProtectedHeader({ alg: 'ES256', kid: MUSICKIT_KEY_ID })
+      .setIssuer(MUSICKIT_TEAM_ID)
+      .setIssuedAt(now)
+      .setExpirationTime(now + (expiryDays * 24 * 60 * 60))
+      .sign(privateKey);
+
+    generatedMusicKitToken = token;
+    console.log(`🍎 MusicKit: Developer token generated from ${path.basename(keyPath)} (expires in ${expiryDays} days)`);
+    return token;
+  } catch (error) {
+    console.error('🍎 MusicKit: Failed to generate developer token:', error.message);
+    return null;
+  }
+}
+
 // Helper to get Spotify credentials with priority: user-stored > env > fallback
 function getSpotifyCredentials() {
   // First check user-configured credentials (stored via UI)
@@ -1771,13 +1856,17 @@ ipcMain.handle('store-delete', (event, key) => {
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
 // Uses fallback values for services that support shared app credentials
-const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID'];
+const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID', 'MUSICKIT_DEVELOPER_TOKEN'];
 const CONFIG_FALLBACKS = {
   'LASTFM_API_KEY': FALLBACK_LASTFM_API_KEY,
   'LASTFM_API_SECRET': FALLBACK_LASTFM_API_SECRET
 };
 ipcMain.handle('config-get', (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
+    // MusicKit token may be generated at startup from .p8 key
+    if (key === 'MUSICKIT_DEVELOPER_TOKEN') {
+      return process.env[key] || generatedMusicKitToken || null;
+    }
     return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }
   console.warn(`⚠️ Attempted to access non-whitelisted config key: ${key}`);

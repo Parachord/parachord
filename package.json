@@ -77,6 +77,13 @@
       "!native/**/.swiftpm"
     ],
     "asar": false,
+    "extraResources": [
+      {
+        "from": "resources/keys/",
+        "to": "keys/",
+        "filter": ["*.p8"]
+      }
+    ],
     "afterSign": "scripts/notarize.js",
     "mac": {
       "category": "public.app-category.music",
