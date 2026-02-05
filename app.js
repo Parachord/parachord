@@ -12843,15 +12843,37 @@ const Parachord = () => {
         }
       });
 
-      // Sort by position and filter overlaps
-      replacements.sort((a, b) => a.start - b.start);
+      // Sort by position, but prioritize cards over other patterns when overlapping
+      // This ensures {{card}} templates inside **bold** or *italic* are still rendered
+      replacements.sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        // Same start position: prioritize cards
+        if (a.type === 'card' && b.type !== 'card') return -1;
+        if (b.type === 'card' && a.type !== 'card') return 1;
+        return 0;
+      });
+
+      // Filter overlaps, but when a card is inside another match, prefer the card
       const filtered = [];
-      let lastEnd = 0;
       for (const r of replacements) {
-        if (r.start >= lastEnd) {
+        // Check if this replacement overlaps with any existing one
+        const overlapping = filtered.find(f =>
+          (r.start >= f.start && r.start < f.end) ||
+          (r.end > f.start && r.end <= f.end) ||
+          (r.start <= f.start && r.end >= f.end)
+        );
+
+        if (!overlapping) {
           filtered.push(r);
-          lastEnd = r.end;
+        } else if (r.type === 'card' && overlapping.type !== 'card') {
+          // Card inside a non-card match: remove the outer match, add the card
+          const idx = filtered.indexOf(overlapping);
+          filtered.splice(idx, 1);
+          filtered.push(r);
+          // Re-sort after modification
+          filtered.sort((a, b) => a.start - b.start);
         }
+        // Otherwise skip this replacement (it overlaps and isn't a priority card)
       }
 
       // Build result
