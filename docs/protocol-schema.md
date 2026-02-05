@@ -2,6 +2,30 @@
 
 Parachord supports deep linking via the `parachord://` URL scheme, enabling external apps to control playback, navigate the app, and interact with the AI DJ.
 
+## Access Methods
+
+There are two ways to send protocol commands to Parachord:
+
+### 1. Protocol URLs (Production)
+
+Use `parachord://` URLs directly. Works with built/installed app:
+```bash
+open "parachord://control/pause"
+```
+
+### 2. HTTP Endpoint (Development & Scripting)
+
+Send protocol URLs via HTTP to `localhost:8888/protocol`. Works reliably in all environments:
+```bash
+curl "http://127.0.0.1:8888/protocol?url=parachord://control/pause"
+```
+
+The HTTP endpoint is recommended for:
+- Development environments
+- Scripts and automation
+- Raycast/Alfred extensions
+- Any programmatic access
+
 ## Quick Reference
 
 | Category | Example URL |
@@ -377,32 +401,73 @@ Create a Shortcut that opens a URL:
 
 ### Raycast
 
+Parachord includes a full Raycast extension in `raycast-extension/`. It uses the HTTP endpoint for reliable communication:
+
 ```typescript
-// raycast-parachord/src/pause.ts
-import { open } from "@raycast/api";
+// raycast-extension/src/utils.ts
+const PARACHORD_HTTP_PORT = 8888;
+
+export async function openParachord(
+  command: string,
+  segments: string[] = [],
+  params: Record<string, string> = {},
+  hudMessage?: string
+): Promise<void> {
+  const protocolUrl = buildProtocolUrl(command, segments, params);
+  const httpUrl = `http://127.0.0.1:${PARACHORD_HTTP_PORT}/protocol?url=${encodeURIComponent(protocolUrl)}`;
+
+  const response = await fetch(httpUrl);
+  if (response.ok && hudMessage) {
+    await showHUD(hudMessage);
+  }
+}
+
+// Example command: raycast-extension/src/play-pause.ts
+import { openParachord } from "./utils";
 
 export default async function Command() {
-  await open("parachord://control/pause");
+  await openParachord("control", ["resume"], {}, "Toggled playback");
 }
+```
+
+To install the Raycast extension:
+```bash
+cd raycast-extension
+npm install
+npm run dev
 ```
 
 ### Alfred Workflow
 
 ```bash
-# Play a song
-open "parachord://play?artist={query}&title={query2}"
+# Using HTTP endpoint (recommended)
+curl "http://127.0.0.1:8888/protocol?url=parachord://play?artist={query}&title={query2}"
 
-# Toggle pause
-open "parachord://control/pause"
+# Using protocol URL (requires built app)
+open "parachord://play?artist={query}&title={query2}"
 ```
 
 ### Stream Deck
 
-Configure a "Website" action with the protocol URL:
-- URL: `parachord://control/skip`
+Configure a "System: Open" action or use the Multi Actions plugin with curl:
+- Protocol URL: `parachord://control/skip`
+- HTTP (more reliable): `curl "http://127.0.0.1:8888/protocol?url=parachord://control/skip"`
 
 ### Command Line
 
+**Using HTTP endpoint (recommended):**
+```bash
+# Works on all platforms when Parachord is running
+curl "http://127.0.0.1:8888/protocol?url=parachord://play?artist=Radiohead&title=Karma%20Police"
+
+# Pause
+curl "http://127.0.0.1:8888/protocol?url=parachord://control/pause"
+
+# Skip
+curl "http://127.0.0.1:8888/protocol?url=parachord://control/skip"
+```
+
+**Using protocol URLs (requires built app):**
 ```bash
 # macOS
 open "parachord://play?artist=Radiohead&title=Karma%20Police"
@@ -447,6 +512,61 @@ All parameter values must be URL-encoded. Common encodings:
 **Example:**
 - Artist: "Guns N' Roses" → `Guns%20N'%20Roses`
 - Title: "Sweet Child O' Mine" → `Sweet%20Child%20O'%20Mine`
+
+---
+
+## HTTP API Reference
+
+The HTTP endpoint provides programmatic access to protocol commands.
+
+### Endpoint
+
+```
+GET http://127.0.0.1:8888/protocol?url={encoded_protocol_url}
+```
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `url` | Yes | URL-encoded `parachord://` protocol URL |
+
+### Response
+
+**Success (200):**
+```json
+{
+  "success": true,
+  "url": "parachord://control/pause"
+}
+```
+
+**Error (400 - Invalid URL):**
+```json
+{
+  "error": "Invalid protocol URL"
+}
+```
+
+**Error (503 - App not ready):**
+```json
+{
+  "error": "Parachord not ready"
+}
+```
+
+### Examples
+
+```bash
+# Pause playback
+curl "http://127.0.0.1:8888/protocol?url=parachord%3A%2F%2Fcontrol%2Fpause"
+
+# Play a track (URL encoding required for special characters)
+curl "http://127.0.0.1:8888/protocol?url=$(python3 -c 'import urllib.parse; print(urllib.parse.quote("parachord://play?artist=Radiohead&title=Karma Police"))')"
+
+# Open AI chat with prompt
+curl "http://127.0.0.1:8888/protocol?url=parachord%3A%2F%2Fchat%3Fprompt%3Dplay%2520something%2520chill"
+```
 
 ---
 
