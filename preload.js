@@ -127,6 +127,13 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('menu-action', handler);
   },
 
+  // Protocol URL handlers (parachord:// deep links)
+  onProtocolUrl: (callback) => {
+    const handler = (event, url) => callback(url);
+    ipcRenderer.on('protocol-url', handler);
+    return () => ipcRenderer.removeListener('protocol-url', handler);
+  },
+
   // Auto-updater
   updater: {
     check: () => ipcRenderer.invoke('updater-check'),

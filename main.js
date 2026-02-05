@@ -598,6 +598,13 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     console.log('Window ready to show');
     mainWindow.show();
+
+    // Send any pending protocol URL that was received before window was ready
+    if (global.pendingProtocolUrl) {
+      console.log('[Protocol] Sending pending URL:', global.pendingProtocolUrl);
+      mainWindow.webContents.send('protocol-url', global.pendingProtocolUrl);
+      global.pendingProtocolUrl = null;
+    }
   });
 
   // Open DevTools in development
@@ -1053,7 +1060,7 @@ async function exchangeSoundCloudCodeForToken(code) {
   }
 }
 
-// Register custom protocol scheme for local audio playback
+// Register custom protocol schemes
 // Must be called before app is ready
 protocol.registerSchemesAsPrivileged([
   {
@@ -1064,11 +1071,78 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
       bypassCSP: true
     }
+  },
+  {
+    scheme: 'parachord',
+    privileges: {
+      secure: true,
+      supportFetchAPI: false,
+      standard: true
+    }
   }
 ]);
 
+// Handle protocol URLs - forward to renderer
+function handleProtocolUrl(url) {
+  console.log('[Protocol] Received URL:', url);
+  if (mainWindow) {
+    // Focus the window
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    // Send to renderer
+    mainWindow.webContents.send('protocol-url', url);
+  } else {
+    // Store for when window is ready
+    global.pendingProtocolUrl = url;
+  }
+}
+
+// Handle protocol URLs on macOS (before app ready)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (url.startsWith('parachord://')) {
+    handleProtocolUrl(url);
+  }
+});
+
+// Single instance lock - handle protocol URLs on Windows/Linux
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, argv) => {
+    // Find protocol URL in argv (Windows/Linux)
+    const url = argv.find(arg => arg.startsWith('parachord://'));
+    if (url) {
+      handleProtocolUrl(url);
+    }
+    // Focus the window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.whenReady().then(() => {
   console.log('=== Electron App Starting ===');
+
+  // Register as default handler for parachord:// protocol
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('parachord', process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient('parachord');
+  }
+  console.log('[Protocol] Registered parachord:// protocol handler');
+
+  // Check if launched with protocol URL in argv (Windows/Linux first launch)
+  const protocolUrlArg = process.argv.find(arg => arg.startsWith('parachord://'));
+  if (protocolUrlArg) {
+    console.log('[Protocol] Found URL in argv:', protocolUrlArg);
+    global.pendingProtocolUrl = protocolUrlArg;
+  }
 
   // Register protocol handler for local audio files
   protocol.handle('local-audio', async (request) => {

@@ -7769,6 +7769,276 @@ const Parachord = () => {
     return cleanup;
   }, []);
 
+  // Protocol URL handler (parachord:// deep links)
+  useEffect(() => {
+    if (!window.electron?.onProtocolUrl) return;
+
+    const cleanup = window.electron.onProtocolUrl(async (url) => {
+      console.log('🔗 Protocol URL received:', url);
+
+      try {
+        // Parse the URL
+        const parsed = new URL(url);
+        const host = parsed.host;
+        const pathSegments = parsed.pathname
+          .replace(/^\/+/, '')
+          .split('/')
+          .map(s => decodeURIComponent(s))
+          .filter(Boolean);
+
+        // Determine command and segments
+        // parachord://play?... -> host='play', or parachord:///artist/Name -> no host
+        let command, segments;
+        if (host && host !== '') {
+          command = host;
+          segments = pathSegments;
+        } else {
+          [command, ...segments] = pathSegments;
+        }
+
+        const params = Object.fromEntries(parsed.searchParams);
+        console.log('🔗 Parsed protocol URL:', { command, segments, params });
+
+        // Execute the command
+        switch (command) {
+          // === Playback Control ===
+          case 'play': {
+            if (params.artist && params.title) {
+              const results = await searchResolvers(`${params.artist} ${params.title}`, {
+                earlyReturn: true,
+                targetArtist: params.artist,
+                targetTitle: params.title
+              });
+              if (results && results.length > 0) {
+                const match = results.find(r =>
+                  r.artist?.toLowerCase() === params.artist.toLowerCase() &&
+                  r.title?.toLowerCase() === params.title.toLowerCase()
+                ) || results[0];
+                await handlePlayRef.current(match);
+                showToast(`Playing "${match.title}" by ${match.artist}`);
+              } else {
+                showToast(`Could not find "${params.title}" by ${params.artist}`);
+              }
+            }
+            break;
+          }
+
+          case 'control': {
+            const action = segments[0];
+            switch (action) {
+              case 'pause':
+                if (isPlayingRef.current && handlePlayPauseRef.current) handlePlayPauseRef.current();
+                break;
+              case 'resume':
+              case 'play':
+                if (!isPlayingRef.current && handlePlayPauseRef.current) handlePlayPauseRef.current();
+                break;
+              case 'skip':
+              case 'next':
+                if (handleNextRef.current) handleNextRef.current();
+                break;
+              case 'previous':
+                if (handlePreviousRef.current) handlePreviousRef.current();
+                break;
+            }
+            break;
+          }
+
+          case 'queue': {
+            const subCommand = segments[0];
+            if (subCommand === 'add' && params.artist && params.title) {
+              const track = { artist: params.artist, title: params.title, album: params.album || null };
+              addToQueue([track], { type: 'protocol', name: 'Protocol' }, { skipAutoPlay: false });
+              showToast(`Added "${params.title}" by ${params.artist} to queue`);
+            } else if (subCommand === 'clear') {
+              clearQueue();
+              showToast('Queue cleared');
+            }
+            break;
+          }
+
+          case 'shuffle': {
+            const enabled = segments[0] === 'on';
+            setShuffleMode(enabled);
+            showToast(`Shuffle ${enabled ? 'on' : 'off'}`);
+            break;
+          }
+
+          case 'volume': {
+            const vol = parseInt(segments[0], 10);
+            if (!isNaN(vol) && vol >= 0 && vol <= 100) {
+              setVolume(vol / 100);
+            }
+            break;
+          }
+
+          // === Navigation Commands ===
+          case 'home':
+            setActiveView('home');
+            break;
+
+          case 'artist': {
+            const [artistName, tab] = segments;
+            if (artistName) {
+              setActiveView('artist');
+              fetchArtistData(artistName);
+              // Tab handling would require additional state management
+            }
+            break;
+          }
+
+          case 'album': {
+            const [artistName, albumTitle] = segments;
+            if (artistName && albumTitle) {
+              // Search for the album and load it
+              const query = `${artistName} ${albumTitle}`;
+              const results = await searchResolvers(query);
+              const albumTrack = results?.find(r =>
+                r.artist?.toLowerCase().includes(artistName.toLowerCase()) &&
+                r.album?.toLowerCase().includes(albumTitle.toLowerCase())
+              );
+              if (albumTrack?.album) {
+                // Would need to trigger album view loading
+                showToast(`Opening album: ${albumTitle}`);
+              }
+            }
+            break;
+          }
+
+          case 'library': {
+            const [tab] = segments;
+            setActiveView('library');
+            if (tab && ['tracks', 'albums', 'artists', 'friends'].includes(tab)) {
+              setCollectionTab(tab);
+            }
+            break;
+          }
+
+          case 'history': {
+            const [tab] = segments;
+            setActiveView('history');
+            if (tab) {
+              const tabMap = {
+                'top-tracks': 'topTracks',
+                'top-albums': 'topAlbums',
+                'top-artists': 'topArtists',
+                'recent': 'recent'
+              };
+              setHistoryTab(tabMap[tab] || tab);
+            }
+            if (params.period) {
+              setHistoryPeriod(params.period);
+            }
+            break;
+          }
+
+          case 'friend': {
+            const [friendId, tab] = segments;
+            if (friendId) {
+              // Find friend by ID or username
+              const friend = friends.find(f =>
+                f.id === friendId ||
+                f.username?.toLowerCase() === friendId.toLowerCase() ||
+                f.name?.toLowerCase() === friendId.toLowerCase()
+              );
+              if (friend) {
+                setSelectedFriend(friend);
+                setActiveView('friendHistory');
+                if (tab) {
+                  const tabMap = {
+                    'top-tracks': 'topTracks',
+                    'top-artists': 'topArtists',
+                    'recent': 'recent'
+                  };
+                  setFriendHistoryTab(tabMap[tab] || tab);
+                }
+              } else {
+                showToast(`Friend not found: ${friendId}`);
+              }
+            }
+            break;
+          }
+
+          case 'recommendations': {
+            const [tab] = segments;
+            setActiveView('recommendations');
+            if (tab && ['artists', 'songs'].includes(tab)) {
+              setRecommendationsTab(tab);
+            }
+            break;
+          }
+
+          case 'charts':
+            setActiveView('discover');
+            break;
+
+          case 'critics-picks':
+            setActiveView('critics-picks');
+            break;
+
+          case 'search': {
+            if (params.q) {
+              setSearchQuery(params.q);
+              setActiveView('search');
+              performSearch(params.q);
+            }
+            break;
+          }
+
+          case 'playlists':
+            setActiveView('playlists');
+            break;
+
+          case 'playlist': {
+            const [playlistId] = segments;
+            if (playlistId) {
+              const playlist = playlists.find(p => p.id === playlistId || p.name === playlistId);
+              if (playlist) {
+                setCurrentPlaylist(playlist);
+                setActiveView('playlist-view');
+              } else {
+                showToast(`Playlist not found: ${playlistId}`);
+              }
+            }
+            break;
+          }
+
+          case 'settings': {
+            const [tab] = segments;
+            setActiveView('settings');
+            if (tab) {
+              setSettingsTab(tab);
+            }
+            break;
+          }
+
+          case 'now-playing':
+            // Could expand now playing view if implemented
+            break;
+
+          case 'chat': {
+            setChatOpen(true);
+            if (params.prompt) {
+              // Trigger chat with prompt
+              setTimeout(() => {
+                handleChatSend(params.prompt);
+              }, 100);
+            }
+            break;
+          }
+
+          default:
+            console.warn('🔗 Unknown protocol command:', command);
+        }
+      } catch (error) {
+        console.error('🔗 Protocol URL error:', error);
+        showToast(`Protocol error: ${error.message}`);
+      }
+    });
+
+    return cleanup;
+  }, [friends, playlists]);
+
   // Auto-updater status listener
   useEffect(() => {
     if (window.electron?.updater?.onStatus) {
@@ -13025,13 +13295,88 @@ const Parachord = () => {
             React.createElement('a', {
               key,
               href: url,
-              onClick: (e) => {
+              onClick: async (e) => {
                 e.preventDefault();
                 if (url.startsWith('parachord://')) {
-                  const path = url.replace('parachord://', '');
-                  const [type, ...rest] = path.split('/');
-                  const value = decodeURIComponent(rest.join('/'));
-                  if (type === 'artist' && value) fetchArtistData(value);
+                  // Parse and handle protocol URL
+                  try {
+                    const parsed = new URL(url);
+                    const host = parsed.host;
+                    const pathSegments = parsed.pathname
+                      .replace(/^\/+/, '')
+                      .split('/')
+                      .map(s => decodeURIComponent(s))
+                      .filter(Boolean);
+
+                    let command, segments;
+                    if (host && host !== '') {
+                      command = host;
+                      segments = pathSegments;
+                    } else {
+                      [command, ...segments] = pathSegments;
+                    }
+
+                    const params = Object.fromEntries(parsed.searchParams);
+
+                    // Handle common protocol commands from chat links
+                    switch (command) {
+                      case 'artist':
+                        if (segments[0]) {
+                          setActiveView('artist');
+                          fetchArtistData(segments[0]);
+                        }
+                        break;
+                      case 'album':
+                        if (segments[0] && segments[1]) {
+                          // Could trigger album view loading
+                          showToast(`Opening album: ${segments[1]} by ${segments[0]}`);
+                        }
+                        break;
+                      case 'play':
+                        if (params.artist && params.title) {
+                          const results = await searchResolvers(`${params.artist} ${params.title}`, {
+                            earlyReturn: true,
+                            targetArtist: params.artist,
+                            targetTitle: params.title
+                          });
+                          if (results && results.length > 0) {
+                            const match = results.find(r =>
+                              r.artist?.toLowerCase() === params.artist.toLowerCase() &&
+                              r.title?.toLowerCase() === params.title.toLowerCase()
+                            ) || results[0];
+                            await handlePlayRef.current(match);
+                          }
+                        }
+                        break;
+                      case 'queue':
+                        if (segments[0] === 'add' && params.artist && params.title) {
+                          const track = { artist: params.artist, title: params.title };
+                          addToQueue([track], { type: 'chat', name: 'Chat' }, { skipAutoPlay: false });
+                          showToast(`Added "${params.title}" to queue`);
+                        }
+                        break;
+                      case 'playlist':
+                        if (segments[0]) {
+                          const playlist = playlists.find(p => p.id === segments[0] || p.name === segments[0]);
+                          if (playlist) {
+                            setCurrentPlaylist(playlist);
+                            setActiveView('playlist-view');
+                          }
+                        }
+                        break;
+                      case 'search':
+                        if (params.q) {
+                          setSearchQuery(params.q);
+                          setActiveView('search');
+                          performSearch(params.q);
+                        }
+                        break;
+                      default:
+                        console.log('Unhandled protocol command in chat link:', command);
+                    }
+                  } catch (err) {
+                    console.error('Error handling protocol URL:', err);
+                  }
                 } else {
                   window.electron?.shell?.openExternal(url);
                 }
