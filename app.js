@@ -44144,7 +44144,7 @@ useEffect(() => {
         },
           React.createElement('p', {
             style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '20px' }
-          }, 'The Parachord Raycast extension lets you control playback, search for music, and chat with the AI DJ — all from your keyboard using Raycast.'),
+          }, 'The Parachord Raycast extension lets you control playback, search for music, and chat with Shuffleupagus — all from your keyboard using Raycast.'),
 
           // Features
           React.createElement('div', { style: { marginBottom: '24px' } },
@@ -44152,17 +44152,25 @@ useEffect(() => {
               style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
             }, 'Commands'),
             [
-              { icon: '⏯️', text: 'Play/Pause, Next, Previous track' },
-              { icon: '🔀', text: 'Toggle shuffle, set volume' },
-              { icon: '🔍', text: 'Search & play or add to queue' },
-              { icon: '🤖', text: 'Chat with the AI DJ' },
-              { icon: '📻', text: 'Start Collection Radio' }
+              { iconPath: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z', text: 'Play/Pause, Next, Previous track' },
+              { iconPath: 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99', text: 'Toggle shuffle, set volume' },
+              { iconPath: 'M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z', text: 'Search & play or add to queue' },
+              { iconPath: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z', text: 'Shuffleupagus, your AI companion' },
+              { iconPath: 'M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zm-1.683 6.443l-.005.005-.006-.005.006-.005.005.005zm-.005 2.127l-.005-.006.005-.005.005.005-.005.006zm-2.116-.006l-.005.006-.006-.006.005-.005.006.005zm-.005-2.116l-.006-.005.006-.005.005.005-.005.005zM9.255 10.5v.008h-.008V10.5h.008zm3.249 1.88l-.007.004-.003-.007.007-.003.003.006zm-1.38 5.126l-.003-.006.006-.004.004.007-.006.003zm.006-1.616l-.006-.004.004-.006.006.004-.004.006zM12 13.5h.008v.008H12V13.5zm0 1.125h.008v.008H12v-.008zm0 1.125h.008v.008H12v-.008zm0 1.125h.008v.008H12v-.008zm-3.743-3.87l-.006.003-.003-.006.006-.004.003.007zm1.133 1.995l.003-.007.007.004-.004.006-.006-.003zm1.127-1.13l.003.007-.006.003-.004-.006.007-.004zm-1.995 1.133l.006.003-.003.006-.007-.003.004-.006zM12 9.375h.008v.008H12V9.375z', text: 'Start Collection Radio' }
             ].map((item, i) =>
               React.createElement('div', {
                 key: i,
                 style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }
               },
-                React.createElement('span', { style: { fontSize: '16px' } }, item.icon),
+                React.createElement('svg', {
+                  style: { width: '18px', height: '18px', flexShrink: 0 },
+                  fill: 'none',
+                  viewBox: '0 0 24 24',
+                  stroke: '#6b7280',
+                  strokeWidth: 1.5
+                },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: item.iconPath })
+                ),
                 React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, item.text)
               )
             )
