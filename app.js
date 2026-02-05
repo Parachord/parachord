@@ -9465,6 +9465,20 @@ const Parachord = () => {
           .map(id => currentResolvers.find(r => r.id === id))
           .filter(r => r && r.capabilities?.resolve);
 
+        // Helper to validate resolved track matches requested metadata
+        const normalizeStr = s => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+        const validateResolvedTrack = (result, targetArtist, targetTitle) => {
+          if (!result || !result.artist || !result.title) return false;
+          const resultArtist = normalizeStr(result.artist);
+          const resultTitle = normalizeStr(result.title);
+          const normTargetArtist = normalizeStr(targetArtist);
+          const normTargetTitle = normalizeStr(targetTitle);
+          // Check for reasonable match - either contains the other
+          const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
+          const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
+          return artistMatches && titleMatches;
+        };
+
         const freshSources = {};
         const resolvePromises = enabledResolvers.map(async (resolver) => {
           try {
@@ -9473,6 +9487,11 @@ const Parachord = () => {
               : {};
             const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
             if (result) {
+              // Validate the result actually matches the requested track
+              if (!validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
+                console.warn(`  ⚠️ Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${trackOrSource.title}" by "${trackOrSource.artist}"`);
+                return; // Don't add this source
+              }
               freshSources[resolver.id] = {
                 ...result,
                 confidence: result.confidence || 0.9,
@@ -12458,6 +12477,20 @@ const Parachord = () => {
 
           const resolvedTrack = { ...placeholder, sources: {}, status: 'resolved' };
 
+          // Helper to validate resolved track matches requested metadata
+          const normalizeStr = s => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+          const validateResolvedTrack = (result, targetArtist, targetTitle) => {
+            if (!result || !result.artist || !result.title) return false;
+            const resultArtist = normalizeStr(result.artist);
+            const resultTitle = normalizeStr(result.title);
+            const normTargetArtist = normalizeStr(targetArtist);
+            const normTargetTitle = normalizeStr(targetTitle);
+            // Check for reasonable match - either contains the other
+            const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
+            const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
+            return artistMatches && titleMatches;
+          };
+
           // Resolve in parallel across all enabled resolvers
           const resolvePromises = enabledResolvers.map(async (resolver) => {
             try {
@@ -12466,6 +12499,11 @@ const Parachord = () => {
                 : {};
               const result = await resolver.resolve(artist, title, album, config);
               if (result) {
+                // Validate the result actually matches the requested track
+                if (!validateResolvedTrack(result, artist, title)) {
+                  console.warn(`ChatCard: Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${title}" by "${artist}"`);
+                  return; // Don't add this source
+                }
                 resolvedTrack.sources[resolver.id] = {
                   ...result,
                   confidence: result.confidence || 0.9,
