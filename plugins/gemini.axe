@@ -1,0 +1,42 @@
+{
+  "manifest": {
+    "id": "gemini",
+    "name": "Google Gemini",
+    "type": "meta-service",
+    "version": "2.0.0",
+    "author": "Parachord Team",
+    "description": "Generate playlists and chat with AI DJ using Google Gemini. Requires Google AI Studio API key.",
+    "icon": "✦",
+    "color": "#4285f4",
+    "homepage": "https://ai.google.dev"
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your API key from Google AI Studio (ai.google.dev)"
+      },
+      "model": {
+        "type": "select",
+        "label": "Model",
+        "default": "gemini-2.0-flash-001-001",
+        "options": [
+          { "value": "gemini-2.0-flash-001-001", "label": "Gemini 2.0 Flash (Recommended)" },
+          { "value": "gemini-1.5-pro-latest", "label": "Gemini 1.5 Pro" },
+          { "value": "gemini-1.5-flash-latest", "label": "Gemini 1.5 Flash" }
+        ]
+      }
+    }
+  },
+  "implementation": {
+    "generate": "async function(prompt, config, listeningContext) {\n  const apiKey = config.apiKey;\n  if (!apiKey) throw new Error('Google AI API key not configured');\n\n  const model = config.model || 'gemini-2.0-flash-001';\n\n  let systemInstruction = 'You are a music expert. Generate a playlist based on the user\\'s request. Return ONLY a JSON array of objects with \"title\" and \"artist\" fields. No explanations, just the JSON array.';\n\n  if (listeningContext) {\n    systemInstruction += '\\n\\nUser\\'s listening history for context:\\n' + JSON.stringify(listeningContext);\n  }\n\n  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      system_instruction: { parts: [{ text: systemInstruction }] },\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig: { temperature: 0.7 }\n    })\n  });\n\n  if (!response.ok) {\n    const error = await response.json().catch(() => ({}));\n    throw new Error(error.error?.message || `Gemini API error: ${response.status}`);\n  }\n\n  const data = await response.json();\n  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';\n\n  try {\n    const jsonMatch = content.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (jsonMatch) {\n      return JSON.parse(jsonMatch[0]);\n    }\n    return JSON.parse(content);\n  } catch (e) {\n    console.error('Failed to parse Gemini response:', content);\n    throw new Error('Could not parse playlist from response');\n  }\n}",
+    "chat": "async function(messages, tools, config) {\n  const apiKey = config.apiKey;\n  if (!apiKey) throw new Error('Google AI API key not configured');\n\n  const model = config.model || 'gemini-2.0-flash-001';\n\n  // Convert messages to Gemini format\n  const contents = [];\n  let systemInstruction = null;\n\n  for (const msg of messages) {\n    if (msg.role === 'system') {\n      systemInstruction = { parts: [{ text: msg.content }] };\n    } else if (msg.role === 'user') {\n      contents.push({ role: 'user', parts: [{ text: msg.content }] });\n    } else if (msg.role === 'assistant') {\n      contents.push({ role: 'model', parts: [{ text: msg.content }] });\n    } else if (msg.role === 'tool') {\n      contents.push({\n        role: 'function',\n        parts: [{ functionResponse: { name: msg.name, response: { result: msg.content } } }]\n      });\n    }\n  }\n\n  // Convert tools to Gemini format\n  const geminiTools = tools ? [{\n    functionDeclarations: tools.map(tool => ({\n      name: tool.name,\n      description: tool.description,\n      parameters: tool.parameters\n    }))\n  }] : undefined;\n\n  const requestBody = {\n    contents: contents,\n    generationConfig: { temperature: 0.7 }\n  };\n\n  if (systemInstruction) {\n    requestBody.system_instruction = systemInstruction;\n  }\n\n  if (geminiTools) {\n    requestBody.tools = geminiTools;\n  }\n\n  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify(requestBody)\n  });\n\n  if (!response.ok) {\n    const error = await response.json().catch(() => ({}));\n    throw new Error(error.error?.message || `Gemini API error: ${response.status}`);\n  }\n\n  const data = await response.json();\n  const candidate = data.candidates?.[0];\n  const parts = candidate?.content?.parts || [];\n\n  const result = {\n    content: '',\n    toolCalls: null\n  };\n\n  for (const part of parts) {\n    if (part.text) {\n      result.content += part.text;\n    }\n    if (part.functionCall) {\n      if (!result.toolCalls) result.toolCalls = [];\n      result.toolCalls.push({\n        id: `call_${Date.now()}_${result.toolCalls.length}`,\n        name: part.functionCall.name,\n        arguments: part.functionCall.args || {}\n      });\n    }\n  }\n\n  return result;\n}"
+  }
+}

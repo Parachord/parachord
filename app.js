@@ -1361,6 +1361,7 @@ const VirtualizedQueueList = React.memo(({
         if (isLoading || isError) return;
         setDroppingFromIndex(index);
         setTimeout(() => {
+          // Clicked track plays, remove it and tracks before it, keep tracks after
           setCurrentQueue(prev => prev.slice(index + 1));
           handlePlay(track);
           setDroppingFromIndex(null);
@@ -1431,6 +1432,7 @@ const VirtualizedQueueList = React.memo(({
           if (spinoffMode) exitSpinoff();
           setDroppingFromIndex(index);
           setTimeout(() => {
+            // Clicked track plays, remove it and tracks before it, keep tracks after
             setCurrentQueue(prev => prev.slice(index + 1));
             handlePlay(track);
             setDroppingFromIndex(null);
@@ -3389,6 +3391,755 @@ const ReleasePage = ({
   );
 };
 
+// =============================================================================
+// AI Chat Service - Inlined for browser compatibility
+// =============================================================================
+
+// DJ Tools definitions
+const djTools = [
+  {
+    name: 'play',
+    description: 'Play a specific track by searching for it and starting playback immediately',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'The artist name' },
+        title: { type: 'string', description: 'The track title' }
+      },
+      required: ['artist', 'title']
+    }
+  },
+  {
+    name: 'control',
+    description: 'Control music playback. Use "start" to begin playing the queue, "resume" to unpause, "pause" to pause, "skip" for next track, "previous" for previous track.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['pause', 'resume', 'start', 'skip', 'previous'],
+          description: 'start=play queue from beginning, resume=unpause, pause=pause, skip=next track, previous=previous track'
+        }
+      },
+      required: ['action']
+    }
+  },
+  {
+    name: 'search',
+    description: 'Search for tracks across all music sources. Returns a list of matching tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (artist name, track title, or both)' },
+        limit: { type: 'number', description: 'Maximum number of results to return (default 10)' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'queue_add',
+    description: 'Add one or more tracks to the playback queue',
+    parameters: {
+      type: 'object',
+      properties: {
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to add to the queue'
+        },
+        position: {
+          type: 'string',
+          enum: ['next', 'last'],
+          description: 'Add after current track (next) or at end of queue (last). Default: last'
+        }
+      },
+      required: ['tracks']
+    }
+  },
+  {
+    name: 'queue_remove',
+    description: 'Remove specific tracks from the queue by artist name, track title, or both. Use this instead of queue_clear when you only want to remove some tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'Remove all tracks by this artist (case-insensitive)' },
+        title: { type: 'string', description: 'Remove tracks with this title (case-insensitive)' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'queue_clear',
+    description: 'Clear ALL tracks from the playback queue. Only use this when the user explicitly wants to clear everything.',
+    parameters: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'create_playlist',
+    description: 'Create a new playlist with the specified tracks. IMPORTANT: After creating, include the playlist card in your response using {{playlist|name|id|trackCount}} with the returned ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the new playlist' },
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to include in the playlist'
+        }
+      },
+      required: ['name', 'tracks']
+    }
+  },
+  {
+    name: 'shuffle',
+    description: 'Turn shuffle mode on or off',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'true to enable shuffle, false to disable' }
+      },
+      required: ['enabled']
+    }
+  }
+];
+
+// Execute a DJ tool
+const executeDjTool = async (name, args, context) => {
+  try {
+    switch (name) {
+      case 'play': {
+        const query = `${args.artist} ${args.title}`;
+        // Use earlyReturn for faster single-track search
+        const results = await context.search(query, {
+          earlyReturn: true,
+          targetArtist: args.artist,
+          targetTitle: args.title
+        });
+        if (!results || results.length === 0) {
+          return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
+        }
+        const bestMatch = results.find(r =>
+          r.artist?.toLowerCase() === args.artist.toLowerCase() &&
+          r.title?.toLowerCase() === args.title.toLowerCase()
+        ) || results[0];
+        await context.playTrack(bestMatch);
+        return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
+      }
+      case 'control': {
+        switch (args.action) {
+          case 'pause': context.handlePause(); return { success: true, action: 'paused' };
+          case 'resume':
+          case 'start': {
+            // If nothing is playing and there's a queue, play the first queue item
+            const isPlaying = context.getIsPlaying();
+            const queue = context.getQueue();
+            if (!isPlaying && queue.length > 0) {
+              // Play first track from queue
+              const firstTrack = queue[0];
+              await context.playTrack(firstTrack);
+              return { success: true, action: 'started', track: { artist: firstTrack.artist, title: firstTrack.title } };
+            }
+            // Otherwise toggle play/pause (resume)
+            context.handleResume();
+            return { success: true, action: 'resumed' };
+          }
+          case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
+          case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
+          default: return { success: false, error: `Unknown action: ${args.action}` };
+        }
+      }
+      case 'search': {
+        const results = await context.search(args.query);
+        const limit = args.limit || 10;
+        return {
+          success: true,
+          results: (results || []).slice(0, limit).map(r => ({
+            artist: r.artist,
+            title: r.title,
+            album: r.album,
+            albumArt: r.albumArt || null
+          })),
+          total: results?.length || 0
+        };
+      }
+      case 'queue_add': {
+        const nothingPlaying = !context.getCurrentTrack();
+        let startedPlaying = false;
+        let tracksToQueue = args.tracks;
+
+        // If nothing is playing, resolve and play the first track immediately
+        if (nothingPlaying && args.tracks.length > 0) {
+          const firstTrack = args.tracks[0];
+          const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
+            earlyReturn: true,
+            targetArtist: firstTrack.artist,
+            targetTitle: firstTrack.title
+          });
+          if (results && results.length > 0) {
+            const match = results.find(r =>
+              r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
+              r.title?.toLowerCase() === firstTrack.title.toLowerCase()
+            ) || results[0];
+            await context.playTrack(match);
+            startedPlaying = true;
+          }
+          // Remaining tracks go to queue
+          tracksToQueue = args.tracks.slice(1);
+        }
+
+        // Add remaining tracks to queue as unresolved metadata
+        // The queue's ResolutionScheduler will resolve them in priority order
+        if (tracksToQueue.length > 0) {
+          const metadataTracks = tracksToQueue.map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: t.album || null
+          }));
+          await context.addToQueue(metadataTracks, args.position || 'last');
+        }
+
+        const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
+        return {
+          success: totalAdded > 0,
+          added: totalAdded,
+          nowPlaying: startedPlaying
+        };
+      }
+      case 'queue_remove': {
+        const queue = context.getQueue();
+        const toRemove = [];
+        const filterArtist = args.artist?.toLowerCase();
+        const filterTitle = args.title?.toLowerCase();
+
+        if (!filterArtist && !filterTitle) {
+          return { success: false, error: 'Must specify artist or title to remove' };
+        }
+
+        for (const track of queue) {
+          const matchesArtist = filterArtist && track.artist?.toLowerCase().includes(filterArtist);
+          const matchesTitle = filterTitle && track.title?.toLowerCase().includes(filterTitle);
+
+          // If both filters specified, both must match. Otherwise, match either.
+          if (filterArtist && filterTitle) {
+            if (matchesArtist && matchesTitle) toRemove.push(track);
+          } else if (matchesArtist || matchesTitle) {
+            toRemove.push(track);
+          }
+        }
+
+        for (const track of toRemove) {
+          context.removeFromQueue(track.id);
+        }
+
+        return {
+          success: true,
+          removed: toRemove.length,
+          tracks: toRemove.map(t => ({ artist: t.artist, title: t.title }))
+        };
+      }
+      case 'queue_clear': {
+        context.clearQueue();
+        return { success: true };
+      }
+      case 'create_playlist': {
+        if (!args.tracks || args.tracks.length === 0) {
+          return { success: false, error: 'No tracks specified for playlist' };
+        }
+        // Create playlist with track metadata - no need to resolve
+        // Tracks will be resolved when played from the playlist
+        const metadataTracks = args.tracks.map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || null
+        }));
+        const playlist = await context.createPlaylist(args.name, metadataTracks);
+        return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
+      }
+      case 'shuffle': {
+        context.setShuffle(args.enabled);
+        return { success: true, shuffle: args.enabled };
+      }
+      default:
+        return { success: false, error: `Unknown tool: ${name}` };
+    }
+  } catch (error) {
+    console.error(`Tool execution error (${name}):`, error);
+    return { success: false, error: error.message || 'Tool execution failed' };
+  }
+};
+
+// Get simple tool definitions for LLM APIs
+const getSimpleToolDefinitions = () => djTools.map(t => ({
+  name: t.name,
+  description: t.description,
+  parameters: t.parameters
+}));
+
+// AI Chat Service class
+const AI_CHAT_SYSTEM_PROMPT = `You are a music DJ assistant for Parachord. You control music playback using tools.
+
+TODAY'S DATE: {{currentDate}}
+
+IMPORTANT: To play music or control the player, you MUST call the appropriate tool. Do NOT just say "I'll play..." - you must actually call the play or queue_add tool. Saying you will do something is NOT the same as doing it.
+
+CURRENT STATE:
+{{currentState}}
+
+KEY DEFINITIONS:
+- TRACK/SONG = A single piece of music (e.g., "Motion Sickness" by Phoebe Bridgers)
+- ALBUM = A collection of tracks released together (e.g., "Punisher" by Phoebe Bridgers contains 11 tracks)
+- "NEW" MUSIC = Released in the last 2 years (2024-2026). Do NOT recommend music from 2020 or earlier as "new"
+- "RECENT" = Last 1-2 years. "CLASSIC" = 10+ years old.
+
+PLAYING ALBUMS vs TRACKS:
+- To play a SINGLE TRACK: use the "play" tool with artist and title - starts immediately
+- To play an ENTIRE ALBUM: use "play" for the FIRST track, then "queue_add" for the remaining tracks
+  Example: To play "Punisher" album, play "DVD Menu" first, then queue_add the other 10 tracks
+- If user says "add album to queue": use queue_add with ALL tracks - does NOT interrupt current playback
+- NEVER say "the album will continue playing" - you must explicitly queue each track
+
+PERSONALIZATION - CRITICAL:
+When making recommendations, you MUST follow these rules:
+- NEVER recommend albums/artists already in their collection or listening history - they already know those!
+- NEVER recommend anything in the user's BLOCKLIST (shown in CURRENT STATE) - they explicitly asked not to see these!
+- Recommend NEW music similar to their taste, not music they already listen to
+- When user asks for "new" music, only suggest releases from 2024-2026
+- STRICTLY limit to 1 album/track per artist - never multiple from same artist
+- If you don't have user data, ASK what genres/artists they like before recommending
+
+BLOCKLIST - USER PREFERENCES:
+When user says "don't recommend X", "I don't like X", "stop suggesting X", "never play X again", etc.:
+- Call the block_recommendation tool IMMEDIATELY to save their preference
+- Confirm you've blocked it: "Got it, I won't recommend [X] again."
+- The blocklist persists across sessions - you'll see it in CURRENT STATE
+
+RECOMMENDATION BASIS - CRITICAL:
+- Base ALL recommendations on GENRE, STYLE, SONIC QUALITIES, and what music critics/publications compare artists to
+- NEVER base recommendations on text similarities, name similarities, or title similarities
+- Consider: production style, instrumentation, tempo, mood, era, scene, influences
+- Example: If user likes Radiohead, recommend artists with similar sonic experimentation, not artists with similar band names
+- Use your knowledge of music criticism and what the internet/publications say about artist comparisons
+
+AVAILABLE ACTIONS (use these tools):
+- play: Play a specific track IMMEDIATELY - clears the queue first, starts playing instantly
+- queue_add: Add tracks to queue WITHOUT interrupting current playback - music keeps playing
+- queue_remove: Remove specific tracks from queue
+- queue_clear: Clear entire queue
+- control: pause, resume, skip, previous
+- search: Find tracks (returns results you can then play/queue)
+- shuffle: Enable/disable shuffle mode
+- block_recommendation: Block an artist/album/track from future recommendations
+
+"PLAY" vs "ADD TO QUEUE" - CRITICAL DISTINCTION:
+- "Play X" / "Put on X" = Use play tool → Immediately starts playing, clears existing queue
+- "Add X to queue" / "Queue X" = Use queue_add → Adds to end of queue, does NOT pause or interrupt current track
+- NEVER pause playback when adding to queue - the current track should keep playing uninterrupted
+
+RULES:
+- When user says "PLAY" a track: call play tool - this clears queue and starts immediately
+- When user says "ADD TO QUEUE": call queue_add - this does NOT interrupt current playback
+- When user says "PLAY" multiple tracks: call play with first track, then queue_add with the rest
+- When user asks to play an ALBUM: call play with first track, then queue_add with remaining tracks
+- Always confirm what you did AFTER the tool executes
+- Keep responses brief
+
+CONTENT TYPE - MATCH EXACTLY WHAT USER ASKS FOR:
+- User asks for "ARTISTS" → Recommend ARTISTS (use {{artist|Name|}})
+- User asks for "ALBUMS" → Recommend ALBUMS (use {{album|Title|Artist|}})
+- User asks for "TRACKS/SONGS" → Recommend TRACKS (use {{track|Title|Artist|Album}})
+
+DEFINITIONS:
+- ARTIST = A musician or band (e.g., Phoebe Bridgers, Radiohead)
+- ALBUM = A collection of tracks released together (e.g., "Punisher", "OK Computer")
+- TRACK = An individual song (e.g., "Motion Sickness", "Paranoid Android")
+
+Do NOT recommend albums when user asks for artists. Do NOT recommend tracks when user asks for albums.
+Limit to 1 recommendation per artist unless user asks for more.
+
+FORMATTING - CRITICAL:
+Do NOT use markdown headers (no #, ##, ###, ####). Just use bold text **like this** for section titles.
+
+CARD SYNTAX - MANDATORY FOR ALL MUSIC MENTIONS:
+You MUST use card syntax for EVERY mention of a track, album, artist, or playlist - no exceptions!
+Cards render as clickable items with artwork. NEVER use plain text like "Song Title" by Artist Name.
+
+Card formats:
+- Track: {{track|Song Title|Artist Name|Album Name}}
+- Album: {{album|ALBUM TITLE|ARTIST NAME|}} ← Album title FIRST, then artist name
+- Artist: {{artist|Artist Name|}}
+- Playlist: {{playlist|Playlist Name|playlist-id|track-count}} ← Use AFTER creating a playlist with create_playlist tool
+
+INLINE CARD USAGE - VERY IMPORTANT:
+Cards can and SHOULD be used inline within sentences. They will render properly anywhere in your response.
+
+CORRECT (uses inline cards):
+"For post-rock, I recommend {{track|Storm|Godspeed You! Black Emperor|Lift Your Skinny Fists}} and {{track|Your Hand in Mine|Explosions in the Sky|The Earth Is Not a Cold Dead Place}}. You might also enjoy {{artist|Mogwai|}} or {{artist|Sigur Rós|}}."
+
+WRONG (plain text - NEVER do this):
+"For post-rock, I recommend 'Storm' by Godspeed You! Black Emperor and 'Your Hand in Mine' by Explosions in the Sky."
+
+Cards work in lists too:
+1. {{track|Certainty|Big Thief|Two Hands}} - a beautiful acoustic track
+2. {{album|In Rainbows|Radiohead|}} - a landmark album
+3. {{artist|Phoebe Bridgers|}} - an incredible songwriter
+
+EXAMPLES OF PROPER RESPONSES:
+**Recommendations for you:**
+{{track|Certainty|Big Thief|Two Hands}}
+{{track|Not|Big Thief|Two Hands}}
+{{album|Two Hands|Big Thief|}}
+{{album|In Rainbows|Radiohead|}}
+{{artist|Phoebe Bridgers|}}
+{{playlist|Rainy Day Vibes|ai-chat-1234567890|15}}
+
+AFTER CREATING A PLAYLIST:
+When you create a playlist using the create_playlist tool, ALWAYS include a playlist card in your response using the ID returned by the tool.
+Example: If you create a playlist called "Chill Vibes" and the tool returns id "ai-chat-1706789012345" with 12 tracks, respond with:
+{{playlist|Chill Vibes|ai-chat-1706789012345|12}}
+
+COMMON MISTAKES - DO NOT DO THESE:
+1. {{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
+2. "Motion Sickness" by Phoebe Bridgers ← WRONG! Use card syntax instead: {{track|Motion Sickness|Phoebe Bridgers|Stranger in the Alps}}
+3. Check out Radiohead ← WRONG! Use: {{artist|Radiohead|}}
+4. The album "Kid A" is great ← WRONG! Use: {{album|Kid A|Radiohead|}}
+5. ![Artist Name](url) ← WRONG! Never use image markdown. Use card syntax or plain [text](url) links.
+6. Putting cards on separate lines in lists:
+   WRONG:
+   1. Here's a track
+   {{track|Song|Artist|Album}}
+
+   CORRECT:
+   1. {{track|Song|Artist|Album}} - great track!
+
+FORMATTING RULES:
+- NEVER use image markdown syntax (![text](url)) - it doesn't render correctly
+- Keep cards INLINE with list numbers, not on separate lines
+- The Album field is REQUIRED for tracks - it enables album artwork to display
+- NEVER output plain text music references. ALWAYS use {{type|...}} card syntax.`;
+
+class AIChatService {
+  constructor(provider, toolContext, getContext) {
+    this.provider = provider;
+    this.toolContext = toolContext;
+    this.getContext = getContext;
+    this.messages = [];
+    this.tools = getSimpleToolDefinitions();
+    this.onProgress = null; // Callback for tool execution progress
+  }
+
+  setProgressCallback(callback) {
+    this.onProgress = callback;
+  }
+
+  _reportProgress(status) {
+    if (this.onProgress) {
+      try { this.onProgress(status); } catch (e) { console.error('Progress callback error:', e); }
+    }
+  }
+
+  async sendMessage(userMessage) {
+    this.messages.push({ role: 'user', content: userMessage });
+    if (this.messages.length > 50) {
+      this.messages = [this.messages[0], ...this.messages.slice(-49)];
+    }
+
+    const context = await this.getContext();
+    const systemPrompt = this.buildSystemPrompt(context);
+    const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+
+    let response;
+    try {
+      response = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+    } catch (error) {
+      console.error('AI provider error:', error);
+      this._lastErrorType = null; // Reset before formatting
+      const errorMessage = this.formatProviderError(error);
+      this.messages.push({ role: 'assistant', content: errorMessage });
+      const result = { content: errorMessage, error: true };
+      if (this._lastErrorType === 'ollama_connection') {
+        result.ollamaUnavailable = true;
+      }
+      return result;
+    }
+
+    // Handle tool calls - check both toolCalls and tool_calls
+    const toolCalls = response.toolCalls || response.tool_calls;
+    if (toolCalls && toolCalls.length > 0) {
+      return await this.handleToolCalls({ ...response, tool_calls: toolCalls }, systemPrompt);
+    }
+
+    // Check if the response mentions playing but didn't use tools
+    // This can happen with smaller models that don't support tool calling well
+    let content = response.content;
+    const lowerContent = content.toLowerCase();
+    const mentionsAction = lowerContent.includes("i'll play") ||
+                          lowerContent.includes("i will play") ||
+                          lowerContent.includes("let me play") ||
+                          lowerContent.includes("playing") ||
+                          lowerContent.includes("i'll add") ||
+                          lowerContent.includes("adding to queue");
+
+    if (mentionsAction && !toolCalls) {
+      // Model described an action but didn't call the tool
+      content += "\n\n⚠️ Note: I described an action but couldn't execute it. This model may not support tool calling well. Try using ChatGPT or a larger Ollama model like llama3.1 or qwen2.5.";
+    }
+
+    this.messages.push({ role: 'assistant', content: content });
+    return { content: content };
+  }
+
+  async handleToolCalls(response, systemPrompt) {
+    let toolResults = [];
+    let iterations = 0;
+    let currentResponse = response;
+
+    while ((currentResponse.tool_calls || currentResponse.toolCalls) && iterations < 5) {
+      iterations++;
+      const calls = currentResponse.tool_calls || currentResponse.toolCalls;
+
+      this.messages.push({
+        role: 'assistant',
+        content: currentResponse.content || '',
+        tool_calls: calls
+      });
+
+      for (const call of calls) {
+        // Report progress to UI
+        const toolLabels = {
+          search: 'Searching...',
+          play: 'Playing track...',
+          queue_add: 'Adding to queue...',
+          queue_remove: 'Removing from queue...',
+          queue_clear: 'Clearing queue...',
+          control: call.arguments?.action === 'pause' ? 'Pausing...' : call.arguments?.action === 'skip' ? 'Skipping...' : 'Controlling playback...',
+          create_playlist: 'Creating playlist...',
+          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...'
+        };
+        this._reportProgress(toolLabels[call.name] || `Running ${call.name}...`);
+
+        const result = await executeDjTool(call.name, call.arguments, this.toolContext);
+        toolResults.push({ tool: call.name, arguments: call.arguments, result });
+        this.messages.push({
+          role: 'tool',
+          tool_call_id: call.id || call.name,
+          content: JSON.stringify(result)
+        });
+      }
+
+      const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+      try {
+        currentResponse = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+        // Normalize tool calls
+        if (currentResponse.toolCalls && !currentResponse.tool_calls) {
+          currentResponse.tool_calls = currentResponse.toolCalls;
+        }
+      } catch (error) {
+        console.error('AI provider error during tool follow-up:', error);
+        this.messages.push({ role: 'assistant', content: 'I encountered an error while processing.' });
+        return { content: 'I encountered an error while processing.', toolResults, error: true };
+      }
+    }
+
+    const finalContent = currentResponse.content || this.summarizeToolResults(toolResults);
+    this.messages.push({ role: 'assistant', content: finalContent });
+    return { content: finalContent, toolResults };
+  }
+
+  buildSystemPrompt(context) {
+    const lines = [];
+    if (context.nowPlaying) {
+      lines.push(`Now Playing: "${context.nowPlaying.title}" by ${context.nowPlaying.artist}`);
+      lines.push(`  State: ${context.playbackState || 'unknown'}`);
+    } else {
+      lines.push('Nothing is currently playing.');
+    }
+    if (context.queue && context.queue.length > 0) {
+      lines.push(`\nQueue (${context.queue.length} tracks):`);
+      context.queue.slice(0, 10).forEach((t, i) => lines.push(`  ${i + 1}. "${t.title}" by ${t.artist}`));
+    }
+    if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
+
+    // Build exclusion list from collection and listening history
+    const knownArtists = new Set();
+    const knownAlbums = new Set();
+
+    // Add collection (user's explicit favorites)
+    if (context.collection) {
+      const { favoriteArtists, favoriteAlbums, favoriteTracks } = context.collection;
+
+      // Add to known sets
+      favoriteArtists?.forEach(a => knownArtists.add(a));
+      favoriteAlbums?.forEach(a => {
+        knownArtists.add(a.artist);
+        knownAlbums.add(`${a.title} by ${a.artist}`);
+      });
+      favoriteTracks?.forEach(t => knownArtists.add(t.artist));
+
+      const hasCollection = (favoriteArtists?.length > 0) || (favoriteAlbums?.length > 0) || (favoriteTracks?.length > 0);
+
+      if (hasCollection) {
+        lines.push('\nUSER COLLECTION (their saved favorites - use for style matching):');
+        if (favoriteArtists?.length > 0) {
+          lines.push(`  Favorite artists: ${favoriteArtists.slice(0, 10).join(', ')}`);
+        }
+        if (favoriteAlbums?.length > 0) {
+          const albumList = favoriteAlbums.slice(0, 8).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+          lines.push(`  Favorite albums: ${albumList}`);
+        }
+        if (favoriteTracks?.length > 0) {
+          const trackList = favoriteTracks.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+          lines.push(`  Favorite tracks: ${trackList}`);
+        }
+      }
+    }
+
+    // Add listening history for personalization
+    const history = context.listeningHistory;
+    if (history) {
+      lines.push(`\nLISTENING HISTORY (from ${history.source || 'scrobbling'}):`);
+
+      // Show data by time period if available
+      if (history.periods && history.periods.length > 0) {
+        for (const period of history.periods) {
+          const periodLabel = period.window.replace(/_/g, ' ');
+          if (period.top_artists && period.top_artists.length > 0) {
+            period.top_artists.forEach(a => knownArtists.add(a));
+            lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
+          }
+          if (period.top_tracks && period.top_tracks.length > 0) {
+            period.top_tracks.forEach(t => knownArtists.add(t.artist));
+            const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+            lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
+          }
+          if (period.top_albums && period.top_albums.length > 0) {
+            period.top_albums.forEach(a => {
+              knownArtists.add(a.artist);
+              knownAlbums.add(`${a.title} by ${a.artist}`);
+            });
+            const albumList = period.top_albums.slice(0, 5).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+            lines.push(`  Top albums (${periodLabel}): ${albumList}`);
+          }
+        }
+      }
+
+      // Add recently played section
+      if (history.recently_played && history.recently_played.length > 0) {
+        history.recently_played.forEach(t => knownArtists.add(t.artist));
+        const recentList = history.recently_played.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+        lines.push(`\n  Recently played: ${recentList}`);
+      }
+    }
+
+    // Add explicit exclusion list for "new music" requests
+    if (knownArtists.size > 0) {
+      const sortedArtists = Array.from(knownArtists).sort().slice(0, 30);
+      lines.push('\n⛔ DO NOT RECOMMEND (user already knows these artists):');
+      lines.push(`  ${sortedArtists.join(', ')}`);
+      lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
+    }
+
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    return AI_CHAT_SYSTEM_PROMPT
+      .replace('{{currentDate}}', currentDate)
+      .replace('{{currentState}}', lines.join('\n'));
+  }
+
+  summarizeToolResults(toolResults) {
+    if (!toolResults || toolResults.length === 0) return 'Done.';
+    return toolResults.map(({ tool, result }) => {
+      if (!result.success) return `Failed to ${tool}: ${result.error}`;
+      switch (tool) {
+        case 'play': return result.track ? `Now playing "${result.track.title}" by ${result.track.artist}` : 'Started playback';
+        case 'control': return `Playback ${result.action}`;
+        case 'search': return `Found ${result.results?.length || 0} results`;
+        case 'queue_add': return `Added ${result.added} track(s) to queue`;
+        case 'queue_clear': return 'Queue cleared';
+        case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
+        case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
+        default: return `${tool} completed`;
+      }
+    }).join('. ') + '.';
+  }
+
+  formatProviderError(error) {
+    const message = error.message || '';
+    const lowerMessage = message.toLowerCase();
+
+    // Connection errors (Ollama, network issues)
+    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused') || lowerMessage.includes('network')) {
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        // Mark this as an Ollama connection error for auto-start handling
+        this._lastErrorType = 'ollama_connection';
+        return "Can't connect to Ollama. Attempting to start it...";
+      }
+      return "Can't connect to the AI service. Check your internet connection.";
+    }
+
+    // Quota/rate limit errors (Gemini, OpenAI)
+    if (lowerMessage.includes('quota') || lowerMessage.includes('exceeded')) {
+      return "API quota exceeded. Check your plan limits or try again later.";
+    }
+    if (message.includes('429') || lowerMessage.includes('rate limit')) {
+      return "Rate limit reached. Please wait a moment and try again.";
+    }
+
+    // Auth errors
+    if (message.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key')) {
+      return "Invalid API key. Please check your settings.";
+    }
+
+    // Model not found
+    if (message.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('does not exist')) {
+      // Check if this is Ollama
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        const model = this.provider.config?.model || 'llama3.1';
+        return `Model "${model}" not installed. Run: ollama pull ${model}`;
+      }
+      return "AI model not found. Check your settings or try a different model.";
+    }
+
+    // Content policy errors
+    if (lowerMessage.includes('content policy') || lowerMessage.includes('safety')) {
+      return "Request was blocked by content policy. Try rephrasing.";
+    }
+
+    // Generic error - truncate long messages
+    const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
+    return `Error: ${shortMessage}`;
+  }
+
+  clearHistory() { this.messages = []; }
+  restoreHistory(messages) { this.messages = messages || []; }
+  getHistory() { return [...this.messages]; }
+}
+
+// Create chat service from plugin
+const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) => {
+  if (!plugin || !plugin.chat) {
+    throw new Error('Plugin does not have chat capability');
+  }
+  const provider = {
+    chat: plugin.chat,
+    config: config,
+    id: plugin.id || plugin.manifest?.id,
+    name: plugin.name || plugin.manifest?.name
+  };
+  return new AIChatService(provider, toolContext, getContext);
+};
+
+// =============================================================================
+// End AI Chat Service
+// =============================================================================
+
 const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
@@ -3444,6 +4195,8 @@ const Parachord = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
+  const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
+  const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
   const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
@@ -3451,7 +4204,19 @@ const Parachord = () => {
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
+  const [sidebarClosing, setSidebarClosing] = useState(false); // Tracks closing animation state
   // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
+  // For chat mode: { mode: 'chat', title, messages: [], provider }
+
+  // Conversational DJ (AI Chat) state
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiChatMessages, setAiChatMessages] = useState([]);
+  const [aiChatInput, setAiChatInput] = useState('');
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [aiChatProgress, setAiChatProgress] = useState(null); // Tool execution progress message
+  const [selectedChatProvider, setSelectedChatProvider] = useState(null);
+  const aiChatServiceRef = useRef(null);
+  const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -4639,6 +5404,7 @@ const Parachord = () => {
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
+  useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -5680,6 +6446,7 @@ const Parachord = () => {
 
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
+  const artistFetchId = useRef(0);  // Incremented on each new fetch to detect stale async callbacks
 
   // Cache for MusicBrainz search results (query -> { artists, albums, tracks, timestamp })
   // TTL: 5 minutes - cached results shown instantly while fresh search runs in background
@@ -5742,6 +6509,14 @@ const Parachord = () => {
     if (!resolverLoaderRef.current) return [];
     return resolverLoaderRef.current.getAllResolvers().filter(r =>
       r.capabilities?.generate
+    );
+  };
+
+  // Get AI services with chat capability (for Conversational DJ)
+  const getChatServices = () => {
+    if (!resolverLoaderRef.current) return [];
+    return resolverLoaderRef.current.getAllResolvers().filter(r =>
+      r.capabilities?.chat
     );
   };
 
@@ -5857,8 +6632,12 @@ const Parachord = () => {
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate
         );
+        // Meta services with chat capability (Conversational DJ)
+        const metaServicesWithChat = metaServiceAxes.filter(axe =>
+          axe.capabilities?.chat && axe.implementation?.chat
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -5876,6 +6655,12 @@ const Parachord = () => {
         if (metaServicesWithGenerate.length > 0) {
           const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
           console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
+        }
+
+        // Load meta services with chat capability (Conversational DJ)
+        if (metaServicesWithChat.length > 0) {
+          const loadedChatServices = await resolverLoader.current.loadResolvers(metaServicesWithChat);
+          console.log(`💬 Loaded ${loadedChatServices.length} chat service(s):`, loadedChatServices.map(s => s.name).join(', '));
         }
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
@@ -8340,12 +9125,51 @@ const Parachord = () => {
     }
   }, [aiIncludeHistory, cacheLoaded]);
 
+  // Persist recommendation blocklist (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('recommendation_blocklist', recommendationBlocklist);
+    }
+  }, [recommendationBlocklist, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
       window.electron.store.set('playlists_view_mode', playlistsViewMode);
     }
   }, [playlistsViewMode, cacheLoaded]);
+
+  // Persist AI chat history per provider (only after cache is loaded to avoid overwriting)
+  const aiChatHistoriesRef = useRef({}); // Store histories for all providers
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store && selectedChatProvider) {
+      // Update the history for current provider
+      aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+      window.electron.store.set('ai_chat_histories', aiChatHistoriesRef.current);
+    }
+  }, [aiChatMessages, cacheLoaded, selectedChatProvider]);
+
+  // Load chat history when provider changes
+  const prevProviderRef = useRef(null);
+  useEffect(() => {
+    if (cacheLoaded && selectedChatProvider && selectedChatProvider !== prevProviderRef.current) {
+      prevProviderRef.current = selectedChatProvider;
+      const history = aiChatHistoriesRef.current[selectedChatProvider] || [];
+      setAiChatMessages(history);
+      // Also restore to service if it exists
+      if (aiChatServiceRef.current) {
+        aiChatServiceRef.current.restoreHistory(history);
+      }
+      // Update resultsSidebar with loaded history if chat is open
+      setResultsSidebar(prev => {
+        if (prev?.mode === 'chat') {
+          return { ...prev, messages: history };
+        }
+        return prev;
+      });
+      console.log('💬 Loaded chat history for provider:', selectedChatProvider, '-', history.length, 'messages');
+    }
+  }, [selectedChatProvider, cacheLoaded]);
 
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
@@ -8440,8 +9264,18 @@ const Parachord = () => {
   }, [activeView, playlists]);
 
   // Keyboard shortcuts - Escape navigates back from search view
+  // Ignore shortcuts when typing in input fields
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in input fields
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      );
+      if (isTyping) return;
+
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
       }
@@ -8580,6 +9414,13 @@ const Parachord = () => {
     let resolverId;
     let sourceToPlay = trackOrSource;
 
+    // Handle tracks without sources property (e.g., AI-added queue tracks that haven't been resolved yet)
+    // Initialize empty sources object so they go through on-demand resolution
+    if (!trackOrSource.sources && trackOrSource.artist && trackOrSource.title) {
+      console.log('🔄 Track has no sources, initializing for on-demand resolution:', trackOrSource.title);
+      trackOrSource = { ...trackOrSource, sources: {} };
+    }
+
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
       // Merge in resolved sources from trackSources state if available
       // This ensures we have all available sources including those resolved in background
@@ -8593,10 +9434,45 @@ const Parachord = () => {
       let availableResolvers = Object.keys(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
-        // No sources available - try resolving on-demand using shared resolution
-        console.log('🔄 No sources found, attempting on-demand resolution...');
+        // No sources available - show track immediately, then resolve
+        console.log('🔄 No sources found, showing track and resolving...');
 
-        const sources = await resolveTrack(trackOrSource, trackOrSource.artist, {});
+        // Immediately set as current track so user sees feedback
+        const placeholderTrack = {
+          ...trackOrSource,
+          status: 'resolving'
+        };
+        setCurrentTrack(placeholderTrack);
+
+        // Resolve across all enabled resolvers in parallel (like ChatCard does)
+        const currentResolvers = loadedResolversRef.current;
+        const currentActiveResolvers = activeResolversRef.current;
+        const currentResolverOrder = resolverOrderRef.current;
+        const enabledResolvers = currentResolverOrder
+          .filter(id => currentActiveResolvers.includes(id))
+          .map(id => currentResolvers.find(r => r.id === id))
+          .filter(r => r && r.capabilities?.resolve);
+
+        const freshSources = {};
+        const resolvePromises = enabledResolvers.map(async (resolver) => {
+          try {
+            const config = getResolverConfigRef.current
+              ? await getResolverConfigRef.current(resolver.id)
+              : {};
+            const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
+            if (result) {
+              freshSources[resolver.id] = {
+                ...result,
+                confidence: result.confidence || 0.9,
+                resolvedAt: Date.now()
+              };
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name || resolver.id} resolve error:`, error);
+          }
+        });
+
+        await Promise.all(resolvePromises);
 
         // Check if another play request superseded this one during resolution
         if (playbackGenerationRef.current !== thisGeneration) {
@@ -8604,8 +9480,15 @@ const Parachord = () => {
           return;
         }
 
-        if (sources && Object.keys(sources).length > 0) {
-          trackOrSource.sources = sources;
+        if (Object.keys(freshSources).length > 0) {
+          trackOrSource.sources = freshSources;
+          // Update trackSources state so resolver dropdown shows all options
+          if (trackOrSource.id) {
+            setTrackSources(prev => ({
+              ...prev,
+              [trackOrSource.id]: freshSources
+            }));
+          }
         }
 
         // Update availableResolvers after resolution
@@ -8613,6 +9496,7 @@ const Parachord = () => {
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
+          setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -8620,6 +9504,14 @@ const Parachord = () => {
           });
           return;
         }
+
+        // Update current track with resolved sources
+        setCurrentTrack(prev => {
+          if (prev?.id === placeholderTrack.id || prev?.title === placeholderTrack.title) {
+            return { ...trackOrSource, status: 'resolved' };
+          }
+          return prev;
+        });
       }
 
       // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
@@ -10820,13 +11712,25 @@ const Parachord = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
+    // Check if we have cached recently played data (from History page)
+    const now = Date.now();
+    const recentCacheValid = listeningHistoryCache.current.tracks &&
+                             (now - listeningHistoryCache.current.timestamp) < (10 * 60 * 1000);
+    const cachedRecentlyPlayed = recentCacheValid
+      ? listeningHistoryCache.current.tracks.slice(0, 50).map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || ''
+        }))
+      : null;
+
     // Time periods to fetch for richer context (fetch more than needed, will dedupe)
-    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit }
+    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit, albumLimit }
     const periods = [
-      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15 },
-      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15 }
+      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15, albumLimit: 10 }
     ];
 
     // Deduplicate results across time periods for maximum variety
@@ -10834,75 +11738,105 @@ const Parachord = () => {
     const deduplicateResults = (results) => {
       const seenArtists = new Set();
       const seenTracks = new Set();
+      const seenAlbums = new Set();
 
       return results.map(period => {
-        const uniqueArtists = period.top_artists.filter(artist => {
+        const uniqueArtists = (period.top_artists || []).filter(artist => {
           const key = artist.toLowerCase();
           if (seenArtists.has(key)) return false;
           seenArtists.add(key);
           return true;
         });
 
-        const uniqueTracks = period.top_tracks.filter(track => {
+        const uniqueTracks = (period.top_tracks || []).filter(track => {
           const key = `${track.artist.toLowerCase()}|${track.title.toLowerCase()}`;
           if (seenTracks.has(key)) return false;
           seenTracks.add(key);
           return true;
         });
 
+        const uniqueAlbums = (period.top_albums || []).filter(album => {
+          const key = `${album.artist.toLowerCase()}|${album.title.toLowerCase()}`;
+          if (seenAlbums.has(key)) return false;
+          seenAlbums.add(key);
+          return true;
+        });
+
         return {
           ...period,
           top_artists: uniqueArtists,
-          top_tracks: uniqueTracks
+          top_tracks: uniqueTracks,
+          top_albums: uniqueAlbums
         };
-      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0);
+      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0 || period.top_albums.length > 0);
     };
 
-    // Try Last.fm first
+    // Fetch from Last.fm (store in variable, don't return yet)
+    let lastfmData = null;
     if (lastfmConfig?.username) {
       const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
           console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
 
-          // Fetch all periods in parallel
+          // Fetch all periods in parallel (artists, tracks, albums)
           const periodPromises = periods.map(async (period) => {
-            const [artistsRes, tracksRes] = await Promise.all([
+            const [artistsRes, tracksRes, albumsRes] = await Promise.all([
               fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`)
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
             ]);
 
-            if (artistsRes.ok && tracksRes.ok) {
-              const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+            if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
+              const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
               return {
                 window: period.label,
                 top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
                 top_tracks: (tracksData.toptracks?.track || []).map(t => ({
                   artist: t.artist?.name || 'Unknown',
                   title: t.name
+                })),
+                top_albums: (albumsData.topalbums?.album || []).map(a => ({
+                  artist: a.artist?.name || 'Unknown',
+                  title: a.name
                 }))
               };
             }
             return null;
           });
 
+          // Use cached recently played if available, otherwise fetch
+          let recentlyPlayed = cachedRecentlyPlayed || [];
+          if (!cachedRecentlyPlayed) {
+            const recentRes = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
+            if (recentRes.ok) {
+              const recentData = await recentRes.json();
+              recentlyPlayed = (recentData.recenttracks?.track || [])
+                .filter(t => !t['@attr']?.nowplaying) // Exclude currently playing
+                .map(t => ({
+                  artist: t.artist?.['#text'] || t.artist?.name || 'Unknown',
+                  title: t.name,
+                  album: t.album?.['#text'] || ''
+                }));
+            }
+          }
+
           const results = await Promise.all(periodPromises);
           const validResults = results.filter(r => r !== null);
 
-          if (validResults.length > 0) {
+          if (validResults.length > 0 || recentlyPlayed.length > 0) {
             const deduped = deduplicateResults(validResults);
-            // Flatten for backward compatibility with AI plugins
             const allArtists = deduped.flatMap(p => p.top_artists);
             const allTracks = deduped.flatMap(p => p.top_tracks);
-            console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
+            const allAlbums = deduped.flatMap(p => p.top_albums || []);
+            console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${recentlyPlayed.length} recently played from Last.fm`);
 
-            return {
+            lastfmData = {
               source: 'Last.fm',
-              // Backward compatible flat format for existing AI plugins
-              window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
               top_artists: allArtists,
               top_tracks: allTracks,
-              // Rich structured format for future use
+              top_albums: allAlbums,
+              recently_played: recentlyPlayed,
               periods: deduped
             };
           }
@@ -10912,54 +11846,75 @@ const Parachord = () => {
       }
     }
 
-    // Fall back to ListenBrainz
+    // Also fetch from ListenBrainz (not just fallback - merge both sources)
+    let listenbrainzData = null;
     if (listenbrainzConfig?.username) {
       try {
         console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
 
-        // Fetch all periods in parallel
+        // Fetch all periods in parallel (artists, tracks, releases/albums)
         const periodPromises = periods.map(async (period) => {
-          const [artistsRes, tracksRes] = await Promise.all([
+          const [artistsRes, tracksRes, releasesRes] = await Promise.all([
             fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`)
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
           ]);
 
-          // Handle 204 No Content
-          if (artistsRes.status === 204 || tracksRes.status === 204) {
-            return null;
-          }
+          // Handle 204 No Content for any
+          const artistsOk = artistsRes.ok && artistsRes.status !== 204;
+          const tracksOk = tracksRes.ok && tracksRes.status !== 204;
+          const releasesOk = releasesRes.ok && releasesRes.status !== 204;
 
-          if (artistsRes.ok && tracksRes.ok) {
-            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
-            return {
-              window: period.label,
-              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
-              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
-                artist: t.artist_name || 'Unknown',
-                title: t.track_name
-              }))
-            };
-          }
-          return null;
+          if (!artistsOk && !tracksOk && !releasesOk) return null;
+
+          const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
+          const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
+          const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
+
+          return {
+            window: period.label,
+            top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
+            top_tracks: (tracksData.payload?.recordings || []).map(t => ({
+              artist: t.artist_name || 'Unknown',
+              title: t.track_name
+            })),
+            top_albums: (releasesData.payload?.releases || []).map(r => ({
+              artist: r.artist_name || 'Unknown',
+              title: r.release_name
+            }))
+          };
         });
+
+        // Use cached recently played if available, otherwise fetch
+        let lbRecentlyPlayed = cachedRecentlyPlayed || [];
+        if (!cachedRecentlyPlayed) {
+          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`);
+          if (recentRes.ok) {
+            const recentData = await recentRes.json();
+            lbRecentlyPlayed = (recentData.payload?.listens || []).map(l => ({
+              artist: l.track_metadata?.artist_name || 'Unknown',
+              title: l.track_metadata?.track_name || 'Unknown',
+              album: l.track_metadata?.release_name || ''
+            }));
+          }
+        }
 
         const results = await Promise.all(periodPromises);
         const validResults = results.filter(r => r !== null);
 
-        if (validResults.length > 0) {
+        if (validResults.length > 0 || lbRecentlyPlayed.length > 0) {
           const deduped = deduplicateResults(validResults);
-          // Flatten for backward compatibility with AI plugins
           const allArtists = deduped.flatMap(p => p.top_artists);
           const allTracks = deduped.flatMap(p => p.top_tracks);
-          console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from ListenBrainz across ${deduped.length} time periods`);
+          const allAlbums = deduped.flatMap(p => p.top_albums || []);
+          console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${lbRecentlyPlayed.length} recently played from ListenBrainz`);
 
-          return {
+          listenbrainzData = {
             source: 'ListenBrainz',
-            // Backward compatible flat format for existing AI plugins
-            window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
             top_artists: allArtists,
             top_tracks: allTracks,
-            // Rich structured format for future use
+            top_albums: allAlbums,
+            recently_played: lbRecentlyPlayed,
             periods: deduped
           };
         }
@@ -10968,6 +11923,61 @@ const Parachord = () => {
       }
     }
 
+    // Merge data from both sources with deduplication
+    if (lastfmData || listenbrainzData) {
+      // Helper to dedupe arrays by key function
+      const dedupeArray = (arr, keyFn) => {
+        const seen = new Set();
+        return arr.filter(item => {
+          const key = keyFn(item);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      };
+
+      // Merge artists (simple strings, lowercase key)
+      const allArtists = dedupeArray(
+        [...(lastfmData?.top_artists || []), ...(listenbrainzData?.top_artists || [])],
+        a => a.toLowerCase()
+      );
+
+      // Merge tracks (objects with artist/title)
+      const allTracks = dedupeArray(
+        [...(lastfmData?.top_tracks || []), ...(listenbrainzData?.top_tracks || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge albums (objects with artist/title)
+      const allAlbums = dedupeArray(
+        [...(lastfmData?.top_albums || []), ...(listenbrainzData?.top_albums || [])],
+        a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`
+      );
+
+      // Merge recently played (objects with artist/title), keeping order
+      const allRecent = dedupeArray(
+        [...(lastfmData?.recently_played || []), ...(listenbrainzData?.recently_played || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge periods (keep both sources' structured data)
+      const allPeriods = [...(lastfmData?.periods || []), ...(listenbrainzData?.periods || [])];
+
+      const sources = [lastfmData?.source, listenbrainzData?.source].filter(Boolean).join(' + ');
+      console.log(`🎵 Combined listening context from ${sources}: ${allArtists.length} artists, ${allTracks.length} tracks, ${allAlbums.length} albums, ${allRecent.length} recent plays`);
+
+      return {
+        source: sources,
+        window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
+        top_artists: allArtists,
+        top_tracks: allTracks,
+        top_albums: allAlbums,
+        recently_played: allRecent,
+        periods: allPeriods
+      };
+    }
+
+    // No data from either source
     return null;
   };
 
@@ -11048,7 +12058,7 @@ const Parachord = () => {
       console.error('AI generation error:', error);
       setAiError(error.message || 'Failed to generate playlist');
       // Close sidebar on error, reopen prompt
-      setResultsSidebar(null);
+      closeSidebarAnimated();
       setAiPromptOpen(true);
     } finally {
       setAiLoading(false);
@@ -11061,7 +12071,7 @@ const Parachord = () => {
     // Use aiPlaylist context type (not navigable, unlike recommendations page)
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     addToQueue(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
 
@@ -11070,7 +12080,7 @@ const Parachord = () => {
     if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     playTrackCollection(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
 
   // Handle adding AI results to existing/new playlist
@@ -11082,9 +12092,970 @@ const Parachord = () => {
       sourceName: resultsSidebar.prompt || 'AI Playlist',
       sourceType: 'playlist'
     });
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
-  const addToQueue = (tracks, context = null) => {
+
+  // ============================================
+  // Conversational DJ (AI Chat) Functions
+  // ============================================
+
+  // Search across all active resolvers (for AI chat tools)
+  // Options:
+  //   earlyReturn: if true, returns as soon as the first resolver finds results (faster for single track play)
+  //   targetArtist/targetTitle: if provided with earlyReturn, returns early only if an exact match is found
+  const searchResolvers = async (query, options = {}) => {
+    const { earlyReturn = false, targetArtist, targetTitle } = options;
+    const allResolvers = loadedResolversRef.current || [];
+    const activeIds = activeResolversRef.current || [];
+    const resolverOrder = resolverOrderRef.current || [];
+    const results = [];
+
+    // Sort resolvers by user-configured priority order
+    const sortedResolvers = [...resolverOrder]
+      .filter(id => activeIds.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(r => r && r.search);
+
+    // Add any active resolvers not in the order list (fallback)
+    for (const resolver of allResolvers) {
+      if (activeIds.includes(resolver.id) && resolver.search && !sortedResolvers.find(r => r.id === resolver.id)) {
+        sortedResolvers.push(resolver);
+      }
+    }
+
+    for (const resolver of sortedResolvers) {
+      try {
+        const config = getResolverConfigRef.current
+          ? await getResolverConfigRef.current(resolver.id)
+          : {};
+        const tracks = await resolver.search(query, config);
+        if (Array.isArray(tracks) && tracks.length > 0) {
+          const taggedTracks = tracks.map(t => ({
+            ...t,
+            source: resolver.id,
+            resolverName: resolver.name || resolver.manifest?.name
+          }));
+          results.push(...taggedTracks);
+
+          // Early return optimization: if we found results from highest-priority resolver
+          if (earlyReturn) {
+            // If target artist/title provided, only return early on exact match
+            if (targetArtist && targetTitle) {
+              const hasExactMatch = taggedTracks.some(t =>
+                t.artist?.toLowerCase() === targetArtist.toLowerCase() &&
+                t.title?.toLowerCase() === targetTitle.toLowerCase()
+              );
+              if (hasExactMatch) {
+                return results;
+              }
+            } else {
+              // No target specified, return early with any results
+              return results;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    return results;
+  };
+
+  // Create a playlist from AI chat
+  const createPlaylistFromChat = async (name, tracks) => {
+    const playlistId = `ai-chat-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: name,
+      creator: 'Shuffleupagus',
+      tracks: tracks,
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
+    };
+
+    const saveResult = await window.electron.playlists.save(newPlaylist);
+    if (saveResult.success) {
+      setPlaylists(prev => [newPlaylist, ...prev]);
+      fetchPlaylistCovers(playlistId, tracks);
+    }
+
+    return newPlaylist;
+  };
+
+  // Initialize or get AI chat service
+  const getOrCreateChatService = (provider) => {
+    const config = metaServiceConfigs[provider.id] || {};
+
+    // Check if we have a service for this provider with same config
+    // Recreate if model or other settings changed
+    if (aiChatServiceRef.current?.provider?.id === provider.id) {
+      const currentConfig = aiChatServiceRef.current.provider.config || {};
+      const configChanged = currentConfig.model !== config.model ||
+                           currentConfig.endpoint !== config.endpoint;
+      if (!configChanged) {
+        return aiChatServiceRef.current;
+      }
+      // Config changed - will recreate service below
+      console.log('🔄 AI config changed, recreating chat service');
+    }
+
+    // Create tool context for DJ tools
+    const toolContext = {
+      search: async (query, options = {}) => {
+        const results = await searchResolvers(query, options);
+        return results || [];
+      },
+      playTrack: async (track) => {
+        await handlePlayRef.current(track);
+      },
+      addToQueue: async (tracks, position) => {
+        // skipAutoPlay: true because queue_add tool handles auto-play itself
+        addToQueue(tracks, { type: 'aiPlaylist', name: 'Shuffleupagus' }, { skipAutoPlay: true });
+      },
+      clearQueue: () => clearQueue(),
+      removeFromQueue: (trackId) => removeFromQueue(trackId),
+      handlePause: () => handlePlayPauseRef.current(),
+      handleResume: () => handlePlayPauseRef.current(), // Toggle play/pause
+      playTrack: async (track) => await handlePlayRef.current(track), // Play specific track
+      handleNext: () => handleNextRef.current(),
+      handlePrevious: () => handlePreviousRef.current(),
+      setShuffle: (enabled) => setShuffleMode(enabled),
+      createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+      getCurrentTrack: () => currentTrackRef.current,
+      getQueue: () => currentQueueRef.current || [],
+      getIsPlaying: () => isPlayingRef.current,
+      blockRecommendation: (type, item) => {
+        // Add item to the recommendation blocklist
+        // type: 'artist' | 'album' | 'track'
+        // item: { name } for artist, { title, artist } for album/track
+        setRecommendationBlocklist(prev => {
+          const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
+          // Check if already blocked (avoid duplicates)
+          const exists = prev[key].some(existing => {
+            if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
+            return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
+                   existing.artist?.toLowerCase() === item.artist?.toLowerCase();
+          });
+          if (exists) return prev;
+          return { ...prev, [key]: [...prev[key], item] };
+        });
+      },
+      getBlocklist: () => recommendationBlocklistRef.current
+    };
+
+    // Create context getter for system prompt
+    const getContext = async () => {
+      const nowPlaying = currentTrackRef.current;
+      const queue = currentQueueRef.current || [];
+      const isPlaying = isPlayingRef.current;
+      const shuffle = shuffleModeRef.current;
+
+      // Fetch listening history for personalization
+      let listeningHistory = null;
+      try {
+        listeningHistory = await fetchListeningContext();
+      } catch (e) {
+        console.log('Could not fetch listening history:', e.message);
+      }
+
+      // Get collection (user's favorites)
+      const collection = {
+        favoriteArtists: (collectionData?.artists || []).slice(0, 20).map(a => a.name || a.artist),
+        favoriteAlbums: (collectionData?.albums || []).slice(0, 15).map(a => ({
+          title: a.title || a.album,
+          artist: a.artist
+        })),
+        favoriteTracks: (collectionData?.tracks || []).slice(0, 20).map(t => ({
+          title: t.title,
+          artist: t.artist
+        }))
+      };
+
+      // Get recommendation blocklist
+      const blocklist = recommendationBlocklistRef.current || { artists: [], albums: [], tracks: [] };
+
+      return {
+        nowPlaying: nowPlaying ? {
+          title: nowPlaying.title,
+          artist: nowPlaying.artist,
+          album: nowPlaying.album,
+          source: nowPlaying.source || nowPlaying.resolverId
+        } : null,
+        playbackState: isPlaying ? 'playing' : 'paused',
+        queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
+        shuffle: shuffle,
+        listeningHistory: listeningHistory,
+        collection: collection,
+        blocklist: blocklist
+      };
+    };
+
+    // Create the service using the inlined function
+    const service = createChatServiceFromPlugin(provider, config, toolContext, getContext);
+
+    // Restore chat history if we have persisted messages
+    if (aiChatMessages.length > 0) {
+      service.restoreHistory(aiChatMessages);
+    }
+
+    aiChatServiceRef.current = service;
+    return service;
+  };
+
+  // ChatCard component - stable reference using ref to prevent re-creation on every render
+  // Without the ref, React.memo() would be called on every App render, creating a new component type
+  const chatCardRef = useRef(null);
+  if (!chatCardRef.current) {
+    chatCardRef.current = React.memo(({ type, title, artist, album }) => {
+    const [imageUrl, setImageUrl] = useState(null);
+    const [loading, setLoading] = useState(true); // Start true for shimmer
+
+    // Fetch album art on mount if not cached
+    useEffect(() => {
+      let cancelled = false;
+
+      const fetchArt = async () => {
+        // Check cache first
+        let cachedUrl = null;
+        if (type === 'artist') {
+          const normalizedName = title?.trim().toLowerCase();
+          if (normalizedName && artistImageCache.current[normalizedName]) {
+            cachedUrl = artistImageCache.current[normalizedName].url;
+          }
+        } else {
+          // For tracks and albums
+          const albumName = type === 'album' ? title : album;
+          if (albumName && artist) {
+            cachedUrl = getCachedAlbumArt(artist, albumName);
+          }
+        }
+
+        if (cachedUrl) {
+          if (!cancelled) {
+            setImageUrl(cachedUrl);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Not in cache - fetch from appropriate source
+        if (type === 'artist') {
+          // Fetch artist image using the app's getArtistImage function
+          try {
+            const result = await getArtistImage(title);
+            if (!cancelled && result?.url) {
+              setImageUrl(result.url);
+            }
+          } catch (err) {
+            // Silently fail
+          }
+          if (!cancelled) setLoading(false);
+          return;
+        }
+
+        // For tracks and albums, use the app's getAlbumArt function
+        let albumName = type === 'album' ? title : album;
+
+        // If no album name provided for a track, try to find it via search
+        if (!albumName && type === 'track' && artist && title) {
+          try {
+            const query = `${artist} ${title}`;
+            // Use earlyReturn for faster album name lookup
+            const results = await searchResolvers(query, {
+              earlyReturn: true,
+              targetArtist: artist,
+              targetTitle: title
+            });
+            if (results && results.length > 0) {
+              const match = results.find(r =>
+                r.artist?.toLowerCase() === artist?.toLowerCase() &&
+                r.title?.toLowerCase() === title?.toLowerCase()
+              ) || results[0];
+              if (match?.album) {
+                albumName = match.album;
+              }
+            }
+          } catch (err) {
+            // Search failed, continue without album
+          }
+        }
+
+        if (!albumName || !artist) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+
+        try {
+          // Use fast iTunes-based lookup for ChatCards (much faster than MusicBrainz)
+          const artUrl = await getAlbumArtFast(artist, albumName);
+          if (!cancelled && artUrl) {
+            setImageUrl(artUrl);
+          }
+        } catch (err) {
+          // Silently fail - will show placeholder
+        }
+        if (!cancelled) setLoading(false);
+      };
+
+      fetchArt();
+      return () => { cancelled = true; };
+    }, [type, title, artist, album]);
+
+    const handleClick = async () => {
+      closeAiChat();
+
+      if (type === 'track') {
+        // Immediately show track metadata and clear queue
+        const placeholderId = `chat-track-${Date.now()}`;
+        const placeholder = {
+          id: placeholderId,
+          title: title,
+          artist: artist,
+          album: album || null,
+          sources: {},
+          status: 'loading',
+          _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+        };
+
+        // Clear queue and set placeholder as current track immediately
+        clearQueue();
+        setCurrentTrack(placeholder);
+        setTrackLoading(true);
+
+        try {
+          // Resolve across ALL enabled resolvers (not earlyReturn) to get all sources
+          const currentResolvers = loadedResolversRef.current;
+          const currentActiveResolvers = activeResolversRef.current;
+          const currentResolverOrder = resolverOrderRef.current;
+          const enabledResolvers = currentResolverOrder
+            .filter(id => currentActiveResolvers.includes(id))
+            .map(id => currentResolvers.find(r => r.id === id))
+            .filter(r => r && r.capabilities?.resolve);
+
+          const resolvedTrack = { ...placeholder, sources: {}, status: 'resolved' };
+
+          // Resolve in parallel across all enabled resolvers
+          const resolvePromises = enabledResolvers.map(async (resolver) => {
+            try {
+              const config = getResolverConfigRef.current
+                ? await getResolverConfigRef.current(resolver.id)
+                : {};
+              const result = await resolver.resolve(artist, title, album, config);
+              if (result) {
+                resolvedTrack.sources[resolver.id] = {
+                  ...result,
+                  confidence: result.confidence || 0.9,
+                  resolvedAt: Date.now()
+                };
+              }
+            } catch (error) {
+              console.error(`ChatCard resolve error for ${resolver.id}:`, error);
+            }
+          });
+
+          await Promise.all(resolvePromises);
+
+          // Check if we found any sources
+          if (Object.keys(resolvedTrack.sources).length > 0) {
+            // Update current track with resolved data
+            setCurrentTrack(prev => {
+              if (prev?.id === placeholderId) {
+                return resolvedTrack;
+              }
+              return prev;
+            });
+            // Play the resolved track
+            await handlePlayRef.current(resolvedTrack);
+          } else {
+            // No sources found - fallback to search
+            console.log('No sources found via resolution, falling back to search');
+            handleSearchInput(`${artist} ${title}`);
+          }
+        } catch (err) {
+          console.error('Error playing track from chat card:', err);
+          handleSearchInput(`${artist} ${title}`);
+        }
+      } else if (type === 'artist') {
+        fetchArtistData(title);
+      } else if (type === 'album') {
+        // Open album page
+        handleCollectionAlbumClick({ title, artist });
+      }
+    };
+
+    const hasImage = imageUrl && imageUrl.trim();
+
+    const [isHovered, setIsHovered] = useState(false);
+
+    return React.createElement('div', {
+      onClick: handleClick,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px',
+        marginTop: '4px',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        transition: 'background-color 0.15s',
+        minWidth: 0,
+        maxWidth: '100%'
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        setIsHovered(true);
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+        setIsHovered(false);
+      }
+    },
+      // Thumbnail wrapper with hover play button
+      React.createElement('div', {
+        style: {
+          position: 'relative',
+          width: '40px',
+          height: '40px',
+          flexShrink: 0
+        }
+      },
+        // Thumbnail with shimmer loading state or placeholder
+        React.createElement('div', {
+          className: loading ? 'animate-shimmer' : '',
+          style: {
+            width: '40px',
+            height: '40px',
+            borderRadius: type === 'artist' ? '50%' : '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundImage: loading
+              ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
+              : hasImage ? `url(${imageUrl})` : 'none',
+            backgroundSize: loading ? '200% 100%' : 'cover',
+            backgroundPosition: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }
+        },
+          // Music note placeholder when no image
+          !loading && !hasImage && React.createElement('svg', {
+            style: {
+              width: '20px',
+              height: '20px',
+              color: 'rgba(255, 255, 255, 0.3)'
+            },
+            fill: 'none',
+            viewBox: '0 0 24 24',
+            stroke: 'currentColor',
+            strokeWidth: 1.5
+          },
+            React.createElement('path', {
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+            })
+          )
+        ),
+        // Hover overlay with play button (only for tracks and albums)
+        // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
+        (type === 'track' || type === 'album') && React.createElement('div', {
+          style: {
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '4px',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isHovered ? 1 : 0,
+            transition: 'opacity 0.2s',
+            pointerEvents: isHovered ? 'auto' : 'none'
+          }
+        },
+          React.createElement('div', {
+            style: {
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              backgroundColor: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+              transform: isHovered ? 'scale(1)' : 'scale(0.9)',
+              transition: 'transform 0.2s'
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '14px', height: '14px', marginLeft: '2px', color: '#111827' },
+              fill: 'currentColor',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M8 5v14l11-7z' })
+            )
+          )
+        )
+      ),
+      // Text content
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', {
+          style: {
+            fontSize: '13px',
+            fontWeight: '500',
+            color: '#f3f4f6',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }
+        }, title),
+        artist && React.createElement('div', {
+          style: {
+            fontSize: '12px',
+            color: '#9ca3af',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }
+        }, artist)
+      ),
+      // Type indicator
+      React.createElement('div', {
+        style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+      }, type)
+    );
+  });
+  }
+  const ChatCard = chatCardRef.current;
+
+  // Render chat message content with markdown formatting
+  // Supports: **bold**, *italic*, `code`, [links](url), numbered lists
+  const renderChatContent = (content, isUserMessage) => {
+    if (!content) return null;
+
+    // Process content line by line for better list handling
+    const lines = content.split('\n');
+    const elements = [];
+    let keyCounter = 0;
+
+    const parseInlineMarkdown = (text, baseKey) => {
+      const result = [];
+      // Combined regex for all inline patterns
+      // Order matters: cards first, then image links (![]()), then regular links, then bold, then italic, then code
+      const patterns = [
+        { regex: /\{\{(track|artist|album|playlist)\|([^}]+)\}\}/g, type: 'card' },
+        { regex: /!\[([^\]]*)\]\(([^)]+)\)/g, type: 'imagelink' }, // Handle ![text](url) - treat as regular link
+        { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
+        { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
+        { regex: /\*([^*]+)\*/g, type: 'italic' },
+        { regex: /`([^`]+)`/g, type: 'code' }
+      ];
+
+      // Simple approach: process patterns in order
+      let processed = text;
+      const replacements = [];
+
+      // Find all matches for all patterns
+      patterns.forEach(({ regex, type }) => {
+        let match;
+        const r = new RegExp(regex.source, 'g');
+        while ((match = r.exec(text)) !== null) {
+          replacements.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            type,
+            match: match
+          });
+        }
+      });
+
+      // Sort by position and filter overlaps
+      replacements.sort((a, b) => a.start - b.start);
+      const filtered = [];
+      let lastEnd = 0;
+      for (const r of replacements) {
+        if (r.start >= lastEnd) {
+          filtered.push(r);
+          lastEnd = r.end;
+        }
+      }
+
+      // Build result
+      let pos = 0;
+      filtered.forEach((r, idx) => {
+        // Add text before this match
+        if (r.start > pos) {
+          result.push(text.slice(pos, r.start));
+        }
+
+        const key = `${baseKey}-${idx}`;
+        if (r.type === 'card') {
+          // Card format: {{type|field1|field2|field3}}
+          const cardType = r.match[1];
+          const cardParts = r.match[2].split('|');
+          result.push(renderCard(cardType, cardParts, key));
+        } else if (r.type === 'link' || r.type === 'imagelink') {
+          // Handle both [text](url) and ![text](url) - treat image links as regular links
+          const linkText = r.match[1] || r.match[2].split('/').pop(); // Use alt text or extract from URL
+          const url = r.match[2];
+          result.push(
+            React.createElement('a', {
+              key,
+              href: url,
+              onClick: (e) => {
+                e.preventDefault();
+                if (url.startsWith('parachord://')) {
+                  const path = url.replace('parachord://', '');
+                  const [type, ...rest] = path.split('/');
+                  const value = decodeURIComponent(rest.join('/'));
+                  if (type === 'artist' && value) fetchArtistData(value);
+                } else {
+                  window.electron?.shell?.openExternal(url);
+                }
+              },
+              style: { color: isUserMessage ? '#c4b5fd' : '#a78bfa', textDecoration: 'underline', cursor: 'pointer' }
+            }, linkText)
+          );
+        } else if (r.type === 'bold') {
+          result.push(React.createElement('strong', { key }, r.match[1]));
+        } else if (r.type === 'italic') {
+          result.push(React.createElement('em', { key }, r.match[1]));
+        } else if (r.type === 'code') {
+          result.push(React.createElement('code', {
+            key,
+            style: {
+              backgroundColor: isUserMessage ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
+              padding: '2px 5px',
+              borderRadius: '3px',
+              fontFamily: 'monospace',
+              fontSize: '0.9em'
+            }
+          }, r.match[1]));
+        }
+
+        pos = r.end;
+      });
+
+      // Add remaining text
+      if (pos < text.length) {
+        result.push(text.slice(pos));
+      }
+
+      return result.length > 0 ? result : [text];
+    };
+
+    // Helper to render a card - wraps ChatCard component (defined outside renderChatContent for stability)
+    const renderCard = (type, parts, key) => {
+      // Parse parts based on type and pass as individual props to prevent array reference changes
+      let title, artist, album;
+      if (type === 'track') {
+        [title, artist, album] = parts;
+      } else if (type === 'artist') {
+        [title] = parts;
+        artist = null;
+        album = null;
+      } else if (type === 'album') {
+        [title, artist] = parts;
+        album = title; // For albums, the title IS the album name
+      } else if (type === 'playlist') {
+        // Playlist card: {{playlist|name|id|trackCount}}
+        const [playlistName, playlistId, trackCount] = parts;
+        const handlePlaylistCardClick = () => {
+          closeAiChat();
+          const playlist = playlists.find(p => p.id === playlistId);
+          if (playlist) {
+            loadPlaylist(playlist);
+          }
+        };
+        return React.createElement('div', {
+          key,
+          onClick: handlePlaylistCardClick,
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '8px',
+            marginTop: '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            transition: 'background-color 0.15s',
+            minWidth: 0,
+            maxWidth: '100%'
+          },
+          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+        },
+          // Playlist icon
+          React.createElement('div', {
+            style: {
+              width: '40px',
+              height: '40px',
+              borderRadius: '4px',
+              background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '20px', height: '20px' },
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z' })
+            )
+          ),
+          // Text content
+          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+            React.createElement('div', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#f3f4f6',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, playlistName),
+            React.createElement('div', {
+              style: {
+                fontSize: '12px',
+                color: '#9ca3af',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, `${trackCount || '?'} tracks`)
+          ),
+          // Type indicator
+          React.createElement('div', {
+            style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+          }, 'playlist')
+        );
+      }
+      return React.createElement(ChatCard, { key, type, title, artist, album });
+    };
+
+    lines.forEach((line, lineIdx) => {
+      // Check for headers: #, ##, ###, ####, #####, ######
+      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (headerMatch) {
+        const level = Math.min(headerMatch[1].length, 6);
+        const sizes = { 1: '18px', 2: '16px', 3: '15px', 4: '14px', 5: '13px', 6: '13px' };
+        elements.push(
+          React.createElement('div', {
+            key: `header-${keyCounter++}`,
+            style: {
+              fontSize: sizes[level],
+              fontWeight: '600',
+              color: '#f3f4f6',
+              marginTop: lineIdx > 0 ? '12px' : '0',
+              marginBottom: '4px'
+            }
+          }, headerMatch[2])
+        );
+      }
+      // Check for card syntax: {{type|field1|field2|...}}
+      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(line)) {
+        const cardMatch = line.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
+        const cardType = cardMatch[1];
+        const cardParts = cardMatch[2].split('|');
+        elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
+      }
+      // Check for numbered list items: "1. ", "2. ", etc.
+      else if (/^(\d+)\.\s+(.+)$/.test(line)) {
+        const listMatch = line.match(/^(\d+)\.\s+(.+)$/);
+        elements.push(
+          React.createElement('div', {
+            key: `line-${keyCounter++}`,
+            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '4px' : 0 }
+          },
+            React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px', flexShrink: 0 } }, `${listMatch[1]}.`),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
+          )
+        );
+      } else if (line.trim() === '') {
+        // Empty line - add spacing
+        elements.push(React.createElement('div', { key: `line-${keyCounter++}`, style: { height: '8px' } }));
+      } else {
+        // Regular line
+        elements.push(
+          React.createElement('div', { key: `line-${keyCounter++}` }, parseInlineMarkdown(line, `text-${lineIdx}`))
+        );
+      }
+    });
+
+    return elements;
+  };
+
+  // Open AI Chat
+  const openAiChat = () => {
+    const chatServices = getChatServices();
+    // Filter to only enabled services with required config
+    const enabledServices = chatServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      // Ollama doesn't need API key, others do
+      if (s.id === 'ollama') return config.enabled !== false;
+      return config.enabled && config.apiKey;
+    });
+
+    if (enabledServices.length === 0) {
+      showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
+      return;
+    }
+
+    // Use selected provider or first available
+    const provider = selectedChatProvider
+      ? enabledServices.find(s => s.id === selectedChatProvider) || enabledServices[0]
+      : enabledServices[0];
+
+    setSelectedChatProvider(provider.id);
+    setAiChatOpen(true);
+    setResultsSidebar({
+      mode: 'chat',
+      title: 'Shuffleupagus',
+      subtitle: provider.name || provider.manifest?.name,
+      messages: aiChatMessages,
+      provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
+      loading: false
+    });
+  };
+
+  // Close sidebar with animation
+  const closeSidebarAnimated = () => {
+    if (sidebarClosing) return; // Already closing
+    setSidebarClosing(true);
+    setTimeout(() => {
+      setResultsSidebar(null);
+      setSidebarClosing(false);
+    }, 200); // Match animation duration
+  };
+
+  // Close AI Chat
+  const closeAiChat = () => {
+    setAiChatOpen(false);
+    closeSidebarAnimated();
+  };
+
+  // Send message in AI Chat
+  const handleAiChatSend = async (message) => {
+    if (!message.trim() || aiChatLoading) return;
+
+    const chatServices = getChatServices();
+    const provider = chatServices.find(s => s.id === selectedChatProvider);
+
+    if (!provider) {
+      showToast('Chat provider not found', 'error');
+      return;
+    }
+
+    // Add user message to UI immediately
+    const userMessage = { role: 'user', content: message.trim() };
+    const updatedMessages = [...aiChatMessages, userMessage];
+    setAiChatMessages(updatedMessages);
+    setAiChatInput('');
+    setAiChatLoading(true);
+
+    // Update sidebar with user message
+    setResultsSidebar(prev => ({
+      ...prev,
+      messages: updatedMessages,
+      loading: true
+    }));
+
+    try {
+      const service = getOrCreateChatService(provider);
+
+      // Set up progress callback
+      service.setProgressCallback((status) => {
+        setAiChatProgress(status);
+        setResultsSidebar(prev => prev ? { ...prev, progressStatus: status } : null);
+      });
+
+      setAiChatProgress(null);
+      let response = await service.sendMessage(message.trim());
+      setAiChatProgress(null);
+
+      // If Ollama is unavailable, try to auto-start it
+      if (response.ollamaUnavailable && window.electron?.ollama) {
+        // Update UI to show we're trying to start Ollama
+        setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama...' }]);
+
+        try {
+          const startResult = await window.electron.ollama.start();
+          if (startResult.success) {
+            // Retry the message after Ollama starts
+            // Remove the user message from history since we'll re-send it
+            service.messages.pop(); // Remove the "Starting Ollama..." assistant message
+            service.messages.pop(); // Remove the user message
+            response = await service.sendMessage(message.trim());
+          } else {
+            // Couldn't start Ollama
+            response = {
+              content: `Couldn't start Ollama: ${startResult.error || 'Unknown error'}. Make sure Ollama is installed from https://ollama.ai`,
+              error: true
+            };
+          }
+        } catch (startError) {
+          response = {
+            content: `Error starting Ollama: ${startError.message}. Make sure Ollama is installed.`,
+            error: true
+          };
+        }
+      }
+
+      // Add assistant response
+      const assistantMessage = { role: 'assistant', content: response.content };
+      const finalMessages = [...updatedMessages, assistantMessage];
+      setAiChatMessages(finalMessages);
+
+      // Update sidebar - clear progress status when done
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false,
+        progressStatus: null,
+        lastToolResults: response.toolResults
+      }));
+    } catch (error) {
+      console.error('AI chat error:', error);
+      const errorMessage = { role: 'assistant', content: `Error: ${error.message}` };
+      const finalMessages = [...updatedMessages, errorMessage];
+      setAiChatMessages(finalMessages);
+
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false,
+        progressStatus: null
+      }));
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  // Clear chat history
+  const clearAiChatHistory = () => {
+    setAiChatMessages([]);
+    if (aiChatServiceRef.current) {
+      aiChatServiceRef.current.clearHistory();
+    }
+    setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
+  };
+
+  // Auto-scroll chat messages to bottom when new messages arrive
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [resultsSidebar?.messages, resultsSidebar?.loading]);
+
+  const addToQueue = (tracks, context = null, options = {}) => {
+    const { skipAutoPlay = false } = options;
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
     // Tag tracks with context if provided
@@ -11140,8 +13111,8 @@ const Parachord = () => {
 
     // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
-    // If nothing is playing, auto-start the first track
-    if (nothingPlaying && taggedTracks.length > 0) {
+    // If nothing is playing, auto-start the first track (unless skipAutoPlay is set)
+    if (nothingPlaying && taggedTracks.length > 0 && !skipAutoPlay) {
       const firstTrack = taggedTracks[0];
       console.log(`▶️ Auto-starting playback: "${firstTrack.title}" by ${firstTrack.artist}`);
       // Remove from queue and play
@@ -12106,6 +14077,21 @@ const Parachord = () => {
         console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
       }
 
+      // Load recommendation blocklist
+      const savedBlocklist = await window.electron.store.get('recommendation_blocklist');
+      if (savedBlocklist && typeof savedBlocklist === 'object') {
+        setRecommendationBlocklist(savedBlocklist);
+        const totalBlocked = (savedBlocklist.artists?.length || 0) + (savedBlocklist.albums?.length || 0) + (savedBlocklist.tracks?.length || 0);
+        console.log('📦 Loaded recommendation blocklist:', totalBlocked, 'items');
+      }
+
+      // Load AI chat histories (per-provider)
+      const savedAiChatHistories = await window.electron.store.get('ai_chat_histories');
+      if (savedAiChatHistories && typeof savedAiChatHistories === 'object') {
+        aiChatHistoriesRef.current = savedAiChatHistories;
+        console.log('📦 Loaded AI chat histories for providers:', Object.keys(savedAiChatHistories).join(', '));
+      }
+
       // Load discovery feature seen hashes (for unread badges)
       const savedSeenRecommendations = await window.electron.store.get('discovery_seen_recommendations');
       const savedSeenCriticsPicks = await window.electron.store.get('discovery_seen_criticsPicks');
@@ -12552,6 +14538,10 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
 
+    // Increment fetch ID to invalidate any in-flight requests for previous artists
+    artistFetchId.current++;
+    const thisFetchId = artistFetchId.current;
+
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
 
@@ -12712,6 +14702,12 @@ const Parachord = () => {
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
 
+      // Check if this fetch is still current (user may have navigated to another artist)
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
+
       // Set artist name immediately so header shows while releases load
       setCurrentArtist({
         name: artist.name,
@@ -12725,6 +14721,7 @@ const Parachord = () => {
       (async () => {
         // Try Spotify first
         const spotifyResult = await getArtistImage(artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (spotifyResult) {
           setArtistImage(spotifyResult.url);
           setArtistImagePosition(spotifyResult.facePosition || 'center 25%');
@@ -12733,6 +14730,7 @@ const Parachord = () => {
 
         // Try Wikipedia fallback
         const wikiImage = await getWikipediaArtistImage(artist.id);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (wikiImage) {
           setArtistImage(wikiImage);
           setArtistImagePosition('center 25%');
@@ -12741,6 +14739,7 @@ const Parachord = () => {
 
         // Try Discogs fallback
         const discogsImage = await getDiscogsArtistImage(artist.id, artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (discogsImage) {
           setArtistImage(discogsImage);
           setArtistImagePosition('center 25%');
@@ -12826,6 +14825,12 @@ const Parachord = () => {
         cacheVersion: 2
       };
       console.log('💾 Cached artist data for:', artistName);
+
+      // Check if this fetch is still current before updating state
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
 
       // Pre-populate releases with cached album art
       const releasesWithCache = uniqueReleases.map(release => ({
@@ -13500,10 +15505,26 @@ const Parachord = () => {
         return;
       }
 
-      // Find best match (prefer exact artist match)
-      const match = results.find(r =>
+      // Find best match - prefer studio albums over singles/live/compilations
+      const isStudioAlbum = (r) => {
+        const primaryType = r['primary-type']?.toLowerCase();
+        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+        // Must be an album (not single, EP, etc)
+        if (primaryType !== 'album') return false;
+        // Must not be live, compilation, remix, etc
+        const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+        return !secondaryTypes.some(t => nonStudioTypes.includes(t));
+      };
+
+      const artistMatches = results.filter(r =>
         r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
-      ) || results[0];
+      );
+
+      // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
+      const match = artistMatches.find(isStudioAlbum)
+        || artistMatches[0]
+        || results.find(isStudioAlbum)
+        || results[0];
 
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
       fetchReleaseData({
@@ -16163,7 +18184,7 @@ ${tracks}
 
     // Close dialogs
     setAiSaveDialogOpen(false);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
   };
 
@@ -19155,6 +21176,74 @@ ${tracks}
 
   // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
   const albumToReleaseIdCache = useRef({});
+
+  // Cache for fast iTunes album art lookups
+  const itunesArtCache = useRef({});
+
+  // Fast album art lookup using iTunes Search API (for ChatCards and other quick lookups)
+  // Much faster than MusicBrainz - typically returns in <500ms
+  const getAlbumArtFast = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    const cacheKey = `${artist}-${album}`.toLowerCase();
+
+    // Check cache first
+    if (itunesArtCache.current[cacheKey]) {
+      return itunesArtCache.current[cacheKey];
+    }
+
+    // Also check the main albumArtCache
+    const cachedArt = getCachedAlbumArt(artist, album);
+    if (cachedArt) {
+      itunesArtCache.current[cacheKey] = cachedArt;
+      return cachedArt;
+    }
+
+    try {
+      // Search iTunes for the album
+      const query = `${artist} ${album}`;
+      const response = await window.iTunesRateLimiter.fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=5`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) return null;
+
+      // Find best match - prefer exact album name match
+      const normalizedAlbum = album.toLowerCase();
+      const normalizedArtist = artist.toLowerCase();
+
+      const bestMatch = data.results.find(r =>
+        r.collectionName?.toLowerCase() === normalizedAlbum &&
+        r.artistName?.toLowerCase() === normalizedArtist
+      ) || data.results.find(r =>
+        // Also check if artist/album might be swapped (common AI mistake)
+        r.collectionName?.toLowerCase() === normalizedArtist &&
+        r.artistName?.toLowerCase() === normalizedAlbum
+      ) || data.results.find(r =>
+        r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
+        normalizedAlbum.includes(r.collectionName?.toLowerCase())
+      ) || data.results.find(r =>
+        // Check partial match with swapped values too
+        r.collectionName?.toLowerCase().includes(normalizedArtist) ||
+        normalizedArtist.includes(r.collectionName?.toLowerCase())
+      ) || data.results[0];
+
+      if (bestMatch?.artworkUrl100) {
+        // Scale up artwork URL (iTunes supports various sizes)
+        const artUrl = bestMatch.artworkUrl100.replace('100x100', '500x500');
+        itunesArtCache.current[cacheKey] = artUrl;
+        return artUrl;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Fast album art lookup failed:', err);
+      return null;
+    }
+  };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
   const getAlbumArt = async (artist, album) => {
@@ -34838,6 +36927,7 @@ useEffect(() => {
                   ),
                   // Category filter pills
                   [
+                    { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
@@ -36133,27 +38223,58 @@ useEffect(() => {
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
-          // AI Playlist Generation button (sparkle icon) - with tooltip
+          // AI Playlist/DJ button (sparkle icon) - opens chat if available, else prompt
           (() => {
             const aiResolvers = getAiServices();
-            const hasEnabledAi = aiResolvers.some(s => {
+            const chatServices = getChatServices();
+
+            // Check if chat providers are enabled
+            const hasEnabledChat = chatServices.some(s => {
+              const config = metaServiceConfigs[s.id] || {};
+              // Ollama doesn't require API key
+              if (s.id === 'ollama') return config.enabled !== false;
+              return config.enabled && config.apiKey;
+            });
+
+            // Check if generate providers are enabled (fallback)
+            const hasEnabledGenerate = aiResolvers.some(s => {
               const config = metaServiceConfigs[s.id] || {};
               return config.enabled && config.apiKey;
             });
+
+            const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
+            const isActive = aiChatOpen || aiPromptOpen;
+
+            const handleClick = () => {
+              if (hasEnabledChat) {
+                // Prefer chat interface
+                if (aiChatOpen) {
+                  closeAiChat();
+                } else {
+                  openAiChat();
+                }
+              } else if (hasEnabledGenerate) {
+                // Fall back to one-shot prompt
+                setAiPromptOpen(!aiPromptOpen);
+              }
+            };
+
             return React.createElement(Tooltip, {
-              content: hasEnabledAi
-                ? 'AI Playlist'
-                : 'Enable AI in Settings',
+              content: hasEnabledChat
+                ? 'Shuffleupagus'
+                : hasEnabledGenerate
+                  ? 'AI Playlist'
+                  : 'Enable AI in Settings',
               position: 'top',
               variant: 'dark'
             },
               React.createElement('button', {
-                onClick: () => setAiPromptOpen(!aiPromptOpen),
-                disabled: !hasEnabledAi,
+                onClick: handleClick,
+                disabled: !hasAnyAi,
                 className: `p-2 ml-1 rounded transition-colors ${
-                  aiPromptOpen
+                  isActive
                     ? 'bg-purple-500/30 text-purple-300'
-                    : hasEnabledAi
+                    : hasAnyAi
                       ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                       : 'text-gray-600 cursor-not-allowed'
                 }`
@@ -37176,7 +39297,7 @@ useEffect(() => {
       React.createElement('div', {
         className: 'flex-1',
         style: { backgroundColor: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(4px)' },
-        onClick: () => setResultsSidebar(null)
+        onClick: closeSidebarAnimated
       }),
 
       // Sidebar panel
@@ -37186,7 +39307,7 @@ useEffect(() => {
           backgroundColor: 'rgba(17, 24, 39, 0.98)',
           borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
           boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.3)',
-          animation: 'slideInRight 0.2s ease-out'
+          animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
         }
       },
         // Header
@@ -37195,11 +39316,19 @@ useEffect(() => {
         },
           React.createElement('div', { className: 'flex items-center justify-between' },
             React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('span', { style: { color: '#c4b5fd' } }, '✨'),
+              React.createElement('span', { style: { color: '#c4b5fd' } },
+                resultsSidebar.mode === 'chat' ? '🎧' : '✨'
+              ),
               React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: '#f3f4f6' } }, resultsSidebar.title)
             ),
             React.createElement('button', {
-              onClick: () => setResultsSidebar(null),
+              onClick: () => {
+                if (resultsSidebar.mode === 'chat') {
+                  closeAiChat();
+                } else {
+                  closeSidebarAnimated();
+                }
+              },
               className: 'transition-colors',
               style: { padding: '6px', color: '#6b7280', borderRadius: '8px' },
               onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
@@ -37210,147 +39339,355 @@ useEffect(() => {
               )
             )
           ),
-          resultsSidebar.subtitle && React.createElement('p', {
-            style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-          }, resultsSidebar.subtitle)
-        ),
-
-        // Track list or loading skeletons
-        React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
-          // Loading skeletons
-          resultsSidebar.loading
-            ? Array.from({ length: 12 }).map((_, index) =>
-                React.createElement('div', {
-                  key: `skeleton-${index}`,
-                  className: 'flex items-center gap-3',
-                  style: { padding: '8px' }
-                },
-                  // Skeleton track number
-                  React.createElement('div', {
-                    className: 'animate-pulse',
-                    style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
-                  }),
-                  // Skeleton track info
-                  React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
-                    }),
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
-                    })
-                  )
-                )
-              )
-            : resultsSidebar.tracks.map((track, index) =>
-                React.createElement('div', {
-                  key: track.id || index,
-                  className: 'group flex items-center gap-3 transition-colors',
-                  style: { padding: '8px', borderRadius: '8px' },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                },
-                  // Track number
-                  React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
-
-                  // Track info
-                  React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
-                    React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
-                  ),
-
-                  // Remove button
-                  React.createElement('button', {
-                    onClick: () => {
+          // Provider selector for chat mode, subtitle for other modes
+          resultsSidebar.mode === 'chat'
+            ? React.createElement('div', { style: { marginTop: '8px' } },
+                React.createElement('select', {
+                  value: selectedChatProvider || '',
+                  onChange: (e) => {
+                    const newProvider = e.target.value;
+                    setSelectedChatProvider(newProvider);
+                    // Clear current chat service so it recreates with new provider
+                    aiChatServiceRef.current = null;
+                    // Load saved chat history for this provider (or empty if none)
+                    const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                    setAiChatMessages(savedHistory);
+                    // Update sidebar with new provider and loaded messages
+                    const chatServices = getChatServices();
+                    const provider = chatServices.find(s => s.id === newProvider);
+                    if (provider) {
                       setResultsSidebar(prev => ({
                         ...prev,
-                        tracks: prev.tracks.filter((_, i) => i !== index)
+                        subtitle: provider.name || provider.manifest?.name,
+                        provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
+                        messages: savedHistory // Load saved messages for this provider
                       }));
-                    },
-                    className: 'opacity-0 group-hover:opacity-100 transition-all',
-                    style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
-                    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
-                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                    }
                   },
-                    React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
-                    )
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    fontSize: '13px',
+                    color: '#e5e7eb',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    width: '100%'
+                  }
+                },
+                  getChatServices().filter(s => {
+                    const config = metaServiceConfigs[s.id] || {};
+                    if (s.id === 'ollama') return config.enabled !== false;
+                    return config.enabled && config.apiKey;
+                  }).map(service =>
+                    React.createElement('option', {
+                      key: service.id,
+                      value: service.id,
+                      style: { backgroundColor: '#1f2937', color: '#e5e7eb' }
+                    }, `${service.icon || service.manifest?.icon || '🤖'} ${service.name || service.manifest?.name}`)
                   )
                 )
               )
+            : (resultsSidebar.subtitle && React.createElement('p', {
+                style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              }, resultsSidebar.subtitle))
         ),
 
-        // Empty state (only show when not loading and no tracks)
-        !resultsSidebar.loading && resultsSidebar.tracks.length === 0 && React.createElement('div', {
-          className: 'flex-1 flex items-center justify-center',
-          style: { padding: '16px' }
-        },
-          React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
-        ),
+        // Content area - Chat mode vs Track list mode
+        resultsSidebar.mode === 'chat'
+          // ========== CHAT MODE ==========
+          ? React.createElement(React.Fragment, null,
+              // Chat messages area
+              React.createElement('div', {
+                ref: chatMessagesRef,
+                className: 'flex-1 overflow-y-auto chat-messages-scroll',
+                style: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }
+              },
+                // Welcome message if no messages
+                (!resultsSidebar.messages || resultsSidebar.messages.length === 0) && React.createElement('div', {
+                  style: { textAlign: 'center', padding: '24px 16px', color: '#6b7280' }
+                },
+                  React.createElement('div', { style: { fontSize: '32px', marginBottom: '12px' } }, '🎵'),
+                  React.createElement('p', { style: { fontSize: '14px', marginBottom: '8px' } }, 'Hi! I\'m Shuffleupagus, your AI DJ.'),
+                  React.createElement('p', { style: { fontSize: '12px' } }, 'Ask me to play music, manage your queue, or discover new tracks.')
+                ),
 
-        // Actions - Three circular buttons
-        React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
-        },
-          // Add to Playlist button
-          React.createElement('button', {
-            onClick: handleAiAddToPlaylist,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Playlist'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                // Chat messages
+                resultsSidebar.messages && resultsSidebar.messages.map((msg, index) =>
+                  React.createElement('div', {
+                    key: index,
+                    style: {
+                      display: 'flex',
+                      justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                    }
+                  },
+                    React.createElement('div', {
+                      style: {
+                        maxWidth: '85%',
+                        padding: '10px 14px',
+                        borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                        backgroundColor: msg.role === 'user' ? '#7c3aed' : 'rgba(255, 255, 255, 0.08)',
+                        color: msg.role === 'user' ? '#ffffff' : '#e5e7eb',
+                        fontSize: '14px',
+                        lineHeight: '1.5',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        overflow: 'hidden'
+                      }
+                    }, renderChatContent(msg.content, msg.role === 'user'))
+                  )
+                ),
+
+                // Loading indicator with progress status
+                resultsSidebar.loading && React.createElement('div', {
+                  style: { display: 'flex', justifyContent: 'flex-start' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      padding: '12px 16px',
+                      borderRadius: '16px 16px 16px 4px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }
+                  },
+                    // Show progress status text if available, otherwise show bouncing dots
+                    resultsSidebar.progressStatus
+                      ? React.createElement('span', {
+                          style: { fontSize: '13px', color: '#9ca3af' }
+                        }, resultsSidebar.progressStatus)
+                      : React.createElement(React.Fragment, null,
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '150ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '300ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } })
+                        )
+                  )
+                )
+              ),
+
+              // Chat input area
+              React.createElement('div', {
+                style: { padding: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
+              },
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: aiChatInput,
+                    onChange: (e) => setAiChatInput(e.target.value),
+                    onKeyDown: (e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
+                        handleAiChatSend(aiChatInput);
+                      } else if (e.key === 'Escape') {
+                        if (!aiChatInput.trim()) {
+                          closeAiChat();
+                        } else {
+                          setAiChatInput('');
+                        }
+                      }
+                    },
+                    placeholder: 'Ask Shuffleupagus...',
+                    disabled: aiChatLoading,
+                    style: {
+                      flex: 1,
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '20px',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      color: '#f3f4f6',
+                      outline: 'none'
+                    },
+                    onFocus: (e) => { e.target.style.borderColor = 'rgba(124, 58, 237, 0.5)'; },
+                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }
+                  }),
+                  React.createElement('button', {
+                    onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
+                    disabled: !aiChatInput.trim() || aiChatLoading,
+                    className: 'transition-transform hover:scale-105',
+                    style: {
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: !aiChatInput.trim() || aiChatLoading ? 'rgba(124, 58, 237, 0.3)' : '#7c3aed',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }
+                  },
+                    aiChatLoading
+                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
+                          React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
+                        )
+                      : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
+                        )
+                  )
+                ),
+                // Clear chat button
+                resultsSidebar.messages && resultsSidebar.messages.length > 0 && React.createElement('button', {
+                  onClick: clearAiChatHistory,
+                  style: {
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 8px'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
+                  onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+                }, 'Clear conversation')
+              )
             )
-          ),
-          // Play button (center, larger)
-          React.createElement('button', {
-            onClick: handleAiPlay,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-            style: {
-              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
-            title: 'Play Now'
-          },
-            React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
-          ),
-          // Add to Queue button
-          React.createElement('button', {
-            onClick: handleAiAddToQueue,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Queue'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+
+          // ========== TRACK LIST MODE (Original) ==========
+          : React.createElement(React.Fragment, null,
+              // Track list or loading skeletons
+              React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
+                // Loading skeletons
+                resultsSidebar.loading
+                  ? Array.from({ length: 12 }).map((_, index) =>
+                      React.createElement('div', {
+                        key: `skeleton-${index}`,
+                        className: 'flex items-center gap-3',
+                        style: { padding: '8px' }
+                      },
+                        // Skeleton track number
+                        React.createElement('div', {
+                          className: 'animate-pulse',
+                          style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
+                        }),
+                        // Skeleton track info
+                        React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                          }),
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                          })
+                        )
+                      )
+                    )
+                  : (resultsSidebar.tracks || []).map((track, index) =>
+                      React.createElement('div', {
+                        key: track.id || index,
+                        className: 'group flex items-center gap-3 transition-colors',
+                        style: { padding: '8px', borderRadius: '8px' },
+                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
+                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                      },
+                        // Track number
+                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
+
+                        // Track info
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
+                          React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
+                        ),
+
+                        // Remove button
+                        React.createElement('button', {
+                          onClick: () => {
+                            setResultsSidebar(prev => ({
+                              ...prev,
+                              tracks: prev.tracks.filter((_, i) => i !== index)
+                            }));
+                          },
+                          className: 'opacity-0 group-hover:opacity-100 transition-all',
+                          style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
+                          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
+                          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                          )
+                        )
+                      )
+                    )
+              ),
+
+              // Empty state (only show when not loading and no tracks)
+              !resultsSidebar.loading && (!resultsSidebar.tracks || resultsSidebar.tracks.length === 0) && React.createElement('div', {
+                className: 'flex-1 flex items-center justify-center',
+                style: { padding: '16px' }
+              },
+                React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
+              ),
+
+              // Actions - Three circular buttons
+              React.createElement('div', {
+                style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
+              },
+                // Add to Playlist button
+                React.createElement('button', {
+                  onClick: handleAiAddToPlaylist,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Playlist'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                  )
+                ),
+                // Play button (center, larger)
+                React.createElement('button', {
+                  onClick: handleAiPlay,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
+                  title: 'Play Now'
+                },
+                  React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
+                ),
+                // Add to Queue button
+                React.createElement('button', {
+                  onClick: handleAiAddToQueue,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Queue'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                  )
+                )
+              )
             )
-          )
-        )
       )
     ),
 
@@ -39518,8 +41855,8 @@ useEffect(() => {
                 )
           ),
 
-          // AI Service configuration (ChatGPT and Gemini)
-          (selectedResolver.id === 'chatgpt' || selectedResolver.id === 'gemini') && React.createElement('div', {
+          // AI Service configuration - generic based on plugin settings
+          (selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') && React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
@@ -39540,11 +41877,7 @@ useEffect(() => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }
-            },
-              selectedResolver.id === 'chatgpt'
-                ? 'Enter your OpenAI API key to enable AI playlist generation.'
-                : 'Enter your Google API key to enable AI playlist generation.'
-            ),
+            }, selectedResolver.settings?.configurable?.apiKey?.description || `Enter your API key to enable ${selectedResolver.name}.`),
             // API Key input
             React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
@@ -39555,7 +41888,7 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'API Key'),
+              }, selectedResolver.settings?.configurable?.apiKey?.label || 'API Key'),
               React.createElement('input', {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
@@ -39566,7 +41899,7 @@ useEffect(() => {
                     enabled: !!e.target.value
                   });
                 },
-                placeholder: selectedResolver.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                placeholder: selectedResolver.settings?.configurable?.apiKey?.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
                 style: {
                   width: '100%',
                   padding: '10px 12px',
@@ -39578,14 +41911,16 @@ useEffect(() => {
                   outline: 'none'
                 }
               }),
-              React.createElement('a', {
+              selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
                   e.preventDefault();
-                  const url = selectedResolver.id === 'chatgpt'
-                    ? 'https://platform.openai.com/api-keys'
-                    : 'https://aistudio.google.com/app/apikey';
-                  window.electron?.shell?.openExternal?.(url);
+                  const urls = {
+                    chatgpt: 'https://platform.openai.com/api-keys',
+                    gemini: 'https://aistudio.google.com/app/apikey',
+                    claude: 'https://console.anthropic.com/settings/keys'
+                  };
+                  window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
                   display: 'inline-block',
@@ -39597,8 +41932,8 @@ useEffect(() => {
                 }
               }, 'Get your API key →')
             ),
-            // Model selector
-            React.createElement('div', { style: { marginBottom: '16px' } },
+            // Model selector - use options from plugin settings if available
+            selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
                 style: {
                   display: 'block',
@@ -39607,9 +41942,9 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'Model'),
+              }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
               React.createElement('select', {
-                value: metaServiceConfigs[selectedResolver.id]?.model || (selectedResolver.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                value: metaServiceConfigs[selectedResolver.id]?.model || selectedResolver.settings?.configurable?.model?.default || '',
                 onChange: (e) => {
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
@@ -39628,14 +41963,19 @@ useEffect(() => {
                   cursor: 'pointer'
                 }
               },
-                selectedResolver.id === 'chatgpt' ? [
-                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
-                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
-                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
-                ] : [
-                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
-                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
-                ]
+                // Use options from plugin settings, or fall back to hardcoded for backward compat
+                selectedResolver.settings?.configurable?.model?.options
+                  ? selectedResolver.settings.configurable.model.options.map(opt =>
+                      React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                    )
+                  : selectedResolver.id === 'chatgpt' ? [
+                      React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                      React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                      React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                    ] : selectedResolver.id === 'gemini' ? [
+                      React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                      React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                    ] : []
               )
             ),
             // Connection status
@@ -39644,6 +41984,145 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'API key configured')
+            )
+          ),
+
+          // Ollama configuration (no API key, but has endpoint and model)
+          selectedResolver.id === 'ollama' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#1f2937'
+              }
+            }, 'Ollama Configuration'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: '4px',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            }, 'Run AI locally with Ollama. Make sure Ollama is running on your machine.'),
+            // Endpoint URL input
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Ollama URL'),
+              React.createElement('input', {
+                type: 'text',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    endpoint: e.target.value,
+                    enabled: true
+                  });
+                },
+                placeholder: 'http://localhost:11434',
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                }
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  window.electron?.shell?.openExternal?.('https://ollama.ai');
+                },
+                style: {
+                  display: 'inline-block',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: '#7c3aed',
+                  fontWeight: '500',
+                  textDecoration: 'none'
+                }
+              }, 'Download Ollama →')
+            ),
+            // Model selector for Ollama
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Model'),
+              React.createElement('select', {
+                value: metaServiceConfigs[selectedResolver.id]?.model || 'llama3.1',
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    model: e.target.value
+                  });
+                },
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }
+              },
+                React.createElement('option', { value: 'llama3.1' }, 'Llama 3.1 (8B)'),
+                React.createElement('option', { value: 'llama3.1:70b' }, 'Llama 3.1 (70B)'),
+                React.createElement('option', { value: 'llama3.2' }, 'Llama 3.2 (3B)'),
+                React.createElement('option', { value: 'mistral' }, 'Mistral (7B)'),
+                React.createElement('option', { value: 'mixtral' }, 'Mixtral (8x7B)'),
+                React.createElement('option', { value: 'qwen2.5' }, 'Qwen 2.5 (7B)'),
+                React.createElement('option', { value: 'gemma2' }, 'Gemma 2 (9B)')
+              )
+            ),
+            // Enable toggle
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, 'Enable Ollama'),
+              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: metaServiceConfigs[selectedResolver.id]?.enabled !== false,
+                  onChange: (e) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: e.target.checked
+                    });
+                  },
+                  className: 'sr-only peer'
+                }),
+                React.createElement('div', {
+                  className: 'w-full h-full rounded-full transition-colors',
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? '#7c3aed' : 'rgba(0, 0, 0, 0.15)' }
+                }),
+                React.createElement('div', {
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? 'translateX(20px)' : 'translateX(0)' }
+                })
+              )
             )
           ),
 

@@ -403,6 +403,12 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Ollama operations (local AI)
+  ollama: {
+    start: () => ipcRenderer.invoke('ollama:start'),
+    check: () => ipcRenderer.invoke('ollama:check')
+  },
+
   // Generic invoke for IPC calls
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 });

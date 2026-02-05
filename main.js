@@ -1237,7 +1237,8 @@ app.whenReady().then(() => {
       submenu: [
         {
           label: 'Play/Pause',
-          accelerator: 'Space',
+          // Note: Space accelerator removed - conflicts with text input in chat
+          // Use media keys or click the playbar button instead
           click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
         },
         {
@@ -2486,39 +2487,60 @@ ipcMain.handle('resolvers-load-builtin', async () => {
   const pluginsDir = getPluginsCacheDir();
   console.log('Plugins cache directory:', pluginsDir);
 
-  try {
-    // Ensure cache directory exists
-    await fs.mkdir(pluginsDir, { recursive: true });
+  // Also check app's local plugins directory (for development)
+  const appPluginsDir = path.join(__dirname, 'plugins');
 
-    // Load cached plugins first (for offline support)
-    const files = await fs.readdir(pluginsDir);
-    const axeFiles = files.filter(f => f.endsWith('.axe'));
+  // Helper to load plugins from a directory
+  const loadPluginsFromDir = async (dir, source) => {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      const files = await fs.readdir(dir);
+      const axeFiles = files.filter(f => f.endsWith('.axe'));
 
-    for (const filename of axeFiles) {
-      const filepath = path.join(pluginsDir, filename);
-      try {
-        const content = await fs.readFile(filepath, 'utf8');
-        const axe = JSON.parse(content);
+      for (const filename of axeFiles) {
+        const filepath = path.join(dir, filename);
+        try {
+          const content = await fs.readFile(filepath, 'utf8');
+          const axe = JSON.parse(content);
 
-        // Check for duplicates
-        if (plugins.find(p => p.manifest.id === axe.manifest.id)) {
-          console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
-          continue;
+          // Check for duplicates - app plugins take priority
+          const existingIdx = plugins.findIndex(p => p.manifest.id === axe.manifest.id);
+          if (existingIdx !== -1) {
+            if (source === 'app') {
+              // App plugins override cached plugins
+              plugins[existingIdx] = axe;
+              axe._filename = filename;
+              axe._source = source;
+              console.log(`  🔄 Override ${axe.manifest.name} from ${source}`);
+            } else {
+              console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
+            }
+            continue;
+          }
+
+          axe._filename = filename;
+          axe._source = source;
+          plugins.push(axe);
+          console.log(`  ✅ Loaded (${source}) ${axe.manifest.name} v${axe.manifest.version}`);
+        } catch (error) {
+          console.error(`  ❌ Failed to load ${filename}:`, error.message);
         }
-
-        axe._filename = filename;
-        axe._cached = true;
-        plugins.push(axe);
-        console.log(`  ✅ Loaded (cached) ${axe.manifest.name} v${axe.manifest.version}`);
-      } catch (error) {
-        console.error(`  ❌ Failed to load ${filename}:`, error.message);
+      }
+    } catch (error) {
+      // Directory may not exist, that's ok
+      if (error.code !== 'ENOENT') {
+        console.error(`  ❌ Failed to read ${source} plugins:`, error.message);
       }
     }
-  } catch (error) {
-    console.error('  ❌ Failed to read plugins cache:', error.message);
-  }
+  };
 
-  console.log(`✅ Loaded ${plugins.length} plugin(s) from cache`);
+  // Load from cache first
+  await loadPluginsFromDir(pluginsDir, 'cache');
+
+  // Then load from app's plugins directory (overrides cache)
+  await loadPluginsFromDir(appPluginsDir, 'app');
+
+  console.log(`✅ Loaded ${plugins.length} plugin(s) total`);
   return plugins;
 });
 
@@ -4283,8 +4305,108 @@ ipcMain.handle('musickit:set-volume', async (event, volume) => {
   }
 });
 
+// Ollama process management
+let ollamaProcess = null;
+
+ipcMain.handle('ollama:start', async () => {
+  // Check if already running
+  if (ollamaProcess && !ollamaProcess.killed) {
+    return { success: true, message: 'Ollama is already running' };
+  }
+
+  try {
+    // First check if ollama is available
+    const { spawn, execSync } = require('child_process');
+
+    // Try to find ollama executable
+    let ollamaPath = 'ollama';
+    try {
+      if (process.platform === 'win32') {
+        execSync('where ollama', { stdio: 'ignore' });
+      } else {
+        execSync('which ollama', { stdio: 'ignore' });
+      }
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Ollama is not installed. Please install it from https://ollama.ai'
+      };
+    }
+
+    // Try to connect first - maybe it's already running
+    try {
+      const response = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(2000)
+      });
+      if (response.ok) {
+        return { success: true, message: 'Ollama is already running' };
+      }
+    } catch (e) {
+      // Not running, proceed to start it
+    }
+
+    // Start ollama serve in background
+    ollamaProcess = spawn(ollamaPath, ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      shell: process.platform === 'win32'
+    });
+
+    ollamaProcess.unref();
+
+    // Wait a bit for it to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Verify it started
+    try {
+      const response = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (response.ok) {
+        return { success: true, message: 'Ollama started successfully' };
+      }
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Ollama started but is not responding. Please try again.'
+      };
+    }
+
+    return { success: true, message: 'Ollama started' };
+  } catch (error) {
+    return { success: false, error: error.message || 'Failed to start Ollama' };
+  }
+});
+
+ipcMain.handle('ollama:check', async () => {
+  try {
+    const response = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        running: true,
+        models: (data.models || []).map(m => m.name)
+      };
+    }
+    return { running: false };
+  } catch (e) {
+    return { running: false };
+  }
+});
+
 // Stop MusicKit helper on app quit
 app.on('will-quit', () => {
   const bridge = getMusicKitBridge();
   bridge.stop();
+
+  // Clean up Ollama process if we started it
+  if (ollamaProcess && !ollamaProcess.killed) {
+    try {
+      ollamaProcess.kill();
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+  }
 });
