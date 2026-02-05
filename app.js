@@ -12765,6 +12765,7 @@ const Parachord = () => {
     const lines = content.split('\n');
     const elements = [];
     let keyCounter = 0;
+    let previousLineWasCard = false;
 
     const parseInlineMarkdown = (text, baseKey) => {
       const result = [];
@@ -12968,8 +12969,15 @@ const Parachord = () => {
     };
 
     lines.forEach((line, lineIdx) => {
+      // Strip leading punctuation if previous line was a card (e.g., ". They are..." becomes "They are...")
+      let processedLine = line;
+      if (previousLineWasCard) {
+        processedLine = line.replace(/^[.,!?;:]\s*/, '');
+      }
+      previousLineWasCard = false; // Reset for this iteration
+
       // Check for headers: #, ##, ###, ####, #####, ######
-      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      const headerMatch = processedLine.match(/^(#{1,6})\s+(.+)$/);
       if (headerMatch) {
         const level = Math.min(headerMatch[1].length, 6);
         const sizes = { 1: '18px', 2: '16px', 3: '15px', 4: '14px', 5: '13px', 6: '13px' };
@@ -12987,15 +12995,16 @@ const Parachord = () => {
         );
       }
       // Check for card syntax: {{type|field1|field2|...}}
-      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(line)) {
-        const cardMatch = line.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
+      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(processedLine)) {
+        const cardMatch = processedLine.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
         const cardType = cardMatch[1];
         const cardParts = cardMatch[2].split('|');
         elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
+        previousLineWasCard = true; // Mark so next line can strip leading punctuation
       }
       // Check for numbered list items: "1. ", "2. ", etc.
-      else if (/^(\d+)\.\s+(.+)$/.test(line)) {
-        const listMatch = line.match(/^(\d+)\.\s+(.+)$/);
+      else if (/^(\d+)\.\s+(.+)$/.test(processedLine)) {
+        const listMatch = processedLine.match(/^(\d+)\.\s+(.+)$/);
         elements.push(
           React.createElement('div', {
             key: `line-${keyCounter++}`,
@@ -13005,13 +13014,13 @@ const Parachord = () => {
             React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
           )
         );
-      } else if (line.trim() === '') {
+      } else if (processedLine.trim() === '') {
         // Empty line - add spacing
         elements.push(React.createElement('div', { key: `line-${keyCounter++}`, style: { height: '8px' } }));
       } else {
         // Regular line
         elements.push(
-          React.createElement('div', { key: `line-${keyCounter++}` }, parseInlineMarkdown(line, `text-${lineIdx}`))
+          React.createElement('div', { key: `line-${keyCounter++}` }, parseInlineMarkdown(processedLine, `text-${lineIdx}`))
         );
       }
     });
