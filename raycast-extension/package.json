@@ -127,6 +127,14 @@
       "description": "Open Parachord app",
       "mode": "no-view",
       "keywords": ["open", "launch", "app"]
+    },
+    {
+      "name": "collection-radio",
+      "title": "Collection Radio",
+      "subtitle": "Parachord",
+      "description": "Shuffle and play your entire collection",
+      "mode": "no-view",
+      "keywords": ["collection", "radio", "shuffle", "library", "my music"]
     }
   ],
   "dependencies": {
