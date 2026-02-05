@@ -7220,6 +7220,8 @@ const Parachord = () => {
       // Trigger auth flow
       if (providerId === 'spotify') {
         await window.electron.spotify.authenticate();
+        // Spotify opens external browser, user needs to re-trigger after auth
+        return;
       } else if (providerId === 'applemusic') {
         // Trigger Apple Music auth via MusicKit JS
         const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -7236,9 +7238,8 @@ const Parachord = () => {
               if (window.electron?.store) {
                 await window.electron.store.set('applemusic_user_token', authResult.userToken);
               }
-              // Re-check auth after connecting
-              const recheck = await window.electron.sync.checkAuth(providerId);
-              if (!recheck.authenticated) return;
+              console.log('[Sync] Apple Music auth successful, proceeding to sync setup');
+              // Auth succeeded - fall through to open modal
             } else {
               return;
             }
@@ -7251,8 +7252,6 @@ const Parachord = () => {
           return;
         }
       }
-      // Re-check auth for Spotify (it opens external browser)
-      if (providerId === 'spotify') return;
     }
 
     // Load existing settings
@@ -33235,15 +33234,7 @@ useEffect(() => {
                 style: { position: 'relative', marginLeft: '12px' }
               },
                 React.createElement('button', {
-                  onClick: () => {
-                    // If only one provider has sync enabled, open it directly
-                    const enabledProviders = Object.entries(resolverSyncSettings).filter(([_, s]) => s?.enabled);
-                    if (enabledProviders.length === 1) {
-                      openSyncSetupModal(enabledProviders[0][0]);
-                    } else {
-                      setSyncMenuOpen(!syncMenuOpen);
-                    }
-                  },
+                  onClick: () => setSyncMenuOpen(!syncMenuOpen),
                   className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   style: {
                     backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#22c55e' : '#4b5563',
