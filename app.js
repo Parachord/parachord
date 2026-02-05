@@ -12507,10 +12507,18 @@ const Parachord = () => {
           const currentResolvers = loadedResolversRef.current;
           const currentActiveResolvers = activeResolversRef.current;
           const currentResolverOrder = resolverOrderRef.current;
+
+          console.log('ChatCard: Resolution pipeline debug:');
+          console.log('  Loaded resolvers:', currentResolvers.map(r => r.id));
+          console.log('  Active resolvers:', currentActiveResolvers);
+          console.log('  Resolver order:', currentResolverOrder);
+
           const enabledResolvers = currentResolverOrder
             .filter(id => currentActiveResolvers.includes(id))
             .map(id => currentResolvers.find(r => r.id === id))
             .filter(r => r && r.capabilities?.resolve);
+
+          console.log('  Enabled resolvers for search:', enabledResolvers.map(r => r.id));
 
           const resolvedTrack = { ...placeholder, sources: {}, status: 'resolved' };
 
