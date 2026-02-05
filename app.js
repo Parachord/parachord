@@ -4292,6 +4292,7 @@ const Parachord = () => {
   const [chatProviderDropdownOpen, setChatProviderDropdownOpen] = useState(false);
   const aiChatServiceRef = useRef(null);
   const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
+  const lastAssistantMessageRef = useRef(null); // Ref for scrolling to top of latest response
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -13394,9 +13395,12 @@ const Parachord = () => {
     setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
   };
 
-  // Auto-scroll chat messages to bottom when new messages arrive
+  // Auto-scroll to top of latest assistant response when new messages arrive
   useEffect(() => {
-    if (chatMessagesRef.current) {
+    if (lastAssistantMessageRef.current) {
+      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (chatMessagesRef.current) {
+      // Fallback: scroll to bottom if no assistant message yet (e.g., only user messages)
       chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
     }
   }, [resultsSidebar?.messages, resultsSidebar?.loading]);
@@ -39942,30 +39946,37 @@ useEffect(() => {
                 ),
 
                 // Chat messages
-                resultsSidebar.messages && resultsSidebar.messages.map((msg, index) =>
-                  React.createElement('div', {
-                    key: index,
-                    style: {
-                      display: 'flex',
-                      justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
-                    }
-                  },
+                resultsSidebar.messages && (() => {
+                  // Find the index of the last assistant message for scroll targeting
+                  const lastAssistantIndex = resultsSidebar.messages.reduce((lastIdx, msg, idx) =>
+                    msg.role === 'assistant' ? idx : lastIdx, -1);
+
+                  return resultsSidebar.messages.map((msg, index) =>
                     React.createElement('div', {
+                      key: index,
+                      ref: index === lastAssistantIndex ? lastAssistantMessageRef : null,
                       style: {
-                        maxWidth: '85%',
-                        padding: '10px 14px',
-                        borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                        backgroundColor: msg.role === 'user' ? '#7c3aed' : 'rgba(255, 255, 255, 0.08)',
-                        color: msg.role === 'user' ? '#ffffff' : '#e5e7eb',
-                        fontSize: '14px',
-                        lineHeight: '1.5',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        overflow: 'hidden'
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
                       }
-                    }, renderChatContent(msg.content, msg.role === 'user'))
-                  )
-                ),
+                    },
+                      React.createElement('div', {
+                        style: {
+                          maxWidth: '85%',
+                          padding: '10px 14px',
+                          borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                          backgroundColor: msg.role === 'user' ? '#7c3aed' : 'rgba(255, 255, 255, 0.08)',
+                          color: msg.role === 'user' ? '#ffffff' : '#e5e7eb',
+                          fontSize: '14px',
+                          lineHeight: '1.5',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          overflow: 'hidden'
+                        }
+                      }, renderChatContent(msg.content, msg.role === 'user'))
+                    )
+                  );
+                })(),
 
                 // Loading indicator with progress status
                 resultsSidebar.loading && React.createElement('div', {
