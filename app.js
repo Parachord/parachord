@@ -2349,7 +2349,7 @@ const CollectionArtistCard = ({ artist, getArtistImage, onNavigate, onPlayTopTra
 };
 
 // CollectionAlbumCard component - Cinematic Light design
-const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, onPlay, onAddToQueue, animationDelay = 0 }) => {
+const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, onPlay, onAddToQueue, onContextMenu, animationDelay = 0 }) => {
   // States: undefined (fetching), null (no art found), string (URL)
   const [imageUrl, setImageUrl] = useState(album.art || undefined);
 
@@ -2374,6 +2374,7 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
 
   return React.createElement('button', {
     onClick: onNavigate,
+    onContextMenu: onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, album); } : undefined,
     className: 'group text-left release-card card-fade-up',
     style: {
       padding: '10px',
@@ -33495,6 +33496,12 @@ useEffect(() => {
                         addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
                         showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
                       }
+                    },
+                    onContextMenu: (e, albumData) => {
+                      window.electron?.contextMenu?.showTrackMenu({
+                        type: 'collection-album',
+                        album: albumData
+                      });
                     },
                     animationDelay: Math.min(index * 30, 300)
                   })
