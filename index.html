@@ -81,6 +81,24 @@
       background: rgba(255, 255, 255, 0.35);
     }
 
+    /* Chat messages scrollbar - slimmer and matches chat UI */
+    .chat-messages-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .chat-messages-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .chat-messages-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    .chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
     /* Loading animation */
     @keyframes spin {
       to { transform: rotate(360deg); }
@@ -238,6 +256,12 @@
     @keyframes slideInRight {
       from { transform: translateX(100%); }
       to { transform: translateX(0); }
+    }
+
+    /* Sidebar slide-out animation */
+    @keyframes slideOutRight {
+      from { transform: translateX(0); }
+      to { transform: translateX(100%); }
     }
 
     /* Tooltip styling */

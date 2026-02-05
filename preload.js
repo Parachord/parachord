@@ -127,6 +127,13 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('menu-action', handler);
   },
 
+  // Protocol URL handlers (parachord:// deep links)
+  onProtocolUrl: (callback) => {
+    const handler = (event, url) => callback(url);
+    ipcRenderer.on('protocol-url', handler);
+    return () => ipcRenderer.removeListener('protocol-url', handler);
+  },
+
   // Auto-updater
   updater: {
     check: () => ipcRenderer.invoke('updater-check'),
@@ -401,6 +408,12 @@ contextBridge.exposeInMainWorld('electron', {
         });
       }
     }
+  },
+
+  // Ollama operations (local AI)
+  ollama: {
+    start: () => ipcRenderer.invoke('ollama:start'),
+    check: () => ipcRenderer.invoke('ollama:check')
   },
 
   // Generic invoke for IPC calls

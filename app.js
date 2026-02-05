@@ -1136,8 +1136,21 @@ const SERVICE_LOGOS = {
     React.createElement('path', { d: 'm75.354 7.823v144l61-35v-74z' }),
     React.createElement('path', { d: 'm70.354 7.823-61 35v74l61 35z' })
   ),
-  chatgpt: React.createElement('svg', { viewBox: '-0.17090198558635983 0.482230148717937 41.14235318283891 40.0339509076386', className: 'w-16 h-16', fill: 'white' },
-    React.createElement('path', { d: 'M37.532 16.87a9.963 9.963 0 0 0-.856-8.184 10.078 10.078 0 0 0-10.855-4.835A9.964 9.964 0 0 0 18.306.5a10.079 10.079 0 0 0-9.614 6.977 9.967 9.967 0 0 0-6.664 4.834 10.08 10.08 0 0 0 1.24 11.817 9.965 9.965 0 0 0 .856 8.185 10.079 10.079 0 0 0 10.855 4.835 9.965 9.965 0 0 0 7.516 3.35 10.078 10.078 0 0 0 9.617-6.981 9.967 9.967 0 0 0 6.663-4.834 10.079 10.079 0 0 0-1.243-11.813zM22.498 37.886a7.474 7.474 0 0 1-4.799-1.735c.061-.033.168-.091.237-.134l7.964-4.6a1.294 1.294 0 0 0 .655-1.134V19.054l3.366 1.944a.12.12 0 0 1 .066.092v9.299a7.505 7.505 0 0 1-7.49 7.496zM6.392 31.006a7.471 7.471 0 0 1-.894-5.023c.06.036.162.099.237.141l7.964 4.6a1.297 1.297 0 0 0 1.308 0l9.724-5.614v3.888a.12.12 0 0 1-.048.103l-8.051 4.649a7.504 7.504 0 0 1-10.24-2.744zM4.297 13.62A7.469 7.469 0 0 1 8.2 10.333c0 .068-.004.19-.004.274v9.201a1.294 1.294 0 0 0 .654 1.132l9.723 5.614-3.366 1.944a.12.12 0 0 1-.114.01L7.04 23.856a7.504 7.504 0 0 1-2.743-10.237zm27.658 6.437l-9.724-5.615 3.367-1.943a.121.121 0 0 1 .113-.01l8.052 4.648a7.498 7.498 0 0 1-1.158 13.528v-9.476a1.293 1.293 0 0 0-.65-1.132zm3.35-5.043c-.059-.037-.162-.099-.236-.141l-7.965-4.6a1.298 1.298 0 0 0-1.308 0l-9.723 5.614v-3.888a.12.12 0 0 1 .048-.103l8.05-4.645a7.497 7.497 0 0 1 11.135 7.763zm-21.063 6.929l-3.367-1.944a.12.12 0 0 1-.065-.092v-9.299a7.497 7.497 0 0 1 12.293-5.756 6.94 6.94 0 0 0-.236.134l-7.965 4.6a1.294 1.294 0 0 0-.654 1.132l-.006 11.225zm1.829-3.943l4.33-2.501 4.332 2.5v5l-4.331 2.5-4.331-2.5V18z' })
+chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.612-1.5z' })
+  ),
+  claude: React.createElement('svg', { viewBox: '0 0 512 509.64', className: 'w-16 h-16', shapeRendering: 'geometricPrecision', textRendering: 'geometricPrecision', imageRendering: 'optimizeQuality', fillRule: 'evenodd', clipRule: 'evenodd' },
+    React.createElement('path', { fill: '#D77655', d: 'M115.612 0h280.775C459.974 0 512 52.026 512 115.612v278.415c0 63.587-52.026 115.612-115.613 115.612H115.612C52.026 509.639 0 457.614 0 394.027V115.612C0 52.026 52.026 0 115.612 0z' }),
+    React.createElement('path', { fill: '#FCF2EE', fillRule: 'nonzero', d: 'M142.27 316.619l73.655-41.326 1.238-3.589-1.238-1.996-3.589-.001-12.31-.759-42.084-1.138-36.498-1.516-35.361-1.896-8.897-1.895-8.34-10.995.859-5.484 7.482-5.03 10.717.935 23.683 1.617 35.537 2.452 25.782 1.517 38.193 3.968h6.064l.86-2.451-2.073-1.517-1.618-1.517-36.776-24.922-39.81-26.338-20.852-15.166-11.273-7.683-5.687-7.204-2.451-15.721 10.237-11.273 13.75.935 3.513.936 13.928 10.716 29.749 23.027 38.848 28.612 5.687 4.727 2.275-1.617.278-1.138-2.553-4.271-21.13-38.193-22.546-38.848-10.035-16.101-2.654-9.655c-.935-3.968-1.617-7.304-1.617-11.374l11.652-15.823 6.445-2.073 15.545 2.073 6.547 5.687 9.655 22.092 15.646 34.78 24.265 47.291 7.103 14.028 3.791 12.992 1.416 3.968 2.449-.001v-2.275l1.997-26.641 3.69-32.707 3.589-42.084 1.239-11.854 5.863-14.206 11.652-7.683 9.099 4.348 7.482 10.716-1.036 6.926-4.449 28.915-8.72 45.294-5.687 30.331h3.313l3.792-3.791 15.342-20.372 25.782-32.227 11.374-12.789 13.27-14.129 8.517-6.724 16.1-.001 11.854 17.617-5.307 18.199-16.581 21.029-13.75 17.819-19.716 26.54-12.309 21.231 1.138 1.694 2.932-.278 44.536-9.479 24.062-4.347 28.714-4.928 12.992 6.066 1.416 6.167-5.106 12.613-30.71 7.583-36.018 7.204-53.636 12.689-.657.48.758.935 24.164 2.275 10.337.556h25.301l47.114 3.514 12.309 8.139 7.381 9.959-1.238 7.583-18.957 9.655-25.579-6.066-59.702-14.205-20.474-5.106-2.83-.001v1.694l17.061 16.682 31.266 28.233 39.152 36.397 1.997 8.999-5.03 7.102-5.307-.758-34.401-25.883-13.27-11.651-30.053-25.302-1.996-.001v2.654l6.926 10.136 36.574 54.975 1.895 16.859-2.653 5.485-9.479 3.311-10.414-1.895-21.408-30.054-22.092-33.844-17.819-30.331-2.173 1.238-10.515 113.261-4.929 5.788-11.374 4.348-9.478-7.204-5.03-11.652 5.03-23.027 6.066-30.052 4.928-23.886 4.449-29.674 2.654-9.858-.177-.657-2.173.278-22.37 30.71-34.021 45.977-26.919 28.815-6.445 2.553-11.173-5.789 1.037-10.337 6.243-9.2 37.257-47.392 22.47-29.371 14.508-16.961-.101-2.451h-.859l-98.954 64.251-17.618 2.275-7.583-7.103.936-11.652 3.589-3.791 29.749-20.474-.101.102.024.101z' })
+  ),
+  gemini: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M12 0C12 6.627 6.627 12 0 12c6.627 0 12 5.373 12 12 0-6.627 5.373-12 12-12-6.627 0-12-5.373-12-12z' })
+  ),
+  ollama: React.createElement('svg', { viewBox: '0 0 512 512', className: 'w-16 h-16', fill: 'none' },
+    React.createElement('path', { fillRule: 'evenodd', clipRule: 'evenodd', fill: 'white', d: 'M168.64 23.253c4.608 1.814 8.768 4.8 12.544 8.747 6.293 6.528 11.605 15.872 15.659 26.944 4.074 11.136 6.72 23.467 7.722 35.84a107.824 107.824 0 0143.712-13.568l1.088-.085c18.56-1.494 36.907 1.856 52.907 10.112a103.091 103.091 0 016.336 3.626c1.067-12.138 3.669-24.192 7.68-35.072 4.053-11.093 9.365-20.416 15.637-26.965a35.628 35.628 0 0112.566-8.747c5.482-2.133 11.306-2.517 16.981-.896 8.555 2.432 15.893 7.851 21.675 15.723 5.29 7.19 9.258 16.405 11.968 27.456 4.906 19.925 5.76 46.144 2.453 77.76l1.131.853.554.406c16.15 12.288 27.392 29.802 33.344 50.133 9.28 31.723 4.608 67.307-11.392 87.211l-.384.448.043.064c8.896 16.256 14.293 33.429 15.445 51.2l.043.64c1.365 22.72-4.267 45.589-17.365 68.053l-.15.213.214.512c10.069 24.683 13.226 49.536 9.344 74.368l-.128.832a13.888 13.888 0 01-15.936 11.435 13.83 13.83 0 01-11.31-10.43 13.828 13.828 0 01-.21-5.399c3.562-22.038.213-44.139-10.24-66.624a13.713 13.713 0 01.853-13.163l.085-.128c12.886-19.712 18.219-39.04 17.067-58.027-.981-16.618-6.933-32.938-17.067-48.49a13.737 13.737 0 013.84-18.902l.192-.128c5.184-3.392 9.963-12.053 12.374-23.893a90.218 90.218 0 00-2.027-42.112c-4.373-14.933-12.373-27.392-23.573-35.904-12.694-9.685-29.504-14.357-50.774-13.013a13.93 13.93 0 01-13.482-7.915c-6.699-14.187-16.47-24.341-28.651-30.635a70.145 70.145 0 00-37.803-7.082c-26.56 2.112-49.984 17.088-56.96 35.968a13.91 13.91 0 01-13.013 9.066c-22.763.043-40.384 5.376-53.269 14.998-11.136 8.32-18.731 19.946-22.742 33.877a86.824 86.824 0 00-1.45 40.235c2.389 11.904 7.061 21.76 12.416 27.072l.17.149c4.523 4.416 5.483 11.307 2.326 16.747-7.68 13.269-13.419 33.045-14.358 52.053-1.066 21.717 3.968 40.576 15.339 54.101l.341.406a13.711 13.711 0 012.027 14.72c-12.288 26.368-16.064 48.042-11.989 65.109a13.91 13.91 0 01-27.072 6.357c-5.184-21.717-1.664-46.592 10.09-74.624l.299-.746-.17-.256a92.574 92.574 0 01-12.758-27.926l-.107-.405a122.965 122.965 0 01-3.776-38.08c.939-19.413 5.931-39.296 13.27-55.253l.256-.555-.043-.043c-6.25-8.917-10.88-20.33-13.44-32.96l-.107-.512a114.176 114.176 0 011.984-53.12c5.59-19.52 16.576-36.288 32.768-48.405 1.28-.96 2.624-1.92 3.968-2.816-3.392-31.851-2.538-58.24 2.39-78.293 2.709-11.051 6.698-20.267 11.989-27.456 5.76-7.851 13.099-13.27 21.653-15.723 5.675-1.621 11.52-1.259 17.003.896v.021zm87.808 193.92c19.968 0 38.4 6.678 52.181 18.24 13.44 11.243 21.44 26.347 21.44 41.387 0 18.944-8.661 33.707-24.17 43.136-13.227 8-30.955 11.883-51.264 11.883-21.526 0-39.915-5.526-53.184-15.659-13.163-10.027-20.544-24.107-20.544-39.36 0-15.083 8.49-30.229 22.528-41.515 14.25-11.456 33.066-18.112 53.013-18.112zm0 19.115a65.498 65.498 0 00-40.875 13.867c-9.834 7.893-15.402 17.813-15.402 26.666 0 9.131 4.48 17.686 13.013 24.192 9.707 7.403 23.979 11.691 41.451 11.691 17.045 0 31.424-3.136 41.216-9.088 9.877-5.973 14.933-14.635 14.933-26.816 0-9.024-5.248-18.987-14.571-26.795-10.325-8.64-24.32-13.717-39.765-13.717zm14.123 25.813l.085.086a7.431 7.431 0 01-1.195 10.453l-6.229 4.907v9.514a7.999 7.999 0 01-8.021 7.958 8.004 8.004 0 01-8.022-7.958v-9.813l-5.781-4.651a7.4 7.4 0 01-1.109-10.453 7.53 7.53 0 0110.538-1.088l4.587 3.669 4.693-3.712a7.533 7.533 0 0110.454 1.088zm-107.52-40.938c10.197 0 18.496 8.32 18.496 18.581a18.564 18.564 0 01-18.518 18.581 18.559 18.559 0 01-18.496-18.56 18.565 18.565 0 015.399-13.129 18.609 18.609 0 0113.119-5.473zm185.728 0c10.24 0 18.517 8.32 18.517 18.581a18.559 18.559 0 01-18.517 18.581 18.56 18.56 0 01-18.496-18.56 18.56 18.56 0 0118.496-18.602zM158.72 49.067l-.064.042a14.06 14.06 0 00-6.08 5.078l-.107.128c-2.944 4.032-5.504 9.962-7.424 17.749-3.626 14.763-4.608 34.795-2.645 59.349 9.173-2.73 19.179-4.437 29.952-5.056l.213-.021.406-.725a69.41 69.41 0 013.157-5.099c2.624-16.448.469-36.096-5.397-52.139-2.859-7.765-6.336-13.866-9.664-17.344a13.403 13.403 0 00-2.283-1.92l-.064-.042zm195.712.853l-.043.021a13.396 13.396 0 00-2.282 1.92c-3.328 3.478-6.827 9.6-9.664 17.366-6.187 16.938-8.256 37.888-4.907 54.869l1.237 2.069.171.299h.64a110.599 110.599 0 0131.275 4.523c1.834-23.979.81-43.584-2.731-58.07-1.92-7.786-4.48-13.717-7.445-17.749l-.086-.128a14.054 14.054 0 00-6.08-5.099h-.085v-.021z' })
+  ),
+  shuffleupagus: React.createElement('svg', { viewBox: '0 0 122.88 89.38', className: 'w-16 h-16', fill: 'currentColor' },
+    React.createElement('path', { d: 'M51.57,34.4c-1.27,0.06-2.35-0.91-2.41-2.18c-0.06-1.27,0.91-2.35,2.18-2.41c1.66-0.09,3.31,0.06,4.94,0.44 c1.63,0.38,3.24,0.98,4.84,1.8c1.13,0.58,1.57,1.97,0.99,3.1c-0.58,1.13-1.97,1.57-3.1,0.99c-1.25-0.65-2.51-1.12-3.76-1.41 C54.02,34.45,52.79,34.34,51.57,34.4L51.57,34.4z M29.24,60.23c-3.02,0.16-5.82-0.11-8.39-0.73c-6.34-1.53-11.26-5.21-14.73-10.03 c-3.41-4.74-5.4-10.58-5.96-16.56c-0.38-4.04-0.1-8.16,0.84-12.05c1.19-4.91,3.22-8.91,5.8-12.05c3.22-3.92,7.29-6.47,11.65-7.77 c4.34-1.3,8.97-1.36,13.38-0.29c3.52,0.85,6.9,2.43,9.85,4.66c3.4-0.52,6.75-0.85,10.01-0.86c3.64-0.01,7.15,0.37,10.44,1.32 c3.01,0.87,5.87,2.21,8.52,4.15c2.63,1.92,5.04,4.41,7.16,7.59l0.02,0.03l0,0c1.53,2.35,2.89,4.77,4.1,7.24 c1.2,2.46,2.24,5,3.16,7.6c2.49,7.08,3.97,14.26,5.51,21.72l0.38,1.83c0.93,4.48,2.29,7.49,3.86,9.33 c1.48,1.74,3.12,2.31,4.65,2.02c7.47-1.41,7.21-11.73,7.03-19.2c-0.03-1.26-0.06-2.45-0.05-3.57c0-1.05,0.72-1.94,1.69-2.21 l7.7-2.33c1.19-0.36,2.44,0.29,2.84,1.45c0.27,0.7,0.47,1.26,0.63,1.74c0.16,0.5,0.35,1.11,0.55,1.78 c1.53,5.15,2.76,9.88,2.99,14.72c0.23,4.95-0.6,9.9-3.24,15.33c-2.17,4.47-5.41,8.28-9.67,10.84c-3.87,2.33-8.57,3.63-14.04,3.44 c-4.55-0.15-9.07-1.56-13.26-3.96c-4.2-2.41-8.09-5.84-11.3-10.02c-2.07-2.7-4.1-5.7-6.07-8.99c-1.95,1.68-4,3.18-6.14,4.51 c-2.92,1.81-6,3.29-9.21,4.47c-0.56,0.2-1.14,0.18-1.65-0.03c-3.95-1.34-7.63-3.39-10.97-6.15C34.32,66.77,31.63,63.77,29.24,60.23 L29.24,60.23z M62.93,62.34c-1.34-2.42-2.66-4.97-3.96-7.66c-0.55-1.14-0.07-2.52,1.07-3.07c1.14-0.55,2.52-0.07,3.07,1.07 c1.91,3.92,3.86,7.58,5.85,10.93c1.98,3.33,3.98,6.33,6.02,8.97c2.84,3.69,6.26,6.71,9.95,8.83c3.56,2.04,7.36,3.24,11.11,3.36 c4.53,0.15,8.37-0.9,11.52-2.79c3.47-2.09,6.12-5.21,7.91-8.9c2.27-4.66,2.98-8.9,2.78-13.13c-0.2-4.33-1.37-8.76-2.81-13.62 c-0.11-0.36-0.23-0.76-0.38-1.23l-4,1.21c0.01,0.56,0.03,1.15,0.04,1.76c0.23,9.11,0.54,21.69-10.77,23.83 c-3.11,0.59-6.32-0.4-9.01-3.57c-2.03-2.38-3.75-6.08-4.85-11.39l-0.38-1.83c-1.5-7.3-2.95-14.31-5.35-21.12 c-0.85-2.41-1.83-4.79-2.96-7.11c-1.12-2.31-2.39-4.56-3.81-6.73c-1.82-2.72-3.84-4.82-6.03-6.42c-2.17-1.59-4.55-2.7-7.08-3.42 c-2.89-0.83-5.97-1.17-9.18-1.16c-3.27,0.01-6.72,0.38-10.27,0.96l0,0c-0.63,0.1-1.3-0.06-1.83-0.49c-2.6-2.14-5.64-3.63-8.84-4.4 c-3.62-0.88-7.43-0.83-10.98,0.24c-3.53,1.06-6.81,3.12-9.42,6.28c-2.16,2.62-3.86,6-4.88,10.21c-0.82,3.4-1.07,7.01-0.74,10.56 c0.48,5.19,2.19,10.24,5.11,14.29c2.86,3.97,6.89,6.99,12.08,8.24c2.34,0.57,4.93,0.78,7.77,0.56c0.97-0.31,2.07,0.06,2.64,0.97 c2.32,3.67,4.96,6.7,7.87,9.1c2.73,2.25,5.7,3.95,8.88,5.11c2.67-1.03,5.22-2.28,7.62-3.77C58.88,65.66,60.96,64.11,62.93,62.34 L62.93,62.34z M30.41,16.02c1.25-0.21,2.44,0.64,2.65,1.89c0.21,1.25-0.64,2.44-1.89,2.65c-1.9,0.32-3.27,1.43-4.11,2.92 c-0.69,1.21-1.04,2.67-1.07,4.17c-0.03,1.53,0.3,3.1,0.97,4.5c0.97,2.04,2.7,3.7,5.19,4.32c1.23,0.3,1.99,1.55,1.68,2.78 c-0.3,1.23-1.55,1.99-2.78,1.68c-3.99-0.99-6.73-3.61-8.26-6.8c-0.97-2.04-1.44-4.32-1.4-6.56c0.04-2.26,0.59-4.48,1.66-6.37 C24.55,18.58,27,16.6,30.41,16.02L30.41,16.02z' })
   ),
   wikipedia: React.createElement('svg', { viewBox: '0 0 98.05 98.05', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M98.023,17.465l-19.584-0.056c-0.004,0.711-0.006,1.563-0.017,2.121c1.664,0.039,5.922,0.822,7.257,4.327L66.92,67.155c-0.919-2.149-9.643-21.528-10.639-24.02l9.072-18.818c1.873-2.863,5.455-4.709,8.918-4.843l-0.01-1.968L55.42,17.489c-0.045,0.499,0.001,1.548-0.068,2.069c5.315,0.144,7.215,1.334,5.941,4.508c-2.102,4.776-6.51,13.824-7.372,15.475c-2.696-5.635-4.41-9.972-7.345-16.064c-1.266-2.823,1.529-3.922,4.485-4.004v-1.981l-21.82-0.067c0.016,0.93-0.021,1.451-0.021,2.131c3.041,0.046,6.988,0.371,8.562,3.019c2.087,4.063,9.044,20.194,11.149,24.514c-2.685,5.153-9.207,17.341-11.544,21.913c-3.348-7.43-15.732-36.689-19.232-44.241c-1.304-3.218,3.732-5.077,6.646-5.213l0.019-2.148L0,17.398c0.005,0.646,0.027,1.71,0.029,2.187c4.025-0.037,9.908,6.573,11.588,10.683c7.244,16.811,14.719,33.524,21.928,50.349c0.002,0.029,2.256,0.059,2.281,0.008c4.717-9.653,10.229-19.797,15.206-29.56L63.588,80.64c0.005,0.004,2.082,0.016,2.093,0.007c7.962-18.196,19.892-46.118,23.794-54.933c1.588-3.767,4.245-6.064,8.543-6.194l0.032-1.956L98.023,17.465z' })
@@ -1359,8 +1372,10 @@ const VirtualizedQueueList = React.memo(({
       },
       onClick: () => {
         if (isLoading || isError) return;
+        if (spinoffMode) exitSpinoff();
         setDroppingFromIndex(index);
         setTimeout(() => {
+          // Clicked track plays, remove it and tracks before it, keep tracks after
           setCurrentQueue(prev => prev.slice(index + 1));
           handlePlay(track);
           setDroppingFromIndex(null);
@@ -1425,16 +1440,6 @@ const VirtualizedQueueList = React.memo(({
           color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
                  isError ? '#f87171' :
                  isCurrentTrack ? '#a78bfa' : 'rgba(229, 231, 235, 0.9)'
-        },
-        onClick: () => {
-          if (isLoading || isError) return;
-          if (spinoffMode) exitSpinoff();
-          setDroppingFromIndex(index);
-          setTimeout(() => {
-            setCurrentQueue(prev => prev.slice(index + 1));
-            handlePlay(track);
-            setDroppingFromIndex(null);
-          }, 300);
         }
       },
         isLoading ? 'Loading...' :
@@ -3389,6 +3394,835 @@ const ReleasePage = ({
   );
 };
 
+// =============================================================================
+// AI Chat Service - Inlined for browser compatibility
+// =============================================================================
+
+// DJ Tools definitions
+const djTools = [
+  {
+    name: 'play',
+    description: 'Play a specific track by searching for it and starting playback immediately',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'The artist name' },
+        title: { type: 'string', description: 'The track title' }
+      },
+      required: ['artist', 'title']
+    }
+  },
+  {
+    name: 'control',
+    description: 'Control music playback. Use "start" to begin playing the queue, "resume" to unpause, "pause" to pause, "skip" for next track, "previous" for previous track.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['pause', 'resume', 'start', 'skip', 'previous'],
+          description: 'start=play queue from beginning, resume=unpause, pause=pause, skip=next track, previous=previous track'
+        }
+      },
+      required: ['action']
+    }
+  },
+  {
+    name: 'search',
+    description: 'Search for tracks across all music sources. Returns a list of matching tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (artist name, track title, or both)' },
+        limit: { type: 'number', description: 'Maximum number of results to return (default 10)' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'queue_add',
+    description: 'Add one or more tracks to the playback queue',
+    parameters: {
+      type: 'object',
+      properties: {
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to add to the queue'
+        },
+        position: {
+          type: 'string',
+          enum: ['next', 'last'],
+          description: 'Add after current track (next) or at end of queue (last). Default: last'
+        }
+      },
+      required: ['tracks']
+    }
+  },
+  {
+    name: 'queue_remove',
+    description: 'Remove specific tracks from the queue by artist name, track title, or both. Use this instead of queue_clear when you only want to remove some tracks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        artist: { type: 'string', description: 'Remove all tracks by this artist (case-insensitive)' },
+        title: { type: 'string', description: 'Remove tracks with this title (case-insensitive)' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'queue_clear',
+    description: 'Clear ALL tracks from the playback queue. Only use this when the user explicitly wants to clear everything.',
+    parameters: { type: 'object', properties: {}, required: [] }
+  },
+  {
+    name: 'create_playlist',
+    description: 'Create a new playlist with the specified tracks. IMPORTANT: After creating, include the playlist card in your response using {{playlist|name|id|trackCount}} with the returned ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the new playlist' },
+        tracks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { artist: { type: 'string' }, title: { type: 'string' } },
+            required: ['artist', 'title']
+          },
+          description: 'Tracks to include in the playlist'
+        }
+      },
+      required: ['name', 'tracks']
+    }
+  },
+  {
+    name: 'shuffle',
+    description: 'Turn shuffle mode on or off',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'true to enable shuffle, false to disable' }
+      },
+      required: ['enabled']
+    }
+  },
+  {
+    name: 'collection_radio',
+    description: 'Start Collection Radio - shuffles and plays all tracks from the user\'s collection (saved tracks and local files). Great for when users want to hear their own music on shuffle.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  }
+];
+
+// Execute a DJ tool
+const executeDjTool = async (name, args, context) => {
+  try {
+    switch (name) {
+      case 'play': {
+        const query = `${args.artist} ${args.title}`;
+        // Use earlyReturn for faster single-track search
+        const results = await context.search(query, {
+          earlyReturn: true,
+          targetArtist: args.artist,
+          targetTitle: args.title
+        });
+        if (!results || results.length === 0) {
+          return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
+        }
+        const bestMatch = results.find(r =>
+          r.artist?.toLowerCase() === args.artist.toLowerCase() &&
+          r.title?.toLowerCase() === args.title.toLowerCase()
+        ) || results[0];
+        await context.playTrack(bestMatch);
+        return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
+      }
+      case 'control': {
+        switch (args.action) {
+          case 'pause': context.handlePause(); return { success: true, action: 'paused' };
+          case 'resume':
+          case 'start': {
+            // If nothing is playing and there's a queue, play the first queue item
+            const isPlaying = context.getIsPlaying();
+            const queue = context.getQueue();
+            if (!isPlaying && queue.length > 0) {
+              // Play first track from queue
+              const firstTrack = queue[0];
+              await context.playTrack(firstTrack);
+              return { success: true, action: 'started', track: { artist: firstTrack.artist, title: firstTrack.title } };
+            }
+            // Otherwise toggle play/pause (resume)
+            context.handleResume();
+            return { success: true, action: 'resumed' };
+          }
+          case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
+          case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
+          default: return { success: false, error: `Unknown action: ${args.action}` };
+        }
+      }
+      case 'search': {
+        const results = await context.search(args.query);
+        const limit = args.limit || 10;
+        return {
+          success: true,
+          results: (results || []).slice(0, limit).map(r => ({
+            artist: r.artist,
+            title: r.title,
+            album: r.album,
+            albumArt: r.albumArt || null
+          })),
+          total: results?.length || 0
+        };
+      }
+      case 'queue_add': {
+        const nothingPlaying = !context.getCurrentTrack();
+        let startedPlaying = false;
+        let tracksToQueue = args.tracks;
+
+        // If nothing is playing, resolve and play the first track immediately
+        if (nothingPlaying && args.tracks.length > 0) {
+          const firstTrack = args.tracks[0];
+          const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
+            earlyReturn: true,
+            targetArtist: firstTrack.artist,
+            targetTitle: firstTrack.title
+          });
+          if (results && results.length > 0) {
+            const match = results.find(r =>
+              r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
+              r.title?.toLowerCase() === firstTrack.title.toLowerCase()
+            ) || results[0];
+            await context.playTrack(match);
+            startedPlaying = true;
+          }
+          // Remaining tracks go to queue
+          tracksToQueue = args.tracks.slice(1);
+        }
+
+        // Add remaining tracks to queue as unresolved metadata
+        // The queue's ResolutionScheduler will resolve them in priority order
+        if (tracksToQueue.length > 0) {
+          const metadataTracks = tracksToQueue.map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: t.album || null
+          }));
+          await context.addToQueue(metadataTracks, args.position || 'last');
+        }
+
+        const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
+        return {
+          success: totalAdded > 0,
+          added: totalAdded,
+          nowPlaying: startedPlaying
+        };
+      }
+      case 'queue_remove': {
+        const queue = context.getQueue();
+        const toRemove = [];
+        const filterArtist = args.artist?.toLowerCase();
+        const filterTitle = args.title?.toLowerCase();
+
+        if (!filterArtist && !filterTitle) {
+          return { success: false, error: 'Must specify artist or title to remove' };
+        }
+
+        for (const track of queue) {
+          const matchesArtist = filterArtist && track.artist?.toLowerCase().includes(filterArtist);
+          const matchesTitle = filterTitle && track.title?.toLowerCase().includes(filterTitle);
+
+          // If both filters specified, both must match. Otherwise, match either.
+          if (filterArtist && filterTitle) {
+            if (matchesArtist && matchesTitle) toRemove.push(track);
+          } else if (matchesArtist || matchesTitle) {
+            toRemove.push(track);
+          }
+        }
+
+        for (const track of toRemove) {
+          context.removeFromQueue(track.id);
+        }
+
+        return {
+          success: true,
+          removed: toRemove.length,
+          tracks: toRemove.map(t => ({ artist: t.artist, title: t.title }))
+        };
+      }
+      case 'queue_clear': {
+        context.clearQueue();
+        return { success: true };
+      }
+      case 'create_playlist': {
+        if (!args.tracks || args.tracks.length === 0) {
+          return { success: false, error: 'No tracks specified for playlist' };
+        }
+        // Create playlist with track metadata - no need to resolve
+        // Tracks will be resolved when played from the playlist
+        const metadataTracks = args.tracks.map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || null
+        }));
+        const playlist = await context.createPlaylist(args.name, metadataTracks);
+        return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
+      }
+      case 'shuffle': {
+        context.setShuffle(args.enabled);
+        return { success: true, shuffle: args.enabled };
+      }
+      case 'collection_radio': {
+        const result = context.startCollectionRadio();
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
+        return { success: true, trackCount: result.trackCount };
+      }
+      default:
+        return { success: false, error: `Unknown tool: ${name}` };
+    }
+  } catch (error) {
+    console.error(`Tool execution error (${name}):`, error);
+    return { success: false, error: error.message || 'Tool execution failed' };
+  }
+};
+
+// Get simple tool definitions for LLM APIs
+const getSimpleToolDefinitions = () => djTools.map(t => ({
+  name: t.name,
+  description: t.description,
+  parameters: t.parameters
+}));
+
+// AI Chat Service class
+const AI_CHAT_SYSTEM_PROMPT = `You are a music DJ assistant for Parachord. You control music playback using tools.
+
+TODAY'S DATE: {{currentDate}}
+
+PERSONALITY & TONE:
+- Be a knowledgeable but casual DJ friend - warm, not robotic
+- Keep responses concise: 1-2 sentences of commentary max, plus cards
+- When recommending, briefly mention WHY it fits their taste (e.g., "similar shoegaze production" or "same melancholic energy")
+- Match the user's energy - if they're excited, be enthusiastic; if they're chill, keep it mellow
+
+IMPORTANT: To play music or control the player, you MUST call the appropriate tool. Do NOT just say "I'll play..." - you must actually call the play or queue_add tool. Saying you will do something is NOT the same as doing it.
+
+HANDLING EDGE CASES:
+- Search returns nothing: Suggest alternative spellings, or ask "Did you mean...?" with similar artist/track names
+- Ambiguous request: Ask a brief clarifying question (e.g., "The band or the solo project?")
+- User corrects you: Acknowledge briefly ("Ah, got it.") and try again - don't over-apologize
+- Just chatting (no music action): Keep it brief and friendly, but gently steer back to music if it continues
+
+CURRENT STATE:
+{{currentState}}
+
+KEY DEFINITIONS:
+- TRACK/SONG = A single piece of music (e.g., "Motion Sickness" by Phoebe Bridgers)
+- ALBUM = A collection of tracks released together (e.g., "Punisher" by Phoebe Bridgers contains 11 tracks)
+- "NEW" MUSIC = Released in the last 2 years ({{twoYearsAgo}}-{{currentYear}}). Do NOT recommend music from {{fiveYearsAgo}} or earlier as "new"
+- "RECENT" = Last 1-2 years. "CLASSIC" = 10+ years old.
+- "RECOMMENDATIONS" = Music the user has NOT listened to (or very little). Use their personal data (listening history, favorite artists/genres) to discover NEW music they might enjoy. Recommendations are for discovery.
+- "SUGGESTIONS" = Music the user already knows and likes. These are familiar favorites to play, not new discoveries. Suggestions are for "what should I put on?" moments.
+
+PLAYING ALBUMS vs TRACKS:
+- To play a SINGLE TRACK: use the "play" tool with artist and title - starts immediately
+- To play an ENTIRE ALBUM: use "play" for the FIRST track, then "queue_add" for the remaining tracks
+  Example: To play "Punisher" album, play "DVD Menu" first, then queue_add the other 10 tracks
+- If user says "add album to queue": use queue_add with ALL tracks - does NOT interrupt current playback
+- NEVER say "the album will continue playing" - you must explicitly queue each track
+
+PERSONALIZATION - CRITICAL:
+When making recommendations, you MUST follow these rules:
+- NEVER recommend albums/artists already in their collection or listening history - they already know those!
+- NEVER recommend anything in the user's BLOCKLIST (shown in CURRENT STATE) - they explicitly asked not to see these!
+- Recommend NEW music similar to their taste, not music they already listen to
+- When user asks for "new" music, only suggest releases from {{twoYearsAgo}}-{{currentYear}}
+- STRICTLY limit to 1 album/track per artist - never multiple from same artist
+- If you don't have user data, ASK what genres/artists they like before recommending
+
+BLOCKLIST - USER PREFERENCES:
+When user says "don't recommend X", "I don't like X", "stop suggesting X", "never play X again", etc.:
+- Call the block_recommendation tool IMMEDIATELY to save their preference
+- Confirm you've blocked it: "Got it, I won't recommend [X] again."
+- The blocklist persists across sessions - you'll see it in CURRENT STATE
+
+RECOMMENDATION BASIS - CRITICAL:
+- Base ALL recommendations on GENRE, STYLE, SONIC QUALITIES, and what music critics/publications compare artists to
+- NEVER base recommendations on text similarities, name similarities, or title similarities
+- Consider: production style, instrumentation, tempo, mood, era, scene, influences
+- Example: If user likes Radiohead, recommend artists with similar sonic experimentation, not artists with similar band names
+- Use your knowledge of music criticism and what the internet/publications say about artist comparisons
+
+AVAILABLE ACTIONS (use these tools):
+- play: Play a specific track IMMEDIATELY - clears the queue first, starts playing instantly
+- queue_add: Add tracks to queue WITHOUT interrupting current playback - music keeps playing
+- queue_remove: Remove specific tracks from queue
+- queue_clear: Clear entire queue
+- control: pause, resume, skip, previous
+- search: Find tracks (returns results you can then play/queue)
+- shuffle: Enable/disable shuffle mode
+- collection_radio: Start Collection Radio - shuffles and plays all tracks from user's collection
+- block_recommendation: Block an artist/album/track from future recommendations
+
+"PLAY" vs "ADD TO QUEUE":
+- "Play X" / "Put on X" → play tool (clears queue, starts immediately)
+- "Add X to queue" / "Queue X" → queue_add tool (adds to end, does NOT interrupt current playback)
+- Multiple tracks or albums: play first track, queue_add the rest
+- Always confirm what you did AFTER the tool executes
+
+CONTENT TYPE - MATCH EXACTLY WHAT USER ASKS FOR:
+- User asks for "ARTISTS" → Recommend ARTISTS (use {{artist|Name|}})
+- User asks for "ALBUMS" → Recommend ALBUMS (use {{album|Title|Artist|}})
+- User asks for "TRACKS/SONGS" → Recommend TRACKS (use {{track|Title|Artist|Album}})
+
+Do NOT recommend albums when user asks for artists. Do NOT recommend tracks when user asks for albums.
+
+FORMATTING - CRITICAL:
+Do NOT use markdown headers (no #, ##, ###, ####). Just use bold text **like this** for section titles.
+
+CARD SYNTAX - MANDATORY FOR ALL MUSIC MENTIONS:
+You MUST use card syntax for EVERY mention of a track, album, artist, or playlist - no exceptions!
+Cards render as clickable items with artwork. NEVER use plain text like "Song Title" by Artist Name.
+
+Card formats:
+- Track: {{track|Song Title|Artist Name|Album Name}}
+- Album: {{album|ALBUM TITLE|ARTIST NAME|}} ← Album title FIRST, then artist name
+- Artist: {{artist|Artist Name|}}
+- Playlist: {{playlist|Playlist Name|playlist-id|track-count}} ← Use AFTER creating a playlist with create_playlist tool
+
+INLINE CARD USAGE - VERY IMPORTANT:
+Cards can and SHOULD be used inline within sentences. They will render properly anywhere in your response.
+
+CORRECT (uses inline cards):
+"For post-rock, I recommend {{track|Storm|Godspeed You! Black Emperor|Lift Your Skinny Fists}} and {{track|Your Hand in Mine|Explosions in the Sky|The Earth Is Not a Cold Dead Place}}. You might also enjoy {{artist|Mogwai|}} or {{artist|Sigur Rós|}}."
+
+WRONG (plain text - NEVER do this):
+"For post-rock, I recommend 'Storm' by Godspeed You! Black Emperor and 'Your Hand in Mine' by Explosions in the Sky."
+
+Cards work in lists too:
+1. {{track|Certainty|Big Thief|Two Hands}} - a beautiful acoustic track
+2. {{album|In Rainbows|Radiohead|}} - a landmark album
+3. {{artist|Phoebe Bridgers|}} - an incredible songwriter
+
+EXAMPLES OF PROPER RESPONSES:
+**Recommendations for you:**
+{{track|Certainty|Big Thief|Two Hands}} - intimate folk with raw vocals
+{{track|Your Hand in Mine|Explosions in the Sky|The Earth Is Not a Cold Dead Place}} - cinematic post-rock
+{{album|In Rainbows|Radiohead|}} - electronic-influenced art rock
+{{artist|Phoebe Bridgers|}} - confessional indie songwriting
+{{playlist|Rainy Day Vibes|ai-chat-1234567890|15}}
+
+AFTER CREATING A PLAYLIST:
+When you create a playlist using the create_playlist tool, ALWAYS include a playlist card in your response using the ID returned by the tool.
+Example: If you create a playlist called "Chill Vibes" and the tool returns id "ai-chat-1706789012345" with 12 tracks, respond with:
+{{playlist|Chill Vibes|ai-chat-1706789012345|12}}
+
+COMMON MISTAKES - DO NOT DO THESE:
+1. {{album|Big Thief|Two Hands|}} ← WRONG! Artist and album are swapped!
+2. "Motion Sickness" by Phoebe Bridgers ← WRONG! Use card syntax instead: {{track|Motion Sickness|Phoebe Bridgers|Stranger in the Alps}}
+3. Check out Radiohead ← WRONG! Use: {{artist|Radiohead|}}
+4. The album "Kid A" is great ← WRONG! Use: {{album|Kid A|Radiohead|}}
+5. ![Artist Name](url) ← WRONG! Never use image markdown. Use card syntax or plain [text](url) links.
+6. Putting cards on separate lines in lists:
+   WRONG:
+   1. Here's a track
+   {{track|Song|Artist|Album}}
+
+   CORRECT:
+   1. {{track|Song|Artist|Album}} - great track!
+
+FORMATTING RULES:
+- NEVER use image markdown syntax (![text](url)) - it doesn't render correctly
+- Keep cards INLINE with list numbers, not on separate lines
+- The Album field is REQUIRED for tracks - it enables album artwork to display
+- NEVER output plain text music references. ALWAYS use {{type|...}} card syntax.`;
+
+class AIChatService {
+  constructor(provider, toolContext, getContext) {
+    this.provider = provider;
+    this.toolContext = toolContext;
+    this.getContext = getContext;
+    this.messages = [];
+    this.tools = getSimpleToolDefinitions();
+    this.onProgress = null; // Callback for tool execution progress
+  }
+
+  setProgressCallback(callback) {
+    this.onProgress = callback;
+  }
+
+  _reportProgress(status) {
+    if (this.onProgress) {
+      try { this.onProgress(status); } catch (e) { console.error('Progress callback error:', e); }
+    }
+  }
+
+  async sendMessage(userMessage) {
+    this.messages.push({ role: 'user', content: userMessage });
+    if (this.messages.length > 50) {
+      this.messages = [this.messages[0], ...this.messages.slice(-49)];
+    }
+
+    const context = await this.getContext();
+    const systemPrompt = this.buildSystemPrompt(context);
+    const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+
+    let response;
+    try {
+      response = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+    } catch (error) {
+      console.error('AI provider error:', error);
+      this._lastErrorType = null; // Reset before formatting
+      const errorMessage = this.formatProviderError(error);
+      this.messages.push({ role: 'assistant', content: errorMessage });
+      const result = { content: errorMessage, error: true };
+      if (this._lastErrorType === 'ollama_connection') {
+        result.ollamaUnavailable = true;
+      }
+      return result;
+    }
+
+    // Handle tool calls - check both toolCalls and tool_calls
+    const toolCalls = response.toolCalls || response.tool_calls;
+    if (toolCalls && toolCalls.length > 0) {
+      return await this.handleToolCalls({ ...response, tool_calls: toolCalls }, systemPrompt);
+    }
+
+    // Check if the response mentions playing but didn't use tools
+    // This can happen with smaller models that don't support tool calling well
+    let content = response.content;
+    const lowerContent = content.toLowerCase();
+    const mentionsAction = lowerContent.includes("i'll play") ||
+                          lowerContent.includes("i will play") ||
+                          lowerContent.includes("let me play") ||
+                          lowerContent.includes("playing") ||
+                          lowerContent.includes("i'll add") ||
+                          lowerContent.includes("adding to queue");
+
+    if (mentionsAction && !toolCalls) {
+      // Model described an action but didn't call the tool
+      content += "\n\n⚠️ Note: I described an action but couldn't execute it. This model may not support tool calling well. Try using ChatGPT or a larger Ollama model like llama3.1 or qwen2.5.";
+    }
+
+    this.messages.push({ role: 'assistant', content: content });
+    return { content: content };
+  }
+
+  async handleToolCalls(response, systemPrompt) {
+    let toolResults = [];
+    let iterations = 0;
+    let currentResponse = response;
+
+    while ((currentResponse.tool_calls || currentResponse.toolCalls) && iterations < 5) {
+      iterations++;
+      const calls = currentResponse.tool_calls || currentResponse.toolCalls;
+
+      this.messages.push({
+        role: 'assistant',
+        content: currentResponse.content || '',
+        tool_calls: calls
+      });
+
+      for (const call of calls) {
+        // Report progress to UI
+        const toolLabels = {
+          search: 'Searching...',
+          play: 'Playing track...',
+          queue_add: 'Adding to queue...',
+          queue_remove: 'Removing from queue...',
+          queue_clear: 'Clearing queue...',
+          control: call.arguments?.action === 'pause' ? 'Pausing...' : call.arguments?.action === 'skip' ? 'Skipping...' : 'Controlling playback...',
+          create_playlist: 'Creating playlist...',
+          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...',
+          collection_radio: 'Starting Collection Radio...'
+        };
+        this._reportProgress(toolLabels[call.name] || `Running ${call.name}...`);
+
+        const result = await executeDjTool(call.name, call.arguments, this.toolContext);
+        toolResults.push({ tool: call.name, arguments: call.arguments, result });
+        this.messages.push({
+          role: 'tool',
+          tool_call_id: call.id || call.name,
+          content: JSON.stringify(result)
+        });
+      }
+
+      const messagesWithSystem = [{ role: 'system', content: systemPrompt }, ...this.messages];
+      try {
+        currentResponse = await this.provider.chat(messagesWithSystem, this.tools, this.provider.config);
+        // Normalize tool calls
+        if (currentResponse.toolCalls && !currentResponse.tool_calls) {
+          currentResponse.tool_calls = currentResponse.toolCalls;
+        }
+      } catch (error) {
+        console.error('AI provider error during tool follow-up:', error);
+        this.messages.push({ role: 'assistant', content: 'I encountered an error while processing.' });
+        return { content: 'I encountered an error while processing.', toolResults, error: true };
+      }
+    }
+
+    const finalContent = currentResponse.content || this.summarizeToolResults(toolResults);
+    this.messages.push({ role: 'assistant', content: finalContent });
+    return { content: finalContent, toolResults };
+  }
+
+  buildSystemPrompt(context) {
+    const lines = [];
+    if (context.nowPlaying) {
+      lines.push(`Now Playing: "${context.nowPlaying.title}" by ${context.nowPlaying.artist}`);
+      lines.push(`  State: ${context.playbackState || 'unknown'}`);
+    } else {
+      lines.push('Nothing is currently playing.');
+    }
+    if (context.queue && context.queue.length > 0) {
+      lines.push(`\nQueue (${context.queue.length} tracks):`);
+      context.queue.slice(0, 10).forEach((t, i) => lines.push(`  ${i + 1}. "${t.title}" by ${t.artist}`));
+    }
+    if (context.shuffle !== undefined) lines.push(`\nShuffle: ${context.shuffle ? 'On' : 'Off'}`);
+
+    // Build exclusion list from collection and listening history
+    const knownArtists = new Set();
+    const knownAlbums = new Set();
+
+    // Add collection (user's explicit favorites)
+    if (context.collection) {
+      const { favoriteArtists, favoriteAlbums, favoriteTracks } = context.collection;
+
+      // Add to known sets
+      favoriteArtists?.forEach(a => knownArtists.add(a));
+      favoriteAlbums?.forEach(a => {
+        knownArtists.add(a.artist);
+        knownAlbums.add(`${a.title} by ${a.artist}`);
+      });
+      favoriteTracks?.forEach(t => knownArtists.add(t.artist));
+
+      const hasCollection = (favoriteArtists?.length > 0) || (favoriteAlbums?.length > 0) || (favoriteTracks?.length > 0);
+
+      if (hasCollection) {
+        lines.push('\nUSER COLLECTION (their saved favorites - use for style matching):');
+        if (favoriteArtists?.length > 0) {
+          lines.push(`  Favorite artists: ${favoriteArtists.slice(0, 10).join(', ')}`);
+        }
+        if (favoriteAlbums?.length > 0) {
+          const albumList = favoriteAlbums.slice(0, 8).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+          lines.push(`  Favorite albums: ${albumList}`);
+        }
+        if (favoriteTracks?.length > 0) {
+          const trackList = favoriteTracks.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+          lines.push(`  Favorite tracks: ${trackList}`);
+        }
+      }
+    }
+
+    // Add listening history for personalization
+    const history = context.listeningHistory;
+    if (history) {
+      lines.push(`\nLISTENING HISTORY (from ${history.source || 'scrobbling'}):`);
+
+      // Show data by time period if available
+      if (history.periods && history.periods.length > 0) {
+        for (const period of history.periods) {
+          const periodLabel = period.window.replace(/_/g, ' ');
+          if (period.top_artists && period.top_artists.length > 0) {
+            period.top_artists.forEach(a => knownArtists.add(a));
+            lines.push(`  Top artists (${periodLabel}): ${period.top_artists.slice(0, 5).join(', ')}`);
+          }
+          if (period.top_tracks && period.top_tracks.length > 0) {
+            period.top_tracks.forEach(t => knownArtists.add(t.artist));
+            const trackList = period.top_tracks.slice(0, 5).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+            lines.push(`  Top tracks (${periodLabel}): ${trackList}`);
+          }
+          if (period.top_albums && period.top_albums.length > 0) {
+            period.top_albums.forEach(a => {
+              knownArtists.add(a.artist);
+              knownAlbums.add(`${a.title} by ${a.artist}`);
+            });
+            const albumList = period.top_albums.slice(0, 5).map(a => `"${a.title}" by ${a.artist}`).join(', ');
+            lines.push(`  Top albums (${periodLabel}): ${albumList}`);
+          }
+        }
+      }
+
+      // Add recently played section
+      if (history.recently_played && history.recently_played.length > 0) {
+        history.recently_played.forEach(t => knownArtists.add(t.artist));
+        const recentList = history.recently_played.slice(0, 10).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+        lines.push(`\n  Recently played: ${recentList}`);
+      }
+    }
+
+    // Add explicit exclusion list for "new music" requests
+    if (knownArtists.size > 0) {
+      const sortedArtists = Array.from(knownArtists).sort().slice(0, 30);
+      lines.push('\n⛔ DO NOT RECOMMEND (user already knows these artists):');
+      lines.push(`  ${sortedArtists.join(', ')}`);
+      lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
+    }
+
+    // Add user's playlists for context
+    if (context.playlists && context.playlists.length > 0) {
+      lines.push('\nUSER\'S PLAYLISTS:');
+      context.playlists.slice(0, 15).forEach(p => {
+        const samples = p.sampleTracks?.length > 0
+          ? ` (e.g. ${p.sampleTracks.map(t => `"${t.title}"`).join(', ')})`
+          : '';
+        lines.push(`  • "${p.name}" - ${p.trackCount} tracks${samples}`);
+      });
+      lines.push('  User can ask to play from these playlists or for music similar to them.');
+    }
+
+    // Add time context for mood-aware recommendations
+    if (context.timeContext) {
+      const { timeOfDay, dayOfWeek, isWeekend } = context.timeContext;
+      lines.push(`\nTIME CONTEXT: ${timeOfDay} on ${dayOfWeek}${isWeekend ? ' (weekend)' : ''}`);
+      lines.push('  Consider this when making mood-based suggestions.');
+    }
+
+    // Add session play history (what was played before current queue)
+    if (context.sessionHistory && context.sessionHistory.length > 0) {
+      lines.push('\nSESSION HISTORY (tracks played earlier this session):');
+      const historyList = context.sessionHistory.slice(-8).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+      lines.push(`  ${historyList}`);
+      lines.push('  Use this to understand current mood/vibe.');
+    }
+
+    // Add recent searches
+    if (context.recentSearches && context.recentSearches.length > 0) {
+      lines.push(`\nRECENT SEARCHES: ${context.recentSearches.slice(0, 5).join(', ')}`);
+      lines.push('  These show what user has been looking for recently.');
+    }
+
+    // Add friend stats (what friends have been into lately)
+    if (context.friendStats && context.friendStats.length > 0) {
+      lines.push('\nFRIENDS\' RECENT FAVORITES (this week):');
+      context.friendStats.forEach(f => {
+        const artistStr = f.topArtists?.length > 0
+          ? `Artists: ${f.topArtists.slice(0, 3).join(', ')}`
+          : '';
+        const trackStr = f.topTracks?.length > 0
+          ? `Tracks: ${f.topTracks.slice(0, 2).map(t => `"${t.title}"`).join(', ')}`
+          : '';
+        const details = [artistStr, trackStr].filter(Boolean).join(' | ');
+        if (details) {
+          lines.push(`  • ${f.name}: ${details}`);
+        }
+      });
+      lines.push('  User can ask "what has [friend] been into?" to explore their tastes.');
+    }
+
+    // Note if user has local library
+    if (context.hasLocalLibrary) {
+      lines.push('\nNOTE: User has local music files enabled. When searching, results may include tracks from their personal library.');
+    }
+
+    const now = new Date();
+    const currentDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const currentYear = now.getFullYear();
+    return AI_CHAT_SYSTEM_PROMPT
+      .replace('{{currentDate}}', currentDate)
+      .replace(/\{\{currentYear\}\}/g, currentYear)
+      .replace(/\{\{twoYearsAgo\}\}/g, currentYear - 2)
+      .replace(/\{\{fiveYearsAgo\}\}/g, currentYear - 5)
+      .replace('{{currentState}}', lines.join('\n'));
+  }
+
+  summarizeToolResults(toolResults) {
+    if (!toolResults || toolResults.length === 0) return 'Done.';
+    return toolResults.map(({ tool, result }) => {
+      if (!result.success) return `Failed to ${tool}: ${result.error}`;
+      switch (tool) {
+        case 'play': return result.track ? `Now playing "${result.track.title}" by ${result.track.artist}` : 'Started playback';
+        case 'control': return `Playback ${result.action}`;
+        case 'search': return `Found ${result.results?.length || 0} results`;
+        case 'queue_add': return `Added ${result.added} track(s) to queue`;
+        case 'queue_clear': return 'Queue cleared';
+        case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
+        case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
+        case 'collection_radio': return `Started Collection Radio with ${result.trackCount} tracks`;
+        default: return `${tool} completed`;
+      }
+    }).join('. ') + '.';
+  }
+
+  formatProviderError(error) {
+    const message = error.message || '';
+    const lowerMessage = message.toLowerCase();
+
+    // Connection errors (Ollama, network issues)
+    if (lowerMessage.includes('failed to fetch') || lowerMessage.includes('econnrefused') || lowerMessage.includes('network')) {
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        // Mark this as an Ollama connection error for auto-start handling
+        this._lastErrorType = 'ollama_connection';
+        return "Can't connect to Ollama. Attempting to start it...";
+      }
+      return "Can't connect to the AI service. Check your internet connection.";
+    }
+
+    // Quota/rate limit errors (Gemini, OpenAI)
+    if (lowerMessage.includes('quota') || lowerMessage.includes('exceeded')) {
+      return "API quota exceeded. Check your plan limits or try again later.";
+    }
+    if (message.includes('429') || lowerMessage.includes('rate limit')) {
+      return "Rate limit reached. Please wait a moment and try again.";
+    }
+
+    // Auth errors
+    if (message.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key')) {
+      return "Invalid API key. Please check your settings.";
+    }
+
+    // Model not found
+    if (message.includes('404') || lowerMessage.includes('not found') || lowerMessage.includes('does not exist')) {
+      // Check if this is Ollama
+      const endpoint = this.provider.config?.endpoint || '';
+      if (endpoint.includes('localhost:11434') || this.provider.id === 'ollama') {
+        const model = this.provider.config?.model || 'llama3.1';
+        return `Model "${model}" not installed. Run: ollama pull ${model}`;
+      }
+      return "AI model not found. Check your settings or try a different model.";
+    }
+
+    // Content policy errors
+    if (lowerMessage.includes('content policy') || lowerMessage.includes('safety')) {
+      return "Request was blocked by content policy. Try rephrasing.";
+    }
+
+    // Generic error - truncate long messages
+    const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
+    return `Error: ${shortMessage}`;
+  }
+
+  clearHistory() { this.messages = []; }
+  restoreHistory(messages) { this.messages = messages || []; }
+  getHistory() { return [...this.messages]; }
+}
+
+// Create chat service from plugin
+const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) => {
+  if (!plugin || !plugin.chat) {
+    throw new Error('Plugin does not have chat capability');
+  }
+  const provider = {
+    chat: plugin.chat,
+    config: config,
+    id: plugin.id || plugin.manifest?.id,
+    name: plugin.name || plugin.manifest?.name
+  };
+  return new AIChatService(provider, toolContext, getContext);
+};
+
+// =============================================================================
+// End AI Chat Service
+// =============================================================================
+
 const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
@@ -3444,6 +4278,8 @@ const Parachord = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
+  const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
+  const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
   const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
@@ -3451,7 +4287,22 @@ const Parachord = () => {
 
   // Results sidebar state (generic/reusable)
   const [resultsSidebar, setResultsSidebar] = useState(null);
+  const [sidebarClosing, setSidebarClosing] = useState(false); // Tracks closing animation state
   // Shape: { title, subtitle, tracks: [], source: 'ai' | 'search' | etc }
+  // For chat mode: { mode: 'chat', title, messages: [], provider }
+
+  // Conversational DJ (AI Chat) state
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiChatMessages, setAiChatMessages] = useState([]);
+  const [aiChatInput, setAiChatInput] = useState('');
+  const [aiChatLoading, setAiChatLoading] = useState(false);
+  const [aiChatProgress, setAiChatProgress] = useState(null); // Tool execution progress message
+  const [selectedChatProvider, setSelectedChatProvider] = useState(null);
+  const [chatProviderDropdownOpen, setChatProviderDropdownOpen] = useState(false);
+  const aiChatServiceRef = useRef(null);
+  const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
+  const lastAssistantMessageRef = useRef(null); // Ref for scrolling to top of latest response
+  const lastUserMessageRef = useRef(null); // Ref for scrolling user messages into view
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -3616,6 +4467,7 @@ const Parachord = () => {
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
   const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
+  const [raycastInfoOpen, setRaycastInfoOpen] = useState(false); // Raycast extension info modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -4505,6 +5357,11 @@ const Parachord = () => {
   const handlePreviousRef = useRef(null);
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
+  const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
+  const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
+  const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
+  const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
+  const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   // Friend function refs (for use in early useEffects before functions are defined)
@@ -4639,6 +5496,7 @@ const Parachord = () => {
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
+  useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -5680,6 +6538,7 @@ const Parachord = () => {
 
   // Cache for artist data (artistName -> { data, timestamp })
   const artistDataCache = useRef({});
+  const artistFetchId = useRef(0);  // Incremented on each new fetch to detect stale async callbacks
 
   // Cache for MusicBrainz search results (query -> { artists, albums, tracks, timestamp })
   // TTL: 5 minutes - cached results shown instantly while fresh search runs in background
@@ -5742,6 +6601,14 @@ const Parachord = () => {
     if (!resolverLoaderRef.current) return [];
     return resolverLoaderRef.current.getAllResolvers().filter(r =>
       r.capabilities?.generate
+    );
+  };
+
+  // Get AI services with chat capability (for Conversational DJ)
+  const getChatServices = () => {
+    if (!resolverLoaderRef.current) return [];
+    return resolverLoaderRef.current.getAllResolvers().filter(r =>
+      r.capabilities?.chat
     );
   };
 
@@ -5857,8 +6724,12 @@ const Parachord = () => {
         const metaServicesWithGenerate = metaServiceAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate
         );
+        // Meta services with chat capability (Conversational DJ)
+        const metaServicesWithChat = metaServiceAxes.filter(axe =>
+          axe.capabilities?.chat && axe.implementation?.chat
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -5876,6 +6747,12 @@ const Parachord = () => {
         if (metaServicesWithGenerate.length > 0) {
           const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
           console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
+        }
+
+        // Load meta services with chat capability (Conversational DJ)
+        if (metaServicesWithChat.length > 0) {
+          const loadedChatServices = await resolverLoader.current.loadResolvers(metaServicesWithChat);
+          console.log(`💬 Loaded ${loadedChatServices.length} chat service(s):`, loadedChatServices.map(s => s.name).join(', '));
         }
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
@@ -6915,6 +7792,285 @@ const Parachord = () => {
 
     return cleanup;
   }, []);
+
+  // Protocol URL handler (parachord:// deep links)
+  useEffect(() => {
+    if (!window.electron?.onProtocolUrl) return;
+
+    const cleanup = window.electron.onProtocolUrl(async (url) => {
+      console.log('🔗 Protocol URL received:', url);
+
+      try {
+        // Parse the URL
+        const parsed = new URL(url);
+        const host = parsed.host;
+        const pathSegments = parsed.pathname
+          .replace(/^\/+/, '')
+          .split('/')
+          .map(s => decodeURIComponent(s))
+          .filter(Boolean);
+
+        // Determine command and segments
+        // parachord://play?... -> host='play', or parachord:///artist/Name -> no host
+        let command, segments;
+        if (host && host !== '') {
+          command = host;
+          segments = pathSegments;
+        } else {
+          [command, ...segments] = pathSegments;
+        }
+
+        const params = Object.fromEntries(parsed.searchParams);
+        console.log('🔗 Parsed protocol URL:', { command, segments, params });
+
+        // Execute the command
+        switch (command) {
+          // === Playback Control ===
+          case 'play': {
+            if (params.artist && params.title) {
+              const results = await searchResolvers(`${params.artist} ${params.title}`, {
+                earlyReturn: true,
+                targetArtist: params.artist,
+                targetTitle: params.title
+              });
+              if (results && results.length > 0) {
+                const match = results.find(r =>
+                  r.artist?.toLowerCase() === params.artist.toLowerCase() &&
+                  r.title?.toLowerCase() === params.title.toLowerCase()
+                ) || results[0];
+                await handlePlayRef.current(match);
+                showToast(`Playing "${match.title}" by ${match.artist}`);
+              } else {
+                showToast(`Could not find "${params.title}" by ${params.artist}`);
+              }
+            }
+            break;
+          }
+
+          case 'control': {
+            const action = segments[0];
+            switch (action) {
+              case 'pause':
+                if (isPlayingRef.current && handlePlayPauseRef.current) handlePlayPauseRef.current();
+                break;
+              case 'resume':
+              case 'play':
+                if (!isPlayingRef.current && handlePlayPauseRef.current) handlePlayPauseRef.current();
+                break;
+              case 'skip':
+              case 'next':
+                if (handleNextRef.current) handleNextRef.current();
+                break;
+              case 'previous':
+                if (handlePreviousRef.current) handlePreviousRef.current();
+                break;
+            }
+            break;
+          }
+
+          case 'queue': {
+            const subCommand = segments[0];
+            if (subCommand === 'add' && params.artist && params.title) {
+              const track = { artist: params.artist, title: params.title, album: params.album || null };
+              addToQueue([track], { type: 'protocol', name: 'Protocol' }, { skipAutoPlay: false });
+              showToast(`Added "${params.title}" by ${params.artist} to queue`);
+            } else if (subCommand === 'clear') {
+              clearQueue();
+              showToast('Queue cleared');
+            }
+            break;
+          }
+
+          case 'shuffle': {
+            const enabled = segments[0] === 'on';
+            setShuffleMode(enabled);
+            showToast(`Shuffle ${enabled ? 'on' : 'off'}`);
+            break;
+          }
+
+          case 'volume': {
+            const vol = parseInt(segments[0], 10);
+            if (!isNaN(vol) && vol >= 0 && vol <= 100) {
+              setVolume(vol / 100);
+            }
+            break;
+          }
+
+          // === Navigation Commands ===
+          case 'home':
+            setActiveView('home');
+            break;
+
+          case 'artist': {
+            const [artistName, tab] = segments;
+            if (artistName) {
+              setActiveView('artist');
+              fetchArtistData(artistName);
+              // Tab handling would require additional state management
+            }
+            break;
+          }
+
+          case 'album': {
+            const [artistName, albumTitle] = segments;
+            if (artistName && albumTitle) {
+              // Search for the album and load it
+              const query = `${artistName} ${albumTitle}`;
+              const results = await searchResolvers(query);
+              const albumTrack = results?.find(r =>
+                r.artist?.toLowerCase().includes(artistName.toLowerCase()) &&
+                r.album?.toLowerCase().includes(albumTitle.toLowerCase())
+              );
+              if (albumTrack?.album) {
+                // Would need to trigger album view loading
+                showToast(`Opening album: ${albumTitle}`);
+              }
+            }
+            break;
+          }
+
+          case 'library': {
+            const [tab] = segments;
+            setActiveView('library');
+            if (tab && ['tracks', 'albums', 'artists', 'friends'].includes(tab)) {
+              setCollectionTab(tab);
+            }
+            break;
+          }
+
+          case 'history': {
+            const [tab] = segments;
+            setActiveView('history');
+            if (tab) {
+              const tabMap = {
+                'top-tracks': 'topTracks',
+                'top-albums': 'topAlbums',
+                'top-artists': 'topArtists',
+                'recent': 'recent'
+              };
+              setHistoryTab(tabMap[tab] || tab);
+            }
+            if (params.period) {
+              setHistoryPeriod(params.period);
+            }
+            break;
+          }
+
+          case 'friend': {
+            const [friendId, tab] = segments;
+            if (friendId) {
+              // Find friend by ID or username
+              const friend = friends.find(f =>
+                f.id === friendId ||
+                f.username?.toLowerCase() === friendId.toLowerCase() ||
+                f.name?.toLowerCase() === friendId.toLowerCase()
+              );
+              if (friend) {
+                setSelectedFriend(friend);
+                setActiveView('friendHistory');
+                if (tab) {
+                  const tabMap = {
+                    'top-tracks': 'topTracks',
+                    'top-artists': 'topArtists',
+                    'recent': 'recent'
+                  };
+                  setFriendHistoryTab(tabMap[tab] || tab);
+                }
+              } else {
+                showToast(`Friend not found: ${friendId}`);
+              }
+            }
+            break;
+          }
+
+          case 'recommendations': {
+            const [tab] = segments;
+            setActiveView('recommendations');
+            if (tab && ['artists', 'songs'].includes(tab)) {
+              setRecommendationsTab(tab);
+            }
+            break;
+          }
+
+          case 'charts':
+            setActiveView('discover');
+            break;
+
+          case 'critics-picks':
+            setActiveView('critics-picks');
+            break;
+
+          case 'search': {
+            if (params.q) {
+              setSearchQuery(params.q);
+              setActiveView('search');
+              performSearch(params.q);
+            }
+            break;
+          }
+
+          case 'playlists':
+            setActiveView('playlists');
+            break;
+
+          case 'playlist': {
+            const [playlistId] = segments;
+            if (playlistId) {
+              const playlist = playlists.find(p => p.id === playlistId || p.name === playlistId);
+              if (playlist) {
+                setCurrentPlaylist(playlist);
+                setActiveView('playlist-view');
+              } else {
+                showToast(`Playlist not found: ${playlistId}`);
+              }
+            }
+            break;
+          }
+
+          case 'settings': {
+            const [tab] = segments;
+            setActiveView('settings');
+            if (tab) {
+              setSettingsTab(tab);
+            }
+            break;
+          }
+
+          case 'now-playing':
+            // Could expand now playing view if implemented
+            break;
+
+          case 'chat': {
+            if (openAiChatRef.current) {
+              openAiChatRef.current();
+            }
+            if (params.prompt && handleAiChatSendRef.current) {
+              // Trigger chat with prompt
+              setTimeout(() => {
+                handleAiChatSendRef.current(params.prompt);
+              }, 100);
+            }
+            break;
+          }
+
+          case 'collection-radio': {
+            if (handleStartCollectionStationRef.current) {
+              handleStartCollectionStationRef.current();
+            }
+            break;
+          }
+
+          default:
+            console.warn('🔗 Unknown protocol command:', command);
+        }
+      } catch (error) {
+        console.error('🔗 Protocol URL error:', error);
+        showToast(`Protocol error: ${error.message}`);
+      }
+    });
+
+    return cleanup;
+  }, [friends, playlists]);
 
   // Auto-updater status listener
   useEffect(() => {
@@ -8340,12 +9496,73 @@ const Parachord = () => {
     }
   }, [aiIncludeHistory, cacheLoaded]);
 
+  // Persist recommendation blocklist (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('recommendation_blocklist', recommendationBlocklist);
+    }
+  }, [recommendationBlocklist, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
       window.electron.store.set('playlists_view_mode', playlistsViewMode);
     }
   }, [playlistsViewMode, cacheLoaded]);
+
+  // Persist selected chat provider (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store && selectedChatProvider) {
+      window.electron.store.set('selected_chat_provider', selectedChatProvider);
+    }
+  }, [selectedChatProvider, cacheLoaded]);
+
+  // Persist AI chat history per provider (only after cache is loaded to avoid overwriting)
+  const aiChatHistoriesRef = useRef({}); // Store histories for all providers
+  const prevProviderRef = useRef(null); // Track provider changes to avoid save/load race condition
+  const chatHistoryLoadedRef = useRef(false); // Track if history has been loaded for current provider
+
+  useEffect(() => {
+    // Don't save if:
+    // - Cache not loaded yet
+    // - No provider selected
+    // - History hasn't been loaded yet for this provider (prevents overwriting with empty array)
+    if (cacheLoaded && window.electron?.store && selectedChatProvider && chatHistoryLoadedRef.current) {
+      // Update the history for current provider
+      aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+      window.electron.store.set('ai_chat_histories', aiChatHistoriesRef.current);
+    }
+  }, [aiChatMessages, cacheLoaded, selectedChatProvider]);
+
+  // Load chat history when provider changes
+  useEffect(() => {
+    if (cacheLoaded && selectedChatProvider && selectedChatProvider !== prevProviderRef.current) {
+      prevProviderRef.current = selectedChatProvider;
+      chatHistoryLoadedRef.current = false; // Reset loaded flag for new provider
+      const history = aiChatHistoriesRef.current[selectedChatProvider] || [];
+      setAiChatMessages(history);
+      // Clear progress status from previous provider to prevent bleeding
+      setAiChatProgress(null);
+      setAiChatLoading(false);
+      // Also restore to service if it exists
+      if (aiChatServiceRef.current) {
+        aiChatServiceRef.current.restoreHistory(history);
+      }
+      // Update resultsSidebar with loaded history if chat is open (and clear progress)
+      setResultsSidebar(prev => {
+        if (prev?.mode === 'chat') {
+          return { ...prev, messages: history, progressStatus: null, loading: false };
+        }
+        return prev;
+      });
+      console.log('💬 Loaded chat history for provider:', selectedChatProvider, '-', history.length, 'messages');
+      // Mark history as loaded so saves can proceed
+      // Use setTimeout to ensure this runs after React processes the state updates
+      setTimeout(() => {
+        chatHistoryLoadedRef.current = true;
+      }, 0);
+    }
+  }, [selectedChatProvider, cacheLoaded]);
 
   // Keep prefetchedReleasesRef in sync for context menu handlers
   useEffect(() => {
@@ -8440,8 +9657,18 @@ const Parachord = () => {
   }, [activeView, playlists]);
 
   // Keyboard shortcuts - Escape navigates back from search view
+  // Ignore shortcuts when typing in input fields
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in input fields
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      );
+      if (isTyping) return;
+
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
       }
@@ -8580,6 +9807,13 @@ const Parachord = () => {
     let resolverId;
     let sourceToPlay = trackOrSource;
 
+    // Handle tracks without sources property (e.g., AI-added queue tracks that haven't been resolved yet)
+    // Initialize empty sources object so they go through on-demand resolution
+    if (!trackOrSource.sources && trackOrSource.artist && trackOrSource.title) {
+      console.log('🔄 Track has no sources, initializing for on-demand resolution:', trackOrSource.title);
+      trackOrSource = { ...trackOrSource, sources: {} };
+    }
+
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
       // Merge in resolved sources from trackSources state if available
       // This ensures we have all available sources including those resolved in background
@@ -8593,10 +9827,101 @@ const Parachord = () => {
       let availableResolvers = Object.keys(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
-        // No sources available - try resolving on-demand using shared resolution
-        console.log('🔄 No sources found, attempting on-demand resolution...');
+        // No sources available - show track immediately, then resolve
+        console.log('🔄 No sources found, showing track and resolving...');
 
-        const sources = await resolveTrack(trackOrSource, trackOrSource.artist, {});
+        // Immediately set as current track so user sees feedback
+        const placeholderTrack = {
+          ...trackOrSource,
+          status: 'resolving'
+        };
+        setCurrentTrack(placeholderTrack);
+
+        // Resolve across all enabled resolvers in parallel (like ChatCard does)
+        const currentResolvers = loadedResolversRef.current;
+        const currentActiveResolvers = activeResolversRef.current;
+        const currentResolverOrder = resolverOrderRef.current;
+        const enabledResolvers = currentResolverOrder
+          .filter(id => currentActiveResolvers.includes(id))
+          .map(id => currentResolvers.find(r => r.id === id))
+          .filter(r => r && r.capabilities?.resolve);
+
+        // Helper to validate resolved track matches requested metadata
+        const normalizeStr = s => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+        const validateResolvedTrack = (result, targetArtist, targetTitle) => {
+          if (!result || !result.artist || !result.title) return false;
+          const resultArtist = normalizeStr(result.artist);
+          const resultTitle = normalizeStr(result.title);
+          const normTargetArtist = normalizeStr(targetArtist);
+          const normTargetTitle = normalizeStr(targetTitle);
+          // Check for reasonable match - either contains the other
+          const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
+          const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
+          return artistMatches && titleMatches;
+        };
+
+        // Helper to find best matching result from search results
+        const findBestMatch = (results, targetArtist, targetTitle) => {
+          if (!results || results.length === 0) return null;
+          const normTargetArtist = normalizeStr(targetArtist);
+          const normTargetTitle = normalizeStr(targetTitle);
+          // First pass: look for exact match (normalized)
+          for (const r of results) {
+            if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
+              return r;
+            }
+          }
+          // Second pass: look for contains match
+          for (const r of results) {
+            if (validateResolvedTrack(r, targetArtist, targetTitle)) {
+              return r;
+            }
+          }
+          return null;
+        };
+
+        const freshSources = {};
+        const resolvePromises = enabledResolvers.map(async (resolver) => {
+          try {
+            const config = getResolverConfigRef.current
+              ? await getResolverConfigRef.current(resolver.id)
+              : {};
+
+            let bestMatch = null;
+
+            // Prefer search() to get all results and find best match
+            if (resolver.search && typeof resolver.search === 'function') {
+              const query = `${trackOrSource.artist} ${trackOrSource.title}`;
+              const results = await resolver.search(query, config);
+              if (results && results.length > 0) {
+                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title);
+                if (!bestMatch) {
+                  console.warn(`  ⚠️ ${resolver.id} returned ${results.length} results but none matched "${trackOrSource.title}" by "${trackOrSource.artist}"`);
+                }
+              }
+            } else {
+              // Fallback to resolve() for resolvers without search
+              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
+              if (result && validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
+                bestMatch = result;
+              } else if (result) {
+                console.warn(`  ⚠️ Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${trackOrSource.title}" by "${trackOrSource.artist}"`);
+              }
+            }
+
+            if (bestMatch) {
+              freshSources[resolver.id] = {
+                ...bestMatch,
+                confidence: bestMatch.confidence || 0.9,
+                resolvedAt: Date.now()
+              };
+            }
+          } catch (error) {
+            console.error(`  ❌ ${resolver.name || resolver.id} resolve error:`, error);
+          }
+        });
+
+        await Promise.all(resolvePromises);
 
         // Check if another play request superseded this one during resolution
         if (playbackGenerationRef.current !== thisGeneration) {
@@ -8604,8 +9929,15 @@ const Parachord = () => {
           return;
         }
 
-        if (sources && Object.keys(sources).length > 0) {
-          trackOrSource.sources = sources;
+        if (Object.keys(freshSources).length > 0) {
+          trackOrSource.sources = freshSources;
+          // Update trackSources state so resolver dropdown shows all options
+          if (trackOrSource.id) {
+            setTrackSources(prev => ({
+              ...prev,
+              [trackOrSource.id]: freshSources
+            }));
+          }
         }
 
         // Update availableResolvers after resolution
@@ -8613,6 +9945,7 @@ const Parachord = () => {
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
+          setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -8620,6 +9953,14 @@ const Parachord = () => {
           });
           return;
         }
+
+        // Update current track with resolved sources
+        setCurrentTrack(prev => {
+          if (prev?.id === placeholderTrack.id || prev?.title === placeholderTrack.title) {
+            return { ...trackOrSource, status: 'resolved' };
+          }
+          return prev;
+        });
       }
 
       // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
@@ -8668,11 +10009,17 @@ const Parachord = () => {
       // We were passed a specific source object - detect resolver from it
       // Check which resolver this source came from by examining resolver-specific fields
       if (trackOrSource.spotifyId) resolverId = 'spotify';
+      else if (trackOrSource.appleMusicId) resolverId = 'applemusic';
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      // Fallback: use the 'source' property if set (added by search tagging)
+      else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
+        resolverId = trackOrSource.source;
+        console.log(`🎵 Using 'source' property as resolver: ${resolverId}`);
+      }
       else {
         console.error('❌ Could not determine resolver for source');
         setTrackLoading(false); // Clear loading state
@@ -9529,13 +10876,23 @@ const Parachord = () => {
     pollingGenerationRef.current++;
 
     if (resolverId === 'spotify' && config.token) {
-      const trackUri = track.spotifyUri || track.uri;
+      // Try multiple ways to get the Spotify URI:
+      // 1. Direct spotifyUri field
+      // 2. Generic uri field
+      // 3. Construct from spotifyId if available
+      let trackUri = track.spotifyUri || track.uri;
+      if (!trackUri && track.spotifyId) {
+        trackUri = `spotify:track:${track.spotifyId}`;
+        console.log(`🔄 Constructed Spotify URI from ID: ${trackUri}`);
+      }
       console.log(`🔄 Starting Spotify playback polling via main process...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
       console.log(`   Expected URI: ${trackUri}`);
+      console.log(`   Source fields: spotifyUri=${track.spotifyUri}, uri=${track.uri}, spotifyId=${track.spotifyId}`);
 
       if (!trackUri) {
         console.warn('⚠️ No Spotify URI found on track, auto-advance may not work');
+        console.warn('   Track object:', JSON.stringify(track, null, 2));
         return;
       }
 
@@ -10677,6 +12034,9 @@ const Parachord = () => {
     console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks`);
   };
 
+  // Keep handleStartCollectionStation ref in sync for protocol handler
+  useEffect(() => { handleStartCollectionStationRef.current = handleStartCollectionStation; });
+
   // Helper to set queue with playback context tagged on each track
   // This allows the context to update when tracks from different sources come up
   // respectShuffle: if true and shuffle is ON, shuffle the new queue (for "Play All" actions)
@@ -10820,13 +12180,25 @@ const Parachord = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
 
+    // Check if we have cached recently played data (from History page)
+    const now = Date.now();
+    const recentCacheValid = listeningHistoryCache.current.tracks &&
+                             (now - listeningHistoryCache.current.timestamp) < (10 * 60 * 1000);
+    const cachedRecentlyPlayed = recentCacheValid
+      ? listeningHistoryCache.current.tracks.slice(0, 50).map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album || ''
+        }))
+      : null;
+
     // Time periods to fetch for richer context (fetch more than needed, will dedupe)
-    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit }
+    // Each period: { label, lastfm, listenbrainz, artistLimit, trackLimit, albumLimit }
     const periods = [
-      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15 },
-      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15 },
-      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15 }
+      { label: 'last_7_days', lastfm: '7day', listenbrainz: 'this_week', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_month', lastfm: '1month', listenbrainz: 'this_month', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'last_6_months', lastfm: '6month', listenbrainz: 'half_yearly', artistLimit: 10, trackLimit: 15, albumLimit: 10 },
+      { label: 'all_time', lastfm: 'overall', listenbrainz: 'all_time', artistLimit: 10, trackLimit: 15, albumLimit: 10 }
     ];
 
     // Deduplicate results across time periods for maximum variety
@@ -10834,75 +12206,105 @@ const Parachord = () => {
     const deduplicateResults = (results) => {
       const seenArtists = new Set();
       const seenTracks = new Set();
+      const seenAlbums = new Set();
 
       return results.map(period => {
-        const uniqueArtists = period.top_artists.filter(artist => {
+        const uniqueArtists = (period.top_artists || []).filter(artist => {
           const key = artist.toLowerCase();
           if (seenArtists.has(key)) return false;
           seenArtists.add(key);
           return true;
         });
 
-        const uniqueTracks = period.top_tracks.filter(track => {
+        const uniqueTracks = (period.top_tracks || []).filter(track => {
           const key = `${track.artist.toLowerCase()}|${track.title.toLowerCase()}`;
           if (seenTracks.has(key)) return false;
           seenTracks.add(key);
           return true;
         });
 
+        const uniqueAlbums = (period.top_albums || []).filter(album => {
+          const key = `${album.artist.toLowerCase()}|${album.title.toLowerCase()}`;
+          if (seenAlbums.has(key)) return false;
+          seenAlbums.add(key);
+          return true;
+        });
+
         return {
           ...period,
           top_artists: uniqueArtists,
-          top_tracks: uniqueTracks
+          top_tracks: uniqueTracks,
+          top_albums: uniqueAlbums
         };
-      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0);
+      }).filter(period => period.top_artists.length > 0 || period.top_tracks.length > 0 || period.top_albums.length > 0);
     };
 
-    // Try Last.fm first
+    // Fetch from Last.fm (store in variable, don't return yet)
+    let lastfmData = null;
     if (lastfmConfig?.username) {
       const apiKey = getLastfmApiKey();
       if (apiKey) {
         try {
           console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
 
-          // Fetch all periods in parallel
+          // Fetch all periods in parallel (artists, tracks, albums)
           const periodPromises = periods.map(async (period) => {
-            const [artistsRes, tracksRes] = await Promise.all([
+            const [artistsRes, tracksRes, albumsRes] = await Promise.all([
               fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`)
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
+              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
             ]);
 
-            if (artistsRes.ok && tracksRes.ok) {
-              const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
+            if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
+              const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
               return {
                 window: period.label,
                 top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
                 top_tracks: (tracksData.toptracks?.track || []).map(t => ({
                   artist: t.artist?.name || 'Unknown',
                   title: t.name
+                })),
+                top_albums: (albumsData.topalbums?.album || []).map(a => ({
+                  artist: a.artist?.name || 'Unknown',
+                  title: a.name
                 }))
               };
             }
             return null;
           });
 
+          // Use cached recently played if available, otherwise fetch
+          let recentlyPlayed = cachedRecentlyPlayed || [];
+          if (!cachedRecentlyPlayed) {
+            const recentRes = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
+            if (recentRes.ok) {
+              const recentData = await recentRes.json();
+              recentlyPlayed = (recentData.recenttracks?.track || [])
+                .filter(t => !t['@attr']?.nowplaying) // Exclude currently playing
+                .map(t => ({
+                  artist: t.artist?.['#text'] || t.artist?.name || 'Unknown',
+                  title: t.name,
+                  album: t.album?.['#text'] || ''
+                }));
+            }
+          }
+
           const results = await Promise.all(periodPromises);
           const validResults = results.filter(r => r !== null);
 
-          if (validResults.length > 0) {
+          if (validResults.length > 0 || recentlyPlayed.length > 0) {
             const deduped = deduplicateResults(validResults);
-            // Flatten for backward compatibility with AI plugins
             const allArtists = deduped.flatMap(p => p.top_artists);
             const allTracks = deduped.flatMap(p => p.top_tracks);
-            console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from Last.fm across ${deduped.length} time periods`);
+            const allAlbums = deduped.flatMap(p => p.top_albums || []);
+            console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${recentlyPlayed.length} recently played from Last.fm`);
 
-            return {
+            lastfmData = {
               source: 'Last.fm',
-              // Backward compatible flat format for existing AI plugins
-              window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
               top_artists: allArtists,
               top_tracks: allTracks,
-              // Rich structured format for future use
+              top_albums: allAlbums,
+              recently_played: recentlyPlayed,
               periods: deduped
             };
           }
@@ -10912,54 +12314,75 @@ const Parachord = () => {
       }
     }
 
-    // Fall back to ListenBrainz
+    // Also fetch from ListenBrainz (not just fallback - merge both sources)
+    let listenbrainzData = null;
     if (listenbrainzConfig?.username) {
       try {
         console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
 
-        // Fetch all periods in parallel
+        // Fetch all periods in parallel (artists, tracks, releases/albums)
         const periodPromises = periods.map(async (period) => {
-          const [artistsRes, tracksRes] = await Promise.all([
+          const [artistsRes, tracksRes, releasesRes] = await Promise.all([
             fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`)
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
+            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
           ]);
 
-          // Handle 204 No Content
-          if (artistsRes.status === 204 || tracksRes.status === 204) {
-            return null;
-          }
+          // Handle 204 No Content for any
+          const artistsOk = artistsRes.ok && artistsRes.status !== 204;
+          const tracksOk = tracksRes.ok && tracksRes.status !== 204;
+          const releasesOk = releasesRes.ok && releasesRes.status !== 204;
 
-          if (artistsRes.ok && tracksRes.ok) {
-            const [artistsData, tracksData] = await Promise.all([artistsRes.json(), tracksRes.json()]);
-            return {
-              window: period.label,
-              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
-              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
-                artist: t.artist_name || 'Unknown',
-                title: t.track_name
-              }))
-            };
-          }
-          return null;
+          if (!artistsOk && !tracksOk && !releasesOk) return null;
+
+          const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
+          const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
+          const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
+
+          return {
+            window: period.label,
+            top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
+            top_tracks: (tracksData.payload?.recordings || []).map(t => ({
+              artist: t.artist_name || 'Unknown',
+              title: t.track_name
+            })),
+            top_albums: (releasesData.payload?.releases || []).map(r => ({
+              artist: r.artist_name || 'Unknown',
+              title: r.release_name
+            }))
+          };
         });
+
+        // Use cached recently played if available, otherwise fetch
+        let lbRecentlyPlayed = cachedRecentlyPlayed || [];
+        if (!cachedRecentlyPlayed) {
+          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`);
+          if (recentRes.ok) {
+            const recentData = await recentRes.json();
+            lbRecentlyPlayed = (recentData.payload?.listens || []).map(l => ({
+              artist: l.track_metadata?.artist_name || 'Unknown',
+              title: l.track_metadata?.track_name || 'Unknown',
+              album: l.track_metadata?.release_name || ''
+            }));
+          }
+        }
 
         const results = await Promise.all(periodPromises);
         const validResults = results.filter(r => r !== null);
 
-        if (validResults.length > 0) {
+        if (validResults.length > 0 || lbRecentlyPlayed.length > 0) {
           const deduped = deduplicateResults(validResults);
-          // Flatten for backward compatibility with AI plugins
           const allArtists = deduped.flatMap(p => p.top_artists);
           const allTracks = deduped.flatMap(p => p.top_tracks);
-          console.log(`🎵 Got ${allArtists.length} unique artists and ${allTracks.length} unique tracks from ListenBrainz across ${deduped.length} time periods`);
+          const allAlbums = deduped.flatMap(p => p.top_albums || []);
+          console.log(`🎵 Got ${allArtists.length} unique artists, ${allTracks.length} unique tracks, ${allAlbums.length} unique albums, and ${lbRecentlyPlayed.length} recently played from ListenBrainz`);
 
-          return {
+          listenbrainzData = {
             source: 'ListenBrainz',
-            // Backward compatible flat format for existing AI plugins
-            window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
             top_artists: allArtists,
             top_tracks: allTracks,
-            // Rich structured format for future use
+            top_albums: allAlbums,
+            recently_played: lbRecentlyPlayed,
             periods: deduped
           };
         }
@@ -10968,6 +12391,61 @@ const Parachord = () => {
       }
     }
 
+    // Merge data from both sources with deduplication
+    if (lastfmData || listenbrainzData) {
+      // Helper to dedupe arrays by key function
+      const dedupeArray = (arr, keyFn) => {
+        const seen = new Set();
+        return arr.filter(item => {
+          const key = keyFn(item);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      };
+
+      // Merge artists (simple strings, lowercase key)
+      const allArtists = dedupeArray(
+        [...(lastfmData?.top_artists || []), ...(listenbrainzData?.top_artists || [])],
+        a => a.toLowerCase()
+      );
+
+      // Merge tracks (objects with artist/title)
+      const allTracks = dedupeArray(
+        [...(lastfmData?.top_tracks || []), ...(listenbrainzData?.top_tracks || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge albums (objects with artist/title)
+      const allAlbums = dedupeArray(
+        [...(lastfmData?.top_albums || []), ...(listenbrainzData?.top_albums || [])],
+        a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`
+      );
+
+      // Merge recently played (objects with artist/title), keeping order
+      const allRecent = dedupeArray(
+        [...(lastfmData?.recently_played || []), ...(listenbrainzData?.recently_played || [])],
+        t => `${t.artist.toLowerCase()}|${t.title.toLowerCase()}`
+      );
+
+      // Merge periods (keep both sources' structured data)
+      const allPeriods = [...(lastfmData?.periods || []), ...(listenbrainzData?.periods || [])];
+
+      const sources = [lastfmData?.source, listenbrainzData?.source].filter(Boolean).join(' + ');
+      console.log(`🎵 Combined listening context from ${sources}: ${allArtists.length} artists, ${allTracks.length} tracks, ${allAlbums.length} albums, ${allRecent.length} recent plays`);
+
+      return {
+        source: sources,
+        window: 'multiple time periods (7 days, 1 month, 6 months, all-time)',
+        top_artists: allArtists,
+        top_tracks: allTracks,
+        top_albums: allAlbums,
+        recently_played: allRecent,
+        periods: allPeriods
+      };
+    }
+
+    // No data from either source
     return null;
   };
 
@@ -11048,7 +12526,7 @@ const Parachord = () => {
       console.error('AI generation error:', error);
       setAiError(error.message || 'Failed to generate playlist');
       // Close sidebar on error, reopen prompt
-      setResultsSidebar(null);
+      closeSidebarAnimated();
       setAiPromptOpen(true);
     } finally {
       setAiLoading(false);
@@ -11061,7 +12539,7 @@ const Parachord = () => {
     // Use aiPlaylist context type (not navigable, unlike recommendations page)
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     addToQueue(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Added ${resultsSidebar.tracks.length} tracks to queue`);
   };
 
@@ -11070,7 +12548,7 @@ const Parachord = () => {
     if (!resultsSidebar?.tracks || resultsSidebar.tracks.length === 0) return;
     const context = { type: 'aiPlaylist', name: 'AI Playlist' };
     playTrackCollection(resultsSidebar.tracks, context);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
 
   // Handle adding AI results to existing/new playlist
@@ -11082,9 +12560,1293 @@ const Parachord = () => {
       sourceName: resultsSidebar.prompt || 'AI Playlist',
       sourceType: 'playlist'
     });
-    setResultsSidebar(null);
+    closeSidebarAnimated();
   };
-  const addToQueue = (tracks, context = null) => {
+
+  // ============================================
+  // Conversational DJ (AI Chat) Functions
+  // ============================================
+
+  // Search across all active resolvers (for AI chat tools)
+  // Options:
+  //   earlyReturn: if true, returns as soon as the first resolver finds results (faster for single track play)
+  //   targetArtist/targetTitle: if provided with earlyReturn, returns early only if an exact match is found
+  const searchResolvers = async (query, options = {}) => {
+    const { earlyReturn = false, targetArtist, targetTitle } = options;
+    const allResolvers = loadedResolversRef.current || [];
+    const activeIds = activeResolversRef.current || [];
+    const resolverOrder = resolverOrderRef.current || [];
+    const results = [];
+
+    // Sort resolvers by user-configured priority order
+    const sortedResolvers = [...resolverOrder]
+      .filter(id => activeIds.includes(id))
+      .map(id => allResolvers.find(r => r.id === id))
+      .filter(r => r && r.search);
+
+    // Add any active resolvers not in the order list (fallback)
+    for (const resolver of allResolvers) {
+      if (activeIds.includes(resolver.id) && resolver.search && !sortedResolvers.find(r => r.id === resolver.id)) {
+        sortedResolvers.push(resolver);
+      }
+    }
+
+    for (const resolver of sortedResolvers) {
+      try {
+        const config = getResolverConfigRef.current
+          ? await getResolverConfigRef.current(resolver.id)
+          : {};
+        const tracks = await resolver.search(query, config);
+        if (Array.isArray(tracks) && tracks.length > 0) {
+          const taggedTracks = tracks.map(t => ({
+            ...t,
+            source: resolver.id,
+            resolverName: resolver.name || resolver.manifest?.name
+          }));
+          results.push(...taggedTracks);
+
+          // Early return optimization: if we found results from highest-priority resolver
+          if (earlyReturn) {
+            // If target artist/title provided, only return early on exact match
+            if (targetArtist && targetTitle) {
+              const hasExactMatch = taggedTracks.some(t =>
+                t.artist?.toLowerCase() === targetArtist.toLowerCase() &&
+                t.title?.toLowerCase() === targetTitle.toLowerCase()
+              );
+              if (hasExactMatch) {
+                return results;
+              }
+            } else {
+              // No target specified, return early with any results
+              return results;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    return results;
+  };
+
+  // Create a playlist from AI chat
+  const createPlaylistFromChat = async (name, tracks) => {
+    const playlistId = `ai-chat-${Date.now()}`;
+    const newPlaylist = {
+      id: playlistId,
+      title: name,
+      creator: 'Shuffleupagus',
+      tracks: tracks,
+      createdAt: Date.now(),
+      addedAt: Date.now(),
+      lastModified: Date.now()
+    };
+
+    const saveResult = await window.electron.playlists.save(newPlaylist);
+    if (saveResult.success) {
+      setPlaylists(prev => [newPlaylist, ...prev]);
+      fetchPlaylistCovers(playlistId, tracks);
+    }
+
+    return newPlaylist;
+  };
+
+  // Initialize or get AI chat service
+  const getOrCreateChatService = (provider) => {
+    const config = metaServiceConfigs[provider.id] || {};
+
+    // Check if we have a service for this provider with same config
+    // Recreate if model or other settings changed
+    if (aiChatServiceRef.current?.provider?.id === provider.id) {
+      const currentConfig = aiChatServiceRef.current.provider.config || {};
+      const configChanged = currentConfig.model !== config.model ||
+                           currentConfig.endpoint !== config.endpoint;
+      if (!configChanged) {
+        return aiChatServiceRef.current;
+      }
+      // Config changed - will recreate service below
+      console.log('🔄 AI config changed, recreating chat service');
+    }
+
+    // Create tool context for DJ tools
+    const toolContext = {
+      search: async (query, options = {}) => {
+        const results = await searchResolvers(query, options);
+        return results || [];
+      },
+      playTrack: async (track) => {
+        await handlePlayRef.current(track);
+      },
+      addToQueue: async (tracks, position) => {
+        // Generate unique IDs for AI-added tracks that don't have them
+        // This prevents the "all tracks purple" bug when clicking a track with undefined id
+        const tracksWithIds = tracks.map((t, i) => ({
+          ...t,
+          id: t.id || `ai-queue-${Date.now()}-${i}-${t.artist?.slice(0, 10)}-${t.title?.slice(0, 10)}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          sources: t.sources || {}
+        }));
+        // skipAutoPlay: true because queue_add tool handles auto-play itself
+        addToQueue(tracksWithIds, { type: 'aiPlaylist', name: 'Shuffleupagus' }, { skipAutoPlay: true });
+      },
+      clearQueue: () => clearQueue(),
+      removeFromQueue: (trackId) => removeFromQueue(trackId),
+      handlePause: () => handlePlayPauseRef.current(),
+      handleResume: () => handlePlayPauseRef.current(), // Toggle play/pause
+      playTrack: async (track) => await handlePlayRef.current(track), // Play specific track
+      handleNext: () => handleNextRef.current(),
+      handlePrevious: () => handlePreviousRef.current(),
+      setShuffle: (enabled) => {
+        if (enabled && !shuffleMode) {
+          // Turn on shuffle - store original and shuffle queue
+          const queue = currentQueueRef.current || [];
+          if (queue.length > 1) {
+            originalQueueRef.current = [...queue];
+            // Fisher-Yates shuffle
+            const shuffled = [...queue];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            setCurrentQueue(shuffled);
+            console.log('🔀 Shuffle ON (via DJ tool) - queue randomized');
+          }
+          setShuffleMode(true);
+        } else if (!enabled && shuffleMode) {
+          // Turn off shuffle - restore original order if available
+          if (originalQueueRef.current) {
+            const currentIds = new Set((currentQueueRef.current || []).map(t => t.id));
+            const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
+            setCurrentQueue(restoredQueue);
+            console.log('🔀 Shuffle OFF (via DJ tool) - restored original order');
+          }
+          originalQueueRef.current = null;
+          setShuffleMode(false);
+        }
+      },
+      createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+      getCurrentTrack: () => currentTrackRef.current,
+      getQueue: () => currentQueueRef.current || [],
+      getIsPlaying: () => isPlayingRef.current,
+      blockRecommendation: (type, item) => {
+        // Add item to the recommendation blocklist
+        // type: 'artist' | 'album' | 'track'
+        // item: { name } for artist, { title, artist } for album/track
+        setRecommendationBlocklist(prev => {
+          const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
+          // Check if already blocked (avoid duplicates)
+          const exists = prev[key].some(existing => {
+            if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
+            return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
+                   existing.artist?.toLowerCase() === item.artist?.toLowerCase();
+          });
+          if (exists) return prev;
+          return { ...prev, [key]: [...prev[key], item] };
+        });
+      },
+      getBlocklist: () => recommendationBlocklistRef.current,
+      startCollectionRadio: () => {
+        // Use collectionTracksRef which is kept in sync with library + collectionData.tracks
+        const allTracks = collectionTracksRef.current || [];
+
+        if (allTracks.length === 0) {
+          return { success: false, error: 'No tracks in your collection yet' };
+        }
+
+        // End listen-along session if active
+        if (listenAlongFriendRef.current) {
+          abortSchedulerContext('listen-along');
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+        }
+
+        // Deduplicate by id
+        const trackMap = new Map();
+        allTracks.forEach(track => {
+          const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          if (!trackMap.has(trackId)) {
+            trackMap.set(trackId, { ...track, id: trackId });
+          }
+        });
+        const uniqueTracks = Array.from(trackMap.values());
+
+        // Fisher-Yates shuffle
+        const shuffled = [...uniqueTracks];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        // Set up playback context
+        const context = { type: 'library', name: 'Collection Station' };
+
+        // Play first track, queue the rest
+        const firstTrack = shuffled[0];
+        const remainingTracks = shuffled.slice(1);
+
+        // Store original order for unshuffle and enable shuffle mode
+        originalQueueRef.current = remainingTracks;
+        setShuffleMode(true);
+
+        // Set queue and play
+        setQueueWithContext(remainingTracks, context, true);
+        setPlaybackContext(context);
+        handlePlayRef.current(firstTrack);
+
+        showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+        console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks (via AI)`);
+
+        return { success: true, trackCount: uniqueTracks.length };
+      }
+    };
+
+    // Create context getter for system prompt
+    const getContext = async () => {
+      const nowPlaying = currentTrackRef.current;
+      const queue = currentQueueRef.current || [];
+      const isPlaying = isPlayingRef.current;
+      const shuffle = shuffleModeRef.current;
+
+      // Fetch listening history for personalization
+      let listeningHistory = null;
+      try {
+        listeningHistory = await fetchListeningContext();
+      } catch (e) {
+        console.log('Could not fetch listening history:', e.message);
+      }
+
+      // Get collection (user's favorites)
+      const collection = {
+        favoriteArtists: (collectionData?.artists || []).slice(0, 20).map(a => a.name || a.artist),
+        favoriteAlbums: (collectionData?.albums || []).slice(0, 15).map(a => ({
+          title: a.title || a.album,
+          artist: a.artist
+        })),
+        favoriteTracks: (collectionData?.tracks || []).slice(0, 20).map(t => ({
+          title: t.title,
+          artist: t.artist
+        }))
+      };
+
+      // Get recommendation blocklist
+      const blocklist = recommendationBlocklistRef.current || { artists: [], albums: [], tracks: [] };
+
+      // Get user's playlists (names, track counts, sample tracks for context)
+      const userPlaylists = (playlists || []).slice(0, 20).map(p => ({
+        name: p.title || p.name,
+        trackCount: p.tracks?.length || 0,
+        // Include first 3 track samples to help AI understand playlist content
+        sampleTracks: (p.tracks || []).slice(0, 3).map(t => ({
+          title: t.title,
+          artist: t.artist
+        }))
+      }));
+
+      // Get time context for mood-aware recommendations
+      const now = new Date();
+      const timeContext = {
+        hour: now.getHours(),
+        dayOfWeek: now.toLocaleDateString('en-US', { weekday: 'long' }),
+        isWeekend: now.getDay() === 0 || now.getDay() === 6,
+        timeOfDay: now.getHours() < 6 ? 'late night' :
+                   now.getHours() < 12 ? 'morning' :
+                   now.getHours() < 17 ? 'afternoon' :
+                   now.getHours() < 21 ? 'evening' : 'night'
+      };
+
+      // Get session play history (tracks played before current queue)
+      const sessionHistory = (playHistoryRef.current || []).slice(-15).map(t => ({
+        title: t.title,
+        artist: t.artist,
+        album: t.album
+      }));
+
+      // Get recent searches (what user has been looking for)
+      const recentSearches = (searchHistory || []).slice(0, 10).map(s =>
+        typeof s === 'string' ? s : s.query || s.term || ''
+      ).filter(Boolean);
+
+      // Get friend stats (what friends have been into lately)
+      const friendStats = (friends || [])
+        .filter(f => f.cachedWeeklyStats?.topArtists?.length > 0 || f.cachedWeeklyStats?.topTracks?.length > 0)
+        .slice(0, 5)
+        .map(f => ({
+          name: f.displayName || f.name || f.username,
+          service: f.service,
+          topArtists: f.cachedWeeklyStats?.topArtists || [],
+          topTracks: f.cachedWeeklyStats?.topTracks || []
+        }));
+
+      // Check if local files resolver is active and has content
+      const localFilesActive = activeResolversRef.current?.includes('localfiles');
+
+      return {
+        nowPlaying: nowPlaying ? {
+          title: nowPlaying.title,
+          artist: nowPlaying.artist,
+          album: nowPlaying.album,
+          source: nowPlaying.source || nowPlaying.resolverId
+        } : null,
+        playbackState: isPlaying ? 'playing' : 'paused',
+        queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
+        shuffle: shuffle,
+        listeningHistory: listeningHistory,
+        collection: collection,
+        blocklist: blocklist,
+        // New context fields
+        playlists: userPlaylists,
+        timeContext: timeContext,
+        sessionHistory: sessionHistory,
+        recentSearches: recentSearches,
+        friendStats: friendStats,
+        hasLocalLibrary: localFilesActive
+      };
+    };
+
+    // Create the service using the inlined function
+    const service = createChatServiceFromPlugin(provider, config, toolContext, getContext);
+
+    // Restore chat history if we have persisted messages
+    if (aiChatMessages.length > 0) {
+      service.restoreHistory(aiChatMessages);
+    }
+
+    aiChatServiceRef.current = service;
+    return service;
+  };
+
+  // ChatCard component - stable reference using ref to prevent re-creation on every render
+  // Without the ref, React.memo() would be called on every App render, creating a new component type
+  const chatCardRef = useRef(null);
+  if (!chatCardRef.current) {
+    chatCardRef.current = React.memo(({ type, title, artist, album }) => {
+    const [imageUrl, setImageUrl] = useState(null);
+    const [loading, setLoading] = useState(true); // Start true for shimmer
+
+    // Fetch album art on mount if not cached
+    useEffect(() => {
+      let cancelled = false;
+
+      const fetchArt = async () => {
+        // Check cache first
+        let cachedUrl = null;
+        if (type === 'artist') {
+          const normalizedName = title?.trim().toLowerCase();
+          if (normalizedName && artistImageCache.current[normalizedName]) {
+            cachedUrl = artistImageCache.current[normalizedName].url;
+          }
+        } else {
+          // For tracks and albums
+          const albumName = type === 'album' ? title : album;
+          if (albumName && artist) {
+            cachedUrl = getCachedAlbumArt(artist, albumName);
+          }
+        }
+
+        if (cachedUrl) {
+          if (!cancelled) {
+            setImageUrl(cachedUrl);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Not in cache - fetch from appropriate source
+        if (type === 'artist') {
+          // Fetch artist image using the app's getArtistImage function
+          try {
+            const result = await getArtistImage(title);
+            if (!cancelled && result?.url) {
+              setImageUrl(result.url);
+            }
+          } catch (err) {
+            // Silently fail
+          }
+          if (!cancelled) setLoading(false);
+          return;
+        }
+
+        // For tracks and albums, use the app's getAlbumArt function
+        let albumName = type === 'album' ? title : album;
+
+        // If no album name provided for a track, try to find it via search
+        if (!albumName && type === 'track' && artist && title) {
+          try {
+            const query = `${artist} ${title}`;
+            // Use earlyReturn for faster album name lookup
+            const results = await searchResolvers(query, {
+              earlyReturn: true,
+              targetArtist: artist,
+              targetTitle: title
+            });
+            if (results && results.length > 0) {
+              const match = results.find(r =>
+                r.artist?.toLowerCase() === artist?.toLowerCase() &&
+                r.title?.toLowerCase() === title?.toLowerCase()
+              ) || results[0];
+              if (match?.album) {
+                albumName = match.album;
+              }
+            }
+          } catch (err) {
+            // Search failed, continue without album
+          }
+        }
+
+        if (!albumName || !artist) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+
+        try {
+          // Use fast iTunes-based lookup for ChatCards (much faster than MusicBrainz)
+          const artUrl = await getAlbumArtFast(artist, albumName);
+          if (!cancelled && artUrl) {
+            setImageUrl(artUrl);
+          }
+        } catch (err) {
+          // Silently fail - will show placeholder
+        }
+        if (!cancelled) setLoading(false);
+      };
+
+      fetchArt();
+      return () => { cancelled = true; };
+    }, [type, title, artist, album]);
+
+    const handleClick = async () => {
+      closeAiChat();
+
+      if (type === 'track') {
+        // Immediately show track metadata and clear queue
+        const placeholderId = `chat-track-${Date.now()}`;
+        const placeholder = {
+          id: placeholderId,
+          title: title,
+          artist: artist,
+          album: album || null,
+          sources: {},
+          status: 'loading',
+          _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+        };
+
+        // Clear queue and set placeholder as current track immediately
+        clearQueue();
+        setCurrentTrack(placeholder);
+        setTrackLoading(true);
+
+        try {
+          // Use the same resolveTrack function as the ResolutionScheduler
+          // This ensures ChatCard uses the same resolvers, priorities, and rules as everywhere else
+          console.log(`ChatCard: Resolving "${title}" by "${artist}" using resolveTrack`);
+
+          const sources = await resolveTrackRef.current(placeholder, artist);
+
+          // Check if we found any sources
+          if (sources && Object.keys(sources).length > 0) {
+            const resolvedTrack = { ...placeholder, sources, status: 'resolved' };
+            // Update current track with resolved data
+            setCurrentTrack(prev => {
+              if (prev?.id === placeholderId) {
+                return resolvedTrack;
+              }
+              return prev;
+            });
+            // Play the resolved track
+            await handlePlayRef.current(resolvedTrack);
+          } else {
+            // No sources found - show error and clear loading state
+            console.error(`ChatCard: No valid sources found for "${title}" by "${artist}"`);
+            setTrackLoading(false);
+            setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error' } : prev);
+            showConfirmDialog({
+              type: 'error',
+              title: 'Track Not Found',
+              message: `Could not find "${title}" by ${artist} on any of your enabled music services. Try searching manually or check your resolver settings.`
+            });
+          }
+        } catch (err) {
+          console.error('Error playing track from chat card:', err);
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: `Failed to play "${title}" by ${artist}: ${err.message}`
+          });
+        }
+      } else if (type === 'artist') {
+        fetchArtistData(title);
+      } else if (type === 'album') {
+        // Open album page
+        handleCollectionAlbumClick({ title, artist });
+      }
+    };
+
+    // Separate handler for play button click (plays album instead of opening page)
+    const handlePlayButtonClick = async (e) => {
+      e.stopPropagation(); // Don't trigger the card's onClick
+      e.preventDefault();
+
+      if (type === 'track') {
+        // For tracks, just call the regular handleClick
+        handleClick();
+        return;
+      }
+
+      if (type === 'album') {
+        closeAiChat();
+        console.log(`ChatCard: Playing album "${title}" by "${artist}"`);
+        setTrackLoading(true);
+
+        try {
+          // Fetch album tracks from MusicBrainz (same as album view)
+          const tracks = await fetchAlbumTracksByNameRef.current(artist, title, imageUrl);
+
+          if (tracks && tracks.length > 0) {
+            // Use same pattern as onAlbumPlay - let handlePlay resolve via scheduler
+            const context = { type: 'album', name: title, artist: artist };
+            const [firstTrack, ...remainingTracks] = tracks;
+            const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+
+            // Set queue with remaining tracks, then play first track
+            // handlePlay will resolve the track through the proper pipeline
+            setQueueWithContext(remainingTracks, context, true);
+            await handlePlayRef.current(taggedFirstTrack);
+          } else {
+            setTrackLoading(false);
+            showConfirmDialog({
+              type: 'error',
+              title: 'Album Not Found',
+              message: `Could not find "${title}" by ${artist} on MusicBrainz.`
+            });
+          }
+        } catch (err) {
+          console.error('Error playing album from chat card:', err);
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: `Failed to play album "${title}" by ${artist}: ${err.message}`
+          });
+        }
+      }
+    };
+
+    const hasImage = imageUrl && imageUrl.trim();
+
+    const [isHovered, setIsHovered] = useState(false);
+
+    return React.createElement('div', {
+      onClick: handleClick,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px',
+        marginTop: '8px',
+        marginBottom: '8px',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        transition: 'background-color 0.15s',
+        minWidth: 0,
+        maxWidth: '100%'
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        setIsHovered(true);
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+        setIsHovered(false);
+      }
+    },
+      // Thumbnail wrapper with hover play button
+      React.createElement('div', {
+        style: {
+          position: 'relative',
+          width: '40px',
+          height: '40px',
+          flexShrink: 0
+        }
+      },
+        // Thumbnail with shimmer loading state or placeholder
+        React.createElement('div', {
+          className: loading ? 'animate-shimmer' : '',
+          style: {
+            width: '40px',
+            height: '40px',
+            borderRadius: type === 'artist' ? '50%' : '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundImage: loading
+              ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 100%)'
+              : hasImage ? `url(${imageUrl})` : 'none',
+            backgroundSize: loading ? '200% 100%' : 'cover',
+            backgroundPosition: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }
+        },
+          // Music note placeholder when no image
+          !loading && !hasImage && React.createElement('svg', {
+            style: {
+              width: '20px',
+              height: '20px',
+              color: 'rgba(255, 255, 255, 0.3)'
+            },
+            fill: 'none',
+            viewBox: '0 0 24 24',
+            stroke: 'currentColor',
+            strokeWidth: 1.5
+          },
+            React.createElement('path', {
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+            })
+          )
+        ),
+        // Hover overlay with play button (only for tracks and albums)
+        // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
+        // For albums: clicking play button plays the album, clicking elsewhere opens album page
+        (type === 'track' || type === 'album') && React.createElement('div', {
+          onClick: handlePlayButtonClick,
+          style: {
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '4px',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isHovered ? 1 : 0,
+            transition: 'opacity 0.2s',
+            pointerEvents: isHovered ? 'auto' : 'none'
+          }
+        },
+          React.createElement('div', {
+            style: {
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              backgroundColor: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+              transform: isHovered ? 'scale(1)' : 'scale(0.9)',
+              transition: 'transform 0.2s'
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '14px', height: '14px', marginLeft: '2px', color: '#111827' },
+              fill: 'currentColor',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M8 5v14l11-7z' })
+            )
+          )
+        )
+      ),
+      // Text content
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', {
+          style: {
+            fontSize: '13px',
+            fontWeight: '500',
+            color: '#f3f4f6',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }
+        }, title),
+        artist && React.createElement('div', {
+          style: {
+            fontSize: '12px',
+            color: '#9ca3af',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }
+        }, artist)
+      ),
+      // Type indicator
+      React.createElement('div', {
+        style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+      }, type)
+    );
+  });
+  }
+  const ChatCard = chatCardRef.current;
+
+  // Render chat message content with markdown formatting
+  // Supports: **bold**, *italic*, `code`, [links](url), numbered lists
+  const renderChatContent = (content, isUserMessage) => {
+    if (!content) return null;
+
+    // Process content line by line for better list handling
+    const lines = content.split('\n');
+    const elements = [];
+    let keyCounter = 0;
+    let previousLineWasCard = false;
+
+    const parseInlineMarkdown = (text, baseKey) => {
+      const result = [];
+      // Combined regex for all inline patterns
+      // Order matters: cards first, then image links (![]()), then regular links, then bold, then italic, then code
+      const patterns = [
+        { regex: /\{\{(track|artist|album|playlist)\|([^}]+)\}\}/g, type: 'card' },
+        { regex: /!\[([^\]]*)\]\(([^)]+)\)/g, type: 'imagelink' }, // Handle ![text](url) - treat as regular link
+        { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
+        { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
+        { regex: /\*([^*]+)\*/g, type: 'italic' },
+        { regex: /`([^`]+)`/g, type: 'code' }
+      ];
+
+      // Simple approach: process patterns in order
+      let processed = text;
+      const replacements = [];
+
+      // Find all matches for all patterns
+      patterns.forEach(({ regex, type }) => {
+        let match;
+        const r = new RegExp(regex.source, 'g');
+        while ((match = r.exec(text)) !== null) {
+          replacements.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            type,
+            match: match
+          });
+        }
+      });
+
+      // Sort by position, but prioritize cards over other patterns when overlapping
+      // This ensures {{card}} templates inside **bold** or *italic* are still rendered
+      replacements.sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        // Same start position: prioritize cards
+        if (a.type === 'card' && b.type !== 'card') return -1;
+        if (b.type === 'card' && a.type !== 'card') return 1;
+        return 0;
+      });
+
+      // Filter overlaps, but when a card is inside another match, prefer the card
+      const filtered = [];
+      for (const r of replacements) {
+        // Check if this replacement overlaps with any existing one
+        const overlapping = filtered.find(f =>
+          (r.start >= f.start && r.start < f.end) ||
+          (r.end > f.start && r.end <= f.end) ||
+          (r.start <= f.start && r.end >= f.end)
+        );
+
+        if (!overlapping) {
+          filtered.push(r);
+        } else if (r.type === 'card' && overlapping.type !== 'card') {
+          // Card inside a non-card match: remove the outer match, add the card
+          const idx = filtered.indexOf(overlapping);
+          filtered.splice(idx, 1);
+          filtered.push(r);
+          // Re-sort after modification
+          filtered.sort((a, b) => a.start - b.start);
+        }
+        // Otherwise skip this replacement (it overlaps and isn't a priority card)
+      }
+
+      // Build result
+      let pos = 0;
+      let lastWasCard = false; // Track if last element was a card to strip trailing punctuation
+      filtered.forEach((r, idx) => {
+        // Add text before this match
+        if (r.start > pos) {
+          let textBefore = text.slice(pos, r.start);
+          // Strip leading punctuation/whitespace if previous element was a card
+          if (lastWasCard) {
+            textBefore = textBefore.replace(/^[\s.,!?;:*]+/, '');
+          }
+          // Strip trailing ** or * markers if next element is a card (orphaned bold/italic)
+          if (r.type === 'card') {
+            textBefore = textBefore.replace(/\*+\s*$/, '');
+          }
+          if (textBefore) {
+            result.push(textBefore);
+          }
+        }
+        lastWasCard = false; // Reset after handling text
+
+        const key = `${baseKey}-${idx}`;
+        if (r.type === 'card') {
+          // Card format: {{type|field1|field2|field3}}
+          const cardType = r.match[1];
+          const cardParts = r.match[2].split('|');
+          result.push(renderCard(cardType, cardParts, key));
+          lastWasCard = true; // Mark that next text should strip leading punctuation
+        } else if (r.type === 'link' || r.type === 'imagelink') {
+          // Handle both [text](url) and ![text](url) - treat image links as regular links
+          const linkText = r.match[1] || r.match[2].split('/').pop(); // Use alt text or extract from URL
+          const url = r.match[2];
+          result.push(
+            React.createElement('a', {
+              key,
+              href: url,
+              onClick: async (e) => {
+                e.preventDefault();
+                if (url.startsWith('parachord://')) {
+                  // Parse and handle protocol URL
+                  try {
+                    const parsed = new URL(url);
+                    const host = parsed.host;
+                    const pathSegments = parsed.pathname
+                      .replace(/^\/+/, '')
+                      .split('/')
+                      .map(s => decodeURIComponent(s))
+                      .filter(Boolean);
+
+                    let command, segments;
+                    if (host && host !== '') {
+                      command = host;
+                      segments = pathSegments;
+                    } else {
+                      [command, ...segments] = pathSegments;
+                    }
+
+                    const params = Object.fromEntries(parsed.searchParams);
+
+                    // Handle common protocol commands from chat links
+                    switch (command) {
+                      case 'artist':
+                        if (segments[0]) {
+                          setActiveView('artist');
+                          fetchArtistData(segments[0]);
+                        }
+                        break;
+                      case 'album':
+                        if (segments[0] && segments[1]) {
+                          // Could trigger album view loading
+                          showToast(`Opening album: ${segments[1]} by ${segments[0]}`);
+                        }
+                        break;
+                      case 'play':
+                        if (params.artist && params.title) {
+                          const results = await searchResolvers(`${params.artist} ${params.title}`, {
+                            earlyReturn: true,
+                            targetArtist: params.artist,
+                            targetTitle: params.title
+                          });
+                          if (results && results.length > 0) {
+                            const match = results.find(r =>
+                              r.artist?.toLowerCase() === params.artist.toLowerCase() &&
+                              r.title?.toLowerCase() === params.title.toLowerCase()
+                            ) || results[0];
+                            await handlePlayRef.current(match);
+                          }
+                        }
+                        break;
+                      case 'queue':
+                        if (segments[0] === 'add' && params.artist && params.title) {
+                          const track = { artist: params.artist, title: params.title };
+                          addToQueue([track], { type: 'chat', name: 'Chat' }, { skipAutoPlay: false });
+                          showToast(`Added "${params.title}" to queue`);
+                        }
+                        break;
+                      case 'playlist':
+                        if (segments[0]) {
+                          const playlist = playlists.find(p => p.id === segments[0] || p.name === segments[0]);
+                          if (playlist) {
+                            setCurrentPlaylist(playlist);
+                            setActiveView('playlist-view');
+                          }
+                        }
+                        break;
+                      case 'search':
+                        if (params.q) {
+                          setSearchQuery(params.q);
+                          setActiveView('search');
+                          performSearch(params.q);
+                        }
+                        break;
+                      default:
+                        console.log('Unhandled protocol command in chat link:', command);
+                    }
+                  } catch (err) {
+                    console.error('Error handling protocol URL:', err);
+                  }
+                } else {
+                  window.electron?.shell?.openExternal(url);
+                }
+              },
+              style: { color: isUserMessage ? '#c4b5fd' : '#a78bfa', textDecoration: 'underline', cursor: 'pointer' }
+            }, linkText)
+          );
+        } else if (r.type === 'bold') {
+          result.push(React.createElement('strong', { key }, r.match[1]));
+        } else if (r.type === 'italic') {
+          result.push(React.createElement('em', { key }, r.match[1]));
+        } else if (r.type === 'code') {
+          result.push(React.createElement('code', {
+            key,
+            style: {
+              backgroundColor: isUserMessage ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)',
+              padding: '2px 5px',
+              borderRadius: '3px',
+              fontFamily: 'monospace',
+              fontSize: '0.9em'
+            }
+          }, r.match[1]));
+        }
+
+        pos = r.end;
+      });
+
+      // Add remaining text
+      if (pos < text.length) {
+        let remaining = text.slice(pos);
+        // Strip leading punctuation/whitespace/asterisks if previous element was a card
+        if (lastWasCard) {
+          remaining = remaining.replace(/^[\s.,!?;:*]+/, '');
+        }
+        if (remaining) {
+          result.push(remaining);
+        }
+      }
+
+      return result.length > 0 ? result : [text];
+    };
+
+    // Helper to render a card - wraps ChatCard component (defined outside renderChatContent for stability)
+    const renderCard = (type, parts, key) => {
+      // Parse parts based on type and pass as individual props to prevent array reference changes
+      let title, artist, album;
+      if (type === 'track') {
+        [title, artist, album] = parts;
+      } else if (type === 'artist') {
+        [title] = parts;
+        artist = null;
+        album = null;
+      } else if (type === 'album') {
+        [title, artist] = parts;
+        album = title; // For albums, the title IS the album name
+      } else if (type === 'playlist') {
+        // Playlist card: {{playlist|name|id|trackCount}}
+        const [playlistName, playlistId, trackCount] = parts;
+        const handlePlaylistCardClick = () => {
+          closeAiChat();
+          const playlist = playlists.find(p => p.id === playlistId);
+          if (playlist) {
+            loadPlaylist(playlist);
+          }
+        };
+        return React.createElement('div', {
+          key,
+          onClick: handlePlaylistCardClick,
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '8px',
+            marginTop: '8px',
+            marginBottom: '8px',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            transition: 'background-color 0.15s',
+            minWidth: 0,
+            maxWidth: '100%'
+          },
+          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
+        },
+          // Playlist icon
+          React.createElement('div', {
+            style: {
+              width: '40px',
+              height: '40px',
+              borderRadius: '4px',
+              background: 'linear-gradient(135deg, #9333ea 0%, #c026d3 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }
+          },
+            React.createElement('svg', {
+              style: { width: '20px', height: '20px' },
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', { d: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z' })
+            )
+          ),
+          // Text content
+          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+            React.createElement('div', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#f3f4f6',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, playlistName),
+            React.createElement('div', {
+              style: {
+                fontSize: '12px',
+                color: '#9ca3af',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }
+            }, `${trackCount || '?'} tracks`)
+          ),
+          // Type indicator
+          React.createElement('div', {
+            style: { fontSize: '10px', color: '#6b7280', textTransform: 'uppercase' }
+          }, 'playlist')
+        );
+      }
+      return React.createElement(ChatCard, { key, type, title, artist, album });
+    };
+
+    lines.forEach((line, lineIdx) => {
+      // Strip leading punctuation and whitespace if previous line was a card
+      // (e.g., ". They are..." becomes "They are...", " and queued" becomes "and queued")
+      let processedLine = line;
+      if (previousLineWasCard) {
+        processedLine = line.replace(/^[\s.,!?;:]+/, '');
+      }
+      previousLineWasCard = false; // Reset for this iteration
+
+      // Check for headers: #, ##, ###, ####, #####, ######
+      const headerMatch = processedLine.match(/^(#{1,6})\s+(.+)$/);
+      if (headerMatch) {
+        const level = Math.min(headerMatch[1].length, 6);
+        const sizes = { 1: '18px', 2: '16px', 3: '15px', 4: '14px', 5: '13px', 6: '13px' };
+        elements.push(
+          React.createElement('div', {
+            key: `header-${keyCounter++}`,
+            style: {
+              fontSize: sizes[level],
+              fontWeight: '600',
+              color: '#f3f4f6',
+              marginTop: lineIdx > 0 ? '12px' : '0',
+              marginBottom: '4px'
+            }
+          }, headerMatch[2])
+        );
+      }
+      // Check for card syntax: {{type|field1|field2|...}}
+      else if (/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/.test(processedLine)) {
+        const cardMatch = processedLine.match(/^\{\{(track|artist|album|playlist)\|(.+)\}\}$/);
+        const cardType = cardMatch[1];
+        const cardParts = cardMatch[2].split('|');
+        elements.push(renderCard(cardType, cardParts, `card-${keyCounter++}`));
+        previousLineWasCard = true; // Mark so next line can strip leading punctuation
+      }
+      // Check for numbered list items: "1. ", "2. ", etc.
+      else if (/^(\d+)\.\s+(.+)$/.test(processedLine)) {
+        const listMatch = processedLine.match(/^(\d+)\.\s+(.+)$/);
+        elements.push(
+          React.createElement('div', {
+            key: `line-${keyCounter++}`,
+            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '12px' : 0 }
+          },
+            React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px', flexShrink: 0 } }, `${listMatch[1]}.`),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
+          )
+        );
+      } else if (processedLine.trim() === '') {
+        // Empty line - add spacing
+        elements.push(React.createElement('div', { key: `line-${keyCounter++}`, style: { height: '8px' } }));
+      } else {
+        // Regular line
+        elements.push(
+          React.createElement('div', { key: `line-${keyCounter++}` }, parseInlineMarkdown(processedLine, `text-${lineIdx}`))
+        );
+      }
+    });
+
+    return elements;
+  };
+
+  // Open AI Chat
+  const openAiChat = () => {
+    const chatServices = getChatServices();
+    // Filter to only enabled services with required config
+    const enabledServices = chatServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      // Ollama doesn't need API key, others do
+      if (s.id === 'ollama') return config.enabled !== false;
+      return config.enabled && config.apiKey;
+    });
+
+    if (enabledServices.length === 0) {
+      showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
+      return;
+    }
+
+    // Use selected provider or first available
+    const provider = selectedChatProvider
+      ? enabledServices.find(s => s.id === selectedChatProvider) || enabledServices[0]
+      : enabledServices[0];
+
+    setSelectedChatProvider(provider.id);
+    setAiChatOpen(true);
+    setResultsSidebar({
+      mode: 'chat',
+      title: 'Shuffleupagus',
+      subtitle: provider.name || provider.manifest?.name,
+      messages: aiChatMessages,
+      provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
+      loading: false
+    });
+  };
+
+  // Close sidebar with animation
+  const closeSidebarAnimated = () => {
+    if (sidebarClosing) return; // Already closing
+    setSidebarClosing(true);
+    setTimeout(() => {
+      setResultsSidebar(null);
+      setSidebarClosing(false);
+    }, 200); // Match animation duration
+  };
+
+  // Close AI Chat
+  const closeAiChat = () => {
+    setAiChatOpen(false);
+    closeSidebarAnimated();
+  };
+
+  // Send message in AI Chat
+  const handleAiChatSend = async (message) => {
+    if (!message.trim() || aiChatLoading) return;
+
+    const chatServices = getChatServices();
+    const provider = chatServices.find(s => s.id === selectedChatProvider);
+
+    if (!provider) {
+      showToast('Chat provider not found', 'error');
+      return;
+    }
+
+    // Add user message to UI immediately
+    const userMessage = { role: 'user', content: message.trim() };
+    const updatedMessages = [...aiChatMessages, userMessage];
+    setAiChatMessages(updatedMessages);
+    setAiChatInput('');
+    setAiChatLoading(true);
+
+    // Update sidebar with user message
+    setResultsSidebar(prev => ({
+      ...prev,
+      messages: updatedMessages,
+      loading: true
+    }));
+
+    try {
+      const service = getOrCreateChatService(provider);
+
+      // Set up progress callback
+      service.setProgressCallback((status) => {
+        setAiChatProgress(status);
+        setResultsSidebar(prev => prev ? { ...prev, progressStatus: status } : null);
+      });
+
+      setAiChatProgress(null);
+      let response = await service.sendMessage(message.trim());
+      setAiChatProgress(null);
+
+      // If Ollama is unavailable, try to auto-start it
+      if (response.ollamaUnavailable && window.electron?.ollama) {
+        // Update UI to show we're trying to start Ollama
+        setAiChatMessages([...updatedMessages, { role: 'assistant', content: 'Starting Ollama...' }]);
+
+        try {
+          const startResult = await window.electron.ollama.start();
+          if (startResult.success) {
+            // Retry the message after Ollama starts
+            // Remove the user message from history since we'll re-send it
+            service.messages.pop(); // Remove the "Starting Ollama..." assistant message
+            service.messages.pop(); // Remove the user message
+            response = await service.sendMessage(message.trim());
+          } else {
+            // Couldn't start Ollama
+            response = {
+              content: `Couldn't start Ollama: ${startResult.error || 'Unknown error'}. Make sure Ollama is installed from https://ollama.ai`,
+              error: true
+            };
+          }
+        } catch (startError) {
+          response = {
+            content: `Error starting Ollama: ${startError.message}. Make sure Ollama is installed.`,
+            error: true
+          };
+        }
+      }
+
+      // Add assistant response
+      const assistantMessage = { role: 'assistant', content: response.content };
+      const finalMessages = [...updatedMessages, assistantMessage];
+      setAiChatMessages(finalMessages);
+
+      // Update sidebar - clear progress status when done
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false,
+        progressStatus: null,
+        lastToolResults: response.toolResults
+      }));
+    } catch (error) {
+      console.error('AI chat error:', error);
+      const errorMessage = { role: 'assistant', content: `Error: ${error.message}` };
+      const finalMessages = [...updatedMessages, errorMessage];
+      setAiChatMessages(finalMessages);
+
+      setResultsSidebar(prev => ({
+        ...prev,
+        messages: finalMessages,
+        loading: false,
+        progressStatus: null
+      }));
+    } finally {
+      setAiChatLoading(false);
+    }
+  };
+
+  // Clear chat history
+  const clearAiChatHistory = () => {
+    setAiChatMessages([]);
+    if (aiChatServiceRef.current) {
+      aiChatServiceRef.current.clearHistory();
+    }
+    setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
+  };
+
+  // Keep AI chat refs in sync for protocol handler
+  useEffect(() => { openAiChatRef.current = openAiChat; });
+  useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
+
+  // Auto-scroll to keep messages visible when new messages arrive
+  useEffect(() => {
+    if (lastAssistantMessageRef.current) {
+      // Scroll to show the assistant response from the top
+      lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (lastUserMessageRef.current) {
+      // Scroll user message fully into view (end ensures it's above the input area)
+      lastUserMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    } else if (chatMessagesRef.current) {
+      // Fallback: scroll to bottom
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [resultsSidebar?.messages, resultsSidebar?.loading]);
+
+  const addToQueue = (tracks, context = null, options = {}) => {
+    const { skipAutoPlay = false } = options;
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
 
     // Tag tracks with context if provided
@@ -11140,8 +13902,8 @@ const Parachord = () => {
 
     // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
-    // If nothing is playing, auto-start the first track
-    if (nothingPlaying && taggedTracks.length > 0) {
+    // If nothing is playing, auto-start the first track (unless skipAutoPlay is set)
+    if (nothingPlaying && taggedTracks.length > 0 && !skipAutoPlay) {
       const firstTrack = taggedTracks[0];
       console.log(`▶️ Auto-starting playback: "${firstTrack.title}" by ${firstTrack.artist}`);
       // Remove from queue and play
@@ -12106,6 +14868,28 @@ const Parachord = () => {
         console.log('📦 Loaded AI include history preference:', savedAiIncludeHistory);
       }
 
+      // Load recommendation blocklist
+      const savedBlocklist = await window.electron.store.get('recommendation_blocklist');
+      if (savedBlocklist && typeof savedBlocklist === 'object') {
+        setRecommendationBlocklist(savedBlocklist);
+        const totalBlocked = (savedBlocklist.artists?.length || 0) + (savedBlocklist.albums?.length || 0) + (savedBlocklist.tracks?.length || 0);
+        console.log('📦 Loaded recommendation blocklist:', totalBlocked, 'items');
+      }
+
+      // Load AI chat histories (per-provider)
+      const savedAiChatHistories = await window.electron.store.get('ai_chat_histories');
+      if (savedAiChatHistories && typeof savedAiChatHistories === 'object') {
+        aiChatHistoriesRef.current = savedAiChatHistories;
+        console.log('📦 Loaded AI chat histories for providers:', Object.keys(savedAiChatHistories).join(', '));
+      }
+
+      // Load last used chat provider
+      const savedChatProvider = await window.electron.store.get('selected_chat_provider');
+      if (savedChatProvider) {
+        setSelectedChatProvider(savedChatProvider);
+        console.log('📦 Loaded last used chat provider:', savedChatProvider);
+      }
+
       // Load discovery feature seen hashes (for unread badges)
       const savedSeenRecommendations = await window.electron.store.get('discovery_seen_recommendations');
       const savedSeenCriticsPicks = await window.electron.store.get('discovery_seen_criticsPicks');
@@ -12552,6 +15336,10 @@ const Parachord = () => {
   const fetchArtistData = async (artistName) => {
     console.log('Fetching artist data for:', artistName);
 
+    // Increment fetch ID to invalidate any in-flight requests for previous artists
+    artistFetchId.current++;
+    const thisFetchId = artistFetchId.current;
+
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
 
@@ -12712,6 +15500,12 @@ const Parachord = () => {
       const artist = searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id);
 
+      // Check if this fetch is still current (user may have navigated to another artist)
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
+
       // Set artist name immediately so header shows while releases load
       setCurrentArtist({
         name: artist.name,
@@ -12725,6 +15519,7 @@ const Parachord = () => {
       (async () => {
         // Try Spotify first
         const spotifyResult = await getArtistImage(artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (spotifyResult) {
           setArtistImage(spotifyResult.url);
           setArtistImagePosition(spotifyResult.facePosition || 'center 25%');
@@ -12733,6 +15528,7 @@ const Parachord = () => {
 
         // Try Wikipedia fallback
         const wikiImage = await getWikipediaArtistImage(artist.id);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (wikiImage) {
           setArtistImage(wikiImage);
           setArtistImagePosition('center 25%');
@@ -12741,6 +15537,7 @@ const Parachord = () => {
 
         // Try Discogs fallback
         const discogsImage = await getDiscogsArtistImage(artist.id, artistName);
+        if (thisFetchId !== artistFetchId.current) return; // Stale check
         if (discogsImage) {
           setArtistImage(discogsImage);
           setArtistImagePosition('center 25%');
@@ -12826,6 +15623,12 @@ const Parachord = () => {
         cacheVersion: 2
       };
       console.log('💾 Cached artist data for:', artistName);
+
+      // Check if this fetch is still current before updating state
+      if (thisFetchId !== artistFetchId.current) {
+        console.log('Artist fetch cancelled (navigated away):', artistName);
+        return;
+      }
 
       // Pre-populate releases with cached album art
       const releasesWithCache = uniqueReleases.map(release => ({
@@ -13500,10 +16303,26 @@ const Parachord = () => {
         return;
       }
 
-      // Find best match (prefer exact artist match)
-      const match = results.find(r =>
+      // Find best match - prefer studio albums over singles/live/compilations
+      const isStudioAlbum = (r) => {
+        const primaryType = r['primary-type']?.toLowerCase();
+        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+        // Must be an album (not single, EP, etc)
+        if (primaryType !== 'album') return false;
+        // Must not be live, compilation, remix, etc
+        const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+        return !secondaryTypes.some(t => nonStudioTypes.includes(t));
+      };
+
+      const artistMatches = results.filter(r =>
         r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist?.toLowerCase()
-      ) || results[0];
+      );
+
+      // Priority: 1) Studio album with artist match, 2) Any album with artist match, 3) Studio album, 4) First result
+      const match = artistMatches.find(isStudioAlbum)
+        || artistMatches[0]
+        || results.find(isStudioAlbum)
+        || results[0];
 
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
       fetchReleaseData({
@@ -14006,6 +16825,11 @@ const Parachord = () => {
 
     return sources;
   };
+
+  // Keep resolveTrackRef in sync for ChatCard and other early-defined components
+  useEffect(() => {
+    resolveTrackRef.current = resolveTrack;
+  }, [resolveTrack]);
 
   // Resolution scheduler hook - manages viewport-based resolution
   const resolutionSchedulerRef = useRef(null);
@@ -16163,7 +18987,7 @@ ${tracks}
 
     // Close dialogs
     setAiSaveDialogOpen(false);
-    setResultsSidebar(null);
+    closeSidebarAnimated();
     showToast(`Saved playlist: ${aiSavePlaylistName.trim()}`);
   };
 
@@ -17841,6 +20665,62 @@ ${tracks}
     }
   };
 
+  // Fetch friend's weekly stats (top artists + tracks) for AI context caching
+  const fetchFriendWeeklyStats = async (friend) => {
+    try {
+      let topArtists = [];
+      let topTracks = [];
+
+      if (friend.service === 'lastfm') {
+        const apiKey = getLastfmApiKey();
+        if (!apiKey) return null;
+
+        // Fetch top artists and tracks in parallel
+        const [artistsRes, tracksRes] = await Promise.all([
+          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`),
+          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`)
+        ]);
+
+        if (artistsRes.ok) {
+          const data = await artistsRes.json();
+          topArtists = (data.topartists?.artist || []).map(a => a.name);
+        }
+        if (tracksRes.ok) {
+          const data = await tracksRes.json();
+          topTracks = (data.toptracks?.track || []).map(t => ({
+            title: t.name,
+            artist: t.artist?.name || t.artist
+          }));
+        }
+      } else {
+        // ListenBrainz - fetch in parallel
+        const [artistsRes, tracksRes] = await Promise.all([
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=week&count=5`),
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=week&count=5`)
+        ]);
+
+        if (artistsRes.ok && artistsRes.status !== 204) {
+          const data = await artistsRes.json();
+          topArtists = (data.payload?.artists || []).map(a => a.artist_name);
+        }
+        if (tracksRes.ok && tracksRes.status !== 204) {
+          const data = await tracksRes.json();
+          topTracks = (data.payload?.recordings || []).map(t => ({
+            title: t.track_name,
+            artist: t.artist_name
+          }));
+        }
+      }
+
+      if (topArtists.length === 0 && topTracks.length === 0) return null;
+
+      return { topArtists, topTracks, fetchedAt: Date.now() };
+    } catch (error) {
+      console.error(`Error fetching weekly stats for ${friend.username}:`, error);
+      return null;
+    }
+  };
+
   // Check if friend is "on air" (listened within last 10 minutes)
   const isOnAir = (friend) => {
     if (!friend.cachedRecentTrack?.timestamp) return false;
@@ -18127,6 +21007,22 @@ ${tracks}
               return next;
             });
           }, 400);
+        }
+
+        // Check if we should refresh weekly stats cache (every 30 minutes)
+        const statsStale = !friend.cachedWeeklyStats ||
+          (Date.now() - (friend.cachedWeeklyStats.fetchedAt || 0)) > 30 * 60 * 1000;
+
+        let newWeeklyStats = friend.cachedWeeklyStats;
+        if (statsStale) {
+          // Fetch in background, don't await to avoid slowing down polling
+          fetchFriendWeeklyStats(friend).then(stats => {
+            if (stats) {
+              setFriends(prev => prev.map(f =>
+                f.id === friend.id ? { ...f, cachedWeeklyStats: stats } : f
+              ));
+            }
+          });
         }
 
         setFriends(prev => prev.map(f =>
@@ -18902,6 +21798,11 @@ ${tracks}
     }
   };
 
+  // Keep fetchAlbumTracksByNameRef in sync for ChatCard
+  useEffect(() => {
+    fetchAlbumTracksByNameRef.current = fetchAlbumTracksByName;
+  }, []);
+
   // Fetch album art for Critic's Picks in background
   const fetchCriticsPicksAlbumArt = async (albums) => {
     // First pass: check cache for all albums (instant, no network)
@@ -19155,6 +22056,74 @@ ${tracks}
 
   // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
   const albumToReleaseIdCache = useRef({});
+
+  // Cache for fast iTunes album art lookups
+  const itunesArtCache = useRef({});
+
+  // Fast album art lookup using iTunes Search API (for ChatCards and other quick lookups)
+  // Much faster than MusicBrainz - typically returns in <500ms
+  const getAlbumArtFast = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    const cacheKey = `${artist}-${album}`.toLowerCase();
+
+    // Check cache first
+    if (itunesArtCache.current[cacheKey]) {
+      return itunesArtCache.current[cacheKey];
+    }
+
+    // Also check the main albumArtCache
+    const cachedArt = getCachedAlbumArt(artist, album);
+    if (cachedArt) {
+      itunesArtCache.current[cacheKey] = cachedArt;
+      return cachedArt;
+    }
+
+    try {
+      // Search iTunes for the album
+      const query = `${artist} ${album}`;
+      const response = await window.iTunesRateLimiter.fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=5`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) return null;
+
+      // Find best match - prefer exact album name match
+      const normalizedAlbum = album.toLowerCase();
+      const normalizedArtist = artist.toLowerCase();
+
+      const bestMatch = data.results.find(r =>
+        r.collectionName?.toLowerCase() === normalizedAlbum &&
+        r.artistName?.toLowerCase() === normalizedArtist
+      ) || data.results.find(r =>
+        // Also check if artist/album might be swapped (common AI mistake)
+        r.collectionName?.toLowerCase() === normalizedArtist &&
+        r.artistName?.toLowerCase() === normalizedAlbum
+      ) || data.results.find(r =>
+        r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
+        normalizedAlbum.includes(r.collectionName?.toLowerCase())
+      ) || data.results.find(r =>
+        // Check partial match with swapped values too
+        r.collectionName?.toLowerCase().includes(normalizedArtist) ||
+        normalizedArtist.includes(r.collectionName?.toLowerCase())
+      ) || data.results[0];
+
+      if (bestMatch?.artworkUrl100) {
+        // Scale up artwork URL (iTunes supports various sizes)
+        const artUrl = bestMatch.artworkUrl100.replace('100x100', '500x500');
+        itunesArtCache.current[cacheKey] = artUrl;
+        return artUrl;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Fast album art lookup failed:', err);
+      return null;
+    }
+  };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
   const getAlbumArt = async (artist, album) => {
@@ -22154,7 +25123,17 @@ const playOnSpotifyConnect = async (track) => {
     }
 
     // Now play the specific track on the device
-    console.log('Starting playback on device:', activeDevice.name);
+    // Get or construct the Spotify URI
+    let spotifyUri = track.spotifyUri || track.uri;
+    if (!spotifyUri && track.spotifyId) {
+      spotifyUri = `spotify:track:${track.spotifyId}`;
+      console.log(`🔄 Constructed Spotify URI from ID: ${spotifyUri}`);
+    }
+    if (!spotifyUri) {
+      console.error('❌ No Spotify URI or ID available for track:', track.title);
+      return false;
+    }
+    console.log('Starting playback on device:', activeDevice.name, 'with URI:', spotifyUri);
     const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, {
       method: 'PUT',
       headers: {
@@ -22162,7 +25141,7 @@ const playOnSpotifyConnect = async (track) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        uris: [track.spotifyUri]
+        uris: [spotifyUri]
       })
     });
     
@@ -29052,6 +32031,19 @@ useEffect(() => {
                   });
                 }
 
+                // Raycast extension suggestion (Mac only)
+                if (navigator.platform.includes('Mac')) {
+                  suggestions.push({
+                    id: 'raycast',
+                    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
+                    title: 'Raycast Extension',
+                    description: 'Control Parachord with keyboard shortcuts',
+                    action: () => setRaycastInfoOpen(true),
+                    actionLabel: 'Learn More',
+                    color: '#FF6363'
+                  });
+                }
+
                 // Empty collection prompt
                 if (collectionData.tracks.length === 0 && collectionData.albums.length === 0) {
                   suggestions.push({
@@ -34838,6 +37830,7 @@ useEffect(() => {
                   ),
                   // Category filter pills
                   [
+                    { value: 'all', label: 'All' },
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
@@ -35160,16 +38153,15 @@ useEffect(() => {
                     },
                       // Browser icon
                       React.createElement('svg', {
-                        className: 'w-12 h-12 text-white',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor',
-                        strokeWidth: 1.5
+                        className: 'w-12 h-12',
+                        fill: 'white',
+                        viewBox: '0 0 512 390.76',
+                        shapeRendering: 'geometricPrecision',
+                        fillRule: 'evenodd',
+                        clipRule: 'evenodd'
                       },
                         React.createElement('path', {
-                          strokeLinecap: 'round',
-                          strokeLinejoin: 'round',
-                          d: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418'
+                          d: 'M34.667 0h442.667C496.417 0 512 15.582 512 34.665v321.427c0 19.041-15.583 34.668-34.666 34.668H34.667C15.584 390.76 0 375.133 0 356.092V34.665C0 15.582 15.584 0 34.667 0zm23.929 307.232h394.809v18.397H58.596v-18.397zm0-50.175h394.809v18.397H58.596v-18.397zm1.182-125.842h392.443c4.335 0 7.879 3.551 7.879 7.879v78.229c0 4.328-3.551 7.878-7.879 7.878H59.778c-4.327 0-7.878-3.544-7.878-7.878v-78.229c0-4.335 3.546-7.879 7.878-7.879zm384.556-92.258c9.459 0 17.124 7.667 17.124 17.126 0 9.458-7.665 17.124-17.124 17.124-9.458 0-17.126-7.666-17.126-17.124.043-9.459 7.708-17.126 17.126-17.126zm-116 0c9.457 0 17.124 7.667 17.124 17.126 0 9.458-7.667 17.124-17.124 17.124-9.458 0-17.126-7.666-17.126-17.124 0-9.459 7.668-17.126 17.126-17.126zm58.001 0c9.456 0 17.124 7.667 17.124 17.126 0 9.458-7.668 17.124-17.124 17.124-9.459 0-17.127-7.666-17.127-17.124 0-9.459 7.668-17.126 17.127-17.126zM488.124 97.04H23.875v262.428a9.536 9.536 0 009.585 9.582h444.914a9.528 9.528 0 009.584-9.582V97.04h.166z'
                         })
                       ),
                       // Info badge
@@ -35199,6 +38191,60 @@ useEffect(() => {
                         width: '120px'
                       }
                     }, 'Browser Extension')
+                  ),
+
+                  // Raycast Extension tile
+                  React.createElement('div', {
+                    className: 'flex flex-col items-center'
+                  },
+                    React.createElement('div', {
+                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      style: {
+                        width: '120px',
+                        height: '120px',
+                        borderRadius: '16px',
+                        background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                      },
+                      onClick: () => setRaycastInfoOpen(true)
+                    },
+                      // Raycast icon (simplified lightning bolt)
+                      React.createElement('svg', {
+                        className: 'w-12 h-12',
+                        fill: 'white',
+                        viewBox: '0 0 24 24'
+                      },
+                        React.createElement('path', {
+                          d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+                        })
+                      ),
+                      // Info badge
+                      React.createElement('div', {
+                        className: 'absolute flex items-center justify-center',
+                        style: {
+                          top: '8px',
+                          right: '8px',
+                          width: '22px',
+                          height: '22px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: '#FF6363'
+                        }
+                      }, 'i')
+                    ),
+                    // Name below card
+                    React.createElement('span', {
+                      style: {
+                        marginTop: '10px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        textAlign: 'center',
+                        width: '120px'
+                      }
+                    }, 'Raycast Extension')
                   )
                 )
               )
@@ -36133,27 +39179,58 @@ useEffect(() => {
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
-          // AI Playlist Generation button (sparkle icon) - with tooltip
+          // AI Playlist/DJ button (sparkle icon) - opens chat if available, else prompt
           (() => {
             const aiResolvers = getAiServices();
-            const hasEnabledAi = aiResolvers.some(s => {
+            const chatServices = getChatServices();
+
+            // Check if chat providers are enabled
+            const hasEnabledChat = chatServices.some(s => {
+              const config = metaServiceConfigs[s.id] || {};
+              // Ollama doesn't require API key
+              if (s.id === 'ollama') return config.enabled !== false;
+              return config.enabled && config.apiKey;
+            });
+
+            // Check if generate providers are enabled (fallback)
+            const hasEnabledGenerate = aiResolvers.some(s => {
               const config = metaServiceConfigs[s.id] || {};
               return config.enabled && config.apiKey;
             });
+
+            const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
+            const isActive = aiChatOpen || aiPromptOpen;
+
+            const handleClick = () => {
+              if (hasEnabledChat) {
+                // Prefer chat interface
+                if (aiChatOpen) {
+                  closeAiChat();
+                } else {
+                  openAiChat();
+                }
+              } else if (hasEnabledGenerate) {
+                // Fall back to one-shot prompt
+                setAiPromptOpen(!aiPromptOpen);
+              }
+            };
+
             return React.createElement(Tooltip, {
-              content: hasEnabledAi
-                ? 'AI Playlist'
-                : 'Enable AI in Settings',
+              content: hasEnabledChat
+                ? 'Shuffleupagus'
+                : hasEnabledGenerate
+                  ? 'AI Playlist'
+                  : 'Enable AI in Settings',
               position: 'top',
               variant: 'dark'
             },
               React.createElement('button', {
-                onClick: () => setAiPromptOpen(!aiPromptOpen),
-                disabled: !hasEnabledAi,
+                onClick: handleClick,
+                disabled: !hasAnyAi,
                 className: `p-2 ml-1 rounded transition-colors ${
-                  aiPromptOpen
+                  isActive
                     ? 'bg-purple-500/30 text-purple-300'
-                    : hasEnabledAi
+                    : hasAnyAi
                       ? 'text-gray-400 hover:bg-white/10 hover:text-white'
                       : 'text-gray-600 cursor-not-allowed'
                 }`
@@ -37176,17 +40253,23 @@ useEffect(() => {
       React.createElement('div', {
         className: 'flex-1',
         style: { backgroundColor: 'rgba(0, 0, 0, 0.3)', backdropFilter: 'blur(4px)' },
-        onClick: () => setResultsSidebar(null)
+        onClick: closeSidebarAnimated
       }),
 
       // Sidebar panel
       React.createElement('div', {
         className: 'w-80 flex flex-col',
+        onClick: (e) => {
+          // Close dropdown when clicking outside of it
+          if (chatProviderDropdownOpen && !e.target.closest('[data-provider-dropdown]')) {
+            setChatProviderDropdownOpen(false);
+          }
+        },
         style: {
           backgroundColor: 'rgba(17, 24, 39, 0.98)',
           borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
           boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.3)',
-          animation: 'slideInRight 0.2s ease-out'
+          animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
         }
       },
         // Header
@@ -37195,11 +40278,23 @@ useEffect(() => {
         },
           React.createElement('div', { className: 'flex items-center justify-between' },
             React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('span', { style: { color: '#c4b5fd' } }, '✨'),
+              resultsSidebar.mode === 'chat'
+                ? React.createElement('span', { style: { color: '#c4b5fd', width: '20px', height: '20px', display: 'inline-flex' } },
+                    React.createElement('svg', { viewBox: '0 0 122.88 89.38', style: { width: '20px', height: '20px' }, fill: 'currentColor' },
+                      React.createElement('path', { d: 'M51.57,34.4c-1.27,0.06-2.35-0.91-2.41-2.18c-0.06-1.27,0.91-2.35,2.18-2.41c1.66-0.09,3.31,0.06,4.94,0.44 c1.63,0.38,3.24,0.98,4.84,1.8c1.13,0.58,1.57,1.97,0.99,3.1c-0.58,1.13-1.97,1.57-3.1,0.99c-1.25-0.65-2.51-1.12-3.76-1.41 C54.02,34.45,52.79,34.34,51.57,34.4L51.57,34.4z M29.24,60.23c-3.02,0.16-5.82-0.11-8.39-0.73c-6.34-1.53-11.26-5.21-14.73-10.03 c-3.41-4.74-5.4-10.58-5.96-16.56c-0.38-4.04-0.1-8.16,0.84-12.05c1.19-4.91,3.22-8.91,5.8-12.05c3.22-3.92,7.29-6.47,11.65-7.77 c4.34-1.3,8.97-1.36,13.38-0.29c3.52,0.85,6.9,2.43,9.85,4.66c3.4-0.52,6.75-0.85,10.01-0.86c3.64-0.01,7.15,0.37,10.44,1.32 c3.01,0.87,5.87,2.21,8.52,4.15c2.63,1.92,5.04,4.41,7.16,7.59l0.02,0.03l0,0c1.53,2.35,2.89,4.77,4.1,7.24 c1.2,2.46,2.24,5,3.16,7.6c2.49,7.08,3.97,14.26,5.51,21.72l0.38,1.83c0.93,4.48,2.29,7.49,3.86,9.33 c1.48,1.74,3.12,2.31,4.65,2.02c7.47-1.41,7.21-11.73,7.03-19.2c-0.03-1.26-0.06-2.45-0.05-3.57c0-1.05,0.72-1.94,1.69-2.21 l7.7-2.33c1.19-0.36,2.44,0.29,2.84,1.45c0.27,0.7,0.47,1.26,0.63,1.74c0.16,0.5,0.35,1.11,0.55,1.78 c1.53,5.15,2.76,9.88,2.99,14.72c0.23,4.95-0.6,9.9-3.24,15.33c-2.17,4.47-5.41,8.28-9.67,10.84c-3.87,2.33-8.57,3.63-14.04,3.44 c-4.55-0.15-9.07-1.56-13.26-3.96c-4.2-2.41-8.09-5.84-11.3-10.02c-2.07-2.7-4.1-5.7-6.07-8.99c-1.95,1.68-4,3.18-6.14,4.51 c-2.92,1.81-6,3.29-9.21,4.47c-0.56,0.2-1.14,0.18-1.65-0.03c-3.95-1.34-7.63-3.39-10.97-6.15C34.32,66.77,31.63,63.77,29.24,60.23 L29.24,60.23z M62.93,62.34c-1.34-2.42-2.66-4.97-3.96-7.66c-0.55-1.14-0.07-2.52,1.07-3.07c1.14-0.55,2.52-0.07,3.07,1.07 c1.91,3.92,3.86,7.58,5.85,10.93c1.98,3.33,3.98,6.33,6.02,8.97c2.84,3.69,6.26,6.71,9.95,8.83c3.56,2.04,7.36,3.24,11.11,3.36 c4.53,0.15,8.37-0.9,11.52-2.79c3.47-2.09,6.12-5.21,7.91-8.9c2.27-4.66,2.98-8.9,2.78-13.13c-0.2-4.33-1.37-8.76-2.81-13.62 c-0.11-0.36-0.23-0.76-0.38-1.23l-4,1.21c0.01,0.56,0.03,1.15,0.04,1.76c0.23,9.11,0.54,21.69-10.77,23.83 c-3.11,0.59-6.32-0.4-9.01-3.57c-2.03-2.38-3.75-6.08-4.85-11.39l-0.38-1.83c-1.5-7.3-2.95-14.31-5.35-21.12 c-0.85-2.41-1.83-4.79-2.96-7.11c-1.12-2.31-2.39-4.56-3.81-6.73c-1.82-2.72-3.84-4.82-6.03-6.42c-2.17-1.59-4.55-2.7-7.08-3.42 c-2.89-0.83-5.97-1.17-9.18-1.16c-3.27,0.01-6.72,0.38-10.27,0.96l0,0c-0.63,0.1-1.3-0.06-1.83-0.49c-2.6-2.14-5.64-3.63-8.84-4.4 c-3.62-0.88-7.43-0.83-10.98,0.24c-3.53,1.06-6.81,3.12-9.42,6.28c-2.16,2.62-3.86,6-4.88,10.21c-0.82,3.4-1.07,7.01-0.74,10.56 c0.48,5.19,2.19,10.24,5.11,14.29c2.86,3.97,6.89,6.99,12.08,8.24c2.34,0.57,4.93,0.78,7.77,0.56c0.97-0.31,2.07,0.06,2.64,0.97 c2.32,3.67,4.96,6.7,7.87,9.1c2.73,2.25,5.7,3.95,8.88,5.11c2.67-1.03,5.22-2.28,7.62-3.77C58.88,65.66,60.96,64.11,62.93,62.34 L62.93,62.34z M30.41,16.02c1.25-0.21,2.44,0.64,2.65,1.89c0.21,1.25-0.64,2.44-1.89,2.65c-1.9,0.32-3.27,1.43-4.11,2.92 c-0.69,1.21-1.04,2.67-1.07,4.17c-0.03,1.53,0.3,3.1,0.97,4.5c0.97,2.04,2.7,3.7,5.19,4.32c1.23,0.3,1.99,1.55,1.68,2.78 c-0.3,1.23-1.55,1.99-2.78,1.68c-3.99-0.99-6.73-3.61-8.26-6.8c-0.97-2.04-1.44-4.32-1.4-6.56c0.04-2.26,0.59-4.48,1.66-6.37 C24.55,18.58,27,16.6,30.41,16.02L30.41,16.02z' })
+                    )
+                  )
+                : React.createElement('span', { style: { color: '#c4b5fd' } }, '✨'),
               React.createElement('h3', { style: { fontSize: '16px', fontWeight: '600', color: '#f3f4f6' } }, resultsSidebar.title)
             ),
             React.createElement('button', {
-              onClick: () => setResultsSidebar(null),
+              onClick: () => {
+                if (resultsSidebar.mode === 'chat') {
+                  closeAiChat();
+                } else {
+                  closeSidebarAnimated();
+                }
+              },
               className: 'transition-colors',
               style: { padding: '6px', color: '#6b7280', borderRadius: '8px' },
               onMouseEnter: (e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; },
@@ -37210,147 +40305,453 @@ useEffect(() => {
               )
             )
           ),
-          resultsSidebar.subtitle && React.createElement('p', {
-            style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-          }, resultsSidebar.subtitle)
-        ),
+          // Provider selector for chat mode, subtitle for other modes
+          resultsSidebar.mode === 'chat'
+            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
+                // "powered by:" label
+                React.createElement('span', { style: { fontSize: '12px', color: '#6b7280' } }, 'powered by:'),
+                // Custom dropdown button
+                (() => {
+                  const enabledServices = getChatServices().filter(s => {
+                    const config = metaServiceConfigs[s.id] || {};
+                    if (s.id === 'ollama') return config.enabled !== false;
+                    return config.enabled && config.apiKey;
+                  });
+                  const currentService = enabledServices.find(s => s.id === selectedChatProvider);
+                  const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
 
-        // Track list or loading skeletons
-        React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
-          // Loading skeletons
-          resultsSidebar.loading
-            ? Array.from({ length: 12 }).map((_, index) =>
-                React.createElement('div', {
-                  key: `skeleton-${index}`,
-                  className: 'flex items-center gap-3',
-                  style: { padding: '8px' }
-                },
-                  // Skeleton track number
-                  React.createElement('div', {
-                    className: 'animate-pulse',
-                    style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
-                  }),
-                  // Skeleton track info
-                  React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
-                    }),
-                    React.createElement('div', {
-                      className: 'animate-pulse',
-                      style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
-                    })
-                  )
-                )
-              )
-            : resultsSidebar.tracks.map((track, index) =>
-                React.createElement('div', {
-                  key: track.id || index,
-                  className: 'group flex items-center gap-3 transition-colors',
-                  style: { padding: '8px', borderRadius: '8px' },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                },
-                  // Track number
-                  React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
-
-                  // Track info
-                  React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
-                    React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
-                  ),
-
-                  // Remove button
-                  React.createElement('button', {
-                    onClick: () => {
-                      setResultsSidebar(prev => ({
-                        ...prev,
-                        tracks: prev.tracks.filter((_, i) => i !== index)
-                      }));
+                  return React.createElement('div', { style: { position: 'relative' } },
+                    // Dropdown trigger button
+                    React.createElement('button', {
+                      onClick: () => setChatProviderDropdownOpen(!chatProviderDropdownOpen),
+                      style: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        color: '#e5e7eb',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }
                     },
-                    className: 'opacity-0 group-hover:opacity-100 transition-all',
-                    style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
-                    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
-                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                      currentLogo
+                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
+                            React.cloneElement(currentLogo, { className: '', style: { width: '14px', height: '14px' } })
+                          )
+                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService?.icon || currentService?.manifest?.icon || '🤖'),
+                      currentService?.name || currentService?.manifest?.name || 'Select',
+                      // Chevron icon
+                      React.createElement('svg', {
+                        style: { width: '10px', height: '10px', transform: chatProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' },
+                        viewBox: '0 0 24 24',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        strokeWidth: 2
+                      },
+                        React.createElement('path', { d: 'M6 9l6 6 6-6' })
+                      )
+                    ),
+                    // Dropdown menu
+                    chatProviderDropdownOpen && React.createElement('div', {
+                      style: {
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: '4px',
+                        backgroundColor: '#1f2937',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        overflow: 'hidden',
+                        zIndex: 50,
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                        minWidth: '140px'
+                      }
+                    },
+                      enabledServices.map(service => {
+                        const logo = SERVICE_LOGOS[service.id];
+                        const isSelected = service.id === selectedChatProvider;
+                        return React.createElement('button', {
+                          key: service.id,
+                          onClick: () => {
+                            const newProvider = service.id;
+                            setSelectedChatProvider(newProvider);
+                            setChatProviderDropdownOpen(false);
+                            // Clear current chat service so it recreates with new provider
+                            aiChatServiceRef.current = null;
+                            // Load saved chat history for this provider (or empty if none)
+                            const savedHistory = aiChatHistoriesRef.current[newProvider] || [];
+                            setAiChatMessages(savedHistory);
+                            // Update sidebar with new provider and loaded messages
+                            setResultsSidebar(prev => ({
+                              ...prev,
+                              subtitle: service.name || service.manifest?.name,
+                              provider: { id: service.id, name: service.name || service.manifest?.name, icon: service.icon || service.manifest?.icon },
+                              messages: savedHistory
+                            }));
+                          },
+                          style: {
+                            width: '100%',
+                            padding: '6px 10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            backgroundColor: isSelected ? 'rgba(124, 58, 237, 0.2)' : 'transparent',
+                            border: 'none',
+                            color: '#e5e7eb',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            whiteSpace: 'nowrap'
+                          },
+                          onMouseEnter: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; },
+                          onMouseLeave: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }
+                        },
+                          logo
+                            ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
+                                React.cloneElement(logo, { className: '', style: { width: '14px', height: '14px' } })
+                              )
+                            : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖'),
+                          service.name || service.manifest?.name,
+                          isSelected && React.createElement('svg', {
+                            style: { width: '12px', height: '12px', marginLeft: 'auto', color: '#a78bfa' },
+                            viewBox: '0 0 24 24',
+                            fill: 'none',
+                            stroke: 'currentColor',
+                            strokeWidth: 2
+                          },
+                            React.createElement('path', { d: 'M5 13l4 4L19 7' })
+                          )
+                        );
+                      })
                     )
+                  );
+                })()
+              )
+            : (resultsSidebar.subtitle && React.createElement('p', {
+                style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              }, resultsSidebar.subtitle))
+        ),
+
+        // Content area - Chat mode vs Track list mode
+        resultsSidebar.mode === 'chat'
+          // ========== CHAT MODE ==========
+          ? React.createElement(React.Fragment, null,
+              // Chat messages area
+              React.createElement('div', {
+                ref: chatMessagesRef,
+                className: 'flex-1 overflow-y-auto chat-messages-scroll',
+                style: { padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }
+              },
+                // Welcome message if no messages
+                (!resultsSidebar.messages || resultsSidebar.messages.length === 0) && React.createElement('div', {
+                  style: { textAlign: 'center', padding: '24px 16px', color: '#6b7280' }
+                },
+                  React.createElement('div', { style: { marginBottom: '12px', display: 'flex', justifyContent: 'center' } },
+                    React.createElement('svg', { viewBox: '0 0 122.88 89.38', style: { width: '48px', height: '48px' }, fill: '#9ca3af' },
+                      React.createElement('path', { d: 'M51.57,34.4c-1.27,0.06-2.35-0.91-2.41-2.18c-0.06-1.27,0.91-2.35,2.18-2.41c1.66-0.09,3.31,0.06,4.94,0.44 c1.63,0.38,3.24,0.98,4.84,1.8c1.13,0.58,1.57,1.97,0.99,3.1c-0.58,1.13-1.97,1.57-3.1,0.99c-1.25-0.65-2.51-1.12-3.76-1.41 C54.02,34.45,52.79,34.34,51.57,34.4L51.57,34.4z M29.24,60.23c-3.02,0.16-5.82-0.11-8.39-0.73c-6.34-1.53-11.26-5.21-14.73-10.03 c-3.41-4.74-5.4-10.58-5.96-16.56c-0.38-4.04-0.1-8.16,0.84-12.05c1.19-4.91,3.22-8.91,5.8-12.05c3.22-3.92,7.29-6.47,11.65-7.77 c4.34-1.3,8.97-1.36,13.38-0.29c3.52,0.85,6.9,2.43,9.85,4.66c3.4-0.52,6.75-0.85,10.01-0.86c3.64-0.01,7.15,0.37,10.44,1.32 c3.01,0.87,5.87,2.21,8.52,4.15c2.63,1.92,5.04,4.41,7.16,7.59l0.02,0.03l0,0c1.53,2.35,2.89,4.77,4.1,7.24 c1.2,2.46,2.24,5,3.16,7.6c2.49,7.08,3.97,14.26,5.51,21.72l0.38,1.83c0.93,4.48,2.29,7.49,3.86,9.33 c1.48,1.74,3.12,2.31,4.65,2.02c7.47-1.41,7.21-11.73,7.03-19.2c-0.03-1.26-0.06-2.45-0.05-3.57c0-1.05,0.72-1.94,1.69-2.21 l7.7-2.33c1.19-0.36,2.44,0.29,2.84,1.45c0.27,0.7,0.47,1.26,0.63,1.74c0.16,0.5,0.35,1.11,0.55,1.78 c1.53,5.15,2.76,9.88,2.99,14.72c0.23,4.95-0.6,9.9-3.24,15.33c-2.17,4.47-5.41,8.28-9.67,10.84c-3.87,2.33-8.57,3.63-14.04,3.44 c-4.55-0.15-9.07-1.56-13.26-3.96c-4.2-2.41-8.09-5.84-11.3-10.02c-2.07-2.7-4.1-5.7-6.07-8.99c-1.95,1.68-4,3.18-6.14,4.51 c-2.92,1.81-6,3.29-9.21,4.47c-0.56,0.2-1.14,0.18-1.65-0.03c-3.95-1.34-7.63-3.39-10.97-6.15C34.32,66.77,31.63,63.77,29.24,60.23 L29.24,60.23z M62.93,62.34c-1.34-2.42-2.66-4.97-3.96-7.66c-0.55-1.14-0.07-2.52,1.07-3.07c1.14-0.55,2.52-0.07,3.07,1.07 c1.91,3.92,3.86,7.58,5.85,10.93c1.98,3.33,3.98,6.33,6.02,8.97c2.84,3.69,6.26,6.71,9.95,8.83c3.56,2.04,7.36,3.24,11.11,3.36 c4.53,0.15,8.37-0.9,11.52-2.79c3.47-2.09,6.12-5.21,7.91-8.9c2.27-4.66,2.98-8.9,2.78-13.13c-0.2-4.33-1.37-8.76-2.81-13.62 c-0.11-0.36-0.23-0.76-0.38-1.23l-4,1.21c0.01,0.56,0.03,1.15,0.04,1.76c0.23,9.11,0.54,21.69-10.77,23.83 c-3.11,0.59-6.32-0.4-9.01-3.57c-2.03-2.38-3.75-6.08-4.85-11.39l-0.38-1.83c-1.5-7.3-2.95-14.31-5.35-21.12 c-0.85-2.41-1.83-4.79-2.96-7.11c-1.12-2.31-2.39-4.56-3.81-6.73c-1.82-2.72-3.84-4.82-6.03-6.42c-2.17-1.59-4.55-2.7-7.08-3.42 c-2.89-0.83-5.97-1.17-9.18-1.16c-3.27,0.01-6.72,0.38-10.27,0.96l0,0c-0.63,0.1-1.3-0.06-1.83-0.49c-2.6-2.14-5.64-3.63-8.84-4.4 c-3.62-0.88-7.43-0.83-10.98,0.24c-3.53,1.06-6.81,3.12-9.42,6.28c-2.16,2.62-3.86,6-4.88,10.21c-0.82,3.4-1.07,7.01-0.74,10.56 c0.48,5.19,2.19,10.24,5.11,14.29c2.86,3.97,6.89,6.99,12.08,8.24c2.34,0.57,4.93,0.78,7.77,0.56c0.97-0.31,2.07,0.06,2.64,0.97 c2.32,3.67,4.96,6.7,7.87,9.1c2.73,2.25,5.7,3.95,8.88,5.11c2.67-1.03,5.22-2.28,7.62-3.77C58.88,65.66,60.96,64.11,62.93,62.34 L62.93,62.34z M30.41,16.02c1.25-0.21,2.44,0.64,2.65,1.89c0.21,1.25-0.64,2.44-1.89,2.65c-1.9,0.32-3.27,1.43-4.11,2.92 c-0.69,1.21-1.04,2.67-1.07,4.17c-0.03,1.53,0.3,3.1,0.97,4.5c0.97,2.04,2.7,3.7,5.19,4.32c1.23,0.3,1.99,1.55,1.68,2.78 c-0.3,1.23-1.55,1.99-2.78,1.68c-3.99-0.99-6.73-3.61-8.26-6.8c-0.97-2.04-1.44-4.32-1.4-6.56c0.04-2.26,0.59-4.48,1.66-6.37 C24.55,18.58,27,16.6,30.41,16.02L30.41,16.02z' })
+                    )
+                  ),
+                  React.createElement('p', { style: { fontSize: '14px', marginBottom: '8px' } }, 'Hi! I\'m Shuffleupagus, your AI DJ.'),
+                  React.createElement('p', { style: { fontSize: '12px' } }, 'Ask me to play music, manage your queue, or discover new tracks.')
+                ),
+
+                // Chat messages
+                resultsSidebar.messages && (() => {
+                  // Find the index of the last assistant and user messages for scroll targeting
+                  const lastAssistantIndex = resultsSidebar.messages.reduce((lastIdx, msg, idx) =>
+                    msg.role === 'assistant' ? idx : lastIdx, -1);
+                  const lastUserIndex = resultsSidebar.messages.reduce((lastIdx, msg, idx) =>
+                    msg.role === 'user' ? idx : lastIdx, -1);
+
+                  return resultsSidebar.messages.map((msg, index) => {
+                    // Determine which ref to use for this message
+                    let messageRef = null;
+                    if (index === lastAssistantIndex) {
+                      messageRef = lastAssistantMessageRef;
+                    } else if (index === lastUserIndex && lastUserIndex > lastAssistantIndex) {
+                      // Only ref the user message if it's after the last assistant message (awaiting response)
+                      messageRef = lastUserMessageRef;
+                    }
+
+                    return React.createElement('div', {
+                      key: index,
+                      ref: messageRef,
+                      style: {
+                        display: 'flex',
+                        justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+                      }
+                    },
+                      React.createElement('div', {
+                        style: {
+                          maxWidth: '85%',
+                          padding: '10px 14px',
+                          borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                          backgroundColor: msg.role === 'user' ? '#7c3aed' : 'rgba(255, 255, 255, 0.08)',
+                          color: msg.role === 'user' ? '#ffffff' : '#e5e7eb',
+                          fontSize: '14px',
+                          lineHeight: '1.5',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          overflow: 'hidden'
+                        }
+                      }, renderChatContent(msg.content, msg.role === 'user'))
+                    );
+                  });
+                })(),
+
+                // Loading indicator with progress status
+                resultsSidebar.loading && React.createElement('div', {
+                  style: { display: 'flex', justifyContent: 'flex-start' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      padding: '12px 16px',
+                      borderRadius: '16px 16px 16px 4px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }
+                  },
+                    // Show progress status text if available, otherwise show bouncing dots
+                    resultsSidebar.progressStatus
+                      ? React.createElement('span', {
+                          style: { fontSize: '13px', color: '#9ca3af' }
+                        }, resultsSidebar.progressStatus)
+                      : React.createElement(React.Fragment, null,
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '0ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '150ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } }),
+                          React.createElement('span', { className: 'animate-bounce', style: { animationDelay: '300ms', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#9ca3af' } })
+                        )
+                  )
+                )
+              ),
+
+              // Chat input area
+              React.createElement('div', {
+                style: { padding: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }
+              },
+                React.createElement('div', { className: 'flex gap-2' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: aiChatInput,
+                    onChange: (e) => setAiChatInput(e.target.value),
+                    onKeyDown: (e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && aiChatInput.trim() && !aiChatLoading) {
+                        handleAiChatSend(aiChatInput);
+                      } else if (e.key === 'Escape') {
+                        if (!aiChatInput.trim()) {
+                          closeAiChat();
+                        } else {
+                          setAiChatInput('');
+                        }
+                      }
+                    },
+                    placeholder: 'Ask Shuffleupagus...',
+                    disabled: aiChatLoading,
+                    style: {
+                      flex: 1,
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '20px',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      color: '#f3f4f6',
+                      outline: 'none'
+                    },
+                    onFocus: (e) => { e.target.style.borderColor = 'rgba(124, 58, 237, 0.5)'; },
+                    onBlur: (e) => { e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }
+                  }),
+                  React.createElement('button', {
+                    onClick: () => aiChatInput.trim() && !aiChatLoading && handleAiChatSend(aiChatInput),
+                    disabled: !aiChatInput.trim() || aiChatLoading,
+                    className: 'transition-transform hover:scale-105',
+                    style: {
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: !aiChatInput.trim() || aiChatLoading ? 'rgba(124, 58, 237, 0.3)' : '#7c3aed',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: !aiChatInput.trim() || aiChatLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }
+                  },
+                    aiChatLoading
+                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 10, strokeOpacity: 0.25 }),
+                          React.createElement('path', { d: 'M12 2a10 10 0 0 1 10 10', strokeLinecap: 'round' })
+                        )
+                      : React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M14 5l7 7m0 0l-7 7m7-7H3' })
+                        )
+                  )
+                ),
+                // Clear chat button
+                resultsSidebar.messages && resultsSidebar.messages.length > 0 && React.createElement('button', {
+                  onClick: clearAiChatHistory,
+                  style: {
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 8px'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
+                  onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+                }, 'Clear conversation')
+              )
+            )
+
+          // ========== TRACK LIST MODE (Original) ==========
+          : React.createElement(React.Fragment, null,
+              // Track list or loading skeletons
+              React.createElement('div', { className: 'flex-1 overflow-y-auto', style: { padding: '8px' } },
+                // Loading skeletons
+                resultsSidebar.loading
+                  ? Array.from({ length: 12 }).map((_, index) =>
+                      React.createElement('div', {
+                        key: `skeleton-${index}`,
+                        className: 'flex items-center gap-3',
+                        style: { padding: '8px' }
+                      },
+                        // Skeleton track number
+                        React.createElement('div', {
+                          className: 'animate-pulse',
+                          style: { width: '24px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }
+                        }),
+                        // Skeleton track info
+                        React.createElement('div', { className: 'flex-1 min-w-0 space-y-2' },
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', width: `${60 + Math.random() * 30}%`, animationDelay: `${index * 0.05}s` }
+                          }),
+                          React.createElement('div', {
+                            className: 'animate-pulse',
+                            style: { height: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px', width: `${40 + Math.random() * 25}%`, animationDelay: `${index * 0.05 + 0.1}s` }
+                          })
+                        )
+                      )
+                    )
+                  : (resultsSidebar.tracks || []).map((track, index) =>
+                      React.createElement('div', {
+                        key: track.id || index,
+                        className: 'group flex items-center gap-3 transition-colors',
+                        style: { padding: '8px', borderRadius: '8px' },
+                        onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)',
+                        onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                      },
+                        // Track number
+                        React.createElement('span', { style: { width: '24px', textAlign: 'center', fontSize: '12px', color: '#6b7280' } }, index + 1),
+
+                        // Track info
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('div', { style: { fontSize: '14px', color: '#f3f4f6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.title),
+                          React.createElement('div', { style: { fontSize: '12px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, track.artist)
+                        ),
+
+                        // Remove button
+                        React.createElement('button', {
+                          onClick: () => {
+                            setResultsSidebar(prev => ({
+                              ...prev,
+                              tracks: prev.tracks.filter((_, i) => i !== index)
+                            }));
+                          },
+                          className: 'opacity-0 group-hover:opacity-100 transition-all',
+                          style: { padding: '4px', borderRadius: '6px', color: '#6b7280' },
+                          onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; e.currentTarget.style.color = '#f87171'; },
+                          onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+                            React.createElement('path', { d: 'M6 18L18 6M6 6l12 12' })
+                          )
+                        )
+                      )
+                    )
+              ),
+
+              // Empty state (only show when not loading and no tracks)
+              !resultsSidebar.loading && (!resultsSidebar.tracks || resultsSidebar.tracks.length === 0) && React.createElement('div', {
+                className: 'flex-1 flex items-center justify-center',
+                style: { padding: '16px' }
+              },
+                React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
+              ),
+
+              // Actions - Three circular buttons
+              React.createElement('div', {
+                style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
+              },
+                // Add to Playlist button
+                React.createElement('button', {
+                  onClick: handleAiAddToPlaylist,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Playlist'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                  )
+                ),
+                // Play button (center, larger)
+                React.createElement('button', {
+                  onClick: handleAiPlay,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
+                  title: 'Play Now'
+                },
+                  React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
+                ),
+                // Add to Queue button
+                React.createElement('button', {
+                  onClick: handleAiAddToQueue,
+                  disabled: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0,
+                  className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                  style: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: resultsSidebar.loading || !resultsSidebar.tracks || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
+                  },
+                  onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
+                  onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
+                  title: 'Add to Queue'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                   )
                 )
               )
-        ),
-
-        // Empty state (only show when not loading and no tracks)
-        !resultsSidebar.loading && resultsSidebar.tracks.length === 0 && React.createElement('div', {
-          className: 'flex-1 flex items-center justify-center',
-          style: { padding: '16px' }
-        },
-          React.createElement('p', { style: { fontSize: '14px', color: '#6b7280' } }, 'No tracks remaining')
-        ),
-
-        // Actions - Three circular buttons
-        React.createElement('div', {
-          style: { padding: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px' }
-        },
-          // Add to Playlist button
-          React.createElement('button', {
-            onClick: handleAiAddToPlaylist,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Playlist'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
             )
-          ),
-          // Play button (center, larger)
-          React.createElement('button', {
-            onClick: handleAiPlay,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-            style: {
-              backgroundColor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'rgba(255, 255, 255, 0.3)' : '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1.1)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.transform = 'scale(1)'; },
-            title: 'Play Now'
-          },
-            React.createElement(Play, { size: 24, className: 'text-gray-800 ml-0.5' })
-          ),
-          // Add to Queue button
-          React.createElement('button', {
-            onClick: handleAiAddToQueue,
-            disabled: resultsSidebar.loading || resultsSidebar.tracks.length === 0,
-            className: 'w-11 h-11 rounded-full flex items-center justify-center transition-all hover:scale-110',
-            style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: resultsSidebar.loading || resultsSidebar.tracks.length === 0 ? '0.4' : '1'
-            },
-            onMouseEnter: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; },
-            onMouseLeave: (e) => { if (!resultsSidebar.loading && resultsSidebar.tracks.length > 0) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
-            title: 'Add to Queue'
-          },
-            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
-            )
-          )
-        )
       )
     ),
 
@@ -39518,8 +42919,8 @@ useEffect(() => {
                 )
           ),
 
-          // AI Service configuration (ChatGPT and Gemini)
-          (selectedResolver.id === 'chatgpt' || selectedResolver.id === 'gemini') && React.createElement('div', {
+          // AI Service configuration - generic based on plugin settings
+          (selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') && React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
@@ -39540,11 +42941,7 @@ useEffect(() => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }
-            },
-              selectedResolver.id === 'chatgpt'
-                ? 'Enter your OpenAI API key to enable AI playlist generation.'
-                : 'Enter your Google API key to enable AI playlist generation.'
-            ),
+            }, selectedResolver.settings?.configurable?.apiKey?.description || `Enter your API key to enable ${selectedResolver.name}.`),
             // API Key input
             React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
@@ -39555,7 +42952,7 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'API Key'),
+              }, selectedResolver.settings?.configurable?.apiKey?.label || 'API Key'),
               React.createElement('input', {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
@@ -39566,7 +42963,7 @@ useEffect(() => {
                     enabled: !!e.target.value
                   });
                 },
-                placeholder: selectedResolver.id === 'chatgpt' ? 'sk-...' : 'AIza...',
+                placeholder: selectedResolver.settings?.configurable?.apiKey?.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
                 style: {
                   width: '100%',
                   padding: '10px 12px',
@@ -39578,14 +42975,16 @@ useEffect(() => {
                   outline: 'none'
                 }
               }),
-              React.createElement('a', {
+              selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
                   e.preventDefault();
-                  const url = selectedResolver.id === 'chatgpt'
-                    ? 'https://platform.openai.com/api-keys'
-                    : 'https://aistudio.google.com/app/apikey';
-                  window.electron?.shell?.openExternal?.(url);
+                  const urls = {
+                    chatgpt: 'https://platform.openai.com/api-keys',
+                    gemini: 'https://aistudio.google.com/app/apikey',
+                    claude: 'https://console.anthropic.com/settings/keys'
+                  };
+                  window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
                   display: 'inline-block',
@@ -39597,8 +42996,8 @@ useEffect(() => {
                 }
               }, 'Get your API key →')
             ),
-            // Model selector
-            React.createElement('div', { style: { marginBottom: '16px' } },
+            // Model selector - use options from plugin settings if available
+            selectedResolver.settings?.configurable?.model && React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
                 style: {
                   display: 'block',
@@ -39607,9 +43006,9 @@ useEffect(() => {
                   color: '#374151',
                   marginBottom: '6px'
                 }
-              }, 'Model'),
+              }, selectedResolver.settings?.configurable?.model?.label || 'Model'),
               React.createElement('select', {
-                value: metaServiceConfigs[selectedResolver.id]?.model || (selectedResolver.id === 'chatgpt' ? 'gpt-4o-mini' : 'gemini-2.5-flash'),
+                value: metaServiceConfigs[selectedResolver.id]?.model || selectedResolver.settings?.configurable?.model?.default || '',
                 onChange: (e) => {
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
@@ -39628,14 +43027,19 @@ useEffect(() => {
                   cursor: 'pointer'
                 }
               },
-                selectedResolver.id === 'chatgpt' ? [
-                  React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
-                  React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
-                  React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
-                ] : [
-                  React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
-                  React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
-                ]
+                // Use options from plugin settings, or fall back to hardcoded for backward compat
+                selectedResolver.settings?.configurable?.model?.options
+                  ? selectedResolver.settings.configurable.model.options.map(opt =>
+                      React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                    )
+                  : selectedResolver.id === 'chatgpt' ? [
+                      React.createElement('option', { key: 'gpt-4o-mini', value: 'gpt-4o-mini' }, 'GPT-4o Mini (Recommended)'),
+                      React.createElement('option', { key: 'gpt-4o', value: 'gpt-4o' }, 'GPT-4o'),
+                      React.createElement('option', { key: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' }, 'GPT-3.5 Turbo')
+                    ] : selectedResolver.id === 'gemini' ? [
+                      React.createElement('option', { key: 'gemini-2.5-flash', value: 'gemini-2.5-flash' }, 'Gemini 2.5 Flash (Recommended)'),
+                      React.createElement('option', { key: 'gemini-2.5-pro', value: 'gemini-2.5-pro' }, 'Gemini 2.5 Pro')
+                    ] : []
               )
             ),
             // Connection status
@@ -39644,6 +43048,145 @@ useEffect(() => {
             },
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'API key configured')
+            )
+          ),
+
+          // Ollama configuration (no API key, but has endpoint and model)
+          selectedResolver.id === 'ollama' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#1f2937'
+              }
+            }, 'Ollama Configuration'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: '4px',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            }, 'Run AI locally with Ollama. Make sure Ollama is running on your machine.'),
+            // Endpoint URL input
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Ollama URL'),
+              React.createElement('input', {
+                type: 'text',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434',
+                onBlur: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    endpoint: e.target.value,
+                    enabled: true
+                  });
+                },
+                placeholder: 'http://localhost:11434',
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                }
+              }),
+              React.createElement('a', {
+                href: '#',
+                onClick: (e) => {
+                  e.preventDefault();
+                  window.electron?.shell?.openExternal?.('https://ollama.ai');
+                },
+                style: {
+                  display: 'inline-block',
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  color: '#7c3aed',
+                  fontWeight: '500',
+                  textDecoration: 'none'
+                }
+              }, 'Download Ollama →')
+            ),
+            // Model selector for Ollama
+            React.createElement('div', { style: { marginBottom: '16px' } },
+              React.createElement('label', {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  marginBottom: '6px'
+                }
+              }, 'Model'),
+              React.createElement('select', {
+                value: metaServiceConfigs[selectedResolver.id]?.model || 'llama3.1',
+                onChange: (e) => {
+                  saveMetaServiceConfig(selectedResolver.id, {
+                    ...metaServiceConfigs[selectedResolver.id],
+                    model: e.target.value
+                  });
+                },
+                style: {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: '#1f2937',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }
+              },
+                React.createElement('option', { value: 'llama3.1' }, 'Llama 3.1 (8B)'),
+                React.createElement('option', { value: 'llama3.1:70b' }, 'Llama 3.1 (70B)'),
+                React.createElement('option', { value: 'llama3.2' }, 'Llama 3.2 (3B)'),
+                React.createElement('option', { value: 'mistral' }, 'Mistral (7B)'),
+                React.createElement('option', { value: 'mixtral' }, 'Mixtral (8x7B)'),
+                React.createElement('option', { value: 'qwen2.5' }, 'Qwen 2.5 (7B)'),
+                React.createElement('option', { value: 'gemma2' }, 'Gemma 2 (9B)')
+              )
+            ),
+            // Enable toggle
+            React.createElement('div', { className: 'flex items-center justify-between' },
+              React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, 'Enable Ollama'),
+              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: metaServiceConfigs[selectedResolver.id]?.enabled !== false,
+                  onChange: (e) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: e.target.checked
+                    });
+                  },
+                  className: 'sr-only peer'
+                }),
+                React.createElement('div', {
+                  className: 'w-full h-full rounded-full transition-colors',
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? '#7c3aed' : 'rgba(0, 0, 0, 0.15)' }
+                }),
+                React.createElement('div', {
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled !== false ? 'translateX(20px)' : 'translateX(0)' }
+                })
+              )
             )
           ),
 
@@ -40507,6 +44050,227 @@ useEffect(() => {
           }, 'Download from GitHub'),
           React.createElement('button', {
             onClick: () => setExtensionInfoOpen(false),
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#374151',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Done')
+        )
+      )
+    ),
+
+    // Raycast Extension Info Modal
+    raycastInfoOpen && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: (e) => { if (e.target === e.currentTarget) setRaycastInfoOpen(false); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        style: { width: '440px', maxHeight: '80vh' },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header with gradient
+        React.createElement('div', {
+          style: {
+            padding: '24px',
+            background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }
+        },
+          // Icon
+          React.createElement('div', {
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', {
+              className: 'w-8 h-8',
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', {
+                d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+              })
+            )
+          ),
+          // Title
+          React.createElement('div', null,
+            React.createElement('h3', {
+              style: { fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '2px' }
+            }, 'Raycast Extension'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+            }, 'Control Parachord with keyboard shortcuts')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setRaycastInfoOpen(false),
+            style: {
+              marginLeft: 'auto',
+              padding: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+        // Content
+        React.createElement('div', {
+          style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
+        },
+          React.createElement('p', {
+            style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '20px' }
+          },
+            'The Parachord ',
+            React.createElement('a', {
+              href: '#',
+              onClick: (e) => {
+                e.preventDefault();
+                if (window.electron?.shell?.openExternal) {
+                  window.electron.shell.openExternal('https://raycast.com');
+                } else {
+                  window.open('https://raycast.com', '_blank');
+                }
+              },
+              style: { color: '#FF6363', textDecoration: 'none', fontWeight: '500' }
+            }, 'Raycast'),
+            ' extension lets you control playback, search for music, and chat with Shuffleupagus — all from your keyboard.'
+          ),
+
+          // Features
+          React.createElement('div', { style: { marginBottom: '24px' } },
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Commands'),
+            [
+              { iconPath: 'M8 5v14l11-7z', filled: true, text: 'Play/Pause, Next, Previous track' },
+              { iconPath: 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99', filled: false, text: 'Toggle shuffle, set volume' },
+              { iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', filled: false, text: 'Search & play or add to queue' },
+              { iconPath: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z', filled: false, text: 'Shuffleupagus, your AI companion' },
+              { iconPath: 'M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75z', filled: false, text: 'Start Collection Radio' }
+            ].map((item, i) =>
+              React.createElement('div', {
+                key: i,
+                style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }
+              },
+                React.createElement('svg', {
+                  style: { width: '18px', height: '18px', flexShrink: 0 },
+                  fill: item.filled ? '#6b7280' : 'none',
+                  viewBox: '0 0 24 24',
+                  stroke: item.filled ? 'none' : '#6b7280',
+                  strokeWidth: item.filled ? 0 : 1.5
+                },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: item.iconPath })
+                ),
+                React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, item.text)
+              )
+            )
+          ),
+
+          // Installation instructions
+          React.createElement('div', null,
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Installation'),
+            React.createElement('div', {
+              style: {
+                backgroundColor: '#f9fafb',
+                borderRadius: '12px',
+                padding: '16px'
+              }
+            },
+              [
+                { step: '1', text: 'Download the extension folder from GitHub' },
+                { step: '2', text: 'Open Raycast and run "Import Extension"' },
+                { step: '3', text: 'Select the parachord-raycast folder' },
+                { step: '4', text: 'The commands will appear in Raycast' }
+              ].map((item, i) =>
+                React.createElement('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 3 ? '10px' : '0' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      backgroundColor: '#FF6363',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      flexShrink: 0
+                    }
+                  }, item.step),
+                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '22px' } }, item.text)
+                )
+              )
+            ),
+            // Note
+            React.createElement('p', {
+              style: { fontSize: '12px', color: '#9ca3af', marginTop: '12px', lineHeight: '1.5' }
+            }, 'Requires Raycast to be installed on your Mac. The extension will be available in the Raycast Store soon.')
+          )
+        ),
+        // Footer
+        React.createElement('div', {
+          style: {
+            padding: '16px 24px',
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px'
+          }
+        },
+          React.createElement('button', {
+            onClick: () => {
+              if (window.electron?.shell?.openExternal) {
+                window.electron.shell.openExternal('https://github.com/Parachord/parachord/tree/main/raycast-extension');
+              } else {
+                window.open('https://github.com/Parachord/parachord/tree/main/raycast-extension', '_blank');
+              }
+            },
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#FF6363',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'View on GitHub'),
+          React.createElement('button', {
+            onClick: () => setRaycastInfoOpen(false),
             className: 'transition-colors',
             style: {
               padding: '10px 16px',
@@ -43116,14 +46880,17 @@ useEffect(() => {
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
-      // aiPlaylist type is not clickable (no navigation back to ephemeral AI-generated sidebar)
       playbackContext && React.createElement('div', {
         className: `flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 transition-colors ${
-          (playbackContext.type === 'spinoff' || playbackContext.type === 'aiPlaylist') ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
+          playbackContext.type === 'spinoff' ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
         }`,
         onClick: () => {
-          // AI Playlist is not navigable (ephemeral sidebar)
-          if (playbackContext.type === 'aiPlaylist') return;
+          // AI Playlist - reopen the Shuffleupagus chat
+          if (playbackContext.type === 'aiPlaylist') {
+            openAiChat();
+            setQueueDrawerOpen(false);
+            return;
+          }
           // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
@@ -43174,7 +46941,8 @@ useEffect(() => {
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-xs text-purple-300' },
             playbackContext.type === 'spinoff' ? 'Playing' :
-            playbackContext.type === 'listenAlong' ? 'Listening along with' : 'Playing from'
+            playbackContext.type === 'listenAlong' ? 'Listening along with' :
+            playbackContext.type === 'aiPlaylist' ? 'From' : 'Playing from'
           ),
           React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
@@ -43182,7 +46950,7 @@ useEffect(() => {
             playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
             playbackContext.type === 'library' ? 'Collection' :
             playbackContext.type === 'recommendations' ? 'Recommendations' :
-            playbackContext.type === 'aiPlaylist' ? 'AI Playlist' :
+            playbackContext.type === 'aiPlaylist' ? 'Shuffleupagus' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
@@ -43192,8 +46960,8 @@ useEffect(() => {
             playbackContext.name || 'Unknown'
           )
         ),
-        // Hide arrow for spinoff and aiPlaylist (not clickable)
-        playbackContext.type !== 'spinoff' && playbackContext.type !== 'aiPlaylist' && React.createElement('svg', {
+        // Hide arrow for spinoff (not clickable)
+        playbackContext.type !== 'spinoff' && React.createElement('svg', {
           className: 'w-4 h-4 text-purple-400',
           fill: 'none',
           stroke: 'currentColor',
