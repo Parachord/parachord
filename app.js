@@ -12553,7 +12553,7 @@ const Parachord = () => {
     // Separate handler for play button click (plays album instead of opening page)
     const handlePlayButtonClick = async (e) => {
       e.stopPropagation(); // Don't trigger the card's onClick
-      closeAiChat();
+      e.preventDefault();
 
       if (type === 'track') {
         // For tracks, just call the regular handleClick
@@ -12562,8 +12562,24 @@ const Parachord = () => {
       }
 
       if (type === 'album') {
+        closeAiChat();
         // Search for the album and play all its tracks
         console.log(`ChatCard: Playing album "${title}" by "${artist}"`);
+
+        // Create placeholder immediately
+        const placeholderId = `chat-album-${Date.now()}`;
+        const placeholder = {
+          id: placeholderId,
+          title: `Loading ${title}...`,
+          artist: artist,
+          album: title,
+          sources: {},
+          status: 'loading',
+          _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+        };
+
+        clearQueue();
+        setCurrentTrack(placeholder);
         setTrackLoading(true);
 
         try {
@@ -12578,39 +12594,50 @@ const Parachord = () => {
               r.artist?.toLowerCase() === artist.toLowerCase()
             );
 
-            if (albumTracks.length > 0) {
-              // Clear queue and play first track, queue the rest
-              clearQueue();
-              const firstTrack = {
-                ...albumTracks[0],
-                id: `chat-album-${Date.now()}-0`,
-                _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
-              };
-              setCurrentTrack(firstTrack);
-              await handlePlayRef.current(firstTrack);
+            const tracksToPlay = albumTracks.length > 0 ? albumTracks : [results[0]];
 
-              // Add remaining tracks to queue
-              if (albumTracks.length > 1) {
-                const queueTracks = albumTracks.slice(1).map((t, i) => ({
-                  ...t,
-                  id: `chat-album-${Date.now()}-${i + 1}`,
-                  _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
-                }));
-                setCurrentQueue(prev => [...prev, ...queueTracks]);
-              }
-            } else {
-              // No album tracks found, try playing first result
-              const firstTrack = {
-                ...results[0],
-                id: `chat-album-${Date.now()}`,
+            if (tracksToPlay.length > 0) {
+              // Prepare first track with placeholder structure for resolution
+              const firstTrackData = {
+                ...tracksToPlay[0],
+                id: `${placeholderId}-0`,
                 _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
               };
-              clearQueue();
-              setCurrentTrack(firstTrack);
-              await handlePlayRef.current(firstTrack);
+
+              // Resolve the first track to get playable sources
+              console.log(`ChatCard: Resolving first album track "${firstTrackData.title}" by "${firstTrackData.artist}"`);
+              const sources = await resolveTrackRef.current(firstTrackData, firstTrackData.artist);
+
+              if (sources && Object.keys(sources).length > 0) {
+                const resolvedFirstTrack = { ...firstTrackData, sources, status: 'resolved' };
+
+                // Update current track and play
+                setCurrentTrack(resolvedFirstTrack);
+                await handlePlayRef.current(resolvedFirstTrack);
+
+                // Add remaining tracks to queue (they'll be resolved when played)
+                if (tracksToPlay.length > 1) {
+                  const queueTracks = tracksToPlay.slice(1).map((t, i) => ({
+                    ...t,
+                    id: `${placeholderId}-${i + 1}`,
+                    _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+                  }));
+                  setCurrentQueue(prev => [...prev, ...queueTracks]);
+                }
+              } else {
+                // Resolution failed
+                setTrackLoading(false);
+                setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
+                showConfirmDialog({
+                  type: 'error',
+                  title: 'Album Not Found',
+                  message: `Could not find playable sources for "${title}" by ${artist}.`
+                });
+              }
             }
           } else {
             setTrackLoading(false);
+            setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
             showConfirmDialog({
               type: 'error',
               title: 'Album Not Found',
@@ -12620,6 +12647,7 @@ const Parachord = () => {
         } catch (err) {
           console.error('Error playing album from chat card:', err);
           setTrackLoading(false);
+          setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error', title: title } : prev);
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
