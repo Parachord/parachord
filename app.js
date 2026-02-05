@@ -9165,14 +9165,17 @@ const Parachord = () => {
       chatHistoryLoadedRef.current = false; // Reset loaded flag for new provider
       const history = aiChatHistoriesRef.current[selectedChatProvider] || [];
       setAiChatMessages(history);
+      // Clear progress status from previous provider to prevent bleeding
+      setAiChatProgress(null);
+      setAiChatLoading(false);
       // Also restore to service if it exists
       if (aiChatServiceRef.current) {
         aiChatServiceRef.current.restoreHistory(history);
       }
-      // Update resultsSidebar with loaded history if chat is open
+      // Update resultsSidebar with loaded history if chat is open (and clear progress)
       setResultsSidebar(prev => {
         if (prev?.mode === 'chat') {
-          return { ...prev, messages: history };
+          return { ...prev, messages: history, progressStatus: null, loading: false };
         }
         return prev;
       });
