@@ -4283,6 +4283,7 @@ const Parachord = () => {
   const aiChatServiceRef = useRef(null);
   const chatMessagesRef = useRef(null); // Ref for auto-scrolling chat messages
   const lastAssistantMessageRef = useRef(null); // Ref for scrolling to top of latest response
+  const lastUserMessageRef = useRef(null); // Ref for scrolling user messages into view
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
@@ -13745,12 +13746,16 @@ const Parachord = () => {
   useEffect(() => { openAiChatRef.current = openAiChat; });
   useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
 
-  // Auto-scroll to top of latest assistant response when new messages arrive
+  // Auto-scroll to keep messages visible when new messages arrive
   useEffect(() => {
     if (lastAssistantMessageRef.current) {
+      // Scroll to show the assistant response from the top
       lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (lastUserMessageRef.current) {
+      // Scroll user message fully into view (end ensures it's above the input area)
+      lastUserMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     } else if (chatMessagesRef.current) {
-      // Fallback: scroll to bottom if no assistant message yet (e.g., only user messages)
+      // Fallback: scroll to bottom
       chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
     }
   }, [resultsSidebar?.messages, resultsSidebar?.loading]);
@@ -40304,14 +40309,25 @@ useEffect(() => {
 
                 // Chat messages
                 resultsSidebar.messages && (() => {
-                  // Find the index of the last assistant message for scroll targeting
+                  // Find the index of the last assistant and user messages for scroll targeting
                   const lastAssistantIndex = resultsSidebar.messages.reduce((lastIdx, msg, idx) =>
                     msg.role === 'assistant' ? idx : lastIdx, -1);
+                  const lastUserIndex = resultsSidebar.messages.reduce((lastIdx, msg, idx) =>
+                    msg.role === 'user' ? idx : lastIdx, -1);
 
-                  return resultsSidebar.messages.map((msg, index) =>
-                    React.createElement('div', {
+                  return resultsSidebar.messages.map((msg, index) => {
+                    // Determine which ref to use for this message
+                    let messageRef = null;
+                    if (index === lastAssistantIndex) {
+                      messageRef = lastAssistantMessageRef;
+                    } else if (index === lastUserIndex && lastUserIndex > lastAssistantIndex) {
+                      // Only ref the user message if it's after the last assistant message (awaiting response)
+                      messageRef = lastUserMessageRef;
+                    }
+
+                    return React.createElement('div', {
                       key: index,
-                      ref: index === lastAssistantIndex ? lastAssistantMessageRef : null,
+                      ref: messageRef,
                       style: {
                         display: 'flex',
                         justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
@@ -40331,8 +40347,8 @@ useEffect(() => {
                           overflow: 'hidden'
                         }
                       }, renderChatContent(msg.content, msg.role === 'user'))
-                    )
-                  );
+                    );
+                  });
                 })(),
 
                 // Loading indicator with progress status
