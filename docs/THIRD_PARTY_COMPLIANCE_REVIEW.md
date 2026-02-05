@@ -49,22 +49,11 @@ User-Agent spoofing to disguise automated access compounds this.
 
 ---
 
-#### 3. Spotify — Hardcoded Client Secret (MEDIUM-HIGH RISK)
+#### 3. Spotify — Hardcoded Client Secret (RESOLVED)
 
-**Issue:** A Spotify Client ID and Client Secret are hardcoded in source code:
-- `main.js` line ~1643: `FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea'`
-- `main.js` line ~1643: `FALLBACK_SPOTIFY_CLIENT_SECRET = '6290dd3f9ddd45e2be725b80b884db6e'`
+**Issue:** A Spotify Client Secret was previously hardcoded in source code and used as a fallback credential.
 
-These are used as fallback credentials when users don't provide their own.
-
-**Why this is a problem:** Spotify's Developer Terms (Section III.3) state:
-> "You will keep your Secret Key confidential...You will not share your Secret Key with any third party."
-
-Publishing the client secret in an open-source repository makes it available to anyone, violating this requirement. Spotify can revoke these credentials at any time.
-
-**Risk Level:** MEDIUM-HIGH — Credential revocation could break the app for all users relying on fallback credentials. Spotify may also restrict or ban the developer account.
-
-**Recommendation:** Remove the hardcoded client secret. For desktop/mobile apps, use the PKCE authorization flow (which doesn't require a client secret). Alternatively, require users to register their own Spotify app and provide credentials.
+**Resolution:** Migrated to the PKCE (Proof Key for Code Exchange) authorization flow. The client secret has been removed entirely — only the Client ID is needed (which is safe to expose publicly). The PKCE flow uses a one-time cryptographic `code_verifier`/`code_challenge` pair generated at runtime, eliminating the need for a shared secret. The Client Secret input field has also been removed from the Settings UI.
 
 ---
 
@@ -112,15 +101,11 @@ Publishing the client secret in an open-source repository makes it available to 
 
 ---
 
-#### 7. Spotify — Unnecessary OAuth Scopes (LOW-MEDIUM RISK)
+#### 7. Spotify — Unnecessary OAuth Scopes (RESOLVED)
 
-**Issue:** The OAuth flow requests `user-read-private` and `user-read-email` scopes (`main.js`, lines ~1883-1893), but neither appears to be used in the codebase.
+**Issue:** The OAuth flow previously requested `user-read-private` and `user-read-email` scopes, but neither was used in the codebase.
 
-**Why this is a concern:** Spotify's Developer Policy requires apps to "only request data that your application needs." Requesting unnecessary scopes, especially email access, violates the principle of least privilege and Spotify's guidelines.
-
-**Risk Level:** LOW-MEDIUM — Unlikely to trigger enforcement alone, but contributes to a pattern of non-compliance.
-
-**Recommendation:** Remove `user-read-private` and `user-read-email` from the requested scopes.
+**Resolution:** Removed `user-read-private` and `user-read-email` from the requested scopes. Only scopes actually used by the app are now requested.
 
 ---
 
@@ -186,11 +171,11 @@ The browser extension can scrape Pitchfork review pages, but this is limited to 
 |---------|--------|------|---------------|
 | YouTube | **VIOLATION** | High | Automatic ad skipping |
 | Bandcamp | **VIOLATION** | High | Web scraping + UA spoofing |
-| Spotify (credentials) | **VIOLATION** | Medium-High | Client secret published in source |
+| Spotify (credentials) | **RESOLVED** | — | Migrated to PKCE; secret removed |
 | Qobuz | **CONCERN** | Medium | Shared demo App ID in production |
 | SoundCloud | **CONCERN** | Medium | Using deprecated API |
 | Apple Music (key) | **CONCERN** | Medium | Private key committed to repo |
-| Spotify (scopes) | **CONCERN** | Low-Medium | Unnecessary OAuth scopes |
+| Spotify (scopes) | **RESOLVED** | — | Unnecessary scopes removed |
 | Spotify (playback) | Compliant | — | — |
 | Last.fm | Compliant | — | — |
 | ListenBrainz | Compliant | — | — |
@@ -207,10 +192,10 @@ The browser extension can scrape Pitchfork review pages, but this is limited to 
 
 ## Recommended Priority Actions
 
-1. **Immediate:** Remove the YouTube ad-skipping code from the browser extension
+1. ~~**Immediate:** Remove the YouTube ad-skipping code from the browser extension~~ **DONE**
 2. **Immediate:** Rotate and remove the Apple MusicKit `.p8` private key from the repository
-3. **Immediate:** Remove the hardcoded Spotify client secret; migrate to PKCE flow
+3. ~~**Immediate:** Remove the hardcoded Spotify client secret; migrate to PKCE flow~~ **DONE**
 4. **Short-term:** Rearchitect Bandcamp integration to avoid scraping (or seek permission)
 5. **Short-term:** Obtain a proper Qobuz production App ID or remove the integration
-6. **Short-term:** Remove unnecessary Spotify OAuth scopes (`user-read-private`, `user-read-email`)
+6. ~~**Short-term:** Remove unnecessary Spotify OAuth scopes (`user-read-private`, `user-read-email`)~~ **DONE**
 7. **Ongoing:** Add deprecation warnings for SoundCloud integration
