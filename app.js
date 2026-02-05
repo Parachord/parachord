@@ -45742,14 +45742,17 @@ useEffect(() => {
       ),
 
       // Playback context banner - shows where playback originated from (at bottom of queue)
-      // aiPlaylist type is not clickable (no navigation back to ephemeral AI-generated sidebar)
       playbackContext && React.createElement('div', {
         className: `flex items-center justify-between px-4 py-1.5 bg-purple-900/40 border-t border-purple-700/30 transition-colors ${
-          (playbackContext.type === 'spinoff' || playbackContext.type === 'aiPlaylist') ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
+          playbackContext.type === 'spinoff' ? 'cursor-default' : 'cursor-pointer hover:bg-purple-900/50'
         }`,
         onClick: () => {
-          // AI Playlist is not navigable (ephemeral sidebar)
-          if (playbackContext.type === 'aiPlaylist') return;
+          // AI Playlist - reopen the Shuffleupagus chat
+          if (playbackContext.type === 'aiPlaylist') {
+            openAiChat();
+            setQueueDrawerOpen(false);
+            return;
+          }
           // Navigate to the context source (skip if already on target page)
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
@@ -45800,7 +45803,8 @@ useEffect(() => {
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-xs text-purple-300' },
             playbackContext.type === 'spinoff' ? 'Playing' :
-            playbackContext.type === 'listenAlong' ? 'Listening along with' : 'Playing from'
+            playbackContext.type === 'listenAlong' ? 'Listening along with' :
+            playbackContext.type === 'aiPlaylist' ? 'From' : 'Playing from'
           ),
           React.createElement('span', { className: 'text-xs font-medium text-purple-100' },
             playbackContext.type === 'playlist' ? `${playbackContext.name || 'Playlist'}` :
@@ -45808,7 +45812,7 @@ useEffect(() => {
             playbackContext.type === 'search' ? `"${playbackContext.name || 'Search'}"` :
             playbackContext.type === 'library' ? 'Collection' :
             playbackContext.type === 'recommendations' ? 'Recommendations' :
-            playbackContext.type === 'aiPlaylist' ? 'AI Playlist' :
+            playbackContext.type === 'aiPlaylist' ? 'Shuffleupagus' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
@@ -45818,8 +45822,8 @@ useEffect(() => {
             playbackContext.name || 'Unknown'
           )
         ),
-        // Hide arrow for spinoff and aiPlaylist (not clickable)
-        playbackContext.type !== 'spinoff' && playbackContext.type !== 'aiPlaylist' && React.createElement('svg', {
+        // Hide arrow for spinoff (not clickable)
+        playbackContext.type !== 'spinoff' && React.createElement('svg', {
           className: 'w-4 h-4 text-purple-400',
           fill: 'none',
           stroke: 'currentColor',
