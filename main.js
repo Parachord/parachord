@@ -1645,7 +1645,7 @@ const FALLBACK_SPOTIFY_CLIENT_SECRET = '6290dd3f9ddd45e2be725b80b884db6e';
 
 // MusicKit developer token - generated from .p8 private key at startup
 const MUSICKIT_TEAM_ID = 'YR3XETE537';
-const MUSICKIT_KEY_ID = '7CLCZTCCQ6';
+const MUSICKIT_KEY_ID = '437JVHZMMK';
 let generatedMusicKitToken = null;
 
 /**
