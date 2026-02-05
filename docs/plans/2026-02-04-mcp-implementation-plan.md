@@ -579,21 +579,7 @@ Add "AI DJ" section to Settings page.
 
 ---
 
-### Task 5.4: Keyboard Shortcuts
-
-**File:** `app.js` (keyboard handler section)
-
-**Subtasks:**
-- [ ] Add Cmd+J / Ctrl+J to toggle chat panel
-- [ ] Add Escape to close chat panel (when focused)
-- [ ] Add Cmd+Enter / Ctrl+Enter to send message (alternative)
-- [ ] Document shortcuts in settings/help
-
-**Estimated complexity:** Low
-
----
-
-### Task 5.5: Conversation Persistence
+### Task 5.4: Conversation Persistence
 
 **File:** `services/ai-chat.js`, `app.js`
 
@@ -608,7 +594,7 @@ Add "AI DJ" section to Settings page.
 
 ---
 
-### Task 5.6: Welcome Message
+### Task 5.5: Welcome Message
 
 **File:** `app.js` (ChatPanel)
 
