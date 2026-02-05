@@ -4083,6 +4083,12 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
   let token;
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
+  } else if (providerId === 'applemusic') {
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const userToken = store.get('applemusic_user_token');
+    if (developerToken && userToken) {
+      token = JSON.stringify({ developerToken, userToken });
+    }
   }
 
   if (!token) {
@@ -4106,6 +4112,12 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   let token;
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
+  } else if (providerId === 'applemusic') {
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const userToken = store.get('applemusic_user_token');
+    if (developerToken && userToken) {
+      token = JSON.stringify({ developerToken, userToken });
+    }
   }
 
   if (!token) {
