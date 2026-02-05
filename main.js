@@ -4357,6 +4357,20 @@ ipcMain.handle('musickit:authorize', async () => {
   }
 });
 
+ipcMain.handle('musickit:fetch-user-token', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    if (!developerToken) {
+      return { success: false, error: 'No developer token available' };
+    }
+    const result = await bridge.fetchUserToken(developerToken);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Search for songs
 ipcMain.handle('musickit:search', async (event, query, limit = 25) => {
   const bridge = getMusicKitBridge();

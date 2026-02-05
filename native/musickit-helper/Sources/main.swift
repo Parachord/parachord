@@ -93,6 +93,20 @@ class MusicKitBridge {
         ]
     }
 
+    // Fetch a Music User Token for REST API access
+    func fetchUserToken(developerToken: String) async -> [String: Any] {
+        guard isAuthorized else {
+            return ["success": false, "error": "Not authorized"]
+        }
+        do {
+            let tokenProvider = DefaultMusicTokenProvider()
+            let token = try await tokenProvider.userToken(for: developerToken, options: .ignoreCache)
+            return ["success": true, "userToken": token]
+        } catch {
+            return ["success": false, "error": error.localizedDescription]
+        }
+    }
+
     private func statusString(_ status: MusicAuthorization.Status) -> String {
         switch status {
         case .authorized: return "authorized"
@@ -401,6 +415,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             case "authorize":
                 result = await bridge.authorize()
+
+            case "fetchUserToken":
+                guard let developerToken = params["developerToken"] as? String else {
+                    return Response(id: request.id, success: false, data: nil, error: "Missing developerToken parameter")
+                }
+                result = await bridge.fetchUserToken(developerToken: developerToken)
 
             case "search":
                 guard let query = params["query"] as? String else {

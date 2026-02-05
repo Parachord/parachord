@@ -7214,35 +7214,46 @@ const Parachord = () => {
 
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
-    // For Apple Music, ensure user token from MusicKit JS / localStorage
-    // is synced to electron-store before checking auth
+    // For Apple Music, ensure user token is available in electron-store before checking auth
     if (providerId === 'applemusic') {
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-      // Try to get token from MusicKit instance, localStorage, or authorize
+      // Try to get token from: MusicKit JS instance, localStorage, or native MusicKit
       let userToken = musicKitWeb?.getUserToken() || localStorage.getItem('musickit_user_token') || null;
 
-      if (!userToken && musicKitWeb) {
-        // No token available - need to authorize
-        try {
-          const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
-          const status = musicKitWeb.getAuthStatus();
-          if (!status.configured && devToken) {
-            await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
+      if (!userToken) {
+        // Try MusicKit JS authorization first
+        if (musicKitWeb) {
+          try {
+            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+            const status = musicKitWeb.getAuthStatus();
+            if (!status.configured && devToken) {
+              await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
+            }
+            const authResult = await musicKitWeb.authorize();
+            userToken = authResult.userToken || musicKitWeb.getUserToken();
+          } catch (error) {
+            console.log('[Sync] MusicKit JS auth failed, trying native MusicKit:', error.message);
           }
-          const authResult = await musicKitWeb.authorize();
-          userToken = authResult.userToken || musicKitWeb.getUserToken();
-          if (!userToken) {
-            showToast('Apple Music authorization failed. Please try again.', 'error');
-            return;
+        }
+
+        // Fallback: try native MusicKit on macOS to get a user token
+        if (!userToken && window.electron?.musicKit) {
+          try {
+            console.log('[Sync] Trying native MusicKit for user token...');
+            const result = await window.electron.musicKit.fetchUserToken();
+            if (result.success && result.userToken) {
+              userToken = result.userToken;
+              console.log('[Sync] Got user token from native MusicKit');
+            }
+          } catch (error) {
+            console.error('[Sync] Native MusicKit token fetch failed:', error);
           }
-        } catch (error) {
-          console.error('[Sync] Apple Music auth failed:', error);
-          showToast('Apple Music authorization failed. Please try again.', 'error');
+        }
+
+        if (!userToken) {
+          showToast('Apple Music authorization failed. Please reconnect Apple Music and try again.', 'error');
           return;
         }
-      } else if (!userToken) {
-        showToast('Apple Music is not available. Please connect Apple Music first.', 'error');
-        return;
       }
 
       // Ensure token is persisted to electron-store for main process

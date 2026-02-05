@@ -369,6 +369,8 @@ contextBridge.exposeInMainWorld('electron', {
     getCachedAuth: () => ipcRenderer.invoke('musickit:get-cached-auth'),
     // Request user authorization (shows Apple ID sign-in)
     authorize: () => ipcRenderer.invoke('musickit:authorize'),
+    // Fetch a Music User Token for REST API access (requires native MusicKit + dev token)
+    fetchUserToken: () => ipcRenderer.invoke('musickit:fetch-user-token'),
     // Search for songs
     search: (query, limit = 25) => ipcRenderer.invoke('musickit:search', query, limit),
     // Resolve a track by artist/title/album

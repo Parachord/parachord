@@ -336,6 +336,10 @@ class MusicKitBridge extends EventEmitter {
     return result;
   }
 
+  async fetchUserToken(developerToken) {
+    return this.send('fetchUserToken', { developerToken });
+  }
+
   async search(query, limit = 25) {
     return this.send('search', { query, limit });
   }
