@@ -21,7 +21,7 @@ Go to **Settings > Plug-ins** and enable the sources you want to use:
 
 **Recommended:**
 - **Spotify** (requires Premium) - Full playback and library sync
-- **Apple Music** (macOS only) - Playback via MusicKit
+- **Apple Music** - Full playback via MusicKit (sign in with your Apple ID)
 - **YouTube** - Stream audio from YouTube
 - **Bandcamp** - Support independent artists
 - **Local Files** - Your own music library
@@ -38,11 +38,11 @@ If you have Spotify Premium:
 3. Authorize in the browser
 4. Once connected, click **Sync Collection** to import your saved albums and playlists
 
-### 3. Connect Apple Music (macOS)
+### 3. Connect Apple Music
 
 1. Go to **Settings > Plug-ins > Apple Music**
-2. Click **Authorize** - this will prompt for Music app access
-3. Your Apple Music library will be available for playback
+2. Click **Authorize** — you'll be prompted to sign in with your Apple ID
+3. Your Apple Music subscription will be available for full playback
 
 ### 4. Install the Browser Extension
 
@@ -112,7 +112,7 @@ https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
 
-- **Apple Music**: macOS only, playback support (no library sync yet)
+- **Apple Music**: Playback support (no library sync yet)
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
 - **YouTube**: Audio-only, quality varies - add the browser extension to improve the experience
 - **Auto-updates**: Not yet enabled - check releases manually

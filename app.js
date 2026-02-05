@@ -4547,7 +4547,30 @@ const Parachord = () => {
 
   // Resolver sync settings
   const [resolverSyncSettings, setResolverSyncSettings] = useState({});
-  const [syncStatus, setSyncStatus] = useState({}); // { spotify: { lastSyncAt, inProgress, error } }
+  const [syncStatus, setSyncStatus] = useState({});
+  const [syncMenuOpen, setSyncMenuOpen] = useState(false);
+
+  // Provider branding for sync UI
+  const syncProviderConfig = {
+    spotify: {
+      name: 'Spotify',
+      color: '#1DB954',
+      colorHover: '#1ed760',
+      capabilities: { tracks: true, albums: true, artists: true, playlists: true },
+      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 24 24', fill: '#ffffff' },
+        React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+      )
+    },
+    applemusic: {
+      name: 'Apple Music',
+      color: '#FA243C',
+      colorHover: '#ff3b52',
+      capabilities: { tracks: true, albums: true, artists: false, playlists: true },
+      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 24 24', fill: '#ffffff' },
+        React.createElement('path', { d: 'M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043A5.022 5.022 0 0019.7.165C18.757.038 17.808 0 16.86.002 15.22.005 13.579 0 11.94.002c-1.614 0-3.228 0-4.843.005C6.203.01 5.31.04 4.42.2a5.1 5.1 0 00-1.976.865C1.424 1.818.69 2.88.393 4.166A8.563 8.563 0 00.12 6.102c-.032.498-.038.998-.036 1.497v8.802c0 .5.004 1 .036 1.497.046.77.157 1.52.393 2.236.317 1.31 1.062 2.31 2.18 3.043.49.325 1.026.555 1.604.695.876.213 1.77.26 2.664.276 1.634.027 3.27.02 4.905.02 1.613 0 3.228 0 4.842-.005.893-.003 1.787-.03 2.664-.276a5.022 5.022 0 001.604-.695c1.118-.733 1.863-1.733 2.18-3.043.236-.716.347-1.467.393-2.236.032-.498.038-.998.036-1.497V7.6c.002-.5-.002-1-.038-1.497zM17.897 12c0 2.04-.004 4.082.005 6.123.003.657-.134 1.014-.788 1.14-.535.104-1.058.23-1.603.256-1.14.056-1.804-.58-1.92-1.634-.07-.642.175-1.18.652-1.592.336-.29.726-.48 1.134-.631.466-.172.946-.3 1.386-.541.21-.115.3-.268.3-.507V8.464c0-.252-.074-.422-.35-.437-.46-.023-.916.048-1.37.114l-4.467.755c-.367.063-.48.2-.488.57-.015.89-.004 1.78-.006 2.67 0 2.07.005 4.14-.004 6.21 0 .633-.076 1.252-.534 1.746-.498.537-1.122.68-1.81.641-.505-.028-.985-.16-1.408-.434-.737-.477-1.004-1.32-.704-2.2.175-.516.516-.887.98-1.14.373-.204.78-.342 1.178-.49.277-.103.56-.197.818-.34.195-.11.278-.266.278-.494V5.636c0-.376.1-.538.466-.618 1.293-.285 2.588-.558 3.884-.828.863-.18 1.728-.352 2.592-.524.284-.057.42.024.42.333V12z' })
+      )
+    }
+  };
 
   // Sync setup modal state
   const [syncSetupModal, setSyncSetupModal] = useState({
@@ -7191,14 +7214,68 @@ const Parachord = () => {
 
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
-    // Check auth first
+    // For Apple Music, ensure user token is available in electron-store before checking auth
+    if (providerId === 'applemusic') {
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      // Try to get token from: MusicKit JS instance, localStorage, or native MusicKit
+      let userToken = musicKitWeb?.getUserToken() || localStorage.getItem('musickit_user_token') || null;
+
+      if (!userToken) {
+        // Try MusicKit JS authorization first
+        if (musicKitWeb) {
+          try {
+            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+            const status = musicKitWeb.getAuthStatus();
+            if (!status.configured && devToken) {
+              await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
+            }
+            const authResult = await musicKitWeb.authorize();
+            userToken = authResult.userToken || musicKitWeb.getUserToken();
+          } catch (error) {
+            console.log('[Sync] MusicKit JS auth failed, trying native MusicKit:', error.message);
+          }
+        }
+
+        // Fallback: try native MusicKit on macOS to get a user token
+        if (!userToken && window.electron?.musicKit) {
+          try {
+            console.log('[Sync] Trying native MusicKit for user token...');
+            const result = await window.electron.musicKit.fetchUserToken();
+            if (result.success && result.userToken) {
+              userToken = result.userToken;
+              console.log('[Sync] Got user token from native MusicKit');
+            }
+          } catch (error) {
+            console.error('[Sync] Native MusicKit token fetch failed:', error);
+          }
+        }
+
+        if (!userToken) {
+          showToast('Apple Music authorization failed. Please reconnect Apple Music and try again.', 'error');
+          return;
+        }
+      }
+
+      // Ensure token is persisted to electron-store for main process
+      localStorage.setItem('musickit_user_token', userToken);
+      if (window.electron?.store) {
+        await window.electron.store.set('applemusic_user_token', userToken);
+      }
+    }
+
+    // Check auth
     const authStatus = await window.electron.sync.checkAuth(providerId);
     if (!authStatus.authenticated) {
-      // Trigger auth flow
       if (providerId === 'spotify') {
         await window.electron.spotify.authenticate();
+        // Spotify opens external browser, user needs to re-trigger after auth
+        return;
       }
-      return;
+      // Apple Music auth was handled above, if we still fail show error
+      if (providerId === 'applemusic') {
+        showToast('Apple Music sync authentication failed. Please reconnect your Apple Music account.', 'error');
+        return;
+      }
     }
 
     // Load existing settings
@@ -24570,9 +24647,12 @@ ${tracks}
           console.log('🍎 MusicKit JS authorized successfully');
           setAppleMusicConnected(true);
 
-          // Store the music user token for session persistence
+          // Store the music user token for session persistence and sync
           if (authResult.userToken) {
             localStorage.setItem('musickit_user_token', authResult.userToken);
+            if (window.electron?.store) {
+              await window.electron.store.set('applemusic_user_token', authResult.userToken);
+            }
             console.log('🍎 Music user token stored');
           }
 
@@ -30738,6 +30818,8 @@ useEffect(() => {
                   let sourceLabel = null;
                   if (source === 'spotify-sync' || source === 'spotify-import' || source === 'spotify') {
                     sourceLabel = 'Spotify';
+                  } else if (source === 'applemusic-sync' || source === 'applemusic-import' || source === 'applemusic') {
+                    sourceLabel = 'Apple Music';
                   } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
                     sourceLabel = 'Hosted XSPF';
                   } else if (source === 'imported-xspf') {
@@ -33173,20 +33255,97 @@ useEffect(() => {
                     )
                   )
               ),
-              // Sync Collection button - styled like Add Friend button (hide on friends tab)
-              collectionTab !== 'friends' && React.createElement('button', {
-                onClick: () => openSyncSetupModal('spotify'),
-                className: `ml-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                  resolverSyncSettings.spotify?.enabled
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : 'bg-gray-600 hover:bg-gray-700 text-white'
-                }`,
-                title: 'Sync your Spotify library'
+              // Sync Collection button with provider dropdown (hide on friends tab)
+              collectionTab !== 'friends' && React.createElement('div', {
+                style: { position: 'relative', marginLeft: '12px' }
               },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                React.createElement('button', {
+                  onClick: () => setSyncMenuOpen(!syncMenuOpen),
+                  className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                  style: {
+                    backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#22c55e' : '#4b5563',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer'
+                  },
+                  title: 'Sync your music library'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                  ),
+                  Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
+                  React.createElement('svg', { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
+                  )
                 ),
-                resolverSyncSettings.spotify?.enabled ? 'Synced' : 'Sync'
+                // Provider dropdown menu
+                syncMenuOpen && React.createElement('div', {
+                  style: {
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '4px',
+                    width: '200px',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                    border: '1px solid rgba(0, 0, 0, 0.08)',
+                    zIndex: 50,
+                    overflow: 'hidden'
+                  }
+                },
+                  Object.entries(syncProviderConfig).map(([pid, config]) =>
+                    React.createElement('button', {
+                      key: pid,
+                      onClick: () => { setSyncMenuOpen(false); openSyncSetupModal(pid); },
+                      style: {
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'background-color 100ms ease'
+                      },
+                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)',
+                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                    },
+                      React.createElement('div', {
+                        style: {
+                          width: '28px', height: '28px', borderRadius: '8px',
+                          backgroundColor: config.color,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0
+                        }
+                      },
+                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 24 24', fill: '#ffffff' },
+                          pid === 'spotify'
+                            ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                            : React.createElement('path', { d: 'M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043A5.022 5.022 0 0019.7.165C18.757.038 17.808 0 16.86.002 15.22.005 13.579 0 11.94.002c-1.614 0-3.228 0-4.843.005C6.203.01 5.31.04 4.42.2a5.1 5.1 0 00-1.976.865C1.424 1.818.69 2.88.393 4.166A8.563 8.563 0 00.12 6.102c-.032.498-.038.998-.036 1.497v8.802c0 .5.004 1 .036 1.497.046.77.157 1.52.393 2.236.317 1.31 1.062 2.31 2.18 3.043.49.325 1.026.555 1.604.695.876.213 1.77.26 2.664.276 1.634.027 3.27.02 4.905.02 1.613 0 3.228 0 4.842-.005.893-.003 1.787-.03 2.664-.276a5.022 5.022 0 001.604-.695c1.118-.733 1.863-1.733 2.18-3.043.236-.716.347-1.467.393-2.236.032-.498.038-.998.036-1.497V7.6c.002-.5-.002-1-.038-1.497zM17.897 12c0 2.04-.004 4.082.005 6.123.003.657-.134 1.014-.788 1.14-.535.104-1.058.23-1.603.256-1.14.056-1.804-.58-1.92-1.634-.07-.642.175-1.18.652-1.592.336-.29.726-.48 1.134-.631.466-.172.946-.3 1.386-.541.21-.115.3-.268.3-.507V8.464c0-.252-.074-.422-.35-.437-.46-.023-.916.048-1.37.114l-4.467.755c-.367.063-.48.2-.488.57-.015.89-.004 1.78-.006 2.67 0 2.07.005 4.14-.004 6.21 0 .633-.076 1.252-.534 1.746-.498.537-1.122.68-1.81.641-.505-.028-.985-.16-1.408-.434-.737-.477-1.004-1.32-.704-2.2.175-.516.516-.887.98-1.14.373-.204.78-.342 1.178-.49.277-.103.56-.197.818-.34.195-.11.278-.266.278-.494V5.636c0-.376.1-.538.466-.618 1.293-.285 2.588-.558 3.884-.828.863-.18 1.728-.352 2.592-.524.284-.057.42.024.42.333V12z' })
+                        )
+                      ),
+                      config.name,
+                      resolverSyncSettings[pid]?.enabled && React.createElement('span', {
+                        style: {
+                          marginLeft: 'auto',
+                          width: '8px', height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: '#22c55e'
+                        }
+                      })
+                    )
+                  )
+                ),
+                // Click-away to close dropdown
+                syncMenuOpen && React.createElement('div', {
+                  style: { position: 'fixed', inset: 0, zIndex: 49 },
+                  onClick: () => setSyncMenuOpen(false)
+                })
               ),
               // Add Friend button in header (only on friends tab)
               collectionTab === 'friends' && React.createElement('button', {
@@ -41764,8 +41923,8 @@ useEffect(() => {
             )
           ),
 
-          // Library Sync Section - shown for Spotify - Cinematic Light design
-          selectedResolver.id === 'spotify' && React.createElement('div', {
+          // Library Sync Section - shown for providers that support sync
+          (selectedResolver.id === 'spotify' || selectedResolver.id === 'applemusic') && React.createElement('div', {
             style: {
               marginTop: '20px',
               padding: '16px',
@@ -41784,7 +41943,7 @@ useEffect(() => {
                 marginBottom: '14px'
               }
             }, 'Library Sync'),
-            resolverSyncSettings.spotify?.enabled
+            resolverSyncSettings[selectedResolver.id]?.enabled
               ? React.createElement('div', {
                   style: { display: 'flex', flexDirection: 'column', gap: '12px' }
                 },
@@ -41814,8 +41973,8 @@ useEffect(() => {
                     React.createElement('span', {
                       style: { color: '#1f2937' }
                     },
-                      resolverSyncSettings.spotify?.lastSyncAt
-                        ? new Date(resolverSyncSettings.spotify.lastSyncAt).toLocaleString()
+                      resolverSyncSettings[selectedResolver.id]?.lastSyncAt
+                        ? new Date(resolverSyncSettings[selectedResolver.id].lastSyncAt).toLocaleString()
                         : 'Never'
                     )
                   ),
@@ -41824,7 +41983,7 @@ useEffect(() => {
                     style: { display: 'flex', gap: '8px', marginTop: '4px' }
                   },
                     React.createElement('button', {
-                      onClick: () => openSyncSetupModal('spotify'),
+                      onClick: () => openSyncSetupModal(selectedResolver.id),
                       style: {
                         padding: '8px 14px',
                         backgroundColor: 'rgba(0, 0, 0, 0.04)',
@@ -41840,7 +41999,7 @@ useEffect(() => {
                       onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; }
                     }, 'Manage Sync'),
                     React.createElement('button', {
-                      onClick: () => setStopSyncDialog({ open: true, providerId: 'spotify' }),
+                      onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }),
                       style: {
                         padding: '8px 14px',
                         backgroundColor: 'transparent',
@@ -41857,11 +42016,11 @@ useEffect(() => {
                   )
                 )
               : React.createElement('button', {
-                  onClick: () => openSyncSetupModal('spotify'),
+                  onClick: () => openSyncSetupModal(selectedResolver.id),
                   style: {
                     width: '100%',
                     padding: '10px 16px',
-                    backgroundColor: '#1DB954',
+                    backgroundColor: syncProviderConfig[selectedResolver.id]?.color || '#22c55e',
                     color: '#ffffff',
                     borderRadius: '10px',
                     fontWeight: '500',
@@ -41870,8 +42029,8 @@ useEffect(() => {
                     cursor: 'pointer',
                     transition: 'background-color 150ms ease'
                   },
-                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
-                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
+                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.colorHover || '#16a34a',
+                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[selectedResolver.id]?.color || '#22c55e'
                 }, 'Set Up Library Sync')
           ),
 
@@ -45511,11 +45670,11 @@ useEffect(() => {
         },
         onClick: (e) => e.stopPropagation()
       },
-        // Header with Spotify green accent bar
+        // Header with provider accent bar
         React.createElement('div', {
           style: {
             height: '4px',
-            background: 'linear-gradient(90deg, #1DB954 0%, #1ed760 100%)'
+            background: `linear-gradient(90deg, ${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'} 0%, ${syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760'} 100%)`
           }
         }),
         React.createElement('div', {
@@ -45525,23 +45684,15 @@ useEffect(() => {
           React.createElement('div', { className: 'flex items-center gap-3' },
             React.createElement('div', {
               className: 'w-10 h-10 rounded-xl flex items-center justify-center',
-              style: { backgroundColor: '#1DB954' }
+              style: { backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' }
             },
-              // Spotify icon
-              React.createElement('svg', {
-                className: 'w-6 h-6',
-                viewBox: '0 0 24 24',
-                fill: '#ffffff'
-              },
-                React.createElement('path', {
-                  d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z'
-                })
-              )
+              // Provider icon
+              syncProviderConfig[syncSetupModal.providerId]?.icon || null
             ),
             React.createElement('div', null,
               React.createElement('h2', {
                 style: { fontSize: '17px', fontWeight: '600', color: '#1f2937' }
-              }, syncSetupModal.step === 'complete' ? 'Sync Complete' : 'Sync Your Spotify Library'),
+              }, syncSetupModal.step === 'complete' ? 'Sync Complete' : `Sync Your ${syncProviderConfig[syncSetupModal.providerId]?.name || 'Music'} Library`),
               React.createElement('p', {
                 style: { fontSize: '13px', color: '#6b7280', marginTop: '2px' }
               },
@@ -45588,42 +45739,47 @@ useEffect(() => {
           syncSetupModal.step === 'options' && React.createElement('div', {
             style: { display: 'flex', flexDirection: 'column', gap: '10px' }
           },
-            [
-              { key: 'syncPlaylists', label: 'Playlists', desc: 'Select which playlists to sync' },
-              { key: 'syncTracks', label: 'Liked Songs', desc: 'Your saved tracks' },
-              { key: 'syncAlbums', label: 'Saved Albums', desc: 'Albums in your library' },
-              { key: 'syncArtists', label: 'Followed Artists', desc: 'Artists you follow' }
-            ].map(option =>
-              React.createElement('label', {
-                key: option.key,
-                className: 'flex items-center gap-3 cursor-pointer transition-colors',
-                style: {
-                  padding: '14px 16px',
-                  backgroundColor: syncSetupModal.settings[option.key] ? 'rgba(29, 185, 84, 0.06)' : 'rgba(0, 0, 0, 0.02)',
-                  borderRadius: '12px',
-                  border: syncSetupModal.settings[option.key] ? '1px solid rgba(29, 185, 84, 0.3)' : '1px solid rgba(0, 0, 0, 0.06)'
-                }
-              },
-                React.createElement('input', {
-                  type: 'checkbox',
-                  checked: syncSetupModal.settings[option.key],
-                  onChange: (e) => setSyncSetupModal(prev => ({
-                    ...prev,
-                    settings: { ...prev.settings, [option.key]: e.target.checked }
-                  })),
+            (() => {
+              const providerCaps = syncProviderConfig[syncSetupModal.providerId]?.capabilities || {};
+              const providerColor = syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954';
+              return [
+                { key: 'syncPlaylists', cap: 'playlists', label: 'Playlists', desc: 'Select which playlists to sync' },
+                { key: 'syncTracks', cap: 'tracks', label: 'Liked Songs', desc: 'Your saved tracks' },
+                { key: 'syncAlbums', cap: 'albums', label: 'Saved Albums', desc: 'Albums in your library' },
+                { key: 'syncArtists', cap: 'artists', label: 'Followed Artists', desc: 'Artists you follow' }
+              ].filter(option => providerCaps[option.cap] !== false)
+              .map(option =>
+                React.createElement('label', {
+                  key: option.key,
+                  className: 'flex items-center gap-3 cursor-pointer transition-colors',
                   style: {
-                    width: '18px',
-                    height: '18px',
-                    accentColor: '#1DB954',
-                    cursor: 'pointer'
+                    padding: '14px 16px',
+                    backgroundColor: syncSetupModal.settings[option.key] ? `${providerColor}10` : 'rgba(0, 0, 0, 0.02)',
+                    borderRadius: '12px',
+                    border: syncSetupModal.settings[option.key] ? `1px solid ${providerColor}4D` : '1px solid rgba(0, 0, 0, 0.06)'
                   }
-                }),
-                React.createElement('div', null,
-                  React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' } }, option.label),
-                  React.createElement('div', { style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' } }, option.desc)
+                },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked: syncSetupModal.settings[option.key],
+                    onChange: (e) => setSyncSetupModal(prev => ({
+                      ...prev,
+                      settings: { ...prev.settings, [option.key]: e.target.checked }
+                    })),
+                    style: {
+                      width: '18px',
+                      height: '18px',
+                      accentColor: providerColor,
+                      cursor: 'pointer'
+                    }
+                  }),
+                  React.createElement('div', null,
+                    React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' } }, option.label),
+                    React.createElement('div', { style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' } }, option.desc)
+                  )
                 )
-              )
-            )
+              );
+            })()
           ),
 
           // Playlists step
@@ -45688,7 +45844,7 @@ useEffect(() => {
                       style: {
                         fontSize: '12px',
                         fontWeight: '500',
-                        color: '#1DB954',
+                        color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
                         backgroundColor: 'transparent',
                         border: 'none',
                         cursor: 'pointer'
@@ -45732,7 +45888,7 @@ useEffect(() => {
                           style: {
                             padding: '10px 12px',
                             borderRadius: '10px',
-                            backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? 'rgba(29, 185, 84, 0.06)' : 'transparent'
+                            backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? `${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'}10` : 'transparent'
                           },
                           onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)'; },
                           onMouseLeave: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'transparent'; }
@@ -45748,7 +45904,7 @@ useEffect(() => {
                                   : prev.selectedPlaylists.filter(id => id !== playlist.externalId)
                               }));
                             },
-                            style: { width: '16px', height: '16px', accentColor: '#1DB954', cursor: 'pointer' }
+                            style: { width: '16px', height: '16px', accentColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954', cursor: 'pointer' }
                           }),
                           playlist.image && React.createElement('img', {
                             src: playlist.image,
@@ -45786,7 +45942,7 @@ useEffect(() => {
                 height: '48px',
                 margin: '0 auto 16px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                backgroundColor: `${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'}1A`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -45794,7 +45950,7 @@ useEffect(() => {
             },
               React.createElement('svg', {
                 className: 'animate-spin',
-                style: { width: '24px', height: '24px', color: '#1DB954' },
+                style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' },
                 fill: 'none',
                 viewBox: '0 0 24 24'
               },
@@ -45814,7 +45970,7 @@ useEffect(() => {
               React.createElement('div', {
                 style: {
                   height: '100%',
-                  backgroundColor: '#1DB954',
+                  backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
                   borderRadius: '3px',
                   transition: 'width 300ms ease-out',
                   width: `${(syncSetupModal.progress.current / syncSetupModal.progress.total) * 100}%`
@@ -45834,14 +45990,14 @@ useEffect(() => {
                 height: '48px',
                 margin: '0 auto 20px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                backgroundColor: `${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'}1A`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }
             },
               React.createElement('svg', {
-                style: { width: '24px', height: '24px', color: '#1DB954' },
+                style: { width: '24px', height: '24px', color: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954' },
                 fill: 'none',
                 viewBox: '0 0 24 24',
                 stroke: 'currentColor'
@@ -45939,14 +46095,14 @@ useEffect(() => {
                 fontSize: '14px',
                 fontWeight: '500',
                 color: '#ffffff',
-                backgroundColor: '#1DB954',
+                backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
-              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'
             }, syncSetupModal.settings.syncPlaylists ? 'Next' : 'Start Sync')
           ),
 
@@ -45974,14 +46130,14 @@ useEffect(() => {
                 fontSize: '14px',
                 fontWeight: '500',
                 color: '#ffffff',
-                backgroundColor: '#1DB954',
+                backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 transition: 'background-color 150ms ease'
               },
-              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
-              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
+              onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760',
+              onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'
             }, 'Start Sync')
           ),
 
@@ -45993,14 +46149,14 @@ useEffect(() => {
               fontSize: '14px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: '#1DB954',
+              backgroundColor: syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer',
               transition: 'background-color 150ms ease'
             },
-            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = '#1ed760',
-            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = '#1DB954'
+            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.colorHover || '#1ed760',
+            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'
           }, 'Done')
         )
       )
@@ -46081,8 +46237,8 @@ useEffect(() => {
                     }),
                     React.createElement('div', { style: { flex: 1 } },
                       React.createElement('div', {
-                        style: { fontSize: '14px', fontWeight: '500', color: '#1f2937', textTransform: 'capitalize' }
-                      }, providerId),
+                        style: { fontSize: '14px', fontWeight: '500', color: '#1f2937' }
+                      }, syncProviderConfig[providerId]?.name || providerId),
                       React.createElement('div', {
                         style: { fontSize: '12px', color: '#6b7280', marginTop: '2px' }
                       }, isInProgress
@@ -46193,14 +46349,14 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: Object.values(syncStatus).some(s => s?.inProgress) ? '#9ca3af' : '#ffffff',
-              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'rgba(0, 0, 0, 0.04)' : '#1DB954',
+              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'rgba(0, 0, 0, 0.04)' : '#22c55e',
               border: 'none',
               borderRadius: '8px',
               cursor: Object.values(syncStatus).some(s => s?.inProgress) ? 'not-allowed' : 'pointer',
               transition: 'background-color 150ms ease'
             },
-            onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#1ed760'; },
-            onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#1DB954'; }
+            onMouseEnter: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#16a34a'; },
+            onMouseLeave: (e) => { if (!Object.values(syncStatus).some(s => s?.inProgress)) e.currentTarget.style.backgroundColor = '#22c55e'; }
           }, Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing...' : 'Sync Now')
         )
       )
