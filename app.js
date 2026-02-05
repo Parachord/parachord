@@ -3710,6 +3710,8 @@ KEY DEFINITIONS:
 - ALBUM = A collection of tracks released together (e.g., "Punisher" by Phoebe Bridgers contains 11 tracks)
 - "NEW" MUSIC = Released in the last 2 years (2024-2026). Do NOT recommend music from 2020 or earlier as "new"
 - "RECENT" = Last 1-2 years. "CLASSIC" = 10+ years old.
+- "RECOMMENDATIONS" = Music the user has NOT listened to (or very little). Use their personal data (listening history, favorite artists/genres) to discover NEW music they might enjoy. Recommendations are for discovery.
+- "SUGGESTIONS" = Music the user already knows and likes. These are familiar favorites to play, not new discoveries. Suggestions are for "what should I put on?" moments.
 
 PLAYING ALBUMS vs TRACKS:
 - To play a SINGLE TRACK: use the "play" tool with artist and title - starts immediately
