@@ -4058,6 +4058,55 @@ class AIChatService {
       lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
     }
 
+    // Add user's playlists for context
+    if (context.playlists && context.playlists.length > 0) {
+      lines.push('\nUSER\'S PLAYLISTS:');
+      context.playlists.slice(0, 15).forEach(p => {
+        const samples = p.sampleTracks?.length > 0
+          ? ` (e.g. ${p.sampleTracks.map(t => `"${t.title}"`).join(', ')})`
+          : '';
+        lines.push(`  • "${p.name}" - ${p.trackCount} tracks${samples}`);
+      });
+      lines.push('  User can ask to play from these playlists or for music similar to them.');
+    }
+
+    // Add time context for mood-aware recommendations
+    if (context.timeContext) {
+      const { timeOfDay, dayOfWeek, isWeekend } = context.timeContext;
+      lines.push(`\nTIME CONTEXT: ${timeOfDay} on ${dayOfWeek}${isWeekend ? ' (weekend)' : ''}`);
+      lines.push('  Consider this when making mood-based suggestions.');
+    }
+
+    // Add session play history (what was played before current queue)
+    if (context.sessionHistory && context.sessionHistory.length > 0) {
+      lines.push('\nSESSION HISTORY (tracks played earlier this session):');
+      const historyList = context.sessionHistory.slice(-8).map(t => `"${t.title}" by ${t.artist}`).join(', ');
+      lines.push(`  ${historyList}`);
+      lines.push('  Use this to understand current mood/vibe.');
+    }
+
+    // Add recent searches
+    if (context.recentSearches && context.recentSearches.length > 0) {
+      lines.push(`\nRECENT SEARCHES: ${context.recentSearches.slice(0, 5).join(', ')}`);
+      lines.push('  These show what user has been looking for recently.');
+    }
+
+    // Add friend activity
+    if (context.friendActivity && context.friendActivity.length > 0) {
+      lines.push('\nFRIEND ACTIVITY (what friends are listening to):');
+      context.friendActivity.forEach(f => {
+        if (f.track) {
+          lines.push(`  • ${f.name}: "${f.track.title}" by ${f.track.artist}`);
+        }
+      });
+      lines.push('  Can suggest music based on what friends are enjoying.');
+    }
+
+    // Note if user has local library
+    if (context.hasLocalLibrary) {
+      lines.push('\nNOTE: User has local music files enabled. When searching, results may include tracks from their personal library.');
+    }
+
     const now = new Date();
     const currentDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const currentYear = now.getFullYear();
@@ -12418,6 +12467,56 @@ const Parachord = () => {
       // Get recommendation blocklist
       const blocklist = recommendationBlocklistRef.current || { artists: [], albums: [], tracks: [] };
 
+      // Get user's playlists (names, track counts, sample tracks for context)
+      const userPlaylists = (playlists || []).slice(0, 20).map(p => ({
+        name: p.title || p.name,
+        trackCount: p.tracks?.length || 0,
+        // Include first 3 track samples to help AI understand playlist content
+        sampleTracks: (p.tracks || []).slice(0, 3).map(t => ({
+          title: t.title,
+          artist: t.artist
+        }))
+      }));
+
+      // Get time context for mood-aware recommendations
+      const now = new Date();
+      const timeContext = {
+        hour: now.getHours(),
+        dayOfWeek: now.toLocaleDateString('en-US', { weekday: 'long' }),
+        isWeekend: now.getDay() === 0 || now.getDay() === 6,
+        timeOfDay: now.getHours() < 6 ? 'late night' :
+                   now.getHours() < 12 ? 'morning' :
+                   now.getHours() < 17 ? 'afternoon' :
+                   now.getHours() < 21 ? 'evening' : 'night'
+      };
+
+      // Get session play history (tracks played before current queue)
+      const sessionHistory = (playHistoryRef.current || []).slice(-15).map(t => ({
+        title: t.title,
+        artist: t.artist,
+        album: t.album
+      }));
+
+      // Get recent searches (what user has been looking for)
+      const recentSearches = (searchHistory || []).slice(0, 10).map(s =>
+        typeof s === 'string' ? s : s.query || s.term || ''
+      ).filter(Boolean);
+
+      // Get friend activity if available (what friends are listening to)
+      const friendActivity = (friends || [])
+        .filter(f => f.nowPlaying || f.recentTrack)
+        .slice(0, 5)
+        .map(f => ({
+          name: f.name || f.username,
+          track: f.nowPlaying || f.recentTrack ? {
+            title: (f.nowPlaying || f.recentTrack).title,
+            artist: (f.nowPlaying || f.recentTrack).artist
+          } : null
+        }));
+
+      // Check if local files resolver is active and has content
+      const localFilesActive = activeResolversRef.current?.includes('localfiles');
+
       return {
         nowPlaying: nowPlaying ? {
           title: nowPlaying.title,
@@ -12430,7 +12529,14 @@ const Parachord = () => {
         shuffle: shuffle,
         listeningHistory: listeningHistory,
         collection: collection,
-        blocklist: blocklist
+        blocklist: blocklist,
+        // New context fields
+        playlists: userPlaylists,
+        timeContext: timeContext,
+        sessionHistory: sessionHistory,
+        recentSearches: recentSearches,
+        friendActivity: friendActivity,
+        hasLocalLibrary: localFilesActive
       };
     };
 
