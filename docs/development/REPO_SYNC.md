@@ -7,6 +7,7 @@ This monorepo contains components that are also published to dedicated repositor
 | Component | Source Path | Dedicated Repo |
 |-----------|-------------|----------------|
 | Browser Extension | `parachord-extension/` | [Parachord/parachord-browser-extension](https://github.com/Parachord/parachord-browser-extension) |
+| Raycast Extension | `raycast-extension/` | [Parachord/raycast-parachord](https://github.com/Parachord/raycast-parachord) |
 
 ## How It Works
 
