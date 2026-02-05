@@ -9141,8 +9141,15 @@ const Parachord = () => {
 
   // Persist AI chat history per provider (only after cache is loaded to avoid overwriting)
   const aiChatHistoriesRef = useRef({}); // Store histories for all providers
+  const prevProviderRef = useRef(null); // Track provider changes to avoid save/load race condition
+  const chatHistoryLoadedRef = useRef(false); // Track if history has been loaded for current provider
+
   useEffect(() => {
-    if (cacheLoaded && window.electron?.store && selectedChatProvider) {
+    // Don't save if:
+    // - Cache not loaded yet
+    // - No provider selected
+    // - History hasn't been loaded yet for this provider (prevents overwriting with empty array)
+    if (cacheLoaded && window.electron?.store && selectedChatProvider && chatHistoryLoadedRef.current) {
       // Update the history for current provider
       aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
       window.electron.store.set('ai_chat_histories', aiChatHistoriesRef.current);
@@ -9150,10 +9157,10 @@ const Parachord = () => {
   }, [aiChatMessages, cacheLoaded, selectedChatProvider]);
 
   // Load chat history when provider changes
-  const prevProviderRef = useRef(null);
   useEffect(() => {
     if (cacheLoaded && selectedChatProvider && selectedChatProvider !== prevProviderRef.current) {
       prevProviderRef.current = selectedChatProvider;
+      chatHistoryLoadedRef.current = false; // Reset loaded flag for new provider
       const history = aiChatHistoriesRef.current[selectedChatProvider] || [];
       setAiChatMessages(history);
       // Also restore to service if it exists
@@ -9168,6 +9175,11 @@ const Parachord = () => {
         return prev;
       });
       console.log('💬 Loaded chat history for provider:', selectedChatProvider, '-', history.length, 'messages');
+      // Mark history as loaded so saves can proceed
+      // Use setTimeout to ensure this runs after React processes the state updates
+      setTimeout(() => {
+        chatHistoryLoadedRef.current = true;
+      }, 0);
     }
   }, [selectedChatProvider, cacheLoaded]);
 
