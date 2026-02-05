@@ -12458,7 +12458,9 @@ const Parachord = () => {
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderRadius: '8px',
         cursor: 'pointer',
-        transition: 'background-color 0.15s'
+        transition: 'background-color 0.15s',
+        minWidth: 0,
+        maxWidth: '100%'
       },
       onMouseEnter: (e) => {
         e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
@@ -12737,7 +12739,9 @@ const Parachord = () => {
             backgroundColor: 'rgba(255, 255, 255, 0.05)',
             borderRadius: '8px',
             cursor: 'pointer',
-            transition: 'background-color 0.15s'
+            transition: 'background-color 0.15s',
+            minWidth: 0,
+            maxWidth: '100%'
           },
           onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; },
           onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; }
@@ -12828,8 +12832,8 @@ const Parachord = () => {
             key: `line-${keyCounter++}`,
             style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '4px' : 0 }
           },
-            React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px' } }, `${listMatch[1]}.`),
-            React.createElement('span', { style: { flex: 1 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
+            React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px', flexShrink: 0 } }, `${listMatch[1]}.`),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
           )
         );
       } else if (line.trim() === '') {
@@ -39313,7 +39317,8 @@ useEffect(() => {
                         fontSize: '14px',
                         lineHeight: '1.5',
                         whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word'
+                        wordBreak: 'break-word',
+                        overflow: 'hidden'
                       }
                     }, renderChatContent(msg.content, msg.role === 'user'))
                   )
