@@ -12550,6 +12550,85 @@ const Parachord = () => {
       }
     };
 
+    // Separate handler for play button click (plays album instead of opening page)
+    const handlePlayButtonClick = async (e) => {
+      e.stopPropagation(); // Don't trigger the card's onClick
+      closeAiChat();
+
+      if (type === 'track') {
+        // For tracks, just call the regular handleClick
+        handleClick();
+        return;
+      }
+
+      if (type === 'album') {
+        // Search for the album and play all its tracks
+        console.log(`ChatCard: Playing album "${title}" by "${artist}"`);
+        setTrackLoading(true);
+
+        try {
+          // Search for the album using resolvers
+          const query = `${artist} ${title}`;
+          const results = await searchResolvers(query);
+
+          if (results && results.length > 0) {
+            // Find tracks from this album
+            const albumTracks = results.filter(r =>
+              r.album?.toLowerCase() === title.toLowerCase() &&
+              r.artist?.toLowerCase() === artist.toLowerCase()
+            );
+
+            if (albumTracks.length > 0) {
+              // Clear queue and play first track, queue the rest
+              clearQueue();
+              const firstTrack = {
+                ...albumTracks[0],
+                id: `chat-album-${Date.now()}-0`,
+                _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+              };
+              setCurrentTrack(firstTrack);
+              await handlePlayRef.current(firstTrack);
+
+              // Add remaining tracks to queue
+              if (albumTracks.length > 1) {
+                const queueTracks = albumTracks.slice(1).map((t, i) => ({
+                  ...t,
+                  id: `chat-album-${Date.now()}-${i + 1}`,
+                  _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+                }));
+                setCurrentQueue(prev => [...prev, ...queueTracks]);
+              }
+            } else {
+              // No album tracks found, try playing first result
+              const firstTrack = {
+                ...results[0],
+                id: `chat-album-${Date.now()}`,
+                _playbackContext: { type: 'aiChat', name: 'Shuffleupagus' }
+              };
+              clearQueue();
+              setCurrentTrack(firstTrack);
+              await handlePlayRef.current(firstTrack);
+            }
+          } else {
+            setTrackLoading(false);
+            showConfirmDialog({
+              type: 'error',
+              title: 'Album Not Found',
+              message: `Could not find "${title}" by ${artist} on any of your enabled music services.`
+            });
+          }
+        } catch (err) {
+          console.error('Error playing album from chat card:', err);
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: `Failed to play album "${title}" by ${artist}: ${err.message}`
+          });
+        }
+      }
+    };
+
     const hasImage = imageUrl && imageUrl.trim();
 
     const [isHovered, setIsHovered] = useState(false);
@@ -12626,7 +12705,9 @@ const Parachord = () => {
         ),
         // Hover overlay with play button (only for tracks and albums)
         // Styled to match app's standard hover play buttons (bg-black/50, white button, shadow-lg)
+        // For albums: clicking play button plays the album, clicking elsewhere opens album page
         (type === 'track' || type === 'album') && React.createElement('div', {
+          onClick: handlePlayButtonClick,
           style: {
             position: 'absolute',
             inset: 0,
