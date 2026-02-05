@@ -12612,7 +12612,8 @@ const Parachord = () => {
         alignItems: 'center',
         gap: '10px',
         padding: '8px',
-        marginTop: '4px',
+        marginTop: '8px',
+        marginBottom: '8px',
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderRadius: '8px',
         cursor: 'pointer',
@@ -12895,7 +12896,8 @@ const Parachord = () => {
             alignItems: 'center',
             gap: '10px',
             padding: '8px',
-            marginTop: '4px',
+            marginTop: '8px',
+            marginBottom: '8px',
             backgroundColor: 'rgba(255, 255, 255, 0.05)',
             borderRadius: '8px',
             cursor: 'pointer',
@@ -12990,7 +12992,7 @@ const Parachord = () => {
         elements.push(
           React.createElement('div', {
             key: `line-${keyCounter++}`,
-            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '4px' : 0 }
+            style: { display: 'flex', gap: '8px', marginTop: lineIdx > 0 ? '12px' : 0 }
           },
             React.createElement('span', { style: { color: '#9ca3af', minWidth: '20px', flexShrink: 0 } }, `${listMatch[1]}.`),
             React.createElement('div', { style: { flex: 1, minWidth: 0 } }, parseInlineMarkdown(listMatch[2], `item-${lineIdx}`))
