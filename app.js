@@ -3510,6 +3510,15 @@ const djTools = [
       },
       required: ['enabled']
     }
+  },
+  {
+    name: 'collection_radio',
+    description: 'Start Collection Radio - shuffles and plays all tracks from the user\'s collection (saved tracks and local files). Great for when users want to hear their own music on shuffle.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
   }
 ];
 
@@ -3669,6 +3678,13 @@ const executeDjTool = async (name, args, context) => {
         context.setShuffle(args.enabled);
         return { success: true, shuffle: args.enabled };
       }
+      case 'collection_radio': {
+        const result = context.startCollectionRadio();
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
+        return { success: true, trackCount: result.trackCount };
+      }
       default:
         return { success: false, error: `Unknown tool: ${name}` };
     }
@@ -3752,6 +3768,7 @@ AVAILABLE ACTIONS (use these tools):
 - control: pause, resume, skip, previous
 - search: Find tracks (returns results you can then play/queue)
 - shuffle: Enable/disable shuffle mode
+- collection_radio: Start Collection Radio - shuffles and plays all tracks from user's collection
 - block_recommendation: Block an artist/album/track from future recommendations
 
 "PLAY" vs "ADD TO QUEUE":
@@ -3923,7 +3940,8 @@ class AIChatService {
           queue_clear: 'Clearing queue...',
           control: call.arguments?.action === 'pause' ? 'Pausing...' : call.arguments?.action === 'skip' ? 'Skipping...' : 'Controlling playback...',
           create_playlist: 'Creating playlist...',
-          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...'
+          shuffle: call.arguments?.enabled ? 'Enabling shuffle...' : 'Disabling shuffle...',
+          collection_radio: 'Starting Collection Radio...'
         };
         this._reportProgress(toolLabels[call.name] || `Running ${call.name}...`);
 
@@ -4127,6 +4145,7 @@ class AIChatService {
         case 'queue_clear': return 'Queue cleared';
         case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
         case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;
+        case 'collection_radio': return `Started Collection Radio with ${result.trackCount} tracks`;
         default: return `${tool} completed`;
       }
     }).join('. ') + '.';
@@ -5340,6 +5359,7 @@ const Parachord = () => {
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
+  const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
@@ -8028,6 +8048,13 @@ const Parachord = () => {
               setTimeout(() => {
                 handleAiChatSendRef.current(params.prompt);
               }, 100);
+            }
+            break;
+          }
+
+          case 'collection-radio': {
+            if (handleStartCollectionStationRef.current) {
+              handleStartCollectionStationRef.current();
             }
             break;
           }
@@ -12006,6 +12033,9 @@ const Parachord = () => {
     console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks`);
   };
 
+  // Keep handleStartCollectionStation ref in sync for protocol handler
+  useEffect(() => { handleStartCollectionStationRef.current = handleStartCollectionStation; });
+
   // Helper to set queue with playback context tagged on each track
   // This allows the context to update when tracks from different sources come up
   // respectShuffle: if true and shuffle is ON, shuffle the new queue (for "Play All" actions)
@@ -12713,7 +12743,61 @@ const Parachord = () => {
           return { ...prev, [key]: [...prev[key], item] };
         });
       },
-      getBlocklist: () => recommendationBlocklistRef.current
+      getBlocklist: () => recommendationBlocklistRef.current,
+      startCollectionRadio: () => {
+        // Use collectionTracksRef which is kept in sync with library + collectionData.tracks
+        const allTracks = collectionTracksRef.current || [];
+
+        if (allTracks.length === 0) {
+          return { success: false, error: 'No tracks in your collection yet' };
+        }
+
+        // End listen-along session if active
+        if (listenAlongFriendRef.current) {
+          abortSchedulerContext('listen-along');
+          setListenAlongFriend(null);
+          listenAlongLastTrackRef.current = null;
+          listenAlongPendingTrackRef.current = null;
+        }
+
+        // Deduplicate by id
+        const trackMap = new Map();
+        allTracks.forEach(track => {
+          const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          if (!trackMap.has(trackId)) {
+            trackMap.set(trackId, { ...track, id: trackId });
+          }
+        });
+        const uniqueTracks = Array.from(trackMap.values());
+
+        // Fisher-Yates shuffle
+        const shuffled = [...uniqueTracks];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        // Set up playback context
+        const context = { type: 'library', name: 'Collection Station' };
+
+        // Play first track, queue the rest
+        const firstTrack = shuffled[0];
+        const remainingTracks = shuffled.slice(1);
+
+        // Store original order for unshuffle and enable shuffle mode
+        originalQueueRef.current = remainingTracks;
+        setShuffleMode(true);
+
+        // Set queue and play
+        setQueueWithContext(remainingTracks, context, true);
+        setPlaybackContext(context);
+        handlePlayRef.current(firstTrack);
+
+        showToast(`Playing ${uniqueTracks.length} tracks on shuffle`);
+        console.log(`📻 Started Collection Station with ${uniqueTracks.length} tracks (via AI)`);
+
+        return { success: true, trackCount: uniqueTracks.length };
+      }
     };
 
     // Create context getter for system prompt
