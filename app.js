@@ -1372,6 +1372,7 @@ const VirtualizedQueueList = React.memo(({
       },
       onClick: () => {
         if (isLoading || isError) return;
+        if (spinoffMode) exitSpinoff();
         setDroppingFromIndex(index);
         setTimeout(() => {
           // Clicked track plays, remove it and tracks before it, keep tracks after
@@ -1439,17 +1440,6 @@ const VirtualizedQueueList = React.memo(({
           color: isLoading ? 'rgba(156, 163, 175, 0.6)' :
                  isError ? '#f87171' :
                  isCurrentTrack ? '#a78bfa' : 'rgba(229, 231, 235, 0.9)'
-        },
-        onClick: () => {
-          if (isLoading || isError) return;
-          if (spinoffMode) exitSpinoff();
-          setDroppingFromIndex(index);
-          setTimeout(() => {
-            // Clicked track plays, remove it and tracks before it, keep tracks after
-            setCurrentQueue(prev => prev.slice(index + 1));
-            handlePlay(track);
-            setDroppingFromIndex(null);
-          }, 300);
         }
       },
         isLoading ? 'Loading...' :
