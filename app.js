@@ -4091,15 +4091,22 @@ class AIChatService {
       lines.push('  These show what user has been looking for recently.');
     }
 
-    // Add friend activity
-    if (context.friendActivity && context.friendActivity.length > 0) {
-      lines.push('\nFRIEND ACTIVITY (what friends are listening to):');
-      context.friendActivity.forEach(f => {
-        if (f.track) {
-          lines.push(`  • ${f.name}: "${f.track.title}" by ${f.track.artist}`);
+    // Add friend stats (what friends have been into lately)
+    if (context.friendStats && context.friendStats.length > 0) {
+      lines.push('\nFRIENDS\' RECENT FAVORITES (this week):');
+      context.friendStats.forEach(f => {
+        const artistStr = f.topArtists?.length > 0
+          ? `Artists: ${f.topArtists.slice(0, 3).join(', ')}`
+          : '';
+        const trackStr = f.topTracks?.length > 0
+          ? `Tracks: ${f.topTracks.slice(0, 2).map(t => `"${t.title}"`).join(', ')}`
+          : '';
+        const details = [artistStr, trackStr].filter(Boolean).join(' | ');
+        if (details) {
+          lines.push(`  • ${f.name}: ${details}`);
         }
       });
-      lines.push('  Can suggest music based on what friends are enjoying.');
+      lines.push('  User can ask "what has [friend] been into?" to explore their tastes.');
     }
 
     // Note if user has local library
@@ -12502,16 +12509,15 @@ const Parachord = () => {
         typeof s === 'string' ? s : s.query || s.term || ''
       ).filter(Boolean);
 
-      // Get friend activity if available (what friends are listening to)
-      const friendActivity = (friends || [])
-        .filter(f => f.nowPlaying || f.recentTrack)
+      // Get friend stats (what friends have been into lately)
+      const friendStats = (friends || [])
+        .filter(f => f.cachedWeeklyStats?.topArtists?.length > 0 || f.cachedWeeklyStats?.topTracks?.length > 0)
         .slice(0, 5)
         .map(f => ({
-          name: f.name || f.username,
-          track: f.nowPlaying || f.recentTrack ? {
-            title: (f.nowPlaying || f.recentTrack).title,
-            artist: (f.nowPlaying || f.recentTrack).artist
-          } : null
+          name: f.displayName || f.name || f.username,
+          service: f.service,
+          topArtists: f.cachedWeeklyStats?.topArtists || [],
+          topTracks: f.cachedWeeklyStats?.topTracks || []
         }));
 
       // Check if local files resolver is active and has content
@@ -12535,7 +12541,7 @@ const Parachord = () => {
         timeContext: timeContext,
         sessionHistory: sessionHistory,
         recentSearches: recentSearches,
-        friendActivity: friendActivity,
+        friendStats: friendStats,
         hasLocalLibrary: localFilesActive
       };
     };
@@ -20208,6 +20214,62 @@ ${tracks}
     }
   };
 
+  // Fetch friend's weekly stats (top artists + tracks) for AI context caching
+  const fetchFriendWeeklyStats = async (friend) => {
+    try {
+      let topArtists = [];
+      let topTracks = [];
+
+      if (friend.service === 'lastfm') {
+        const apiKey = getLastfmApiKey();
+        if (!apiKey) return null;
+
+        // Fetch top artists and tracks in parallel
+        const [artistsRes, tracksRes] = await Promise.all([
+          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`),
+          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`)
+        ]);
+
+        if (artistsRes.ok) {
+          const data = await artistsRes.json();
+          topArtists = (data.topartists?.artist || []).map(a => a.name);
+        }
+        if (tracksRes.ok) {
+          const data = await tracksRes.json();
+          topTracks = (data.toptracks?.track || []).map(t => ({
+            title: t.name,
+            artist: t.artist?.name || t.artist
+          }));
+        }
+      } else {
+        // ListenBrainz - fetch in parallel
+        const [artistsRes, tracksRes] = await Promise.all([
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/artists?range=week&count=5`),
+          fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(friend.username)}/recordings?range=week&count=5`)
+        ]);
+
+        if (artistsRes.ok && artistsRes.status !== 204) {
+          const data = await artistsRes.json();
+          topArtists = (data.payload?.artists || []).map(a => a.artist_name);
+        }
+        if (tracksRes.ok && tracksRes.status !== 204) {
+          const data = await tracksRes.json();
+          topTracks = (data.payload?.recordings || []).map(t => ({
+            title: t.track_name,
+            artist: t.artist_name
+          }));
+        }
+      }
+
+      if (topArtists.length === 0 && topTracks.length === 0) return null;
+
+      return { topArtists, topTracks, fetchedAt: Date.now() };
+    } catch (error) {
+      console.error(`Error fetching weekly stats for ${friend.username}:`, error);
+      return null;
+    }
+  };
+
   // Check if friend is "on air" (listened within last 10 minutes)
   const isOnAir = (friend) => {
     if (!friend.cachedRecentTrack?.timestamp) return false;
@@ -20494,6 +20556,22 @@ ${tracks}
               return next;
             });
           }, 400);
+        }
+
+        // Check if we should refresh weekly stats cache (every 30 minutes)
+        const statsStale = !friend.cachedWeeklyStats ||
+          (Date.now() - (friend.cachedWeeklyStats.fetchedAt || 0)) > 30 * 60 * 1000;
+
+        let newWeeklyStats = friend.cachedWeeklyStats;
+        if (statsStale) {
+          // Fetch in background, don't await to avoid slowing down polling
+          fetchFriendWeeklyStats(friend).then(stats => {
+            if (stats) {
+              setFriends(prev => prev.map(f =>
+                f.id === friend.id ? { ...f, cachedWeeklyStats: stats } : f
+              ));
+            }
+          });
         }
 
         setFriends(prev => prev.map(f =>
