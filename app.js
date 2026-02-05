@@ -8017,7 +8017,7 @@ const Parachord = () => {
             break;
 
           case 'chat': {
-            setAiChatOpen(true);
+            openAiChat();
             if (params.prompt) {
               // Trigger chat with prompt
               setTimeout(() => {
