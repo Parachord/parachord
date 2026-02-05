@@ -5270,6 +5270,7 @@ const Parachord = () => {
   const handlePreviousRef = useRef(null);
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
+  const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
   const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   // Friend function refs (for use in early useEffects before functions are defined)
@@ -12503,109 +12504,15 @@ const Parachord = () => {
         setTrackLoading(true);
 
         try {
-          // Resolve across ALL enabled resolvers (not earlyReturn) to get all sources
-          const currentResolvers = loadedResolversRef.current;
-          const currentActiveResolvers = activeResolversRef.current;
-          const currentResolverOrder = resolverOrderRef.current;
+          // Use the same resolveTrack function as the ResolutionScheduler
+          // This ensures ChatCard uses the same resolvers, priorities, and rules as everywhere else
+          console.log(`ChatCard: Resolving "${title}" by "${artist}" using resolveTrack`);
 
-          console.log('ChatCard: Resolution pipeline debug:');
-          console.log('  Loaded resolvers:', currentResolvers.map(r => r.id));
-          console.log('  Active resolvers:', currentActiveResolvers);
-          console.log('  Resolver order:', currentResolverOrder);
-
-          const enabledResolvers = currentResolverOrder
-            .filter(id => currentActiveResolvers.includes(id))
-            .map(id => currentResolvers.find(r => r.id === id))
-            .filter(r => r && r.capabilities?.resolve);
-
-          console.log('  Enabled resolvers for search:', enabledResolvers.map(r => r.id));
-
-          const resolvedTrack = { ...placeholder, sources: {}, status: 'resolved' };
-
-          // Helper to validate resolved track matches requested metadata
-          const normalizeStr = s => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-          const validateResolvedTrack = (result, targetArtist, targetTitle) => {
-            if (!result || !result.artist || !result.title) return false;
-            const resultArtist = normalizeStr(result.artist);
-            const resultTitle = normalizeStr(result.title);
-            const normTargetArtist = normalizeStr(targetArtist);
-            const normTargetTitle = normalizeStr(targetTitle);
-            // Check for reasonable match - either contains the other
-            const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
-            const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
-            return artistMatches && titleMatches;
-          };
-
-          // Helper to find best matching result from search results
-          const findBestMatch = (results, targetArtist, targetTitle) => {
-            if (!results || results.length === 0) return null;
-            // First pass: look for exact match (normalized)
-            const normTargetArtist = normalizeStr(targetArtist);
-            const normTargetTitle = normalizeStr(targetTitle);
-            for (const r of results) {
-              if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
-                return r;
-              }
-            }
-            // Second pass: look for contains match
-            for (const r of results) {
-              if (validateResolvedTrack(r, targetArtist, targetTitle)) {
-                return r;
-              }
-            }
-            return null;
-          };
-
-          // Resolve in parallel across all enabled resolvers
-          // Use search() directly when available to get all results, then find best match
-          const resolvePromises = enabledResolvers.map(async (resolver) => {
-            try {
-              const config = getResolverConfigRef.current
-                ? await getResolverConfigRef.current(resolver.id)
-                : {};
-
-              let bestMatch = null;
-
-              // Prefer search() to get all results and find best match
-              if (resolver.search && typeof resolver.search === 'function') {
-                const query = `${artist} ${title}`;
-                console.log(`ChatCard: Searching ${resolver.id} for "${query}"`);
-                const results = await resolver.search(query, config);
-                if (results && results.length > 0) {
-                  console.log(`ChatCard: ${resolver.id} returned ${results.length} results`);
-                  bestMatch = findBestMatch(results, artist, title);
-                  if (bestMatch) {
-                    console.log(`ChatCard: ${resolver.id} found match - "${bestMatch.title}" by "${bestMatch.artist}"`);
-                  } else {
-                    console.warn(`ChatCard: ${resolver.id} returned ${results.length} results but none matched "${title}" by "${artist}"`);
-                  }
-                }
-              } else {
-                // Fallback to resolve() for resolvers without search
-                const result = await resolver.resolve(artist, title, album, config);
-                if (result && validateResolvedTrack(result, artist, title)) {
-                  bestMatch = result;
-                } else if (result) {
-                  console.warn(`ChatCard: Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${title}" by "${artist}"`);
-                }
-              }
-
-              if (bestMatch) {
-                resolvedTrack.sources[resolver.id] = {
-                  ...bestMatch,
-                  confidence: bestMatch.confidence || 0.9,
-                  resolvedAt: Date.now()
-                };
-              }
-            } catch (error) {
-              console.error(`ChatCard resolve error for ${resolver.id}:`, error);
-            }
-          });
-
-          await Promise.all(resolvePromises);
+          const sources = await resolveTrackRef.current(placeholder, artist);
 
           // Check if we found any sources
-          if (Object.keys(resolvedTrack.sources).length > 0) {
+          if (sources && Object.keys(sources).length > 0) {
+            const resolvedTrack = { ...placeholder, sources, status: 'resolved' };
             // Update current track with resolved data
             setCurrentTrack(prev => {
               if (prev?.id === placeholderId) {
@@ -16185,6 +16092,11 @@ const Parachord = () => {
 
     return sources;
   };
+
+  // Keep resolveTrackRef in sync for ChatCard and other early-defined components
+  useEffect(() => {
+    resolveTrackRef.current = resolveTrack;
+  }, [resolveTrack]);
 
   // Resolution scheduler hook - manages viewport-based resolution
   const resolutionSchedulerRef = useRef(null);
