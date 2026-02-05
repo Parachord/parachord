@@ -7214,43 +7214,56 @@ const Parachord = () => {
 
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
-    // Check auth first
+    // For Apple Music, ensure user token from MusicKit JS / localStorage
+    // is synced to electron-store before checking auth
+    if (providerId === 'applemusic') {
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      // Try to get token from MusicKit instance, localStorage, or authorize
+      let userToken = musicKitWeb?.getUserToken() || localStorage.getItem('musickit_user_token') || null;
+
+      if (!userToken && musicKitWeb) {
+        // No token available - need to authorize
+        try {
+          const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+          const status = musicKitWeb.getAuthStatus();
+          if (!status.configured && devToken) {
+            await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
+          }
+          const authResult = await musicKitWeb.authorize();
+          userToken = authResult.userToken || musicKitWeb.getUserToken();
+          if (!userToken) {
+            showToast('Apple Music authorization failed. Please try again.', 'error');
+            return;
+          }
+        } catch (error) {
+          console.error('[Sync] Apple Music auth failed:', error);
+          showToast('Apple Music authorization failed. Please try again.', 'error');
+          return;
+        }
+      } else if (!userToken) {
+        showToast('Apple Music is not available. Please connect Apple Music first.', 'error');
+        return;
+      }
+
+      // Ensure token is persisted to electron-store for main process
+      localStorage.setItem('musickit_user_token', userToken);
+      if (window.electron?.store) {
+        await window.electron.store.set('applemusic_user_token', userToken);
+      }
+    }
+
+    // Check auth
     const authStatus = await window.electron.sync.checkAuth(providerId);
     if (!authStatus.authenticated) {
-      // Trigger auth flow
       if (providerId === 'spotify') {
         await window.electron.spotify.authenticate();
         // Spotify opens external browser, user needs to re-trigger after auth
         return;
-      } else if (providerId === 'applemusic') {
-        // Trigger Apple Music auth via MusicKit JS
-        const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-        if (musicKitWeb) {
-          try {
-            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
-            const status = musicKitWeb.getAuthStatus();
-            if (!status.configured && devToken) {
-              await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
-            }
-            const authResult = await musicKitWeb.authorize();
-            if (authResult.authorized && authResult.userToken) {
-              localStorage.setItem('musickit_user_token', authResult.userToken);
-              if (window.electron?.store) {
-                await window.electron.store.set('applemusic_user_token', authResult.userToken);
-              }
-              console.log('[Sync] Apple Music auth successful, proceeding to sync setup');
-              // Auth succeeded - fall through to open modal
-            } else {
-              return;
-            }
-          } catch (error) {
-            console.error('[Sync] Apple Music auth failed:', error);
-            return;
-          }
-        } else {
-          showToast('Apple Music is not available. Developer token may be missing.', 'error');
-          return;
-        }
+      }
+      // Apple Music auth was handled above, if we still fail show error
+      if (providerId === 'applemusic') {
+        showToast('Apple Music sync authentication failed. Please reconnect your Apple Music account.', 'error');
+        return;
       }
     }
 
