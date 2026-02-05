@@ -194,7 +194,7 @@ const searchTool = {
  */
 const queueAddTool = {
   name: 'queue_add',
-  description: 'Add one or more tracks to the playback queue',
+  description: 'Add one or more tracks to the playback queue. By default, plays the first track immediately (replacing whatever is currently playing) and queues the rest. Set playFirst to false to only add to queue without starting playback.',
   parameters: {
     type: 'object',
     properties: {
@@ -214,17 +214,20 @@ const queueAddTool = {
         type: 'string',
         enum: ['next', 'last'],
         description: 'Add after current track (next) or at end of queue (last). Default: last'
+      },
+      playFirst: {
+        type: 'boolean',
+        description: 'If true (default), play the first track immediately, replacing what is currently playing. If false, only add tracks to queue.'
       }
     },
     required: ['tracks']
   },
-  execute: async ({ tracks, position = 'last' }, context) => {
-    const nothingPlaying = !context.getCurrentTrack?.();
+  execute: async ({ tracks, position = 'last', playFirst = true }, context) => {
     let startedPlaying = false;
     let playedTrack = null;
 
-    // If nothing is playing, resolve and play the first track immediately
-    if (nothingPlaying && tracks.length > 0) {
+    // If playFirst is true and we have tracks, play the first track immediately
+    if (playFirst && tracks.length > 0) {
       const firstTrack = tracks[0];
       const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
         earlyReturn: true,
