@@ -738,6 +738,26 @@ function startAuthServer() {
     }
   });
 
+  // Protocol command endpoint for Raycast/external control
+  expressApp.get('/protocol', (req, res) => {
+    const url = req.query.url;
+    if (!url || !url.startsWith('parachord://')) {
+      return res.status(400).json({ error: 'Invalid protocol URL' });
+    }
+
+    console.log('[Protocol HTTP] Received:', url);
+
+    // Focus the window and send to renderer
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      mainWindow.webContents.send('protocol-url', url);
+      res.json({ success: true, url });
+    } else {
+      res.status(503).json({ error: 'Parachord not ready' });
+    }
+  });
+
   authServer = expressApp.listen(8888, '127.0.0.1', () => {
     console.log('Auth server running on http://127.0.0.1:8888');
   });

@@ -1,4 +1,6 @@
-import { open, showHUD, showToast, Toast } from "@raycast/api";
+import { showHUD, showToast, Toast } from "@raycast/api";
+
+const PARACHORD_HTTP_PORT = 8888;
 
 /**
  * Build a parachord:// protocol URL
@@ -14,7 +16,7 @@ export function buildProtocolUrl(
 }
 
 /**
- * Open a parachord:// URL and show feedback
+ * Send a command to Parachord via HTTP and show feedback
  */
 export async function openParachord(
   command: string,
@@ -22,19 +24,37 @@ export async function openParachord(
   params: Record<string, string> = {},
   hudMessage?: string
 ): Promise<void> {
-  const url = buildProtocolUrl(command, segments, params);
+  const protocolUrl = buildProtocolUrl(command, segments, params);
+  const httpUrl = `http://127.0.0.1:${PARACHORD_HTTP_PORT}/protocol?url=${encodeURIComponent(protocolUrl)}`;
 
   try {
-    await open(url);
+    const response = await fetch(httpUrl);
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({} as { error?: string }));
+      throw new Error((data as { error?: string }).error || `HTTP ${response.status}`);
+    }
+
     if (hudMessage) {
       await showHUD(hudMessage);
     }
   } catch (error) {
-    await showToast({
-      style: Toast.Style.Failure,
-      title: "Failed to open Parachord",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    // Check if it's a connection error (Parachord not running)
+    if (message.includes("ECONNREFUSED") || message.includes("fetch failed")) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Parachord not running",
+        message: "Start Parachord and try again",
+      });
+    } else {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Failed to send command",
+        message: message,
+      });
+    }
   }
 }
 
