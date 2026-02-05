@@ -110,13 +110,16 @@ const transformAlbum = (album) => {
  */
 const transformPlaylist = (playlist) => {
   const attrs = playlist.attributes || {};
+  // Track count: prefer relationships.tracks.meta.total, fall back to data length, then 0
+  const tracksRel = playlist.relationships?.tracks;
+  const trackCount = tracksRel?.meta?.total ?? tracksRel?.data?.length ?? 0;
   return {
     id: `applemusic-${playlist.id}`,
     externalId: playlist.id,
     name: attrs.name || 'Untitled Playlist',
     description: attrs.description?.standard || '',
     image: attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
-    trackCount: attrs.trackCount || 0,
+    trackCount,
     snapshotId: attrs.lastModifiedDate || null,
     folderId: null,
     folderName: null,
@@ -186,7 +189,7 @@ const AppleMusicSyncProvider = {
   async fetchPlaylists(token, onProgress) {
     const { developerToken, userToken } = JSON.parse(token);
     const items = await appleMusicFetch(
-      '/me/library/playlists?limit=100',
+      '/me/library/playlists?limit=100&include=tracks',
       developerToken,
       userToken,
       [],
