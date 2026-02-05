@@ -5337,6 +5337,8 @@ const Parachord = () => {
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
+  const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
+  const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const getResolverConfigRef = useRef(null);
   const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
@@ -8017,11 +8019,13 @@ const Parachord = () => {
             break;
 
           case 'chat': {
-            openAiChat();
-            if (params.prompt) {
+            if (openAiChatRef.current) {
+              openAiChatRef.current();
+            }
+            if (params.prompt && handleAiChatSendRef.current) {
               // Trigger chat with prompt
               setTimeout(() => {
-                handleAiChatSend(params.prompt);
+                handleAiChatSendRef.current(params.prompt);
               }, 100);
             }
             break;
@@ -9476,6 +9480,13 @@ const Parachord = () => {
       window.electron.store.set('playlists_view_mode', playlistsViewMode);
     }
   }, [playlistsViewMode, cacheLoaded]);
+
+  // Persist selected chat provider (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store && selectedChatProvider) {
+      window.electron.store.set('selected_chat_provider', selectedChatProvider);
+    }
+  }, [selectedChatProvider, cacheLoaded]);
 
   // Persist AI chat history per provider (only after cache is loaded to avoid overwriting)
   const aiChatHistoriesRef = useRef({}); // Store histories for all providers
@@ -13730,6 +13741,10 @@ const Parachord = () => {
     setResultsSidebar(prev => prev ? { ...prev, messages: [] } : null);
   };
 
+  // Keep AI chat refs in sync for protocol handler
+  useEffect(() => { openAiChatRef.current = openAiChat; });
+  useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
+
   // Auto-scroll to top of latest assistant response when new messages arrive
   useEffect(() => {
     if (lastAssistantMessageRef.current) {
@@ -14776,6 +14791,13 @@ const Parachord = () => {
       if (savedAiChatHistories && typeof savedAiChatHistories === 'object') {
         aiChatHistoriesRef.current = savedAiChatHistories;
         console.log('📦 Loaded AI chat histories for providers:', Object.keys(savedAiChatHistories).join(', '));
+      }
+
+      // Load last used chat provider
+      const savedChatProvider = await window.electron.store.get('selected_chat_provider');
+      if (savedChatProvider) {
+        setSelectedChatProvider(savedChatProvider);
+        console.log('📦 Loaded last used chat provider:', savedChatProvider);
       }
 
       // Load discovery feature seen hashes (for unread badges)
