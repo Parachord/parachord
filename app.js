@@ -4467,6 +4467,7 @@ const Parachord = () => {
   const [installingResolvers, setInstallingResolvers] = useState(new Set());
   const [selectedMarketplaceItem, setSelectedMarketplaceItem] = useState(null); // Marketplace item detail modal
   const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
+  const [raycastInfoOpen, setRaycastInfoOpen] = useState(false); // Raycast extension info modal
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -32030,6 +32031,19 @@ useEffect(() => {
                   });
                 }
 
+                // Raycast extension suggestion (Mac only)
+                if (navigator.platform.includes('Mac')) {
+                  suggestions.push({
+                    id: 'raycast',
+                    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
+                    title: 'Raycast Extension',
+                    description: 'Control Parachord with keyboard shortcuts',
+                    action: () => setRaycastInfoOpen(true),
+                    actionLabel: 'Learn More',
+                    color: '#FF6363'
+                  });
+                }
+
                 // Empty collection prompt
                 if (collectionData.tracks.length === 0 && collectionData.albums.length === 0) {
                   suggestions.push({
@@ -38177,6 +38191,60 @@ useEffect(() => {
                         width: '120px'
                       }
                     }, 'Browser Extension')
+                  ),
+
+                  // Raycast Extension tile
+                  React.createElement('div', {
+                    className: 'flex flex-col items-center'
+                  },
+                    React.createElement('div', {
+                      className: 'relative flex items-center justify-center cursor-pointer transition-all hover:scale-105',
+                      style: {
+                        width: '120px',
+                        height: '120px',
+                        borderRadius: '16px',
+                        background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
+                      },
+                      onClick: () => setRaycastInfoOpen(true)
+                    },
+                      // Raycast icon (simplified lightning bolt)
+                      React.createElement('svg', {
+                        className: 'w-12 h-12',
+                        fill: 'white',
+                        viewBox: '0 0 24 24'
+                      },
+                        React.createElement('path', {
+                          d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+                        })
+                      ),
+                      // Info badge
+                      React.createElement('div', {
+                        className: 'absolute flex items-center justify-center',
+                        style: {
+                          top: '8px',
+                          right: '8px',
+                          width: '22px',
+                          height: '22px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: '#FF6363'
+                        }
+                      }, 'i')
+                    ),
+                    // Name below card
+                    React.createElement('span', {
+                      style: {
+                        marginTop: '10px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#1f2937',
+                        textAlign: 'center',
+                        width: '120px'
+                      }
+                    }, 'Raycast Extension')
                   )
                 )
               )
@@ -43982,6 +44050,204 @@ useEffect(() => {
           }, 'Download from GitHub'),
           React.createElement('button', {
             onClick: () => setExtensionInfoOpen(false),
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#374151',
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'Done')
+        )
+      )
+    ),
+
+    // Raycast Extension Info Modal
+    raycastInfoOpen && React.createElement('div', {
+      className: 'fixed inset-0 z-50 flex items-center justify-center',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: (e) => { if (e.target === e.currentTarget) setRaycastInfoOpen(false); }
+    },
+      React.createElement('div', {
+        className: 'bg-white rounded-2xl shadow-2xl overflow-hidden',
+        style: { width: '440px', maxHeight: '80vh' },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header with gradient
+        React.createElement('div', {
+          style: {
+            padding: '24px',
+            background: 'linear-gradient(135deg, #FF6363 0%, #FF8E53 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }
+        },
+          // Icon
+          React.createElement('div', {
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', {
+              className: 'w-8 h-8',
+              fill: 'white',
+              viewBox: '0 0 24 24'
+            },
+              React.createElement('path', {
+                d: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+              })
+            )
+          ),
+          // Title
+          React.createElement('div', null,
+            React.createElement('h3', {
+              style: { fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '2px' }
+            }, 'Raycast Extension'),
+            React.createElement('p', {
+              style: { fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }
+            }, 'Control Parachord with keyboard shortcuts')
+          ),
+          // Close button
+          React.createElement('button', {
+            onClick: () => setRaycastInfoOpen(false),
+            style: {
+              marginLeft: 'auto',
+              padding: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }
+          },
+            React.createElement('svg', { className: 'w-5 h-5 text-white', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+            )
+          )
+        ),
+        // Content
+        React.createElement('div', {
+          style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
+        },
+          React.createElement('p', {
+            style: { fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '20px' }
+          }, 'The Parachord Raycast extension lets you control playback, search for music, and chat with the AI DJ — all from your keyboard using Raycast.'),
+
+          // Features
+          React.createElement('div', { style: { marginBottom: '24px' } },
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Commands'),
+            [
+              { icon: '⏯️', text: 'Play/Pause, Next, Previous track' },
+              { icon: '🔀', text: 'Toggle shuffle, set volume' },
+              { icon: '🔍', text: 'Search & play or add to queue' },
+              { icon: '🤖', text: 'Chat with the AI DJ' },
+              { icon: '📻', text: 'Start Collection Radio' }
+            ].map((item, i) =>
+              React.createElement('div', {
+                key: i,
+                style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }
+              },
+                React.createElement('span', { style: { fontSize: '16px' } }, item.icon),
+                React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, item.text)
+              )
+            )
+          ),
+
+          // Installation instructions
+          React.createElement('div', null,
+            React.createElement('h4', {
+              style: { fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
+            }, 'Installation'),
+            React.createElement('div', {
+              style: {
+                backgroundColor: '#f9fafb',
+                borderRadius: '12px',
+                padding: '16px'
+              }
+            },
+              [
+                { step: '1', text: 'Download the extension folder from GitHub' },
+                { step: '2', text: 'Open Raycast and run "Import Extension"' },
+                { step: '3', text: 'Select the parachord-raycast folder' },
+                { step: '4', text: 'The commands will appear in Raycast' }
+              ].map((item, i) =>
+                React.createElement('div', {
+                  key: i,
+                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 3 ? '10px' : '0' }
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      backgroundColor: '#FF6363',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      flexShrink: 0
+                    }
+                  }, item.step),
+                  React.createElement('span', { style: { fontSize: '13px', color: '#374151', lineHeight: '22px' } }, item.text)
+                )
+              )
+            ),
+            // Note
+            React.createElement('p', {
+              style: { fontSize: '12px', color: '#9ca3af', marginTop: '12px', lineHeight: '1.5' }
+            }, 'Requires Raycast to be installed on your Mac. The extension will be available in the Raycast Store soon.')
+          )
+        ),
+        // Footer
+        React.createElement('div', {
+          style: {
+            padding: '16px 24px',
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px'
+          }
+        },
+          React.createElement('button', {
+            onClick: () => {
+              if (window.electron?.shell?.openExternal) {
+                window.electron.shell.openExternal('https://github.com/Parachord/parachord/tree/main/raycast-extension');
+              } else {
+                window.open('https://github.com/Parachord/parachord/tree/main/raycast-extension', '_blank');
+              }
+            },
+            className: 'transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#FF6363',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }
+          }, 'View on GitHub'),
+          React.createElement('button', {
+            onClick: () => setRaycastInfoOpen(false),
             className: 'transition-colors',
             style: {
               padding: '10px 16px',
