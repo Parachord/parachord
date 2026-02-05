@@ -12311,7 +12311,34 @@ const Parachord = () => {
       playTrack: async (track) => await handlePlayRef.current(track), // Play specific track
       handleNext: () => handleNextRef.current(),
       handlePrevious: () => handlePreviousRef.current(),
-      setShuffle: (enabled) => setShuffleMode(enabled),
+      setShuffle: (enabled) => {
+        if (enabled && !shuffleMode) {
+          // Turn on shuffle - store original and shuffle queue
+          const queue = currentQueueRef.current || [];
+          if (queue.length > 1) {
+            originalQueueRef.current = [...queue];
+            // Fisher-Yates shuffle
+            const shuffled = [...queue];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            setCurrentQueue(shuffled);
+            console.log('🔀 Shuffle ON (via DJ tool) - queue randomized');
+          }
+          setShuffleMode(true);
+        } else if (!enabled && shuffleMode) {
+          // Turn off shuffle - restore original order if available
+          if (originalQueueRef.current) {
+            const currentIds = new Set((currentQueueRef.current || []).map(t => t.id));
+            const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
+            setCurrentQueue(restoredQueue);
+            console.log('🔀 Shuffle OFF (via DJ tool) - restored original order');
+          }
+          originalQueueRef.current = null;
+          setShuffleMode(false);
+        }
+      },
       createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
       getCurrentTrack: () => currentTrackRef.current,
       getQueue: () => currentQueueRef.current || [],
@@ -12814,11 +12841,20 @@ const Parachord = () => {
 
       // Build result
       let pos = 0;
+      let lastWasCard = false; // Track if last element was a card to strip trailing punctuation
       filtered.forEach((r, idx) => {
         // Add text before this match
         if (r.start > pos) {
-          result.push(text.slice(pos, r.start));
+          let textBefore = text.slice(pos, r.start);
+          // Strip leading punctuation/whitespace if previous element was a card
+          if (lastWasCard) {
+            textBefore = textBefore.replace(/^[\s.,!?;:]+/, '');
+          }
+          if (textBefore) {
+            result.push(textBefore);
+          }
         }
+        lastWasCard = false; // Reset after handling text
 
         const key = `${baseKey}-${idx}`;
         if (r.type === 'card') {
@@ -12826,6 +12862,7 @@ const Parachord = () => {
           const cardType = r.match[1];
           const cardParts = r.match[2].split('|');
           result.push(renderCard(cardType, cardParts, key));
+          lastWasCard = true; // Mark that next text should strip leading punctuation
         } else if (r.type === 'link' || r.type === 'imagelink') {
           // Handle both [text](url) and ![text](url) - treat image links as regular links
           const linkText = r.match[1] || r.match[2].split('/').pop(); // Use alt text or extract from URL
@@ -12870,7 +12907,14 @@ const Parachord = () => {
 
       // Add remaining text
       if (pos < text.length) {
-        result.push(text.slice(pos));
+        let remaining = text.slice(pos);
+        // Strip leading punctuation/whitespace if previous element was a card
+        if (lastWasCard) {
+          remaining = remaining.replace(/^[\s.,!?;:]+/, '');
+        }
+        if (remaining) {
+          result.push(remaining);
+        }
       }
 
       return result.length > 0 ? result : [text];
