@@ -39108,7 +39108,7 @@ useEffect(() => {
                     color: '#9ca3af'
                   }
                 },
-                  '© ', new Date().getFullYear(), ' Parachord. All rights reserved.'
+                  '© ', new Date().getFullYear(), ' Jason Herskowitz. All rights reserved.'
                 ),
 
                 // License
