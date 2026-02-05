@@ -60,9 +60,10 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
   if (data.next) {
     await new Promise(resolve => setTimeout(resolve, 150));
     // data.next is a relative path like /v1/me/library/songs?offset=100
+    // data.next already includes /v1, so use base domain only
     const nextUrl = data.next.startsWith('http')
       ? data.next
-      : `${APPLE_MUSIC_API_BASE}${data.next}`;
+      : `https://api.music.apple.com${data.next}`;
     return appleMusicFetch(nextUrl, developerToken, userToken, combined, onProgress);
   }
 

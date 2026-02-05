@@ -30818,6 +30818,8 @@ useEffect(() => {
                   let sourceLabel = null;
                   if (source === 'spotify-sync' || source === 'spotify-import' || source === 'spotify') {
                     sourceLabel = 'Spotify';
+                  } else if (source === 'applemusic-sync' || source === 'applemusic-import' || source === 'applemusic') {
+                    sourceLabel = 'Apple Music';
                   } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
                     sourceLabel = 'Hosted XSPF';
                   } else if (source === 'imported-xspf') {
