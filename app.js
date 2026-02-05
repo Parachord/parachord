@@ -12594,7 +12594,16 @@ const Parachord = () => {
               r.artist?.toLowerCase() === artist.toLowerCase()
             );
 
-            const tracksToPlay = albumTracks.length > 0 ? albumTracks : [results[0]];
+            // Deduplicate by track title (multiple resolvers may return same tracks)
+            const seenTitles = new Set();
+            const uniqueAlbumTracks = albumTracks.filter(t => {
+              const normalizedTitle = t.title?.toLowerCase().trim();
+              if (seenTitles.has(normalizedTitle)) return false;
+              seenTitles.add(normalizedTitle);
+              return true;
+            });
+
+            const tracksToPlay = uniqueAlbumTracks.length > 0 ? uniqueAlbumTracks : [results[0]];
 
             if (tracksToPlay.length > 0) {
               // Prepare first track with placeholder structure for resolution
