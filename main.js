@@ -3801,6 +3801,12 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
   let token;
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
+  } else if (providerId === 'applemusic') {
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const userToken = store.get('applemusic_user_token');
+    if (developerToken && userToken) {
+      token = JSON.stringify({ developerToken, userToken });
+    }
   }
 
   if (!token) {
@@ -3826,6 +3832,12 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
   let token;
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
+  } else if (providerId === 'applemusic') {
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const userToken = store.get('applemusic_user_token');
+    if (developerToken && userToken) {
+      token = JSON.stringify({ developerToken, userToken });
+    }
   }
 
   if (!token) {
@@ -3935,7 +3947,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         const localPlaylist = currentPlaylists.find(p =>
           p.syncedFrom?.externalId === remotePlaylist.externalId ||
           p.id === remotePlaylist.id ||
-          p.id === `spotify-${remotePlaylist.externalId}`
+          p.id === `${providerId}-${remotePlaylist.externalId}`
         );
 
         if (!localPlaylist) {
@@ -3954,7 +3966,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             description: remotePlaylist.description,
             tracks: tracks,
             creator: remotePlaylist.ownerName || null,
-            source: remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import',
+            source: remotePlaylist.isOwnedByUser ? `${providerId}-sync` : `${providerId}-import`,
             syncedFrom: {
               resolver: providerId,
               externalId: remotePlaylist.externalId,
@@ -3997,7 +4009,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Backfill creator if not set
               creator: currentPlaylists[idx].creator || remotePlaylist.ownerName || null,
               // Backfill source if not set
-              source: currentPlaylists[idx].source || (remotePlaylist.isOwnedByUser ? 'spotify-sync' : 'spotify-import'),
+              source: currentPlaylists[idx].source || (remotePlaylist.isOwnedByUser ? `${providerId}-sync` : `${providerId}-import`),
               // Update createdAt from track data
               createdAt: recalculatedCreatedAt,
               // Update/backfill syncedFrom structure

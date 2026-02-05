@@ -5,10 +5,12 @@
  */
 
 const SpotifySyncProvider = require('../sync-providers/spotify');
+const AppleMusicSyncProvider = require('../sync-providers/applemusic');
 
 // Registry of available sync providers
 const providers = {
-  spotify: SpotifySyncProvider
+  spotify: SpotifySyncProvider,
+  applemusic: AppleMusicSyncProvider
 };
 
 /**

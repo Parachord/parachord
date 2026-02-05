@@ -165,6 +165,10 @@ class MusicKitWeb {
       console.log('[MusicKitWeb] Requesting authorization...');
       const musicUserToken = await this.musicKit.authorize();
       this.isAuthorized = true;
+      // Persist user token for sync and future sessions
+      if (typeof localStorage !== 'undefined' && musicUserToken) {
+        localStorage.setItem('musickit_user_token', musicUserToken);
+      }
       console.log('[MusicKitWeb] Authorization successful');
       return { authorized: true, userToken: musicUserToken };
     } catch (error) {
@@ -401,6 +405,248 @@ class MusicKitWeb {
       duration: item.playbackDuration,
       artworkUrl: item.artwork?.url?.replace('{w}', '500').replace('{h}', '500')
     };
+  }
+
+  /**
+   * Get the stored user token
+   */
+  getUserToken() {
+    if (this.musicKit) {
+      return this.musicKit.musicUserToken || null;
+    }
+    return null;
+  }
+
+  /**
+   * Fetch paginated results from a MusicKit API endpoint
+   */
+  async fetchAllPaginated(endpoint, params = {}, limit = 100) {
+    if (!this.musicKit) {
+      throw new Error('MusicKit not configured');
+    }
+
+    const allItems = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.musicKit.api.music(endpoint, {
+        ...params,
+        limit,
+        offset
+      });
+
+      const data = response.data;
+      const items = data.data || [];
+      allItems.push(...items);
+
+      // Check for next page
+      hasMore = !!data.next;
+      offset += items.length;
+
+      // Rate limit delay
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
+    return allItems;
+  }
+
+  /**
+   * Fetch user's library songs
+   */
+  async fetchLibrarySongs(onProgress) {
+    if (!this.isAuthorized) {
+      throw new Error('Not authorized - call authorize() first');
+    }
+
+    console.log('[MusicKitWeb] Fetching library songs...');
+    const allSongs = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.musicKit.api.music('/v1/me/library/songs', {
+        limit: 100,
+        offset
+      });
+
+      const songs = response.data.data || [];
+      allSongs.push(...songs);
+
+      if (onProgress) {
+        onProgress({ current: allSongs.length, total: allSongs.length });
+      }
+
+      hasMore = !!response.data.next;
+      offset += songs.length;
+
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
+    console.log(`[MusicKitWeb] Fetched ${allSongs.length} library songs`);
+    return allSongs.map(song => ({
+      id: song.id,
+      catalogId: song.attributes?.playParams?.catalogId || null,
+      title: song.attributes?.name,
+      artist: song.attributes?.artistName,
+      album: song.attributes?.albumName,
+      duration: song.attributes?.durationInMillis
+        ? Math.floor(song.attributes.durationInMillis / 1000)
+        : 0,
+      artworkUrl: song.attributes?.artwork?.url
+        ?.replace('{w}', '500').replace('{h}', '500') || null,
+      dateAdded: song.attributes?.dateAdded || null
+    }));
+  }
+
+  /**
+   * Fetch user's library albums
+   */
+  async fetchLibraryAlbums(onProgress) {
+    if (!this.isAuthorized) {
+      throw new Error('Not authorized - call authorize() first');
+    }
+
+    console.log('[MusicKitWeb] Fetching library albums...');
+    const allAlbums = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.musicKit.api.music('/v1/me/library/albums', {
+        limit: 100,
+        offset
+      });
+
+      const albums = response.data.data || [];
+      allAlbums.push(...albums);
+
+      if (onProgress) {
+        onProgress({ current: allAlbums.length, total: allAlbums.length });
+      }
+
+      hasMore = !!response.data.next;
+      offset += albums.length;
+
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
+    console.log(`[MusicKitWeb] Fetched ${allAlbums.length} library albums`);
+    return allAlbums.map(album => ({
+      id: album.id,
+      catalogId: album.attributes?.playParams?.catalogId || null,
+      title: album.attributes?.name,
+      artist: album.attributes?.artistName,
+      trackCount: album.attributes?.trackCount || 0,
+      artworkUrl: album.attributes?.artwork?.url
+        ?.replace('{w}', '500').replace('{h}', '500') || null,
+      releaseDate: album.attributes?.releaseDate || null,
+      dateAdded: album.attributes?.dateAdded || null
+    }));
+  }
+
+  /**
+   * Fetch user's library playlists
+   */
+  async fetchLibraryPlaylists(onProgress) {
+    if (!this.isAuthorized) {
+      throw new Error('Not authorized - call authorize() first');
+    }
+
+    console.log('[MusicKitWeb] Fetching library playlists...');
+    const allPlaylists = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.musicKit.api.music('/v1/me/library/playlists', {
+        limit: 100,
+        offset
+      });
+
+      const playlists = response.data.data || [];
+      allPlaylists.push(...playlists);
+
+      if (onProgress) {
+        onProgress({ current: allPlaylists.length, total: allPlaylists.length });
+      }
+
+      hasMore = !!response.data.next;
+      offset += playlists.length;
+
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
+    console.log(`[MusicKitWeb] Fetched ${allPlaylists.length} library playlists`);
+    return allPlaylists.map(playlist => ({
+      id: playlist.id,
+      name: playlist.attributes?.name,
+      description: playlist.attributes?.description?.standard || '',
+      trackCount: playlist.attributes?.trackCount || 0,
+      artworkUrl: playlist.attributes?.artwork?.url
+        ?.replace('{w}', '500').replace('{h}', '500') || null,
+      dateAdded: playlist.attributes?.dateAdded || null,
+      lastModifiedDate: playlist.attributes?.lastModifiedDate || null,
+      isPublic: playlist.attributes?.isPublic || false,
+      canEdit: playlist.attributes?.canEdit || false
+    }));
+  }
+
+  /**
+   * Fetch tracks for a specific library playlist
+   */
+  async fetchPlaylistTracks(playlistId, onProgress) {
+    if (!this.isAuthorized) {
+      throw new Error('Not authorized - call authorize() first');
+    }
+
+    console.log('[MusicKitWeb] Fetching playlist tracks for:', playlistId);
+    const allTracks = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await this.musicKit.api.music(
+        `/v1/me/library/playlists/${playlistId}/tracks`,
+        { limit: 100, offset }
+      );
+
+      const tracks = response.data.data || [];
+      allTracks.push(...tracks);
+
+      if (onProgress) {
+        onProgress({ current: allTracks.length, total: allTracks.length });
+      }
+
+      hasMore = !!response.data.next;
+      offset += tracks.length;
+
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
+    console.log(`[MusicKitWeb] Fetched ${allTracks.length} playlist tracks`);
+    return allTracks.map(track => ({
+      id: track.id,
+      catalogId: track.attributes?.playParams?.catalogId || null,
+      title: track.attributes?.name,
+      artist: track.attributes?.artistName,
+      album: track.attributes?.albumName,
+      duration: track.attributes?.durationInMillis
+        ? Math.floor(track.attributes.durationInMillis / 1000)
+        : 0,
+      artworkUrl: track.attributes?.artwork?.url
+        ?.replace('{w}', '500').replace('{h}', '500') || null
+    }));
   }
 
   /**

@@ -24570,9 +24570,12 @@ ${tracks}
           console.log('🍎 MusicKit JS authorized successfully');
           setAppleMusicConnected(true);
 
-          // Store the music user token for session persistence
+          // Store the music user token for session persistence and sync
           if (authResult.userToken) {
             localStorage.setItem('musickit_user_token', authResult.userToken);
+            if (window.electron?.store) {
+              await window.electron.store.set('applemusic_user_token', authResult.userToken);
+            }
             console.log('🍎 Music user token stored');
           }
 
