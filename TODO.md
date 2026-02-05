@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-02-02
+> Last updated: 2026-02-05
 
 ---
 
@@ -95,6 +95,27 @@
 - Persist resolved sources to collection/playlists for faster playback
 - Improved Apple Music end-of-track detection with auto-advance
 - Resolver fallback when primary resolver playback fails
+- Collection Radio via AI and protocol URL
+
+### AI DJ (Shuffleupagus)
+- Conversational AI assistant for music control and discovery
+- Natural language commands: "play something chill", "skip this", "add to queue"
+- Tool-based architecture with search, play, queue, shuffle, create_playlist
+- Claude and Ollama provider support with pluggable backend architecture
+- Rich context injection (now playing, queue, listening history, friends)
+- Clickable ChatCards for tracks, albums, artists, and playlists in responses
+- Recommendation blocklist ("don't recommend X anymore")
+- Per-provider chat history persistence
+- Progress indicators for tool execution
+
+### Protocol URLs & External Control
+- `parachord://` deep link protocol for external app integration
+- Playback control URLs: play, pause, skip, queue, shuffle, collection-radio
+- Navigation URLs: artist pages, albums, library, search, settings
+- AI chat URL with prompt parameter
+- HTTP endpoint (port 8888) for apps that can't use custom protocols
+- Raycast extension with full playback control, search, AI chat, Collection Radio
+- Raycast Extension discovery UI in Settings and Home page
 
 ### Playlists
 - Drag/drop/import of Spotify, Apple Music and hosted .XSPF playlists
