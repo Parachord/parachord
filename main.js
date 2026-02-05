@@ -2982,7 +2982,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   // Only add queue/playlist options for types that have playable tracks
   // Exclude friend-track since it has its own specific menu items
-  if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track') {
+  if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track' && data.type !== 'collection-album') {
     menuItems.push({
       label: menuLabel,
       enabled: enabled,
@@ -3052,6 +3052,20 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         mainWindow.webContents.send('track-context-menu-action', {
           action: 'edit-id3-tags',
           track: data.track
+        });
+      }
+    });
+  }
+
+  // Add "Remove from Collection" option for collection albums
+  if (data.type === 'collection-album') {
+    menuItems.push({
+      label: 'Remove from Collection',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'remove-from-collection',
+          type: 'album',
+          album: data.album
         });
       }
     });
