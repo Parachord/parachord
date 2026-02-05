@@ -10421,13 +10421,23 @@ const Parachord = () => {
     pollingGenerationRef.current++;
 
     if (resolverId === 'spotify' && config.token) {
-      const trackUri = track.spotifyUri || track.uri;
+      // Try multiple ways to get the Spotify URI:
+      // 1. Direct spotifyUri field
+      // 2. Generic uri field
+      // 3. Construct from spotifyId if available
+      let trackUri = track.spotifyUri || track.uri;
+      if (!trackUri && track.spotifyId) {
+        trackUri = `spotify:track:${track.spotifyId}`;
+        console.log(`🔄 Constructed Spotify URI from ID: ${trackUri}`);
+      }
       console.log(`🔄 Starting Spotify playback polling via main process...`);
       console.log(`   Track: ${track.title} by ${track.artist}`);
       console.log(`   Expected URI: ${trackUri}`);
+      console.log(`   Source fields: spotifyUri=${track.spotifyUri}, uri=${track.uri}, spotifyId=${track.spotifyId}`);
 
       if (!trackUri) {
         console.warn('⚠️ No Spotify URI found on track, auto-advance may not work');
+        console.warn('   Track object:', JSON.stringify(track, null, 2));
         return;
       }
 
@@ -24243,7 +24253,17 @@ const playOnSpotifyConnect = async (track) => {
     }
 
     // Now play the specific track on the device
-    console.log('Starting playback on device:', activeDevice.name);
+    // Get or construct the Spotify URI
+    let spotifyUri = track.spotifyUri || track.uri;
+    if (!spotifyUri && track.spotifyId) {
+      spotifyUri = `spotify:track:${track.spotifyId}`;
+      console.log(`🔄 Constructed Spotify URI from ID: ${spotifyUri}`);
+    }
+    if (!spotifyUri) {
+      console.error('❌ No Spotify URI or ID available for track:', track.title);
+      return false;
+    }
+    console.log('Starting playback on device:', activeDevice.name, 'with URI:', spotifyUri);
     const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, {
       method: 'PUT',
       headers: {
@@ -24251,7 +24271,7 @@ const playOnSpotifyConnect = async (track) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        uris: [track.spotifyUri]
+        uris: [spotifyUri]
       })
     });
     
