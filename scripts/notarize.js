@@ -16,6 +16,13 @@ exports.default = async function notarizing(context) {
     return;
   }
 
+  // Skip notarization for pull request builds
+  // electron-builder skips code signing for PRs, so notarization would fail
+  if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
+    console.log('Skipping notarization: pull request build (code signing was skipped)');
+    return;
+  }
+
   // Check for required environment variables
   const appleId = process.env.APPLE_ID;
   const appleIdPassword = process.env.APPLE_APP_SPECIFIC_PASSWORD;
