@@ -189,7 +189,7 @@ const AppleMusicSyncProvider = {
   async fetchPlaylists(token, onProgress) {
     const { developerToken, userToken } = JSON.parse(token);
     const items = await appleMusicFetch(
-      '/me/library/playlists?limit=100&include=tracks',
+      '/me/library/playlists?limit=100',
       developerToken,
       userToken,
       [],
@@ -197,6 +197,26 @@ const AppleMusicSyncProvider = {
     );
 
     const playlists = items.map(transformPlaylist);
+
+    // Fetch track counts individually (library playlists API doesn't include them)
+    const headers = {
+      'Authorization': `Bearer ${developerToken}`,
+      'Music-User-Token': userToken
+    };
+    await Promise.all(playlists.map(async (playlist) => {
+      try {
+        const resp = await fetch(
+          `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlist.externalId}/tracks?limit=1`,
+          { headers }
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          playlist.trackCount = data.meta?.total ?? data.data?.length ?? 0;
+        }
+      } catch {
+        // Leave trackCount as 0 on failure
+      }
+    }));
 
     return {
       playlists,
