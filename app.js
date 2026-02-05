@@ -9652,11 +9652,17 @@ const Parachord = () => {
       // We were passed a specific source object - detect resolver from it
       // Check which resolver this source came from by examining resolver-specific fields
       if (trackOrSource.spotifyId) resolverId = 'spotify';
+      else if (trackOrSource.appleMusicId) resolverId = 'applemusic';
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      // Fallback: use the 'source' property if set (added by search tagging)
+      else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
+        resolverId = trackOrSource.source;
+        console.log(`🎵 Using 'source' property as resolver: ${resolverId}`);
+      }
       else {
         console.error('❌ Could not determine resolver for source');
         setTrackLoading(false); // Clear loading state

@@ -40,7 +40,7 @@
  */
 const playTool = {
   name: 'play',
-  description: 'Play a specific track by searching for it and starting playback immediately',
+  description: 'Play a specific track by searching for it and starting playback immediately. Clears the queue before playing.',
   parameters: {
     type: 'object',
     properties: {
@@ -77,6 +77,8 @@ const playTool = {
       r.title?.toLowerCase() === title.toLowerCase()
     ) || results[0];
 
+    // Clear the queue before playing (user expects fresh start when they say "play")
+    context.clearQueue();
     await context.playTrack(bestMatch);
 
     return {
@@ -194,7 +196,7 @@ const searchTool = {
  */
 const queueAddTool = {
   name: 'queue_add',
-  description: 'Add one or more tracks to the playback queue. By default, plays the first track immediately (replacing whatever is currently playing) and queues the rest. Set playFirst to false to only add to queue without starting playback.',
+  description: 'Add one or more tracks to the playback queue. By default (playFirst=true), clears the queue, plays the first track immediately, and queues the rest. Set playFirst to false to add tracks to the existing queue without clearing it or starting playback.',
   parameters: {
     type: 'object',
     properties: {
@@ -217,7 +219,7 @@ const queueAddTool = {
       },
       playFirst: {
         type: 'boolean',
-        description: 'If true (default), play the first track immediately, replacing what is currently playing. If false, only add tracks to queue.'
+        description: 'If true (default), clears the queue, plays the first track immediately, and queues the rest. If false, adds tracks to existing queue without clearing or starting playback.'
       }
     },
     required: ['tracks']
@@ -225,6 +227,11 @@ const queueAddTool = {
   execute: async ({ tracks, position = 'last', playFirst = true }, context) => {
     let startedPlaying = false;
     let playedTrack = null;
+
+    // If playFirst is true, clear the existing queue first (user expects fresh start)
+    if (playFirst) {
+      context.clearQueue();
+    }
 
     // If playFirst is true and we have tracks, play the first track immediately
     if (playFirst && tracks.length > 0) {
