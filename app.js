@@ -12885,7 +12885,11 @@ const Parachord = () => {
           let textBefore = text.slice(pos, r.start);
           // Strip leading punctuation/whitespace if previous element was a card
           if (lastWasCard) {
-            textBefore = textBefore.replace(/^[\s.,!?;:]+/, '');
+            textBefore = textBefore.replace(/^[\s.,!?;:*]+/, '');
+          }
+          // Strip trailing ** or * markers if next element is a card (orphaned bold/italic)
+          if (r.type === 'card') {
+            textBefore = textBefore.replace(/\*+\s*$/, '');
           }
           if (textBefore) {
             result.push(textBefore);
@@ -12945,9 +12949,9 @@ const Parachord = () => {
       // Add remaining text
       if (pos < text.length) {
         let remaining = text.slice(pos);
-        // Strip leading punctuation/whitespace if previous element was a card
+        // Strip leading punctuation/whitespace/asterisks if previous element was a card
         if (lastWasCard) {
-          remaining = remaining.replace(/^[\s.,!?;:]+/, '');
+          remaining = remaining.replace(/^[\s.,!?;:*]+/, '');
         }
         if (remaining) {
           result.push(remaining);
