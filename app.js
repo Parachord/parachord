@@ -9479,22 +9479,59 @@ const Parachord = () => {
           return artistMatches && titleMatches;
         };
 
+        // Helper to find best matching result from search results
+        const findBestMatch = (results, targetArtist, targetTitle) => {
+          if (!results || results.length === 0) return null;
+          const normTargetArtist = normalizeStr(targetArtist);
+          const normTargetTitle = normalizeStr(targetTitle);
+          // First pass: look for exact match (normalized)
+          for (const r of results) {
+            if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
+              return r;
+            }
+          }
+          // Second pass: look for contains match
+          for (const r of results) {
+            if (validateResolvedTrack(r, targetArtist, targetTitle)) {
+              return r;
+            }
+          }
+          return null;
+        };
+
         const freshSources = {};
         const resolvePromises = enabledResolvers.map(async (resolver) => {
           try {
             const config = getResolverConfigRef.current
               ? await getResolverConfigRef.current(resolver.id)
               : {};
-            const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
-            if (result) {
-              // Validate the result actually matches the requested track
-              if (!validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
-                console.warn(`  ⚠️ Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${trackOrSource.title}" by "${trackOrSource.artist}"`);
-                return; // Don't add this source
+
+            let bestMatch = null;
+
+            // Prefer search() to get all results and find best match
+            if (resolver.search && typeof resolver.search === 'function') {
+              const query = `${trackOrSource.artist} ${trackOrSource.title}`;
+              const results = await resolver.search(query, config);
+              if (results && results.length > 0) {
+                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title);
+                if (!bestMatch) {
+                  console.warn(`  ⚠️ ${resolver.id} returned ${results.length} results but none matched "${trackOrSource.title}" by "${trackOrSource.artist}"`);
+                }
               }
+            } else {
+              // Fallback to resolve() for resolvers without search
+              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
+              if (result && validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
+                bestMatch = result;
+              } else if (result) {
+                console.warn(`  ⚠️ Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${trackOrSource.title}" by "${trackOrSource.artist}"`);
+              }
+            }
+
+            if (bestMatch) {
               freshSources[resolver.id] = {
-                ...result,
-                confidence: result.confidence || 0.9,
+                ...bestMatch,
+                confidence: bestMatch.confidence || 0.9,
                 resolvedAt: Date.now()
               };
             }
@@ -12491,22 +12528,64 @@ const Parachord = () => {
             return artistMatches && titleMatches;
           };
 
+          // Helper to find best matching result from search results
+          const findBestMatch = (results, targetArtist, targetTitle) => {
+            if (!results || results.length === 0) return null;
+            // First pass: look for exact match (normalized)
+            const normTargetArtist = normalizeStr(targetArtist);
+            const normTargetTitle = normalizeStr(targetTitle);
+            for (const r of results) {
+              if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
+                return r;
+              }
+            }
+            // Second pass: look for contains match
+            for (const r of results) {
+              if (validateResolvedTrack(r, targetArtist, targetTitle)) {
+                return r;
+              }
+            }
+            return null;
+          };
+
           // Resolve in parallel across all enabled resolvers
+          // Use search() directly when available to get all results, then find best match
           const resolvePromises = enabledResolvers.map(async (resolver) => {
             try {
               const config = getResolverConfigRef.current
                 ? await getResolverConfigRef.current(resolver.id)
                 : {};
-              const result = await resolver.resolve(artist, title, album, config);
-              if (result) {
-                // Validate the result actually matches the requested track
-                if (!validateResolvedTrack(result, artist, title)) {
-                  console.warn(`ChatCard: Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${title}" by "${artist}"`);
-                  return; // Don't add this source
+
+              let bestMatch = null;
+
+              // Prefer search() to get all results and find best match
+              if (resolver.search && typeof resolver.search === 'function') {
+                const query = `${artist} ${title}`;
+                console.log(`ChatCard: Searching ${resolver.id} for "${query}"`);
+                const results = await resolver.search(query, config);
+                if (results && results.length > 0) {
+                  console.log(`ChatCard: ${resolver.id} returned ${results.length} results`);
+                  bestMatch = findBestMatch(results, artist, title);
+                  if (bestMatch) {
+                    console.log(`ChatCard: ${resolver.id} found match - "${bestMatch.title}" by "${bestMatch.artist}"`);
+                  } else {
+                    console.warn(`ChatCard: ${resolver.id} returned ${results.length} results but none matched "${title}" by "${artist}"`);
+                  }
                 }
+              } else {
+                // Fallback to resolve() for resolvers without search
+                const result = await resolver.resolve(artist, title, album, config);
+                if (result && validateResolvedTrack(result, artist, title)) {
+                  bestMatch = result;
+                } else if (result) {
+                  console.warn(`ChatCard: Rejecting ${resolver.id} result - "${result.title}" by "${result.artist}" doesn't match "${title}" by "${artist}"`);
+                }
+              }
+
+              if (bestMatch) {
                 resolvedTrack.sources[resolver.id] = {
-                  ...result,
-                  confidence: result.confidence || 0.9,
+                  ...bestMatch,
+                  confidence: bestMatch.confidence || 0.9,
                   resolvedAt: Date.now()
                 };
               }
@@ -12529,13 +12608,24 @@ const Parachord = () => {
             // Play the resolved track
             await handlePlayRef.current(resolvedTrack);
           } else {
-            // No sources found - fallback to search
-            console.log('No sources found via resolution, falling back to search');
-            handleSearchInput(`${artist} ${title}`);
+            // No sources found - show error and clear loading state
+            console.error(`ChatCard: No valid sources found for "${title}" by "${artist}"`);
+            setTrackLoading(false);
+            setCurrentTrack(prev => prev?.id === placeholderId ? { ...prev, status: 'error' } : prev);
+            showConfirmDialog({
+              type: 'error',
+              title: 'Track Not Found',
+              message: `Could not find "${title}" by ${artist} on any of your enabled music services. Try searching manually or check your resolver settings.`
+            });
           }
         } catch (err) {
           console.error('Error playing track from chat card:', err);
-          handleSearchInput(`${artist} ${title}`);
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: `Failed to play "${title}" by ${artist}: ${err.message}`
+          });
         }
       } else if (type === 'artist') {
         fetchArtistData(title);
