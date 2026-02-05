@@ -141,7 +141,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           # Clone the target repo
-          TARGET_REPO="https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/raycast-parachord.git"
+          TARGET_REPO="https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-raycast.git"
           git clone "$TARGET_REPO" target-repo
 
           # Get the source commit info for the sync commit message
