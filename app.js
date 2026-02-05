@@ -39570,7 +39570,9 @@ useEffect(() => {
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', position: 'relative' } },
+            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
+                // "powered by:" label
+                React.createElement('span', { style: { fontSize: '12px', color: '#6b7280' } }, 'powered by:'),
                 // Custom dropdown button
                 (() => {
                   const enabledServices = getChatServices().filter(s => {
@@ -39581,37 +39583,33 @@ useEffect(() => {
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
                   const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
 
-                  return React.createElement(React.Fragment, null,
+                  return React.createElement('div', { style: { position: 'relative' } },
                     // Dropdown trigger button
                     React.createElement('button', {
                       onClick: () => setChatProviderDropdownOpen(!chatProviderDropdownOpen),
                       style: {
                         backgroundColor: 'rgba(255, 255, 255, 0.05)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '8px',
-                        padding: '6px 10px',
-                        fontSize: '13px',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
                         color: '#e5e7eb',
                         cursor: 'pointer',
                         outline: 'none',
-                        width: '100%',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        justifyContent: 'space-between'
+                        gap: '6px'
                       }
                     },
-                      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                        currentLogo
-                          ? React.createElement('span', { style: { width: '16px', height: '16px', display: 'inline-flex', flexShrink: 0 } },
-                              React.cloneElement(currentLogo, { className: '', style: { width: '16px', height: '16px' } })
-                            )
-                          : React.createElement('span', { style: { fontSize: '14px' } }, currentService?.icon || currentService?.manifest?.icon || '🤖'),
-                        currentService?.name || currentService?.manifest?.name || 'Select provider'
-                      ),
+                      currentLogo
+                        ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
+                            React.cloneElement(currentLogo, { className: '', style: { width: '14px', height: '14px' } })
+                          )
+                        : React.createElement('span', { style: { fontSize: '12px' } }, currentService?.icon || currentService?.manifest?.icon || '🤖'),
+                      currentService?.name || currentService?.manifest?.name || 'Select',
                       // Chevron icon
                       React.createElement('svg', {
-                        style: { width: '12px', height: '12px', transform: chatProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' },
+                        style: { width: '10px', height: '10px', transform: chatProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' },
                         viewBox: '0 0 24 24',
                         fill: 'none',
                         stroke: 'currentColor',
@@ -39625,15 +39623,15 @@ useEffect(() => {
                       style: {
                         position: 'absolute',
                         top: '100%',
-                        left: 0,
                         right: 0,
                         marginTop: '4px',
                         backgroundColor: '#1f2937',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '8px',
+                        borderRadius: '6px',
                         overflow: 'hidden',
                         zIndex: 50,
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                        minWidth: '140px'
                       }
                     },
                       enabledServices.map(service => {
@@ -39660,28 +39658,29 @@ useEffect(() => {
                           },
                           style: {
                             width: '100%',
-                            padding: '8px 12px',
+                            padding: '6px 10px',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px',
+                            gap: '6px',
                             backgroundColor: isSelected ? 'rgba(124, 58, 237, 0.2)' : 'transparent',
                             border: 'none',
                             color: '#e5e7eb',
-                            fontSize: '13px',
+                            fontSize: '12px',
                             cursor: 'pointer',
-                            textAlign: 'left'
+                            textAlign: 'left',
+                            whiteSpace: 'nowrap'
                           },
                           onMouseEnter: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; },
                           onMouseLeave: (e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'; }
                         },
                           logo
-                            ? React.createElement('span', { style: { width: '16px', height: '16px', display: 'inline-flex', flexShrink: 0 } },
-                                React.cloneElement(logo, { className: '', style: { width: '16px', height: '16px' } })
+                            ? React.createElement('span', { style: { width: '14px', height: '14px', display: 'inline-flex', flexShrink: 0 } },
+                                React.cloneElement(logo, { className: '', style: { width: '14px', height: '14px' } })
                               )
-                            : React.createElement('span', { style: { fontSize: '14px' } }, service.icon || service.manifest?.icon || '🤖'),
+                            : React.createElement('span', { style: { fontSize: '12px' } }, service.icon || service.manifest?.icon || '🤖'),
                           service.name || service.manifest?.name,
                           isSelected && React.createElement('svg', {
-                            style: { width: '14px', height: '14px', marginLeft: 'auto', color: '#a78bfa' },
+                            style: { width: '12px', height: '12px', marginLeft: 'auto', color: '#a78bfa' },
                             viewBox: '0 0 24 24',
                             fill: 'none',
                             stroke: 'currentColor',
