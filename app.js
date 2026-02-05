@@ -12291,8 +12291,15 @@ const Parachord = () => {
         await handlePlayRef.current(track);
       },
       addToQueue: async (tracks, position) => {
+        // Generate unique IDs for AI-added tracks that don't have them
+        // This prevents the "all tracks purple" bug when clicking a track with undefined id
+        const tracksWithIds = tracks.map((t, i) => ({
+          ...t,
+          id: t.id || `ai-queue-${Date.now()}-${i}-${t.artist?.slice(0, 10)}-${t.title?.slice(0, 10)}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          sources: t.sources || {}
+        }));
         // skipAutoPlay: true because queue_add tool handles auto-play itself
-        addToQueue(tracks, { type: 'aiPlaylist', name: 'Shuffleupagus' }, { skipAutoPlay: true });
+        addToQueue(tracksWithIds, { type: 'aiPlaylist', name: 'Shuffleupagus' }, { skipAutoPlay: true });
       },
       clearQueue: () => clearQueue(),
       removeFromQueue: (trackId) => removeFromQueue(trackId),
