@@ -4271,6 +4271,7 @@ const Parachord = () => {
     youtube: -6,     // YouTube videos are often much louder
     qobuz: 0         // Qobuz is typically well mastered
   });
+  const resolverVolumeOffsetsRef = useRef(resolverVolumeOffsets);  // Ref to avoid stale closure in save
   // Per-track volume adjustments (trackId -> dB offset from resolver default)
   const trackVolumeAdjustments = useRef({});
 
@@ -4393,11 +4394,13 @@ const Parachord = () => {
   const [criticsPicks, setCriticsPicks] = useState([]);
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
   const [criticsPicksLoaded, setCriticsPicksLoaded] = useState(false);
+  const [criticsPicksError, setCriticsPicksError] = useState(null);
 
   // Charts state
   const [charts, setCharts] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
+  const [chartsError, setChartsError] = useState(null);
 
   // Unread badges for discovery features (shows when content has changed since last view)
   const [discoveryUnread, setDiscoveryUnread] = useState({
@@ -9512,6 +9515,14 @@ const Parachord = () => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
+
+  // Keep volume offsets ref in sync and persist on change
+  useEffect(() => {
+    resolverVolumeOffsetsRef.current = resolverVolumeOffsets;
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
+    }
+  }, [resolverVolumeOffsets, cacheLoaded]);
 
   // Keep selectedPlaylistRef in sync for callbacks
   useEffect(() => {
@@ -15287,8 +15298,8 @@ const Parachord = () => {
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
 
-      // Save volume normalization offsets
-      await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
+      // Save volume normalization offsets (use ref to avoid stale closure)
+      await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
 
       // Save playlists view mode
       await window.electron.store.set('playlists_view_mode', playlistsViewMode);
@@ -18823,7 +18834,10 @@ const Parachord = () => {
     console.log('  Loaded resolvers count (ref):', loadedResolversRef.current.length);
     console.log('  Loaded resolver IDs (ref):', loadedResolversRef.current.map(r => r.id));
 
-    const resolver = loadedResolversRef.current.find(r => r.id === resolverId);
+    // Check both content resolvers and meta-services
+    const resolver = loadedResolversRef.current.find(r => r.id === resolverId)
+      || metaServices.find(s => s.id === resolverId);
+    const isMetaService = !loadedResolversRef.current.find(r => r.id === resolverId) && !!resolver;
 
     if (!resolver) {
       console.error('❌ Resolver not found:', resolverId);
@@ -18835,7 +18849,7 @@ const Parachord = () => {
       return;
     }
 
-    console.log('  Found resolver:', resolver.name);
+    console.log('  Found resolver:', resolver.name, isMetaService ? '(meta-service)' : '(content)');
 
     // Check if this plugin is available in the marketplace (can be reinstalled easily)
     const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
@@ -18873,7 +18887,11 @@ const Parachord = () => {
       removeResolverSources(resolverId);
 
       // Hot-reload: Remove from state without restarting
-      setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
+      if (isMetaService) {
+        setMetaServices(prev => prev.filter(s => s.id !== resolverId));
+      } else {
+        setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
+      }
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
 
@@ -18986,8 +19004,9 @@ const Parachord = () => {
       const resolverName = axe.manifest.name;
       const resolverId = axe.manifest.id;
 
-      // Check if already installed
-      const existing = allResolvers.find(r => r.id === resolverId);
+      // Check if already installed (content resolvers or meta-services)
+      const existing = allResolvers.find(r => r.id === resolverId)
+        || metaServices.find(s => s.id === resolverId);
       if (existing) {
         const shouldOverwrite = confirm(
           `Resolver "${resolverName}" is already installed.\n\n` +
@@ -19014,7 +19033,7 @@ const Parachord = () => {
 
       // Hot-reload
             axe._filename = filename;
-      const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+      const isMetaService = axe.manifest?.type === 'meta-service';
 
       // Remove from uninstalled list if it was previously uninstalled
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
@@ -19022,24 +19041,66 @@ const Parachord = () => {
         await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
       }
 
-      if (existing) {
-        setLoadedResolvers(prev => prev.map(r =>
-          r.id === resolverId ? newResolverInstance : r
-        ));
-        showConfirmDialog({
-          type: 'success',
-          title: 'Resolver Updated',
-          message: resolverName
-        });
+      if (isMetaService) {
+        // Load meta-service implementation into resolver loader
+        await resolverLoader.current.loadResolver(axe);
+
+        // Add to metaServices state
+        const metaServiceData = {
+          id: axe.manifest.id,
+          name: axe.manifest.name,
+          type: axe.manifest.type,
+          version: axe.manifest.version,
+          author: axe.manifest.author,
+          description: axe.manifest.description,
+          icon: axe.manifest.icon,
+          color: axe.manifest.color,
+          homepage: axe.manifest.homepage,
+          capabilities: axe.capabilities,
+          settings: axe.settings,
+          _filename: filename
+        };
+
+        const existingMeta = metaServices.find(s => s.id === resolverId);
+        if (existingMeta) {
+          setMetaServices(prev => prev.map(s =>
+            s.id === resolverId ? metaServiceData : s
+          ));
+          showConfirmDialog({
+            type: 'success',
+            title: 'Updated',
+            message: resolverName
+          });
+        } else {
+          setMetaServices(prev => [...prev, metaServiceData]);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Installed',
+            message: resolverName
+          });
+        }
       } else {
-        setLoadedResolvers(prev => [...prev, newResolverInstance]);
-        setResolverOrder(prev => [...prev, resolverId]);
-        setActiveResolvers(prev => [...prev, resolverId]);
-        showConfirmDialog({
-          type: 'success',
-          title: 'Installed',
-          message: resolverName
-        });
+        const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+
+        if (existing) {
+          setLoadedResolvers(prev => prev.map(r =>
+            r.id === resolverId ? newResolverInstance : r
+          ));
+          showConfirmDialog({
+            type: 'success',
+            title: 'Resolver Updated',
+            message: resolverName
+          });
+        } else {
+          setLoadedResolvers(prev => [...prev, newResolverInstance]);
+          setResolverOrder(prev => [...prev, resolverId]);
+          setActiveResolvers(prev => [...prev, resolverId]);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Installed',
+            message: resolverName
+          });
+        }
       }
     } catch (error) {
       console.error('Marketplace install error:', error);
@@ -19410,6 +19471,7 @@ ${tracks}
     if (criticsPicksLoading || criticsPicksLoaded) return;
 
     setCriticsPicksLoading(true);
+    setCriticsPicksError(null);
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
@@ -19436,11 +19498,7 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Critic\'s Picks:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load Critic\'s Picks. Please try again.'
-      });
+      setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
     } finally {
       setCriticsPicksLoading(false);
     }
@@ -19451,6 +19509,7 @@ ${tracks}
     if (chartsLoading || chartsLoaded) return;
 
     setChartsLoading(true);
+    setChartsError(null);
     console.log('📊 Loading Charts...');
 
     try {
@@ -19487,11 +19546,7 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Charts:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load Charts. Please try again.'
-      });
+      setChartsError('Failed to load Charts. Please try again.');
     } finally {
       setChartsLoading(false);
     }
@@ -34557,8 +34612,22 @@ useEffect(() => {
             },
             onScroll: handleChartsScroll
           },
-            // ALBUMS TAB - Grid of iTunes albums
-            chartsTab === 'albums' && (chartsLoading || !chartsLoaded) && React.createElement('div', {
+            // ALBUMS TAB - Error state
+            chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, chartsError),
+              React.createElement('button', {
+                onClick: () => { setChartsError(null); loadCharts(); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
+            // ALBUMS TAB - Grid of iTunes albums (skeleton loading)
+            chartsTab === 'albums' && !chartsError && (chartsLoading || !chartsLoaded) && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
               Array.from({ length: 15 }).map((_, i) =>
@@ -35246,8 +35315,22 @@ useEffect(() => {
             },
             onScroll: handleCriticsScroll
           },
+            // Error state for critics picks
+            criticsPicksError && !criticsPicksLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, criticsPicksError),
+              React.createElement('button', {
+                onClick: () => { setCriticsPicksError(null); loadCriticsPicks(); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
             // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
-            (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
+            !criticsPicksError && (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
               className: 'space-y-4 pb-6'
             },
             Array.from({ length: 8 }).map((_, i) =>

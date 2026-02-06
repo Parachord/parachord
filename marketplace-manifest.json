@@ -155,6 +155,24 @@
       "tags": ["local", "files", "library", "offline", "free"]
     },
     {
+      "id": "claude",
+      "name": "Claude",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Anthropic's Claude - thoughtful and capable AI assistant.",
+      "icon": "🧡",
+      "color": "#D97757",
+      "homepage": "https://anthropic.com",
+      "capabilities": {
+        "chat": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/claude.axe",
+      "category": "ai",
+      "tags": ["ai", "chat", "anthropic", "claude"]
+    },
+    {
       "id": "chatgpt",
       "name": "ChatGPT",
       "type": "meta-service",
@@ -171,6 +189,24 @@
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/chatgpt.axe",
       "category": "ai",
       "tags": ["ai", "playlist", "generation", "openai", "chatgpt"]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama (Local)",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Run AI locally with Ollama. Free, private, works offline.",
+      "icon": "🦙",
+      "color": "#000000",
+      "homepage": "https://ollama.ai",
+      "capabilities": {
+        "chat": true
+      },
+      "requiresAuth": false,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/ollama.axe",
+      "category": "ai",
+      "tags": ["ai", "chat", "local", "ollama", "free", "offline"]
     },
     {
       "id": "gemini",
