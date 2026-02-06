@@ -1,5 +1,7 @@
 I'm excited - and nervous - to announce Parachord, a music player that builds on the legacy of Tomahawk and unifies all your music sources into one seamless experience.
 
+![Parachord Screenshot](assets/artist-page2.png)
+
 # The Problem We’re Solving
 If you’re like us, your music is scattered everywhere. You have playlists on Spotify, purchased albums on Bandcamp, rare live recordings on YouTube, and a carefully curated local library of FLAC files. Switching between apps to listen to a single playlist is exhausting.
 
