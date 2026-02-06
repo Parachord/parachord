@@ -24966,12 +24966,21 @@ ${tracks}
         setAppleMusicNativeAvailable(available);
         console.log('🍎 Native MusicKit available:', available);
 
-        // If available and we have a saved auth state, check if still authorized
+        // Only auto-reconnect native MusicKit if user hasn't explicitly disconnected.
+        // macOS system auth persists in the keychain even after uninstall, so we must
+        // check our own electron-store flag to respect the user's disconnect action.
         if (available) {
-          const authStatus = await window.electron.musicKit.checkAuth();
-          if (authStatus.success && authStatus.authorized) {
-            console.log('🍎 Native MusicKit already authorized');
-            setAppleMusicConnected(true);
+          const savedAuthFlag = window.electron?.store
+            ? await window.electron.store.get('applemusic_authorized')
+            : null;
+          if (savedAuthFlag === false) {
+            console.log('🍎 Native MusicKit available but user disconnected - skipping auto-reconnect');
+          } else {
+            const authStatus = await window.electron.musicKit.checkAuth();
+            if (authStatus.success && authStatus.authorized) {
+              console.log('🍎 Native MusicKit already authorized');
+              setAppleMusicConnected(true);
+            }
           }
         }
       }
@@ -25118,9 +25127,12 @@ ${tracks}
       }
     }
 
-    // Clear from persistent storage
+    // Clear user auth from persistent storage. Set authorized to false (not delete) so
+    // startup can distinguish "user disconnected" from "never connected" and won't
+    // auto-reconnect based on macOS system keychain auth that persists across installs.
+    // Keep developer token intact — it's the app credential users authenticate against.
     if (window.electron?.store) {
-      await window.electron.store.delete('applemusic_authorized');
+      await window.electron.store.set('applemusic_authorized', false);
       await window.electron.store.delete('applemusic_user_token');
     }
 

@@ -4616,6 +4616,17 @@ ipcMain.handle('musickit:authorize', async () => {
   }
 });
 
+// Clear native MusicKit auth state (invalidate cache, stop helper)
+ipcMain.handle('musickit:unauthorize', async () => {
+  const bridge = getMusicKitBridge();
+  try {
+    bridge.unauthorize();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('musickit:fetch-user-token', async () => {
   const bridge = getMusicKitBridge();
   try {

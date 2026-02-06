@@ -51,6 +51,16 @@ class MusicKitBridge extends EventEmitter {
   }
 
   /**
+   * Clear auth state: invalidate cache and stop the helper process.
+   * Cannot programmatically revoke macOS system keychain auth, but this
+   * ensures the app won't treat the user as connected on next launch.
+   */
+  unauthorize() {
+    this.invalidateAuthCache();
+    this.stop();
+  }
+
+  /**
    * Get the path to the MusicKit helper executable (inside .app bundle)
    */
   getHelperPath() {
