@@ -24949,21 +24949,22 @@ ${tracks}
         setAppleMusicNativeAvailable(available);
         console.log('🍎 Native MusicKit available:', available);
 
-        // Only auto-reconnect native MusicKit if user hasn't explicitly disconnected.
-        // macOS system auth persists in the keychain even after uninstall, so we must
-        // check our own electron-store flag to respect the user's disconnect action.
+        // Only auto-reconnect native MusicKit if the user has previously connected
+        // in this app. macOS system auth persists in the keychain even after
+        // uninstall (and may exist from the system Music app), so we require an
+        // explicit opt-in flag rather than trusting keychain state alone.
         if (available) {
           const savedAuthFlag = window.electron?.store
             ? await window.electron.store.get('applemusic_authorized')
             : null;
-          if (savedAuthFlag === false) {
-            console.log('🍎 Native MusicKit available but user disconnected - skipping auto-reconnect');
-          } else {
+          if (savedAuthFlag === true) {
             const authStatus = await window.electron.musicKit.checkAuth();
             if (authStatus.success && authStatus.authorized) {
-              console.log('🍎 Native MusicKit already authorized');
+              console.log('🍎 Native MusicKit already authorized - auto-reconnecting');
               setAppleMusicConnected(true);
             }
+          } else {
+            console.log('🍎 Native MusicKit available but no prior connection - skipping auto-reconnect');
           }
         }
       }
