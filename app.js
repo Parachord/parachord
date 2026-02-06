@@ -4393,11 +4393,13 @@ const Parachord = () => {
   const [criticsPicks, setCriticsPicks] = useState([]);
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
   const [criticsPicksLoaded, setCriticsPicksLoaded] = useState(false);
+  const [criticsPicksError, setCriticsPicksError] = useState(null);
 
   // Charts state
   const [charts, setCharts] = useState([]);
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
+  const [chartsError, setChartsError] = useState(null);
 
   // Unread badges for discovery features (shows when content has changed since last view)
   const [discoveryUnread, setDiscoveryUnread] = useState({
@@ -19410,6 +19412,7 @@ ${tracks}
     if (criticsPicksLoading || criticsPicksLoaded) return;
 
     setCriticsPicksLoading(true);
+    setCriticsPicksError(null);
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
@@ -19436,11 +19439,7 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Critic\'s Picks:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load Critic\'s Picks. Please try again.'
-      });
+      setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
     } finally {
       setCriticsPicksLoading(false);
     }
@@ -19451,6 +19450,7 @@ ${tracks}
     if (chartsLoading || chartsLoaded) return;
 
     setChartsLoading(true);
+    setChartsError(null);
     console.log('📊 Loading Charts...');
 
     try {
@@ -19487,11 +19487,7 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Charts:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load Charts. Please try again.'
-      });
+      setChartsError('Failed to load Charts. Please try again.');
     } finally {
       setChartsLoading(false);
     }
@@ -34557,8 +34553,22 @@ useEffect(() => {
             },
             onScroll: handleChartsScroll
           },
-            // ALBUMS TAB - Grid of iTunes albums
-            chartsTab === 'albums' && (chartsLoading || !chartsLoaded) && React.createElement('div', {
+            // ALBUMS TAB - Error state
+            chartsTab === 'albums' && chartsError && !chartsLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, chartsError),
+              React.createElement('button', {
+                onClick: () => { setChartsError(null); loadCharts(); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
+            // ALBUMS TAB - Grid of iTunes albums (skeleton loading)
+            chartsTab === 'albums' && !chartsError && (chartsLoading || !chartsLoaded) && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-6'
             },
               Array.from({ length: 15 }).map((_, i) =>
@@ -35246,8 +35256,22 @@ useEffect(() => {
             },
             onScroll: handleCriticsScroll
           },
+            // Error state for critics picks
+            criticsPicksError && !criticsPicksLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, criticsPicksError),
+              React.createElement('button', {
+                onClick: () => { setCriticsPicksError(null); loadCriticsPicks(); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
             // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
-            (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
+            !criticsPicksError && (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
               className: 'space-y-4 pb-6'
             },
             Array.from({ length: 8 }).map((_, i) =>
