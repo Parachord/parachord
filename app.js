@@ -1740,8 +1740,8 @@ const ResolverCard = React.memo(({
         marginTop: '2px'
       }
     }, 'Setup required'),
-    // "Available" label for not installed
-    isNotInstalled && !isInstalling && React.createElement('span', {
+    // "Available" label for not installed OR installed-but-disabled without needsConfiguration
+    (isNotInstalled || (isDisabled && !needsConfiguration)) && !isInstalling && React.createElement('span', {
       style: {
         fontSize: '10px',
         fontWeight: '500',
@@ -4467,8 +4467,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['youtube']);
-  const [resolverOrder, setResolverOrder] = useState(['youtube']);
+  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'localfiles']);
+  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
@@ -4645,7 +4645,7 @@ const Parachord = () => {
   const [firstRunTutorial, setFirstRunTutorial] = useState({
     open: false,
     step: 'welcome', // 'welcome' | 'sources' | 'social' | 'features' | 'complete'
-    selectedSources: ['youtube'], // Default to YouTube as it's free
+    selectedSources: ['spotify', 'bandcamp', 'localfiles'],
     selectedScrobblers: [],
     spotifyConnecting: false,
     spotifyConnected: false
@@ -24802,11 +24802,17 @@ ${tracks}
         const result = await window.electron.soundcloud.authenticate();
         console.log('SoundCloud authenticate result:', result);
         if (!result.success && result.error) {
-          showConfirmDialog({
-            type: 'error',
-            title: 'Authentication Failed',
-            message: result.error
-          });
+          // If no credentials, guide user to Advanced section
+          if (result.error.includes('API credentials')) {
+            showToast('SoundCloud requires API credentials. Enter them below.', 'error');
+            setSoundcloudAdvancedOpen(true);
+          } else {
+            showConfirmDialog({
+              type: 'error',
+              title: 'Authentication Failed',
+              message: result.error
+            });
+          }
         }
       } catch (error) {
         console.error('SoundCloud auth error:', error);
@@ -38561,7 +38567,8 @@ useEffect(() => {
                           if (isAiService) {
                             // AI services: not active until user provides API key or explicitly enables
                             isServiceActive = !!(config?.apiKey || config?.enabled === true);
-                            needsConfiguration = !isServiceActive;
+                            // Don't show "Setup required" for optional AI services - show "Available" via isDisabled state
+                            needsConfiguration = false;
                           } else if (service.id === 'lastfm') {
                             // Last.fm: always active (used for metadata) but needs login for scrobbling
                             isServiceActive = true;
@@ -39462,6 +39469,16 @@ useEffect(() => {
                           // Clear localStorage tokens (MusicKit, etc.) that persist across resets
                           localStorage.removeItem('musickit_developer_token');
                           localStorage.removeItem('musickit_user_token');
+
+                          // Unauthorize MusicKit JS to revoke Apple Music session
+                          const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+                          if (musicKitWeb) {
+                            try { await musicKitWeb.unauthorize(); } catch (e) { /* ignore */ }
+                          }
+                          // Clear native MusicKit auth
+                          if (window.electron?.musicKit) {
+                            try { await window.electron.musicKit.unauthorize(); } catch (e) { /* ignore */ }
+                          }
 
                           // Reload the app (all React state reinitializes from defaults)
                           window.location.reload();
@@ -43974,20 +43991,34 @@ useEffect(() => {
               }
               return null;
             })(),
-            React.createElement('button', {
-              onClick: () => setSelectedResolver(null),
-              className: 'transition-colors',
-              style: {
-                padding: '8px 16px',
-                fontSize: '13px',
-                fontWeight: '500',
-                color: '#374151',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }
-            }, 'Done')
+            (() => {
+              const isAiService = selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey';
+              const config = metaServiceConfigs[selectedResolver.id];
+              const isUnconfiguredAi = isAiService && !config?.apiKey && config?.enabled !== true;
+              return React.createElement('button', {
+                onClick: () => {
+                  if (isUnconfiguredAi) {
+                    // Enable the service when clicking "Enable"
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: true
+                    });
+                  }
+                  setSelectedResolver(null);
+                },
+                className: 'transition-colors',
+                style: {
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: isUnconfiguredAi ? '#ffffff' : '#374151',
+                  backgroundColor: isUnconfiguredAi ? '#7c3aed' : 'rgba(0, 0, 0, 0.04)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }
+              }, isUnconfiguredAi ? 'Enable' : 'Done');
+            })()
           )
         )
       )

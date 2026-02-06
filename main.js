@@ -1958,6 +1958,20 @@ ipcMain.handle('store-clear', async () => {
     }
   }
 
+  // Clear Local Files database (watch folders, scanned tracks)
+  try {
+    const localFilesDbPath = path.join(app.getPath('userData'), 'local-files.db');
+    await fs.unlink(localFilesDbPath);
+    console.log('  ✅ Cleared Local Files database');
+    // Also clear WAL/SHM files if they exist
+    await fs.unlink(localFilesDbPath + '-wal').catch(() => {});
+    await fs.unlink(localFilesDbPath + '-shm').catch(() => {});
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('  ⚠️ Failed to clear Local Files database:', error.message);
+    }
+  }
+
   return { success: true };
 });
 
