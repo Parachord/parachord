@@ -42037,7 +42037,8 @@ useEffect(() => {
                   purchase: 'Purchase Downloads',
                   recommendations: 'Recommendations',
                   metadata: 'Metadata',
-                  generate: 'AI Playlist Generation'
+                  generate: 'AI Playlist Generation',
+                  chat: 'Conversational DJ'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
@@ -44307,7 +44308,8 @@ useEffect(() => {
                   purchase: 'Purchase Downloads',
                   recommendations: 'Recommendations',
                   metadata: 'Metadata',
-                  generate: 'AI Playlist Generation'
+                  generate: 'AI Playlist Generation',
+                  chat: 'Conversational DJ'
                 };
                 const label = capLabels[cap] || cap;
                 return React.createElement('span', {
