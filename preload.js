@@ -371,6 +371,8 @@ contextBridge.exposeInMainWorld('electron', {
     getCachedAuth: () => ipcRenderer.invoke('musickit:get-cached-auth'),
     // Request user authorization (shows Apple ID sign-in)
     authorize: () => ipcRenderer.invoke('musickit:authorize'),
+    // Clear native MusicKit auth state (invalidate cache, stop helper)
+    unauthorize: () => ipcRenderer.invoke('musickit:unauthorize'),
     // Fetch a Music User Token for REST API access (requires native MusicKit + dev token)
     fetchUserToken: () => ipcRenderer.invoke('musickit:fetch-user-token'),
     // Search for songs
