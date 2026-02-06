@@ -9378,6 +9378,7 @@ const Parachord = () => {
               } else {
                 alert(`Failed to delete playlist: ${result.error}`);
               }
+            }
           }
         } else if (data.action === 'edit-id3-tags' && data.track) {
           // Open ID3 tag editor modal
