@@ -1956,7 +1956,7 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         onClick: handleConnect,
         disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)),
         className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
-      }, connecting ? 'Connecting...' : 'Connect'),
+      }, connecting ? 'Authenticating...' : scrobbler.id === 'lastfm' ? 'Authenticate Scrobbling' : 'Connect'),
 
       // Waiting for authorization (auto-polling active)
       isPolling && React.createElement('div', {
@@ -25044,9 +25044,19 @@ ${tracks}
       }
     }
 
+    // Clear native MusicKit auth (macOS)
+    if (window.electron?.musicKit) {
+      try {
+        await window.electron.musicKit.unauthorize();
+      } catch (e) {
+        console.log('[AppleMusic] Native MusicKit sign out error:', e);
+      }
+    }
+
     // Clear from persistent storage
     if (window.electron?.store) {
       await window.electron.store.delete('applemusic_authorized');
+      await window.electron.store.delete('applemusic_user_token');
     }
 
     // Remove Apple Music sources from all tracks
@@ -38458,6 +38468,8 @@ useEffect(() => {
                             needsConfiguration = true;
                           } else if (resolver.id === 'applemusic' && !appleMusicConnected) {
                             needsConfiguration = true;
+                          } else if (resolver.id === 'soundcloud' && !soundcloudConnected) {
+                            needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;
                           }
@@ -43234,14 +43246,37 @@ useEffect(() => {
                     React.createElement('span', null, '✓'),
                     React.createElement('span', null, 'Connected to ListenBrainz')
                   ),
-                  // Show token status if configured
-                  metaServiceConfigs.listenbrainz.userToken && React.createElement('p', {
+                  // Show token status if configured - masked like AI service API keys
+                  metaServiceConfigs.listenbrainz.userToken && React.createElement('div', {
                     style: {
-                      marginTop: '8px',
-                      fontSize: '11px',
-                      color: '#6b7280'
+                      marginTop: '12px'
                     }
-                  }, '🔑 User token configured'),
+                  },
+                    React.createElement('label', {
+                      style: {
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: '#374151',
+                        marginBottom: '4px'
+                      }
+                    }, 'User Token'),
+                    React.createElement('input', {
+                      type: 'password',
+                      defaultValue: metaServiceConfigs.listenbrainz.userToken,
+                      readOnly: true,
+                      style: {
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        color: '#1f2937',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        borderRadius: '6px',
+                        outline: 'none'
+                      }
+                    })
+                  ),
 
                   // Scrobbling section for ListenBrainz
                   React.createElement('div', {
@@ -43418,7 +43453,9 @@ useEffect(() => {
           ),
 
           // AI Service configuration - generic based on plugin settings
-          (selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') && React.createElement('div', {
+          // Check both .axe settings and top-level marketplace manifest properties
+          ((selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') ||
+           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
@@ -44032,6 +44069,9 @@ useEffect(() => {
               const isContentResolver = selectedResolver.capabilities?.resolve && !selectedResolver.type;
               const isMetaService = selectedResolver.type === 'meta-service';
               const config = metaServiceConfigs[selectedResolver.id];
+              const isAiServiceNeedingKey = isMetaService &&
+                (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) &&
+                selectedResolver.id !== 'ollama';
 
               let showEnable = false;
               if (isContentResolver) {
@@ -44064,6 +44104,12 @@ useEffect(() => {
                         ...metaServiceConfigs[selectedResolver.id],
                         enabled: true
                       });
+                    }
+
+                    // For AI services that need an API key, keep the modal open
+                    // so the user can enter their key after enabling
+                    if (isAiServiceNeedingKey) {
+                      return; // Don't close modal - let user enter API key
                     }
                   }
                   setSelectedResolver(null);
