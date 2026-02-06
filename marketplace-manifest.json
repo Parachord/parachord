@@ -47,29 +47,6 @@
       "tags": ["streaming", "purchase", "independent", "discovery"]
     },
     {
-      "id": "qobuz",
-      "name": "Qobuz",
-      "version": "1.1.0",
-      "author": "Parachord Team",
-      "description": "Coming soon: High-quality audio streaming from Qobuz. Currently disabled pending API access.",
-      "icon": "🎵",
-      "color": "#0E7EBF",
-      "homepage": "https://qobuz.com",
-      "capabilities": {
-        "resolve": true,
-        "search": true,
-        "stream": true,
-        "browse": false,
-        "urlLookup": false
-      },
-      "requiresAuth": false,
-      "builtin": true,
-      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/qobuz.axe",
-      "category": "streaming",
-      "tags": ["streaming", "hi-res", "audiophile", "lossless", "flac"],
-      "_TODO": "Waiting for Qobuz to respond to request for access to their API"
-    },
-    {
       "id": "soundcloud",
       "name": "SoundCloud",
       "version": "1.0.0",

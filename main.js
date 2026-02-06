@@ -2768,17 +2768,17 @@ ipcMain.handle('resolvers-load-builtin', async () => {
           const content = await fs.readFile(filepath, 'utf8');
           const axe = JSON.parse(content);
 
-          // Check for duplicates - app plugins take priority
+          // Check for duplicates - marketplace cache overrides shipped plugins
           const existingIdx = plugins.findIndex(p => p.manifest.id === axe.manifest.id);
           if (existingIdx !== -1) {
-            if (source === 'app') {
-              // App plugins override cached plugins
+            if (source === 'cache') {
+              // Marketplace updates override shipped plugins
               plugins[existingIdx] = axe;
               axe._filename = filename;
               axe._source = source;
-              console.log(`  🔄 Override ${axe.manifest.name} from ${source}`);
+              console.log(`  🔄 Marketplace update: ${axe.manifest.name} v${axe.manifest.version}`);
             } else {
-              console.log(`  ⚠️  Skipping ${axe.manifest.name} (duplicate ID: ${axe.manifest.id})`);
+              console.log(`  ⚠️  Skipping ${axe.manifest.name} (already loaded from cache)`);
             }
             continue;
           }
@@ -2799,11 +2799,11 @@ ipcMain.handle('resolvers-load-builtin', async () => {
     }
   };
 
-  // Load from cache first
-  await loadPluginsFromDir(pluginsDir, 'cache');
-
-  // Then load from app's plugins directory (overrides cache)
+  // Load shipped plugins first (baseline)
   await loadPluginsFromDir(appPluginsDir, 'app');
+
+  // Then load marketplace cache (overrides shipped versions with updates)
+  await loadPluginsFromDir(pluginsDir, 'cache');
 
   console.log(`✅ Loaded ${plugins.length} plugin(s) total`);
   return plugins;

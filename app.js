@@ -879,8 +879,7 @@ const loadBuiltinResolvers = async () => {
     console.log('📁 Loading resolvers via fetch (web mode)...');
     const resolverFiles = [
       'resolvers/builtin/spotify.axe',
-      'resolvers/builtin/bandcamp.axe',
-      'resolvers/builtin/qobuz.axe'
+      'resolvers/builtin/bandcamp.axe'
     ];
     
     const resolvers = [];
@@ -4430,8 +4429,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'qobuz', 'youtube', 'soundcloud']);
+  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'applemusic', 'bandcamp', 'youtube']);
+  const [resolverOrder, setResolverOrder] = useState(['spotify', 'applemusic', 'bandcamp', 'youtube', 'soundcloud']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
@@ -6724,6 +6723,24 @@ const Parachord = () => {
             resolversToLoad = [...builtinAxeFiles, ...missingBuiltins];
           }
         }
+
+        // Ensure builtin resolver manifest types match app definitions
+        // (cached marketplace .axe files may have incorrect type field)
+        for (const fallbackAxe of FALLBACK_RESOLVERS) {
+          const loaded = resolversToLoad.find(axe => axe.manifest?.id === fallbackAxe.manifest?.id);
+          if (loaded && loaded.manifest.type !== fallbackAxe.manifest.type) {
+            console.log(`🔧 Fixing type for ${loaded.manifest.name}: "${loaded.manifest.type}" → "${fallbackAxe.manifest.type || 'resolver'}"`);
+            if (fallbackAxe.manifest.type) {
+              loaded.manifest.type = fallbackAxe.manifest.type;
+            } else {
+              delete loaded.manifest.type;
+            }
+          }
+        }
+
+        // Hide unreleased resolvers (not ready for users yet)
+        const hiddenResolvers = ['qobuz'];
+        resolversToLoad = resolversToLoad.filter(axe => !hiddenResolvers.includes(axe.manifest?.id));
 
         // Filter out user-uninstalled resolvers (they can reinstall from marketplace)
         if (uninstalledResolvers.length > 0) {
@@ -38301,6 +38318,8 @@ useEffect(() => {
                         if (resolver.isInstalled) {
                           if (resolver.id === 'spotify' && !spotifyConnected) {
                             needsConfiguration = true;
+                          } else if (resolver.id === 'applemusic' && !appleMusicConnected) {
+                            needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;
                           }
@@ -38431,16 +38450,33 @@ useEffect(() => {
                         const isInstalling = installingResolvers.has(service.id);
                         const config = metaServiceConfigs[service.id];
 
-                        // Check if needs configuration (for AI services - need API key)
+                        // Determine active state and configuration needs per service type
                         let needsConfiguration = false;
-                        if (service.isInstalled && service.capabilities?.generate) {
-                          needsConfiguration = !config?.apiKey;
+                        let isServiceActive = false;
+                        if (service.isInstalled) {
+                          const isAiService = service.capabilities?.generate || service.capabilities?.chat;
+                          if (isAiService) {
+                            // AI services: not active until user provides API key or explicitly enables
+                            isServiceActive = !!(config?.apiKey || config?.enabled === true);
+                            needsConfiguration = !isServiceActive;
+                          } else if (service.id === 'lastfm') {
+                            // Last.fm: always active (used for metadata) but needs login for scrobbling
+                            isServiceActive = true;
+                            needsConfiguration = !config?.username;
+                          } else if (service.id === 'listenbrainz' || service.id === 'librefm') {
+                            // ListenBrainz, Libre.fm: disabled until user logs in
+                            isServiceActive = !!config?.username;
+                            needsConfiguration = !config?.username;
+                          } else {
+                            // Wikipedia, Discogs, etc.: always active
+                            isServiceActive = true;
+                          }
                         }
 
                         return React.createElement(ResolverCard, {
                           key: service.id,
                           resolver: service,
-                          isActive: service.isInstalled ? true : null,
+                          isActive: service.isInstalled ? isServiceActive : null,
                           isInstalled: service.isInstalled,
                           isMarketplaceOnly: !service.isInstalled,
                           hasUpdate: service.hasUpdate,
