@@ -1888,6 +1888,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'scrobble-failed-queue', 'scrobbling-enabled', 'search_history',
   'selected_chat_provider', 'show_discovery_badges',
   'skip_external_prompt', 'skip_unsaved_friend_warning',
+  'suppressed_sync_playlists',
   'tutorial_completed', 'uninstalled_resolvers',
 ]);
 
@@ -1918,6 +1919,34 @@ ipcMain.handle('store-delete', (event, key) => {
   }
   store.delete(key);
   return true;
+});
+
+ipcMain.handle('store-clear', async () => {
+  console.log('=== Reset Application Data ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  // Clear all electron-store data
+  store.clear();
+  console.log('  ✅ Cleared electron-store');
+
+  // Clear plugin cache directory
+  try {
+    const pluginsDir = getPluginsCacheDir();
+    const files = await fs.readdir(pluginsDir);
+    for (const file of files) {
+      if (file.endsWith('.axe')) {
+        await fs.unlink(path.join(pluginsDir, file));
+      }
+    }
+    console.log('  ✅ Cleared plugin cache');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('  ⚠️ Failed to clear plugin cache:', error.message);
+    }
+  }
+
+  return { success: true };
 });
 
 // Config handler - expose select environment variables to renderer
@@ -3545,6 +3574,61 @@ ipcMain.handle('playlists-delete', async (event, playlistId) => {
   }
 });
 
+ipcMain.handle('playlists-suppress-sync', async (event, providerId, externalId) => {
+  console.log(`=== Suppress Sync: ${providerId}/${externalId} ===`);
+  try {
+    const suppressed = store.get('suppressed_sync_playlists') || {};
+    if (!suppressed[providerId]) {
+      suppressed[providerId] = [];
+    }
+    if (!suppressed[providerId].includes(externalId)) {
+      suppressed[providerId].push(externalId);
+    }
+    store.set('suppressed_sync_playlists', suppressed);
+    console.log('  ✅ Playlist suppressed from future syncs');
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Suppress failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playlists-delete-from-source', async (event, providerId, externalId) => {
+  console.log(`=== Delete Playlist from Source: ${providerId}/${externalId} ===`);
+  try {
+    const providers = {
+      spotify: require('./sync-providers/spotify'),
+      applemusic: require('./sync-providers/applemusic')
+    };
+
+    const provider = providers[providerId];
+    if (!provider || !provider.deletePlaylist) {
+      return { success: false, error: `Provider ${providerId} does not support playlist deletion` };
+    }
+
+    // Get auth token for the provider
+    let token;
+    if (providerId === 'spotify') {
+      token = store.get('spotify_access_token');
+    } else if (providerId === 'applemusic') {
+      const developerToken = store.get('applemusic_developer_token');
+      const userToken = store.get('applemusic_user_token');
+      token = JSON.stringify({ developerToken, userToken });
+    }
+
+    if (!token) {
+      return { success: false, error: 'Not authenticated with provider' };
+    }
+
+    await provider.deletePlaylist(externalId, token);
+    console.log('  ✅ Deleted playlist from source');
+    return { success: true };
+  } catch (error) {
+    console.error('  ❌ Delete from source failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('playlists-export', async (event, defaultFilename, xspfContent) => {
   console.log('=== Export Playlist ===');
   const { dialog } = require('electron');
@@ -4047,7 +4131,12 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       // Fetch playlist metadata to check for updates
       sendProgress({ phase: 'playlists', current: 0, total: settings.selectedPlaylistIds.length, providerId });
       const { playlists: remotePlaylists } = await provider.fetchPlaylists(token);
-      const selectedRemote = remotePlaylists.filter(p => settings.selectedPlaylistIds.includes(p.externalId));
+      const suppressedPlaylists = store.get('suppressed_sync_playlists') || {};
+      const suppressedForProvider = suppressedPlaylists[providerId] || [];
+      const selectedRemote = remotePlaylists.filter(p =>
+        settings.selectedPlaylistIds.includes(p.externalId) &&
+        !suppressedForProvider.includes(p.externalId)
+      );
 
       let playlistsAdded = 0;
       let playlistsUpdated = 0;
