@@ -25,8 +25,18 @@ const generateTrackId = (artist, title, album) => {
 /**
  * Make an authenticated Apple Music API request with pagination
  */
-const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [], onProgress) => {
+const MAX_RETRIES = 5;
+
+const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [], onProgress, _retryCount = 0) => {
   const url = endpoint.startsWith('http') ? endpoint : `${APPLE_MUSIC_API_BASE}${endpoint}`;
+
+  // Validate pagination URLs stay on the expected host
+  if (endpoint.startsWith('http')) {
+    const parsedUrl = new URL(endpoint);
+    if (parsedUrl.hostname !== 'api.music.apple.com') {
+      throw new Error(`Unexpected pagination hostname: ${parsedUrl.hostname}`);
+    }
+  }
 
   const response = await fetch(url, {
     headers: {
@@ -38,9 +48,12 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
 
   if (!response.ok) {
     if (response.status === 429) {
+      if (_retryCount >= MAX_RETRIES) {
+        throw new Error('Apple Music API rate limit exceeded after maximum retries');
+      }
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return appleMusicFetch(endpoint, developerToken, userToken, allItems, onProgress);
+      return appleMusicFetch(endpoint, developerToken, userToken, allItems, onProgress, _retryCount + 1);
     }
     if (response.status === 401 || response.status === 403) {
       throw new Error('Apple Music token expired or unauthorized. Please reconnect your Apple Music account.');
@@ -64,7 +77,7 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
     const nextUrl = data.next.startsWith('http')
       ? data.next
       : `https://api.music.apple.com${data.next}`;
-    return appleMusicFetch(nextUrl, developerToken, userToken, combined, onProgress);
+    return appleMusicFetch(nextUrl, developerToken, userToken, combined, onProgress, 0);
   }
 
   return combined;

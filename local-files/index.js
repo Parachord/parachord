@@ -322,15 +322,27 @@ class LocalFilesService {
   }
 
   // Helper to download image from URL
-  async downloadImage(url) {
+  async downloadImage(url, _redirectDepth = 0) {
+    const MAX_REDIRECTS = 5;
+    const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+    if (_redirectDepth > MAX_REDIRECTS) {
+      throw new Error('Too many redirects');
+    }
+
+    // Validate URL protocol
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      throw new Error('Only HTTP and HTTPS URLs are allowed');
+    }
+
     return new Promise((resolve, reject) => {
       const protocol = url.startsWith('https') ? require('https') : require('http');
 
       const request = protocol.get(url, (response) => {
-        // Handle redirects
+        // Handle redirects with depth limit
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           console.log(`[LocalFiles] Following redirect to: ${response.headers.location}`);
-          this.downloadImage(response.headers.location).then(resolve).catch(reject);
+          this.downloadImage(response.headers.location, _redirectDepth + 1).then(resolve).catch(reject);
           return;
         }
 
@@ -340,7 +352,16 @@ class LocalFilesService {
         }
 
         const chunks = [];
-        response.on('data', (chunk) => chunks.push(chunk));
+        let totalSize = 0;
+        response.on('data', (chunk) => {
+          totalSize += chunk.length;
+          if (totalSize > MAX_RESPONSE_SIZE) {
+            request.destroy();
+            reject(new Error('Response too large'));
+            return;
+          }
+          chunks.push(chunk);
+        });
         response.on('end', () => {
           const buffer = Buffer.concat(chunks);
           resolve(buffer);

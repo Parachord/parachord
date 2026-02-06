@@ -121,6 +121,8 @@ class MetadataReader {
 
         fs.closeSync(fd);
       } catch (err) {
+        // Ensure file descriptor is closed on error to prevent FD leaks
+        try { if (typeof fd !== 'undefined' && fd !== null) fs.closeSync(fd); } catch (_) {}
         console.error(`[MetadataReader] Error calculating fallback duration:`, err.message);
       }
     }

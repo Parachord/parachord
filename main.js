@@ -589,7 +589,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      webviewTag: true  // Enable webview support for embedded players
+      webviewTag: false  // Disabled for security — use BrowserView or iframes instead
     },
     show: false
   });
@@ -675,11 +675,13 @@ function startAuthServer() {
     const error = req.query.error;
 
     if (error) {
+      // HTML-escape error to prevent XSS via crafted callback URLs
+      const safeError = String(error).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       res.send(`
         <html>
           <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
             <h1>❌ Authentication Failed</h1>
-            <p>${error}</p>
+            <p>${safeError}</p>
             <p>You can close this window.</p>
           </body>
         </html>
@@ -710,11 +712,13 @@ function startAuthServer() {
     const error = req.query.error;
 
     if (error) {
+      // HTML-escape error to prevent XSS via crafted callback URLs
+      const safeError = String(error).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       res.send(`
         <html>
           <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
             <h1>❌ Authentication Failed</h1>
-            <p>${error}</p>
+            <p>${safeError}</p>
             <p>You can close this window.</p>
           </body>
         </html>
@@ -1180,15 +1184,30 @@ app.whenReady().then(() => {
       const filePath = decodeURIComponent(request.url.replace('local-audio://', ''));
       console.log('[LocalAudio] Requested file:', filePath);
 
+      // Security: resolve the real path to prevent directory traversal via symlinks/..
+      const resolvedPath = path.resolve(filePath);
+
+      // Validate the file is within a watched folder
+      if (localFilesService?.initialized) {
+        const watchFolders = localFilesService.getWatchFolders();
+        const isInWatchedFolder = watchFolders.some(folder =>
+          resolvedPath.startsWith(folder.path + path.sep) || resolvedPath === folder.path
+        );
+        if (!isInWatchedFolder) {
+          console.error('[LocalAudio] Access denied — file not in a watched folder:', resolvedPath);
+          return new Response('Access denied', { status: 403 });
+        }
+      }
+
       // Verify file exists and get stats
-      const stats = await fs.promises.stat(filePath);
+      const stats = await fs.promises.stat(resolvedPath);
       if (!stats.isFile()) {
-        console.error('[LocalAudio] Not a file:', filePath);
+        console.error('[LocalAudio] Not a file:', resolvedPath);
         return new Response('Not a file', { status: 404 });
       }
 
       // Get file extension for MIME type
-      const ext = path.extname(filePath).toLowerCase();
+      const ext = path.extname(resolvedPath).toLowerCase();
       const mimeTypes = {
         '.mp3': 'audio/mpeg',
         '.m4a': 'audio/mp4',
@@ -1214,7 +1233,7 @@ app.whenReady().then(() => {
 
           console.log(`[LocalAudio] Range request: ${start}-${end}/${stats.size}`);
 
-          const fileHandle = await fs.promises.open(filePath, 'r');
+          const fileHandle = await fs.promises.open(resolvedPath, 'r');
           const buffer = Buffer.alloc(chunkSize);
           await fileHandle.read(buffer, 0, chunkSize, start);
           await fileHandle.close();
@@ -1232,7 +1251,7 @@ app.whenReady().then(() => {
       }
 
       // Full file request
-      const buffer = await fs.promises.readFile(filePath);
+      const buffer = await fs.promises.readFile(resolvedPath);
       console.log(`[LocalAudio] Serving full file: ${buffer.length} bytes`);
 
       return new Response(buffer, {
@@ -1853,17 +1872,50 @@ ipcMain.handle('updater-get-version', () => {
   return app.getVersion();
 });
 
-// IPC handlers for storage
+// IPC handlers for storage — restricted to a whitelist of safe keys
+const ALLOWED_STORE_KEYS = new Set([
+  'active_resolvers', 'ai_chat_histories', 'ai_include_history',
+  'applemusic_authorized', 'applemusic_developer_token', 'applemusic_user_token',
+  'auto_launch_spotify', 'autoPinnedFriendIds',
+  'cache_album_art', 'cache_album_release_ids', 'cache_artist_data',
+  'cache_artist_images', 'cache_charts', 'cache_playlist_covers', 'cache_track_sources',
+  'discovery_seen_charts', 'discovery_seen_criticsPicks', 'discovery_seen_recommendations',
+  'friends', 'last_active_view', 'local_playlists', 'media-key-handling',
+  'meta_service_configs', 'pinnedFriendIds', 'playlists_view_mode',
+  'recommendation_blocklist', 'remember_queue',
+  'resolver_order', 'resolver_sync_settings', 'resolver_volume_offsets',
+  'saved_playback_context', 'saved_queue', 'saved_shuffle_state',
+  'scrobble-failed-queue', 'scrobbling-enabled', 'search_history',
+  'selected_chat_provider', 'show_discovery_badges',
+  'skip_external_prompt', 'skip_unsaved_friend_warning',
+  'tutorial_completed', 'uninstalled_resolvers',
+]);
+
+// Sensitive keys that should only be accessed by dedicated IPC handlers
+// (spotify_token, spotify_refresh_token, soundcloud_client_secret, etc.)
+
 ipcMain.handle('store-get', (event, key) => {
+  if (!ALLOWED_STORE_KEYS.has(key)) {
+    console.warn(`⚠️ Blocked store-get for non-whitelisted key: ${key}`);
+    return undefined;
+  }
   return store.get(key);
 });
 
 ipcMain.handle('store-set', (event, key, value) => {
+  if (!ALLOWED_STORE_KEYS.has(key)) {
+    console.warn(`⚠️ Blocked store-set for non-whitelisted key: ${key}`);
+    return false;
+  }
   store.set(key, value);
   return true;
 });
 
 ipcMain.handle('store-delete', (event, key) => {
+  if (!ALLOWED_STORE_KEYS.has(key)) {
+    console.warn(`⚠️ Blocked store-delete for non-whitelisted key: ${key}`);
+    return false;
+  }
   store.delete(key);
   return true;
 });
@@ -2189,13 +2241,7 @@ ipcMain.handle('soundcloud-disconnect', async () => {
   return { success: true };
 });
 
-// Debug handler to inspect store contents
-ipcMain.handle('debug-store', () => {
-  console.log('=== Debug Store Contents ===');
-  const allData = store.store;
-  console.log('All store data:', allData);
-  return allData;
-});
+// Debug handler removed for security — exposed all credentials to renderer
 
 // Shell handler to open external URLs
 ipcMain.handle('shell-open-external', async (event, url) => {
@@ -2582,8 +2628,30 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   console.log('=== Proxy Fetch ===');
   console.log('URL:', url);
   console.log('Method:', options.method || 'GET');
-  console.log('Headers:', JSON.stringify(options.headers || {}, null, 2));
-  console.log('Response type:', options.responseType || 'text');
+
+  // Validate URL to prevent SSRF attacks
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      return { success: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+    }
+    // Block requests to private/internal networks
+    const hostname = urlObj.hostname;
+    if (hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '0.0.0.0' ||
+        hostname === '::1' ||
+        hostname.startsWith('10.') ||
+        hostname.startsWith('192.168.') ||
+        hostname.match(/^172\.(1[6-9]|2\d|3[01])\./) ||
+        hostname === '169.254.169.254' ||
+        hostname.endsWith('.local') ||
+        hostname.endsWith('.internal')) {
+      return { success: false, error: 'Requests to private/internal networks are not allowed' };
+    }
+  } catch (e) {
+    return { success: false, error: `Invalid URL: ${e.message}` };
+  }
 
   try {
     const fetchOptions = {
@@ -2863,11 +2931,26 @@ ipcMain.handle('resolvers-install', async (event, axeContent, filename) => {
     const axe = JSON.parse(axeContent);
     console.log(`  Plugin: ${axe.manifest.name} v${axe.manifest.version}`);
 
+    // Sanitize filename — strip path separators and directory traversal
+    const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (!safeFilename.endsWith('.axe')) {
+      throw new Error('Invalid filename: must end with .axe');
+    }
+
+    // Validate manifest.id format — alphanumeric, dots, dashes only
+    if (axe.manifest.id && !/^[a-zA-Z0-9._-]+$/.test(axe.manifest.id)) {
+      throw new Error('Invalid manifest.id: must contain only alphanumeric characters, dots, dashes, and underscores');
+    }
+
     // Save to plugins cache directory
     const pluginsDir = getPluginsCacheDir();
     await fs.mkdir(pluginsDir, { recursive: true });
 
-    const targetPath = path.join(pluginsDir, filename);
+    const targetPath = path.join(pluginsDir, safeFilename);
+    // Verify target is still within pluginsDir after path.join
+    if (!targetPath.startsWith(pluginsDir)) {
+      throw new Error('Invalid filename: path traversal detected');
+    }
     await fs.writeFile(targetPath, axeContent, 'utf8');
 
     console.log(`  ✅ Installed to: ${targetPath}`);
@@ -3330,7 +3413,10 @@ ipcMain.handle('marketplace-download-resolver', async (event, url) => {
 
     console.log(`✅ Downloaded resolver: ${axe.manifest.name}`);
 
-    // Generate filename from resolver ID
+    // Validate and sanitize manifest.id for use as filename
+    if (!/^[a-zA-Z0-9._-]+$/.test(axe.manifest.id)) {
+      throw new Error('Invalid manifest.id: must contain only alphanumeric characters, dots, dashes, and underscores');
+    }
     const filename = `${axe.manifest.id}.axe`;
 
     return { success: true, content, filename, resolver: axe };

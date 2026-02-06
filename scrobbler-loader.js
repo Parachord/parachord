@@ -394,7 +394,12 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       return { valid: false, error: 'Invalid token' };
     }
 
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
     return {
       valid: data.valid,
       username: data.user_name,
@@ -497,7 +502,12 @@ class LastFmScrobbler extends BaseScrobbler {
       throw new Error(`Last.fm API request failed: ${response.error || response.status}`);
     }
 
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Last.fm API error ${data.error}: ${data.message}`);
@@ -535,7 +545,12 @@ class LastFmScrobbler extends BaseScrobbler {
     if (!response.success) {
       throw new Error(`Failed to get auth token: ${response.error || response.status}`);
     }
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
     if (data.error) {
       throw new Error(`Failed to get auth token: ${data.message}`);
     }
@@ -562,7 +577,12 @@ class LastFmScrobbler extends BaseScrobbler {
     if (!response.success) {
       throw new Error(`Failed to get session: ${response.error || response.status}`);
     }
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Failed to get session: ${data.message}`);
@@ -726,7 +746,12 @@ class LibreFmScrobbler extends LastFmScrobbler {
       throw new Error(`Libre.fm auth request failed: ${response.error || response.status}`);
     }
 
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Libre.fm auth failed: ${data.message}`);
@@ -756,7 +781,12 @@ class LibreFmScrobbler extends LastFmScrobbler {
     if (!response.success) {
       throw new Error(`Failed to get auth token: ${response.error || response.status}`);
     }
-    const data = JSON.parse(response.text);
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Failed to get auth token: ${data.message}`);

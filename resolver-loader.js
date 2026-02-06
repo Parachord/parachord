@@ -93,6 +93,23 @@ class ResolverLoader {
       }
     }
 
+    // Filter implementation functions to prevent prototype pollution
+    const RESERVED_KEYS = new Set([
+      '__proto__', 'constructor', 'prototype',
+      'id', 'name', 'version', 'author', 'description', 'icon', 'color',
+      'homepage', 'email', 'capabilities', 'urlPatterns',
+      'requiresAuth', 'authType', 'configurable', 'enabled', 'weight', 'config',
+      '_bindContext'
+    ]);
+    const safeImplFunctions = {};
+    for (const [key, fn] of Object.entries(implFunctions)) {
+      if (!RESERVED_KEYS.has(key)) {
+        safeImplFunctions[key] = fn;
+      } else {
+        console.warn(`⚠️ Skipping reserved implementation key "${key}" in resolver ${manifest.id}`);
+      }
+    }
+
     // Create resolver object
     const resolver = {
       // Metadata
@@ -121,13 +138,13 @@ class ResolverLoader {
       weight: 0,
       config: {},
 
-      // Implementation
-      ...implFunctions,
+      // Implementation (filtered for safety)
+      ...safeImplFunctions,
 
       // Bind this context to implementation functions
       _bindContext() {
         const self = this;
-        for (const key of Object.keys(implFunctions)) {
+        for (const key of Object.keys(safeImplFunctions)) {
           const original = this[key];
           this[key] = function(...args) {
             return original.call(self, ...args);

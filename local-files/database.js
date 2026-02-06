@@ -89,10 +89,12 @@ class LocalFilesDatabase {
   }
 
   removeWatchFolder(folderPath) {
+    // Escape LIKE wildcards in folder path to prevent pattern injection
+    const escapedPath = folderPath.replace(/[%_]/g, '\\$&');
     const deleteTracksStmt = this.db.prepare(`
-      DELETE FROM tracks WHERE file_path LIKE ?
+      DELETE FROM tracks WHERE file_path LIKE ? ESCAPE '\\'
     `);
-    deleteTracksStmt.run(folderPath + '%');
+    deleteTracksStmt.run(escapedPath + '%');
 
     const deleteFolderStmt = this.db.prepare(`
       DELETE FROM watch_folders WHERE path = ?
