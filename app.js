@@ -11617,7 +11617,14 @@ const Parachord = () => {
     if (isAppleMusicActive && window.electron?.musicKit) {
       try {
         if (isPlaying) {
+          // Pause both native MusicKit AND preview audio — when native MusicKit fails,
+          // playback falls back to preview via window._appleMusicPreviewAudio but this
+          // handler was only pausing native MusicKit, leaving the preview stream running
           await window.electron.musicKit.pause();
+          if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+            window._appleMusicPreviewAudio.pause();
+            console.log('🍎 Paused Apple Music preview audio');
+          }
           setIsPlaying(false);
           // Stop polling so stale state checks don't trigger auto-advance
           if (window.electron.musicKit.polling) {
@@ -11626,6 +11633,11 @@ const Parachord = () => {
           console.log('🍎 Paused Apple Music playback');
         } else {
           await window.electron.musicKit.resume();
+          // Resume preview audio if it was the active playback method
+          if (window._appleMusicPreviewAudio && window._appleMusicPreviewAudio.src && window._appleMusicPreviewAudio.paused) {
+            await window._appleMusicPreviewAudio.play();
+            console.log('🍎 Resumed Apple Music preview audio');
+          }
           setIsPlaying(true);
           console.log('🍎 Resumed Apple Music playback');
         }
