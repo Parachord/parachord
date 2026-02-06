@@ -1921,6 +1921,34 @@ ipcMain.handle('store-delete', (event, key) => {
   return true;
 });
 
+ipcMain.handle('store-clear', async () => {
+  console.log('=== Reset Application Data ===');
+  const fs = require('fs').promises;
+  const path = require('path');
+
+  // Clear all electron-store data
+  store.clear();
+  console.log('  ✅ Cleared electron-store');
+
+  // Clear plugin cache directory
+  try {
+    const pluginsDir = getPluginsCacheDir();
+    const files = await fs.readdir(pluginsDir);
+    for (const file of files) {
+      if (file.endsWith('.axe')) {
+        await fs.unlink(path.join(pluginsDir, file));
+      }
+    }
+    console.log('  ✅ Cleared plugin cache');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('  ⚠️ Failed to clear plugin cache:', error.message);
+    }
+  }
+
+  return { success: true };
+});
+
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
 // Uses fallback values for services that support shared app credentials

@@ -39405,18 +39405,13 @@ useEffect(() => {
 
                       if (confirmed) {
                         try {
-                          // Clear electron store (all persisted data)
-                          if (window.electron?.store?.clear) {
-                            await window.electron.store.clear();
+                          // Clear electron store, plugin cache, and all persisted data
+                          const result = await window.electron.store.clear();
+                          if (!result?.success) {
+                            throw new Error('Store clear failed');
                           }
 
-                          // Clear in-memory caches
-                          artistImageCache.current = {};
-                          albumArtCache.current = {};
-                          artistDataCache.current = {};
-                          albumToReleaseIdCache.current = {};
-
-                          // Reload the app
+                          // Reload the app (all React state reinitializes from defaults)
                           window.location.reload();
                         } catch (error) {
                           console.error('Failed to reset application:', error);
