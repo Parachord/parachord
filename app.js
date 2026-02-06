@@ -1608,11 +1608,14 @@ const VirtualizedQueueList = React.memo(({
 });
 
 // ResolverCard component - Tomahawk-style colored card with centered logo
+// Four user-facing states:
+//   1. Enabled (full color, checkmark, priority number)
+//   2. Enabled + needs setup (full color, checkmark, orange "!", "Setup required")
+//   3. Not enabled (grayed, "Available")
+//   4. Installing (spinner overlay)
 const ResolverCard = React.memo(({
   resolver,
   isActive,
-  isInstalled,
-  isMarketplaceOnly,
   hasUpdate,
   isInstalling,
   needsConfiguration,
@@ -1629,15 +1632,9 @@ const ResolverCard = React.memo(({
   isDragOver = false,
   isDragging = false
 }) => {
-  // Get the logo SVG or fall back to emoji icon
   const logo = SERVICE_LOGOS[resolver.id];
-
-  // Determine visual state:
-  // - isMarketplaceOnly: not installed, show faded with download arrow
-  // - isActive === false: installed but disabled, show grayscale
-  // - isInstalled or normal: full color with checkmark
-  const isNotInstalled = isMarketplaceOnly === true;
-  const isDisabled = isActive === false && !isNotInstalled;
+  const isEnabled = isActive === true;
+  const isAvailable = !isEnabled && !isInstalling;
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -1650,7 +1647,7 @@ const ResolverCard = React.memo(({
     onDragEnd: draggable ? onDragEnd : undefined,
     onContextMenu: onContextMenu
   },
-    // Drop indicator - shown when dragging over this card
+    // Drop indicator
     isDragOver && React.createElement('div', {
       className: 'absolute -left-3 top-0 bottom-6 w-1 rounded-full',
       style: {
@@ -1659,24 +1656,22 @@ const ResolverCard = React.memo(({
         zIndex: 10
       }
     }),
-    // Card with colored background
+    // Card
     React.createElement('div', {
-      className: `relative flex items-center justify-center cursor-pointer transition-all ${
-        isDisabled ? 'grayscale' : ''
-      }`,
+      className: `relative flex items-center justify-center cursor-pointer transition-all ${isAvailable ? 'grayscale' : ''}`,
       style: {
         width: '120px',
         height: '120px',
         borderRadius: '16px',
         backgroundColor: resolver.color || '#6B7280',
-        opacity: isNotInstalled ? 0.5 : (isDisabled ? 0.5 : 1),
+        opacity: isAvailable ? 0.5 : 1,
         boxShadow: isDragOver
           ? '0 0 0 3px #7c3aed, 0 4px 12px rgba(0, 0, 0, 0.15)'
           : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
       },
       onClick: onClick
     },
-      // Priority number badge (top-left) - only for installed resolvers
+      // Priority number badge (top-left) - only for enabled resolvers
       priorityNumber && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
@@ -1696,26 +1691,22 @@ const ResolverCard = React.memo(({
       logo ? logo : React.createElement('span', {
         className: 'text-5xl text-white drop-shadow-md'
       }, resolver.icon),
-      // Status badge (top-right): download arrow for not installed, update arrow, or checkmark
-      !isInstalling && React.createElement('div', {
+      // Status badge (top-right) - only for enabled resolvers
+      isEnabled && !isInstalling && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
           top: '8px',
           right: '8px',
           width: '22px',
           height: '22px',
-          backgroundColor: isNotInstalled
-            ? 'rgba(255, 255, 255, 0.95)'
-            : (hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)'),
+          backgroundColor: hasUpdate ? '#f97316' : 'rgba(255, 255, 255, 0.95)',
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: isNotInstalled
-            ? '#6b7280'
-            : (hasUpdate ? '#ffffff' : '#22c55e')
+          color: hasUpdate ? '#ffffff' : '#22c55e'
         },
-        title: isNotInstalled ? 'Click to install' : (hasUpdate ? 'Update available' : 'Installed')
-      }, isNotInstalled ? '↓' : (hasUpdate ? '↑' : '✓')),
+        title: hasUpdate ? 'Update available' : 'Enabled'
+      }, hasUpdate ? '↑' : '✓'),
       // Installing spinner
       isInstalling && React.createElement('div', {
         className: 'absolute inset-0 flex items-center justify-center',
@@ -1726,8 +1717,8 @@ const ResolverCard = React.memo(({
       },
         React.createElement('span', { className: 'text-white text-2xl animate-spin' }, '⏳')
       ),
-      // Needs configuration warning badge (bottom-right)
-      needsConfiguration && !isInstalling && !isNotInstalled && React.createElement('div', {
+      // Needs configuration warning badge (bottom-right) - only for enabled resolvers
+      needsConfiguration && isEnabled && !isInstalling && React.createElement('div', {
         className: 'absolute flex items-center justify-center',
         style: {
           bottom: '8px',
@@ -1750,7 +1741,7 @@ const ResolverCard = React.memo(({
         marginTop: '10px',
         fontSize: '13px',
         fontWeight: '500',
-        color: isNotInstalled ? '#9ca3af' : '#1f2937',
+        color: isAvailable ? '#9ca3af' : '#1f2937',
         textAlign: 'center',
         width: '120px',
         overflow: 'hidden',
@@ -1758,23 +1749,13 @@ const ResolverCard = React.memo(({
         whiteSpace: 'nowrap'
       }
     }, resolver.name),
-    // Status label below name
-    needsConfiguration && !isNotInstalled && React.createElement('span', {
-      style: {
-        fontSize: '10px',
-        fontWeight: '500',
-        color: '#d97706',
-        marginTop: '2px'
-      }
+    // "Setup required" label - enabled but needs configuration
+    needsConfiguration && isEnabled && React.createElement('span', {
+      style: { fontSize: '10px', fontWeight: '500', color: '#d97706', marginTop: '2px' }
     }, 'Setup required'),
-    // "Available" label for not installed OR installed-but-disabled without needsConfiguration
-    (isNotInstalled || (isDisabled && !needsConfiguration)) && !isInstalling && React.createElement('span', {
-      style: {
-        fontSize: '10px',
-        fontWeight: '500',
-        color: '#9ca3af',
-        marginTop: '2px'
-      }
+    // "Available" label - not enabled
+    isAvailable && React.createElement('span', {
+      style: { fontSize: '10px', fontWeight: '500', color: '#9ca3af', marginTop: '2px' }
     }, 'Available')
   );
 });
@@ -38418,17 +38399,34 @@ useEffect(() => {
                         });
                       });
 
-                    // Then, add marketplace-only resolvers (not installed)
-                    marketplaceContentResolvers.forEach(resolver => {
-                      const isInstalled = allResolvers.some(r => r.id === resolver.id);
-                      if (!isInstalled) {
+                    // Then, add all other resolvers (loaded but not enabled + marketplace-only)
+                    // User sees no distinction - they're all just "Available"
+                    const addedIds = new Set(resolverOrder);
+
+                    // Loaded but not enabled
+                    allResolvers.forEach(resolver => {
+                      if (resolver.capabilities?.resolve && !addedIds.has(resolver.id)) {
+                        const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
                         unifiedResolvers.push({
                           ...resolver,
-                          isInstalled: false,
+                          priorityNumber: null,
+                          marketplaceData: marketplaceResolver,
+                          hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
+                        });
+                        addedIds.add(resolver.id);
+                      }
+                    });
+
+                    // Marketplace-only (not yet downloaded)
+                    marketplaceContentResolvers.forEach(resolver => {
+                      if (!addedIds.has(resolver.id)) {
+                        unifiedResolvers.push({
+                          ...resolver,
                           priorityNumber: null,
                           marketplaceData: resolver,
                           hasUpdate: false
                         });
+                        addedIds.add(resolver.id);
                       }
                     });
 
@@ -38443,8 +38441,9 @@ useEffect(() => {
                           if (!matchesName && !matchesDesc) return false;
                         }
                         // Install status filter
-                        if (pluginsFilter === 'installed' && !resolver.isInstalled) return false;
-                        if (pluginsFilter === 'available' && resolver.isInstalled) return false;
+                        const isEnabled = activeResolvers.includes(resolver.id);
+                        if (pluginsFilter === 'installed' && !isEnabled) return false;
+                        if (pluginsFilter === 'available' && isEnabled) return false;
                         // Category filter
                         if (marketplaceCategory !== 'all') {
                           const category = resolver.category || resolver.marketplaceData?.category;
@@ -38456,12 +38455,13 @@ useEffect(() => {
                         return true;
                       })
                       .map(resolver => {
-                        const isActive = resolver.isInstalled ? activeResolvers.includes(resolver.id) : null;
+                        const isActive = activeResolvers.includes(resolver.id);
                         const isInstalling = installingResolvers.has(resolver.id);
+                        const isLoaded = allResolvers.some(r => r.id === resolver.id);
 
-                        // Determine if resolver needs configuration
+                        // Determine if enabled resolver needs configuration
                         let needsConfiguration = false;
-                        if (resolver.isInstalled) {
+                        if (isActive) {
                           if (resolver.id === 'spotify' && !spotifyConnected) {
                             needsConfiguration = true;
                           } else if (resolver.id === 'applemusic' && !appleMusicConnected) {
@@ -38475,31 +38475,25 @@ useEffect(() => {
                           key: resolver.id,
                           resolver: resolver,
                           isActive: isActive,
-                          isInstalled: resolver.isInstalled,
-                          isMarketplaceOnly: !resolver.isInstalled,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
-                          draggable: resolver.isInstalled,
+                          draggable: isActive,
                           isDragging: draggedResolver === resolver.id,
                           isDragOver: dragOverResolver === resolver.id,
                           onClick: () => {
-                            if (resolver.isInstalled) {
-                              // Installed: open config modal
-                              setSelectedResolver(allResolvers.find(r => r.id === resolver.id) || resolver);
-                            } else {
-                              // Not installed: open marketplace info modal
-                              setSelectedMarketplaceItem({ ...resolver, isInstalled: false, installedResolver: null });
-                            }
+                            // Always open config modal - use loaded resolver data if available
+                            const loadedResolver = allResolvers.find(r => r.id === resolver.id);
+                            setSelectedResolver(loadedResolver || resolver);
                           },
-                          onDragStart: resolver.isInstalled ? (e) => handleResolverDragStart(e, resolver.id) : undefined,
-                          onDragOver: resolver.isInstalled ? handleResolverDragOver : undefined,
-                          onDragEnter: resolver.isInstalled ? (e) => handleResolverDragEnter(e, resolver.id) : undefined,
-                          onDragLeave: resolver.isInstalled ? handleResolverDragLeave : undefined,
-                          onDrop: resolver.isInstalled ? (e) => handleResolverDrop(e, resolver.id) : undefined,
-                          onDragEnd: resolver.isInstalled ? handleResolverDragEnd : undefined,
-                          onContextMenu: resolver.isInstalled ? (e) => {
+                          onDragStart: isActive ? (e) => handleResolverDragStart(e, resolver.id) : undefined,
+                          onDragOver: isActive ? handleResolverDragOver : undefined,
+                          onDragEnter: isActive ? (e) => handleResolverDragEnter(e, resolver.id) : undefined,
+                          onDragLeave: isActive ? handleResolverDragLeave : undefined,
+                          onDrop: isActive ? (e) => handleResolverDrop(e, resolver.id) : undefined,
+                          onDragEnd: isActive ? handleResolverDragEnd : undefined,
+                          onContextMenu: isActive ? (e) => {
                             e.preventDefault();
                             if (window.electron?.resolvers?.showContextMenu) {
                               window.electron.resolvers.showContextMenu(resolver.id);
@@ -38556,16 +38550,17 @@ useEffect(() => {
                       });
                     });
 
-                    // Then, add marketplace-only meta services (not installed)
+                    // Then, add marketplace-only meta services (not yet downloaded)
+                    const addedServiceIds = new Set(metaServices.map(s => s.id));
                     marketplaceMetaServices.forEach(service => {
-                      const isInstalled = metaServices.some(s => s.id === service.id);
-                      if (!isInstalled) {
+                      if (!addedServiceIds.has(service.id)) {
                         unifiedServices.push({
                           ...service,
                           isInstalled: false,
                           marketplaceData: service,
                           hasUpdate: false
                         });
+                        addedServiceIds.add(service.id);
                       }
                     });
 
@@ -38579,9 +38574,11 @@ useEffect(() => {
                           const matchesDesc = (service.description || '').toLowerCase().includes(query);
                           if (!matchesName && !matchesDesc) return false;
                         }
-                        // Install status filter
-                        if (pluginsFilter === 'installed' && !service.isInstalled) return false;
-                        if (pluginsFilter === 'available' && service.isInstalled) return false;
+                        // Install status filter - based on active state, not loaded state
+                        const config = metaServiceConfigs[service.id];
+                        const isServiceEnabled = !!(config?.enabled || config?.apiKey || config?.username);
+                        if (pluginsFilter === 'installed' && !isServiceEnabled) return false;
+                        if (pluginsFilter === 'available' && isServiceEnabled) return false;
                         // Category filter
                         if (marketplaceCategory !== 'all') {
                           const category = service.category || service.marketplaceData?.category;
@@ -38599,52 +38596,37 @@ useEffect(() => {
                         // Determine active state and configuration needs per service type
                         let needsConfiguration = false;
                         let isServiceActive = false;
-                        if (service.isInstalled) {
-                          const isAiService = service.capabilities?.generate || service.capabilities?.chat;
-                          if (isAiService) {
-                            // AI services: active when user provides API key or explicitly enables
-                            const hasApiKey = !!config?.apiKey;
-                            const isExplicitlyEnabled = config?.enabled === true;
-                            isServiceActive = hasApiKey || isExplicitlyEnabled;
-                            // "Setup required" only if explicitly enabled but missing API key (for services that need one)
-                            // "Available" if not enabled at all (handled by isDisabled state in ResolverCard)
-                            if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
-                              needsConfiguration = true;
-                            } else {
-                              needsConfiguration = false;
-                            }
-                          } else if (service.id === 'lastfm') {
-                            // Last.fm: always active (used for metadata) but needs login for scrobbling
-                            isServiceActive = true;
-                            needsConfiguration = !config?.username;
-                          } else if (service.id === 'listenbrainz' || service.id === 'librefm') {
-                            // ListenBrainz, Libre.fm: show "Available" unless user has started configuring
-                            const isEnabled = !!config?.enabled || !!config?.username;
-                            isServiceActive = !!config?.username;
-                            needsConfiguration = isEnabled && !config?.username;
-                          } else {
-                            // Wikipedia, Discogs, etc.: always active
-                            isServiceActive = true;
+                        const isAiService = service.capabilities?.generate || service.capabilities?.chat;
+                        if (isAiService) {
+                          const hasApiKey = !!config?.apiKey;
+                          const isExplicitlyEnabled = config?.enabled === true;
+                          isServiceActive = hasApiKey || isExplicitlyEnabled;
+                          if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
+                            needsConfiguration = true;
                           }
+                        } else if (service.id === 'lastfm') {
+                          isServiceActive = true;
+                          needsConfiguration = !config?.username;
+                        } else if (service.id === 'listenbrainz' || service.id === 'librefm') {
+                          const isEnabled = !!config?.enabled || !!config?.username;
+                          isServiceActive = !!config?.username;
+                          needsConfiguration = isEnabled && !config?.username;
+                        } else {
+                          // Wikipedia, Discogs, etc.: always active
+                          isServiceActive = true;
                         }
 
                         return React.createElement(ResolverCard, {
                           key: service.id,
                           resolver: service,
-                          isActive: service.isInstalled ? isServiceActive : null,
-                          isInstalled: service.isInstalled,
-                          isMarketplaceOnly: !service.isInstalled,
+                          isActive: isServiceActive,
                           hasUpdate: service.hasUpdate,
                           needsConfiguration: needsConfiguration,
                           isInstalling: isInstalling,
                           onClick: () => {
-                            if (service.isInstalled) {
-                              // Installed: open config modal
-                              setSelectedResolver(metaServices.find(s => s.id === service.id) || service);
-                            } else {
-                              // Not installed: open marketplace info modal
-                              setSelectedMarketplaceItem({ ...service, isInstalled: false, installedResolver: null });
-                            }
+                            // Always open config modal
+                            const loadedService = metaServices.find(s => s.id === service.id);
+                            setSelectedResolver(loadedService || service);
                           }
                         });
                       });
@@ -44067,10 +44049,22 @@ useEffect(() => {
               }
 
               return React.createElement('button', {
-                onClick: () => {
+                onClick: async () => {
                   if (showEnable) {
+                    const isLoaded = allResolvers.some(r => r.id === selectedResolver.id)
+                      || metaServices.some(s => s.id === selectedResolver.id);
+
+                    if (!isLoaded) {
+                      // Not yet downloaded - install transparently from marketplace
+                      const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                      if (marketplaceItem) {
+                        await handleInstallFromMarketplace(marketplaceItem);
+                        setSelectedResolver(null);
+                        return;
+                      }
+                    }
+
                     if (isContentResolver) {
-                      // Enable the content resolver and add to order at canonical position
                       setActiveResolvers(prev => [...prev, selectedResolver.id]);
                       setResolverOrder(prev => insertInCanonicalOrder(prev, selectedResolver.id));
                     } else if (isMetaService) {
