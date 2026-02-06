@@ -18834,7 +18834,10 @@ const Parachord = () => {
     console.log('  Loaded resolvers count (ref):', loadedResolversRef.current.length);
     console.log('  Loaded resolver IDs (ref):', loadedResolversRef.current.map(r => r.id));
 
-    const resolver = loadedResolversRef.current.find(r => r.id === resolverId);
+    // Check both content resolvers and meta-services
+    const resolver = loadedResolversRef.current.find(r => r.id === resolverId)
+      || metaServices.find(s => s.id === resolverId);
+    const isMetaService = !loadedResolversRef.current.find(r => r.id === resolverId) && !!resolver;
 
     if (!resolver) {
       console.error('❌ Resolver not found:', resolverId);
@@ -18846,7 +18849,7 @@ const Parachord = () => {
       return;
     }
 
-    console.log('  Found resolver:', resolver.name);
+    console.log('  Found resolver:', resolver.name, isMetaService ? '(meta-service)' : '(content)');
 
     // Check if this plugin is available in the marketplace (can be reinstalled easily)
     const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
@@ -18884,7 +18887,11 @@ const Parachord = () => {
       removeResolverSources(resolverId);
 
       // Hot-reload: Remove from state without restarting
-      setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
+      if (isMetaService) {
+        setMetaServices(prev => prev.filter(s => s.id !== resolverId));
+      } else {
+        setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
+      }
       setResolverOrder(prev => prev.filter(id => id !== resolverId));
       setActiveResolvers(prev => prev.filter(id => id !== resolverId));
 
@@ -18997,8 +19004,9 @@ const Parachord = () => {
       const resolverName = axe.manifest.name;
       const resolverId = axe.manifest.id;
 
-      // Check if already installed
-      const existing = allResolvers.find(r => r.id === resolverId);
+      // Check if already installed (content resolvers or meta-services)
+      const existing = allResolvers.find(r => r.id === resolverId)
+        || metaServices.find(s => s.id === resolverId);
       if (existing) {
         const shouldOverwrite = confirm(
           `Resolver "${resolverName}" is already installed.\n\n` +
@@ -19025,7 +19033,7 @@ const Parachord = () => {
 
       // Hot-reload
             axe._filename = filename;
-      const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+      const isMetaService = axe.manifest?.type === 'meta-service';
 
       // Remove from uninstalled list if it was previously uninstalled
       const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
@@ -19033,24 +19041,66 @@ const Parachord = () => {
         await window.electron.store.set('uninstalled_resolvers', uninstalledResolvers.filter(id => id !== resolverId));
       }
 
-      if (existing) {
-        setLoadedResolvers(prev => prev.map(r =>
-          r.id === resolverId ? newResolverInstance : r
-        ));
-        showConfirmDialog({
-          type: 'success',
-          title: 'Resolver Updated',
-          message: resolverName
-        });
+      if (isMetaService) {
+        // Load meta-service implementation into resolver loader
+        await resolverLoader.current.loadResolver(axe);
+
+        // Add to metaServices state
+        const metaServiceData = {
+          id: axe.manifest.id,
+          name: axe.manifest.name,
+          type: axe.manifest.type,
+          version: axe.manifest.version,
+          author: axe.manifest.author,
+          description: axe.manifest.description,
+          icon: axe.manifest.icon,
+          color: axe.manifest.color,
+          homepage: axe.manifest.homepage,
+          capabilities: axe.capabilities,
+          settings: axe.settings,
+          _filename: filename
+        };
+
+        const existingMeta = metaServices.find(s => s.id === resolverId);
+        if (existingMeta) {
+          setMetaServices(prev => prev.map(s =>
+            s.id === resolverId ? metaServiceData : s
+          ));
+          showConfirmDialog({
+            type: 'success',
+            title: 'Updated',
+            message: resolverName
+          });
+        } else {
+          setMetaServices(prev => [...prev, metaServiceData]);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Installed',
+            message: resolverName
+          });
+        }
       } else {
-        setLoadedResolvers(prev => [...prev, newResolverInstance]);
-        setResolverOrder(prev => [...prev, resolverId]);
-        setActiveResolvers(prev => [...prev, resolverId]);
-        showConfirmDialog({
-          type: 'success',
-          title: 'Installed',
-          message: resolverName
-        });
+        const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+
+        if (existing) {
+          setLoadedResolvers(prev => prev.map(r =>
+            r.id === resolverId ? newResolverInstance : r
+          ));
+          showConfirmDialog({
+            type: 'success',
+            title: 'Resolver Updated',
+            message: resolverName
+          });
+        } else {
+          setLoadedResolvers(prev => [...prev, newResolverInstance]);
+          setResolverOrder(prev => [...prev, resolverId]);
+          setActiveResolvers(prev => [...prev, resolverId]);
+          showConfirmDialog({
+            type: 'success',
+            title: 'Installed',
+            message: resolverName
+          });
+        }
       }
     } catch (error) {
       console.error('Marketplace install error:', error);
