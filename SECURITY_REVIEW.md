@@ -396,25 +396,25 @@ The entire React application is a single 47,000-line `app.js` file with no build
 
 ### Immediate (Critical/High)
 
-1. **Sandbox plugin execution** -- Replace `new Function()` with a Web Worker or sandboxed iframe
-2. **Remove generic `invoke` passthrough** from preload.js (line 422)
-3. **Remove `debug-store` handler** or gate it behind a developer mode flag
-4. **Add URL validation to `proxy-fetch`** -- restrict to known API domains or at minimum block RFC 1918 addresses
-5. **Add path validation to `local-audio://` protocol** -- verify paths are within watched folders
-6. **Sanitize plugin `filename` and `manifest.id`** -- strip path separators, validate format
-7. **HTML-escape the `error` parameter** in OAuth callback responses
-8. **Remove `webviewTag: true`** unless actively needed; use `<iframe>` or `BrowserView` instead
-9. **Restrict `store-get`/`store-set`** to a whitelist of allowed keys, or remove them and use specific handlers
+1. ~~**Sandbox plugin execution** -- Replace `new Function()` with a Web Worker or sandboxed iframe~~ See C1 note below
+2. ~~**Remove generic `invoke` passthrough** from preload.js (line 422)~~ **FIXED**
+3. ~~**Remove `debug-store` handler** or gate it behind a developer mode flag~~ **FIXED**
+4. ~~**Add URL validation to `proxy-fetch`** -- restrict to known API domains or at minimum block RFC 1918 addresses~~ **FIXED**
+5. ~~**Add path validation to `local-audio://` protocol** -- verify paths are within watched folders~~ **FIXED**
+6. ~~**Sanitize plugin `filename` and `manifest.id`** -- strip path separators, validate format~~ **FIXED**
+7. ~~**HTML-escape the `error` parameter** in OAuth callback responses~~ **FIXED**
+8. ~~**Remove `webviewTag: true`** unless actively needed; use `<iframe>` or `BrowserView` instead~~ **FIXED**
+9. ~~**Restrict `store-get`/`store-set`** to a whitelist of allowed keys, or remove them and use specific handlers~~ **FIXED**
 
 ### Short-term (Medium)
 
 10. **Switch WebSocket to native messaging** for the browser extension
 11. **Encrypt credentials at rest** using Electron's `safeStorage` API
-12. **Add redirect depth limits** and response size limits to all HTTP clients
-13. **Fix LIKE pattern injection** by escaping `%` and `_` in folder paths
-14. **Add symlink detection** in the directory scanner
-15. **Add retry limits** to recursive API calls in sync providers
-16. **Validate pagination URLs** against expected hostnames before following them
+12. ~~**Add redirect depth limits** and response size limits to all HTTP clients~~ **FIXED**
+13. ~~**Fix LIKE pattern injection** by escaping `%` and `_` in folder paths~~ **FIXED**
+14. ~~**Add symlink detection** in the directory scanner~~ **FIXED**
+15. ~~**Add retry limits** to recursive API calls in sync providers~~ **FIXED**
+16. ~~**Validate pagination URLs** against expected hostnames before following them~~ **FIXED**
 17. **Remove or consolidate `scrobbler-loader.js`** to eliminate the duplicated codebase
 
 ### Longer-term (Architecture)
@@ -424,3 +424,44 @@ The entire React application is a single 47,000-line `app.js` file with no build
 20. **Implement a capability-based permission system** for plugins
 21. **Add automated security scanning** (SAST) to the CI pipeline
 22. **Remove globals** from `window` -- use module imports or a controlled dependency injection pattern
+
+---
+
+## Appendix: C1 Plugin Sandboxing — Breaking Change Analysis
+
+Full sandboxing of `.axe` plugin execution (`new Function()` -> Web Worker) **would be a breaking change** for content resolver plugins. Here is the detailed compatibility breakdown:
+
+### Worker-safe plugins (no breaking change)
+
+| Plugin | Notes |
+|--------|-------|
+| **chatgpt.axe** | Only uses `fetch`, `JSON`, `console` |
+| **gemini.axe** | Only uses `fetch`, `JSON`, `console`, `Date.now()` |
+| **ollama.axe** | Only uses `fetch`, `JSON`, `console`, `Date.now()`, `Math.random()` |
+| **claude.axe** | Only uses `fetch`, `JSON`, `console` |
+| **Spotify resolver** | `search()`/`resolve()` use only `fetch`. `play()` uses `fetch` + `setTimeout` (Worker-safe). |
+
+### Plugins that would break in a Web Worker
+
+| Plugin | Blocker | Which methods |
+|--------|---------|---------------|
+| **Bandcamp** | `DOMParser` (not in Workers) | `search()` |
+| **Bandcamp** | `window.electron.shell.openExternal`, `window.open` | `play()` |
+| **SoundCloud** | `window.electron.shell.openExternal`, `window.open` | `play()` |
+| **Qobuz** | `new Audio()` (main thread only) | `play()` |
+| **Apple Music** | `window.getMusicKitWeb`, `window.iTunesRateLimiter`, `window.appleMusicSearchWithMusicKit`, `window.electron.musicKit.*`, `new Audio()`, `window.dispatchEvent` | `init()`, `search()`, `play()`, `cleanup()` |
+
+### Recommended incremental approach
+
+1. **Sandbox AI plugins immediately** -- zero breaking changes, these only need `fetch`
+2. **Sandbox `search()` and `resolve()` for content resolvers** -- these are the main attack surface (they process untrusted data). Leave `play()`/`init()`/`cleanup()` on the main thread since they fundamentally need DOM/Audio/shell APIs
+3. **Provide a controlled API bridge** instead of raw `window` access -- give plugins a `context` object with only the methods they need (`context.proxyFetch()`, `context.openExternal()`, `context.parseHTML()`) rather than letting them access `window.electron` directly
+4. The Bandcamp `DOMParser` case needs either a main-thread proxy callback or a streaming HTML parser library
+
+### Risk without sandboxing
+
+Today, plugin code can only run if it comes from:
+- The Parachord marketplace (GitHub repo `Parachord/parachord-plugins`)
+- A user-installed `.axe` file (via file picker or URL)
+
+The attack surface is limited to supply-chain compromise of the marketplace repo or social engineering a user into installing a malicious `.axe` file. With the other fixes in place (store whitelist, no generic invoke, SSRF protection), the blast radius of a malicious plugin is reduced but not eliminated — it can still access anything visible in the renderer DOM and make `fetch` calls to external services.
