@@ -12748,7 +12748,7 @@ const Parachord = () => {
     // Filter to only enabled services with API keys
     const enabledServices = aiServices.filter(s => {
       const config = metaServiceConfigs[s.id] || {};
-      return config.enabled && config.apiKey;
+      return !!config.apiKey;
     });
 
     if (enabledServices.length === 0) {
@@ -13973,7 +13973,7 @@ const Parachord = () => {
       const config = metaServiceConfigs[s.id] || {};
       // Ollama doesn't need API key, others do
       if (s.id === 'ollama') return config.enabled === true;
-      return config.enabled && config.apiKey;
+      return !!config.apiKey;
     });
 
     if (enabledServices.length === 0) {
@@ -39726,13 +39726,13 @@ useEffect(() => {
               const config = metaServiceConfigs[s.id] || {};
               // Ollama doesn't require API key
               if (s.id === 'ollama') return config.enabled === true;
-              return config.enabled && config.apiKey;
+              return !!config.apiKey;
             });
 
             // Check if generate providers are enabled (fallback)
             const hasEnabledGenerate = aiResolvers.some(s => {
               const config = metaServiceConfigs[s.id] || {};
-              return config.enabled && config.apiKey;
+              return !!config.apiKey;
             });
 
             const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
@@ -40852,7 +40852,7 @@ useEffect(() => {
                   const enabledServices = getChatServices().filter(s => {
                     const config = metaServiceConfigs[s.id] || {};
                     if (s.id === 'ollama') return config.enabled === true;
-                    return config.enabled && config.apiKey;
+                    return !!config.apiKey;
                   });
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
                   const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
