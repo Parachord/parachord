@@ -1668,9 +1668,9 @@ ipcMain.handle('crypto-md5', (event, input) => {
 const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
 const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
 const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
-// SoundCloud fallback credentials - set these to your app's client ID/secret
-const FALLBACK_SOUNDCLOUD_CLIENT_ID = '';
-const FALLBACK_SOUNDCLOUD_CLIENT_SECRET = '';
+// SoundCloud fallback credentials - app's registered OAuth client
+const FALLBACK_SOUNDCLOUD_CLIENT_ID = 'O2HcIaRQu87Kbf4CP34FpDi87nR2XTcr';
+const FALLBACK_SOUNDCLOUD_CLIENT_SECRET = 'ylYKJ1OW7YKqd3iSPreTc1wTeHcZRAMD';
 
 // PKCE (Proof Key for Code Exchange) helpers for Spotify OAuth
 // This avoids the need to ship or store a client_secret in a public app.
