@@ -595,6 +595,19 @@ const SpotifySyncProvider = {
     }
 
     return { success: true, unfollowed: totalUnfollowed };
+  },
+
+  /**
+   * Unfollow (delete) a playlist from the user's Spotify library
+   * @param {string} playlistId - Spotify playlist ID
+   * @param {string} token - Access token
+   * @returns {Object} - { success: boolean }
+   */
+  async deletePlaylist(playlistId, token) {
+    await spotifyRequest(`/playlists/${playlistId}/followers`, token, {
+      method: 'DELETE'
+    });
+    return { success: true };
   }
 };
 

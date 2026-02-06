@@ -5357,6 +5357,56 @@ const Parachord = () => {
   const closeConfirmDialog = () => {
     setConfirmDialog(prev => ({ ...prev, show: false }));
   };
+
+  // Synced playlist delete dialog state
+  const [syncDeleteDialog, setSyncDeleteDialog] = useState({ show: false, playlist: null });
+
+  const handleDeleteSyncedPlaylist = async (action) => {
+    const playlist = syncDeleteDialog.playlist;
+    if (!playlist) return;
+    setSyncDeleteDialog({ show: false, playlist: null });
+
+    const providerId = playlist.syncedFrom?.resolver;
+    const externalId = playlist.syncedFrom?.externalId;
+
+    if (action === 'stop-syncing' || action === 'delete-from-source') {
+      // Suppress future syncs
+      if (providerId && externalId) {
+        await window.electron.playlists.suppressSync(providerId, externalId);
+      }
+
+      // Delete from source service if requested
+      if (action === 'delete-from-source' && providerId && externalId) {
+        const result = await window.electron.playlists.deleteFromSource(providerId, externalId);
+        if (!result.success) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Could not delete from source',
+            message: result.error
+          });
+        }
+      }
+
+      // Delete locally
+      await window.electron.playlists.delete(playlist.id);
+      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
+      delete playlistCoverCache.current[playlist.id];
+      setAllPlaylistCovers(prev => {
+        const newCovers = { ...prev };
+        delete newCovers[playlist.id];
+        return newCovers;
+      });
+
+      // Exit edit mode and navigate back
+      setPlaylistEditMode(false);
+      setEditedPlaylistData(null);
+      setSelectedPlaylist(null);
+      setPlaylistTracks([]);
+      setPlaylistCoverArt([]);
+      navigateTo('playlists');
+    }
+  };
+
   const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
 
   // Drag & drop URL state
@@ -9308,23 +9358,25 @@ const Parachord = () => {
             }));
           }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
-          // Show confirmation alert
-          const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
-          if (confirmed) {
-            const result = await window.electron.playlists.delete(data.playlistId);
-            if (result.success) {
-              // Remove from state
-              setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
-              // Clear cover cache for deleted playlist
-              delete playlistCoverCache.current[data.playlistId];
-              setAllPlaylistCovers(prev => {
-                const updated = { ...prev };
-                delete updated[data.playlistId];
-                return updated;
-              });
-            } else {
-              alert(`Failed to delete playlist: ${result.error}`);
-            }
+          // Check if this is a synced playlist
+          const playlistToDelete = playlists.find(p => p.id === data.playlistId);
+          if (playlistToDelete?.syncedFrom) {
+            setSyncDeleteDialog({ show: true, playlist: playlistToDelete });
+          } else {
+            const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
+            if (confirmed) {
+              const result = await window.electron.playlists.delete(data.playlistId);
+              if (result.success) {
+                setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
+                delete playlistCoverCache.current[data.playlistId];
+                setAllPlaylistCovers(prev => {
+                  const updated = { ...prev };
+                  delete updated[data.playlistId];
+                  return updated;
+                });
+              } else {
+                alert(`Failed to delete playlist: ${result.error}`);
+              }
           }
         } else if (data.action === 'edit-id3-tags' && data.track) {
           // Open ID3 tag editor modal
@@ -31046,24 +31098,27 @@ useEffect(() => {
                 // Delete Playlist button (only in edit mode)
                 playlistEditMode && React.createElement('button', {
                   onClick: () => {
-                    if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
-                      // Delete the playlist
-                      window.electron.playlists.delete(selectedPlaylist.id);
-                      setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
-                      // Clear cover cache for this playlist
-                      delete playlistCoverCache.current[selectedPlaylist.id];
-                      setAllPlaylistCovers(prev => {
-                        const newCovers = { ...prev };
-                        delete newCovers[selectedPlaylist.id];
-                        return newCovers;
-                      });
-                      // Exit edit mode and navigate back
-                      setPlaylistEditMode(false);
-                      setEditedPlaylistData(null);
-                      setSelectedPlaylist(null);
-                      setPlaylistTracks([]);
-                      setPlaylistCoverArt([]);
-                      navigateTo('playlists');
+                    if (selectedPlaylist.syncedFrom) {
+                      // Synced playlist: show options dialog
+                      setSyncDeleteDialog({ show: true, playlist: selectedPlaylist });
+                    } else {
+                      // Local playlist: simple confirm
+                      if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
+                        window.electron.playlists.delete(selectedPlaylist.id);
+                        setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
+                        delete playlistCoverCache.current[selectedPlaylist.id];
+                        setAllPlaylistCovers(prev => {
+                          const newCovers = { ...prev };
+                          delete newCovers[selectedPlaylist.id];
+                          return newCovers;
+                        });
+                        setPlaylistEditMode(false);
+                        setEditedPlaylistData(null);
+                        setSelectedPlaylist(null);
+                        setPlaylistTracks([]);
+                        setPlaylistCoverArt([]);
+                        navigateTo('playlists');
+                      }
                     }
                   },
                   className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
@@ -45851,6 +45906,104 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'OK')
+        )
+      )
+    ),
+
+    // Synced Playlist Delete Dialog
+    syncDeleteDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: {
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backdropFilter: 'blur(4px)'
+      },
+      onClick: () => setSyncDeleteDialog({ show: false, playlist: null })
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: '#ffffff',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          maxWidth: '400px',
+          width: '100%',
+          margin: '0 16px',
+          overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header
+        React.createElement('div', {
+          className: 'flex flex-col items-center text-center',
+          style: { padding: '32px 24px 20px' }
+        },
+          React.createElement('div', {
+            className: 'flex items-center justify-center',
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(220, 38, 38, 0.1)',
+              marginBottom: '16px'
+            }
+          },
+            React.createElement('span', {
+              style: { fontSize: '24px', color: '#dc2626' }
+            }, '✕')
+          ),
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: '#1f2937', marginBottom: '8px' }
+          }, `Delete "${syncDeleteDialog.playlist?.title}"?`),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }
+          }, `This playlist is synced from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'}. What would you like to do?`)
+        ),
+        // Actions
+        React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+          // Stop syncing (keep on source)
+          React.createElement('button', {
+            onClick: () => handleDeleteSyncedPlaylist('stop-syncing'),
+            className: 'w-full transition-colors',
+            style: {
+              padding: '12px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#7c3aed',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }
+          }, 'Stop Syncing'),
+          // Delete from source too
+          React.createElement('button', {
+            onClick: () => handleDeleteSyncedPlaylist('delete-from-source'),
+            className: 'w-full transition-colors',
+            style: {
+              padding: '12px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#ffffff',
+              backgroundColor: '#dc2626',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }
+          }, `Delete from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'} too`),
+          // Cancel
+          React.createElement('button', {
+            onClick: () => setSyncDeleteDialog({ show: false, playlist: null }),
+            className: 'w-full transition-colors',
+            style: {
+              padding: '12px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#6b7280',
+              backgroundColor: 'transparent',
+              border: '1px solid #e5e7eb',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }
+          }, 'Cancel')
         )
       )
     ),

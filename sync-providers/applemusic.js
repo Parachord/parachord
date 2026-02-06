@@ -302,6 +302,27 @@ const AppleMusicSyncProvider = {
     } catch {
       return false;
     }
+  },
+
+  /**
+   * Delete a playlist from the user's Apple Music library
+   * @param {string} playlistId - Apple Music library playlist ID
+   * @param {string} token - JSON string with developerToken and userToken
+   * @returns {Object} - { success: boolean }
+   */
+  async deletePlaylist(playlistId, token) {
+    const { developerToken, userToken } = JSON.parse(token);
+    const response = await fetch(`${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${developerToken}`,
+        'Music-User-Token': userToken
+      }
+    });
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`Failed to delete playlist: ${response.status}`);
+    }
+    return { success: true };
   }
 };
 
