@@ -49,7 +49,10 @@ If you want some technical background on what is going on, check out:
 - https://parachord.com/blog/2026/02/03/how-content-resolution-works/
 - 
 
-### 1. Enable Plug-ins
+### 1. Onboarding Experience
+- Did it help? Did it leave you with more questions that needed to be answered?
+  
+### 2. Enable Plug-ins
 
 Go to **Settings > Plug-ins** and enable the sources you want to use:
 
@@ -64,7 +67,7 @@ Go to **Settings > Plug-ins** and enable the sources you want to use:
 - **Last.fm** - Scrobbling, recommendations, and artist images
 - **MusicBrainz** - Artist discographies and release info
 
-### 2. Connect Spotify (Recommended)
+### 3. Connect Spotify (Recommended)
 
 If you have Spotify Premium:
 1. Go to **Settings > Plug-ins > Spotify**
@@ -72,21 +75,21 @@ If you have Spotify Premium:
 3. Authorize in the browser
 4. Once connected, click **Sync Collection** to import your saved albums and playlists
 
-### 3. Connect Apple Music
+### 4. Connect Apple Music (Recommended)
 
 1. Go to **Settings > Plug-ins > Apple Music**
 2. Click **Authorize** — you'll be prompted to sign in with your Apple ID
 3. Your Apple Music subscription will be available for full playback
 4. Once connected, click **Sync Collection** to import your saved albums and playlists
 
-### 4. Install the Browser Extension
+### 5. Install the Browser Extension
 
 Send songs to Parachord directly from your browser:
 1. Download from [Chrome Web Store](#) or [Firefox Add-ons](#) *(links coming soon)*
 2. Or load unpacked from `parachord-extension/` in the repo
 3. Right-click any song link to send it to Parachord
 
-### 5. Add Friends
+### 6. Add Friends
 
 See what others are listening to in real-time:
 1. Go to **Collection > Friends > Add Friend**
