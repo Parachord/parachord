@@ -2810,6 +2810,16 @@ ipcMain.handle('resolvers-load-builtin', async () => {
   // Also check app's local plugins directory (for development)
   const appPluginsDir = path.join(__dirname, 'plugins');
 
+  // Compare semver strings (e.g. "2.0.0" > "1.0.0"). Returns >0 if a>b, <0 if a<b, 0 if equal.
+  const compareSemver = (a, b) => {
+    const pa = (a || '0.0.0').split('.').map(Number);
+    const pb = (b || '0.0.0').split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+    }
+    return 0;
+  };
+
   // Helper to load plugins from a directory
   const loadPluginsFromDir = async (dir, source) => {
     try {
@@ -2823,17 +2833,25 @@ ipcMain.handle('resolvers-load-builtin', async () => {
           const content = await fs.readFile(filepath, 'utf8');
           const axe = JSON.parse(content);
 
-          // Check for duplicates - marketplace cache overrides shipped plugins
+          // Check for duplicates - only override if the new version is actually newer
           const existingIdx = plugins.findIndex(p => p.manifest.id === axe.manifest.id);
           if (existingIdx !== -1) {
-            if (source === 'cache') {
-              // Marketplace updates override shipped plugins
+            const existing = plugins[existingIdx];
+            const versionCmp = compareSemver(axe.manifest.version, existing.manifest.version);
+            if (versionCmp > 0) {
+              // Newer version found - override regardless of source
               plugins[existingIdx] = axe;
               axe._filename = filename;
               axe._source = source;
-              console.log(`  🔄 Marketplace update: ${axe.manifest.name} v${axe.manifest.version}`);
+              console.log(`  🔄 Upgraded: ${axe.manifest.name} v${existing.manifest.version} → v${axe.manifest.version} (${source})`);
+            } else if (versionCmp === 0 && source === 'cache') {
+              // Same version from cache - prefer cache (may have user customizations)
+              plugins[existingIdx] = axe;
+              axe._filename = filename;
+              axe._source = source;
+              console.log(`  🔄 Using cached: ${axe.manifest.name} v${axe.manifest.version}`);
             } else {
-              console.log(`  ⚠️  Skipping ${axe.manifest.name} (already loaded from cache)`);
+              console.log(`  ⚠️  Skipping ${axe.manifest.name} v${axe.manifest.version} (already have v${existing.manifest.version} from ${existing._source})`);
             }
             continue;
           }
