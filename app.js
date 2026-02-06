@@ -39630,6 +39630,13 @@ useEffect(() => {
                             throw new Error('Store clear failed');
                           }
 
+                          // Persist the disconnect flag so native MusicKit (macOS keychain)
+                          // doesn't auto-reconnect after reset. store.clear() removes the
+                          // flag that disconnectAppleMusic() sets, so we must re-set it.
+                          if (window.electron?.store) {
+                            await window.electron.store.set('applemusic_authorized', false);
+                          }
+
                           // Clear localStorage tokens (MusicKit, etc.) that persist across resets
                           localStorage.removeItem('musickit_developer_token');
                           localStorage.removeItem('musickit_user_token');
