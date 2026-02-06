@@ -6718,19 +6718,35 @@ const Parachord = () => {
 
   // Get meta services with AI generation capability
   const getAiServices = () => {
-    // AI services are meta-services loaded into the resolver loader
-    if (!resolverLoaderRef.current) return [];
-    return resolverLoaderRef.current.getAllResolvers().filter(r =>
-      r.capabilities?.generate
+    // Primary source: resolver loader (has implementation functions)
+    const fromLoader = resolverLoaderRef.current
+      ? resolverLoaderRef.current.getAllResolvers().filter(r => r.capabilities?.generate)
+      : [];
+
+    // Also include meta services with generate capability not yet in the resolver loader
+    const loaderIds = new Set(fromLoader.map(r => r.id));
+    const fromState = metaServices.filter(ms =>
+      ms.capabilities?.generate && !loaderIds.has(ms.id)
     );
+
+    return [...fromLoader, ...fromState];
   };
 
   // Get AI services with chat capability (for Conversational DJ)
   const getChatServices = () => {
-    if (!resolverLoaderRef.current) return [];
-    return resolverLoaderRef.current.getAllResolvers().filter(r =>
-      r.capabilities?.chat
+    // Primary source: resolver loader (has implementation functions)
+    const fromLoader = resolverLoaderRef.current
+      ? resolverLoaderRef.current.getAllResolvers().filter(r => r.capabilities?.chat)
+      : [];
+
+    // Also include meta services with chat capability not yet in the resolver loader
+    // This ensures services appear in the dropdown even if they failed to load into the resolver
+    const loaderIds = new Set(fromLoader.map(r => r.id));
+    const fromState = metaServices.filter(ms =>
+      ms.capabilities?.chat && !loaderIds.has(ms.id)
     );
+
+    return [...fromLoader, ...fromState];
   };
 
   // Check if a scrobbler service (Last.fm or ListenBrainz) is connected
@@ -9714,7 +9730,9 @@ const Parachord = () => {
     // - Cache not loaded yet
     // - No provider selected
     // - History hasn't been loaded yet for this provider (prevents overwriting with empty array)
-    if (cacheLoaded && window.electron?.store && selectedChatProvider && chatHistoryLoadedRef.current) {
+    // - Provider just changed (prevents saving old provider's messages under new provider's key)
+    if (cacheLoaded && window.electron?.store && selectedChatProvider && chatHistoryLoadedRef.current
+        && prevProviderRef.current === selectedChatProvider) {
       // Update the history for current provider
       aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
       window.electron.store.set('ai_chat_histories', aiChatHistoriesRef.current);
@@ -13986,13 +14004,33 @@ const Parachord = () => {
       ? enabledServices.find(s => s.id === selectedChatProvider) || enabledServices[0]
       : enabledServices[0];
 
+    // If switching providers, save old history and load new
+    const isProviderSwitch = selectedChatProvider && selectedChatProvider !== provider.id;
+    if (isProviderSwitch) {
+      // Save current messages under old provider before switching
+      if (aiChatMessages.length > 0) {
+        aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+      }
+      // Clear chat service so it recreates for new provider
+      aiChatServiceRef.current = null;
+    }
+
+    // Load the correct history for the target provider
+    const providerMessages = isProviderSwitch
+      ? (aiChatHistoriesRef.current[provider.id] || [])
+      : aiChatMessages;
+
+    if (isProviderSwitch) {
+      setAiChatMessages(providerMessages);
+    }
+
     setSelectedChatProvider(provider.id);
     setAiChatOpen(true);
     setResultsSidebar({
       mode: 'chat',
       title: 'Shuffleupagus',
       subtitle: provider.name || provider.manifest?.name,
-      messages: aiChatMessages,
+      messages: providerMessages,
       provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
       loading: false
     });
@@ -14018,11 +14056,21 @@ const Parachord = () => {
   const handleAiChatSend = async (message) => {
     if (!message.trim() || aiChatLoading) return;
 
-    const chatServices = getChatServices();
-    const provider = chatServices.find(s => s.id === selectedChatProvider);
+    // Prefer resolver loader version (has implementation functions)
+    let provider = resolverLoaderRef.current?.getResolver(selectedChatProvider);
+    if (!provider || !provider.capabilities?.chat) {
+      // Fallback to getChatServices
+      const chatServices = getChatServices();
+      provider = chatServices.find(s => s.id === selectedChatProvider);
+    }
 
     if (!provider) {
       showToast('Chat provider not found', 'error');
+      return;
+    }
+
+    if (!provider.chat) {
+      showToast('Chat provider not loaded. Try restarting the app.', 'error');
       return;
     }
 
@@ -40915,6 +40963,10 @@ useEffect(() => {
                           key: service.id,
                           onClick: () => {
                             const newProvider = service.id;
+                            // Save current provider's history before switching
+                            if (selectedChatProvider && selectedChatProvider !== newProvider && aiChatMessages.length > 0) {
+                              aiChatHistoriesRef.current[selectedChatProvider] = aiChatMessages;
+                            }
                             setSelectedChatProvider(newProvider);
                             setChatProviderDropdownOpen(false);
                             // Clear current chat service so it recreates with new provider
