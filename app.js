@@ -38410,7 +38410,21 @@ useEffect(() => {
                         });
                       });
 
-                    // Then, add marketplace-only resolvers (not installed)
+                    // Then, add loaded-but-not-enabled resolvers (installed but disabled)
+                    allResolvers.forEach(resolver => {
+                      if (resolver.capabilities?.resolve && !resolverOrder.includes(resolver.id)) {
+                        const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
+                        unifiedResolvers.push({
+                          ...resolver,
+                          isInstalled: true,
+                          priorityNumber: null,
+                          marketplaceData: marketplaceResolver,
+                          hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
+                        });
+                      }
+                    });
+
+                    // Finally, add marketplace-only resolvers (not installed at all)
                     marketplaceContentResolvers.forEach(resolver => {
                       const isInstalled = allResolvers.some(r => r.id === resolver.id);
                       if (!isInstalled) {
