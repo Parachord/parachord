@@ -111,6 +111,12 @@ class FileScanner {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
+          // Skip symlinks to prevent traversal outside watched folders
+          if (entry.isSymbolicLink && entry.isSymbolicLink()) continue;
+          try {
+            const stat = fs.lstatSync(fullPath);
+            if (stat.isSymbolicLink()) continue;
+          } catch (_) { /* skip inaccessible entries */ continue; }
           await walk(fullPath);
         } else if (entry.isFile() && MetadataReader.isSupported(fullPath)) {
           files.push(fullPath);

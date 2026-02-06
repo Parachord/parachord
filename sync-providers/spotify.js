@@ -22,7 +22,9 @@ const generateTrackId = (artist, title, album) => {
 /**
  * Make an authenticated Spotify API request (non-paginated, supports all methods)
  */
-const spotifyRequest = async (endpoint, token, options = {}) => {
+const MAX_RETRIES = 5;
+
+const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) => {
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
   const { method = 'GET', body } = options;
 
@@ -37,9 +39,12 @@ const spotifyRequest = async (endpoint, token, options = {}) => {
 
   if (!response.ok) {
     if (response.status === 429) {
+      if (_retryCount >= MAX_RETRIES) {
+        throw new Error('Spotify API rate limit exceeded after maximum retries');
+      }
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return spotifyRequest(endpoint, token, options);
+      return spotifyRequest(endpoint, token, options, _retryCount + 1);
     }
     if (response.status === 401) {
       throw new Error('Spotify token expired. Please reconnect your Spotify account.');
@@ -58,8 +63,16 @@ const spotifyRequest = async (endpoint, token, options = {}) => {
 /**
  * Make an authenticated Spotify API request with pagination support
  */
-const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
+const spotifyFetch = async (endpoint, token, allItems = [], onProgress, _retryCount = 0) => {
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
+
+  // Validate pagination URLs stay on the expected host
+  if (endpoint.startsWith('http')) {
+    const parsedUrl = new URL(endpoint);
+    if (parsedUrl.hostname !== 'api.spotify.com') {
+      throw new Error(`Unexpected pagination hostname: ${parsedUrl.hostname}`);
+    }
+  }
 
   const response = await fetch(url, {
     headers: {
@@ -70,10 +83,13 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
 
   if (!response.ok) {
     if (response.status === 429) {
+      if (_retryCount >= MAX_RETRIES) {
+        throw new Error('Spotify API rate limit exceeded after maximum retries');
+      }
       // Rate limited - get retry-after header
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return spotifyFetch(endpoint, token, allItems, onProgress);
+      return spotifyFetch(endpoint, token, allItems, onProgress, _retryCount + 1);
     }
     if (response.status === 401) {
       throw new Error('Spotify token expired. Please reconnect your Spotify account.');
@@ -96,7 +112,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress) => {
   if (data.next) {
     // Small delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 100));
-    return spotifyFetch(data.next, token, combined, onProgress);
+    return spotifyFetch(data.next, token, combined, onProgress, 0);
   }
 
   return combined;

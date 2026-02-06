@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld('electron', {
     get: (key) => ipcRenderer.invoke('store-get', key),
     set: (key, value) => ipcRenderer.invoke('store-set', key, value),
     delete: (key) => ipcRenderer.invoke('store-delete', key),
-    debug: () => ipcRenderer.invoke('debug-store')
   },
 
   // Spotify operations
@@ -418,6 +417,5 @@ contextBridge.exposeInMainWorld('electron', {
     check: () => ipcRenderer.invoke('ollama:check')
   },
 
-  // Generic invoke for IPC calls
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
+  // Generic invoke removed for security — use specific API methods above
 });
