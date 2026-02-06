@@ -964,13 +964,18 @@ function broadcastToEmbeds(event, data) {
 }
 
 async function exchangeCodeForToken(code) {
-  console.log('=== Exchange Code for Token ===');
+  console.log('=== Exchange Code for Token (PKCE) ===');
   console.log('Code received:', code ? 'Yes' : 'No');
 
-  // Get credentials with fallback chain: user-stored > env > bundled
-  const { clientId, clientSecret, source } = getSpotifyCredentials();
+  const { clientId, source } = getSpotifyCredentials();
   const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
   console.log('Using credentials from:', source);
+
+  if (!spotifyCodeVerifier) {
+    console.error('No PKCE code verifier found — did the auth flow start correctly?');
+    mainWindow?.webContents.send('spotify-auth-error', 'PKCE code verifier missing. Please try connecting again.');
+    return;
+  }
 
   try {
     const response = await fetch('https://accounts.spotify.com/api/token', {
@@ -983,9 +988,12 @@ async function exchangeCodeForToken(code) {
         code: code,
         redirect_uri: redirectUri,
         client_id: clientId,
-        client_secret: clientSecret,
+        code_verifier: spotifyCodeVerifier,
       }),
     });
+
+    // Clear verifier after use (single-use)
+    spotifyCodeVerifier = null;
 
     const data = await response.json();
     console.log('Spotify API response:', data.access_token ? 'Token received' : 'No token', data.error || '');
@@ -1641,7 +1649,18 @@ ipcMain.handle('crypto-md5', (event, input) => {
 const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
 const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
 const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
-const FALLBACK_SPOTIFY_CLIENT_SECRET = '6290dd3f9ddd45e2be725b80b884db6e';
+
+// PKCE (Proof Key for Code Exchange) helpers for Spotify OAuth
+// This avoids the need to ship or store a client_secret in a public app.
+let spotifyCodeVerifier = null;
+
+function generateCodeVerifier() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier) {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
 
 // MusicKit developer token - generated from .p8 private key at startup
 const MUSICKIT_TEAM_ID = 'YR3XETE537';
@@ -1724,34 +1743,30 @@ async function generateMusicKitDeveloperToken() {
 
 // Helper to get Spotify credentials with priority: user-stored > env > fallback
 function getSpotifyCredentials() {
-  // First check user-configured credentials (stored via UI)
+  // First check user-configured Client ID (stored via UI)
   const userClientId = store.get('spotify_client_id');
-  const userClientSecret = store.get('spotify_client_secret');
 
-  if (userClientId && userClientSecret) {
-    console.log('🔑 Using user-configured Spotify credentials');
+  if (userClientId) {
+    console.log('🔑 Using user-configured Spotify Client ID');
     return {
       clientId: userClientId,
-      clientSecret: userClientSecret,
       source: 'user'
     };
   }
 
-  // Then check environment variables
-  if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
-    console.log('🔑 Using environment Spotify credentials');
+  // Then check environment variable
+  if (process.env.SPOTIFY_CLIENT_ID) {
+    console.log('🔑 Using environment Spotify Client ID');
     return {
       clientId: process.env.SPOTIFY_CLIENT_ID,
-      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
       source: 'env'
     };
   }
 
-  // Fall back to bundled credentials
-  console.log('🔑 Using fallback Spotify credentials');
+  // Fall back to bundled Client ID (safe to expose publicly with PKCE)
+  console.log('🔑 Using fallback Spotify Client ID');
   return {
     clientId: FALLBACK_SPOTIFY_CLIENT_ID,
-    clientSecret: FALLBACK_SPOTIFY_CLIENT_SECRET,
     source: 'fallback'
   };
 }
@@ -1881,8 +1896,6 @@ ipcMain.handle('spotify-auth', async () => {
   console.log('🔑 Spotify auth using credentials from:', source);
 
   const scopes = [
-    'user-read-private',
-    'user-read-email',
     'streaming',
     'user-read-playback-state',
     'user-modify-playback-state',
@@ -1892,11 +1905,15 @@ ipcMain.handle('spotify-auth', async () => {
     'playlist-read-collaborative'
   ].join(' ');
 
-  const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true`;
+  // Generate PKCE code verifier and challenge
+  spotifyCodeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(spotifyCodeVerifier);
+
+  const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true&code_challenge_method=S256&code_challenge=${codeChallenge}`;
 
   // Open in system browser
   shell.openExternal(authUrl);
-  
+
   return { success: true };
 });
 
@@ -1920,7 +1937,7 @@ ipcMain.handle('spotify-check-token', async () => {
   }
 
   // Get credentials with fallback chain: user-stored > env > bundled
-  const { clientId, clientSecret, source } = getSpotifyCredentials();
+  const { clientId, source } = getSpotifyCredentials();
 
   // If token is expired but we have a refresh token, try to refresh
   if (refreshToken) {
@@ -1931,11 +1948,11 @@ ipcMain.handle('spotify-check-token', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64')
         },
         body: new URLSearchParams({
           grant_type: 'refresh_token',
-          refresh_token: refreshToken
+          refresh_token: refreshToken,
+          client_id: clientId
         })
       });
 
@@ -1976,31 +1993,28 @@ ipcMain.handle('spotify-check-token', async () => {
 // Get Spotify credentials (for UI to show which source is being used)
 ipcMain.handle('spotify-get-credentials', () => {
   const userClientId = store.get('spotify_client_id');
-  const userClientSecret = store.get('spotify_client_secret');
   const { source } = getSpotifyCredentials();
 
   return {
     clientId: userClientId || '',
-    clientSecret: userClientSecret || '',
     source
   };
 });
 
-// Save user-configured Spotify credentials
-ipcMain.handle('spotify-set-credentials', (event, { clientId, clientSecret }) => {
-  if (clientId && clientSecret) {
+// Save user-configured Spotify Client ID
+ipcMain.handle('spotify-set-credentials', (event, { clientId }) => {
+  if (clientId) {
     store.set('spotify_client_id', clientId);
-    store.set('spotify_client_secret', clientSecret);
-    console.log('💾 Saved user Spotify credentials');
+    // Clean up any legacy client secret from previous versions
+    store.delete('spotify_client_secret');
+    console.log('💾 Saved user Spotify Client ID');
     return { success: true, source: 'user' };
-  } else if (!clientId && !clientSecret) {
+  } else {
     // Clear user credentials to use fallback
     store.delete('spotify_client_id');
     store.delete('spotify_client_secret');
-    console.log('🗑️ Cleared user Spotify credentials, will use fallback');
+    console.log('🗑️ Cleared user Spotify Client ID, will use fallback');
     return { success: true, source: 'fallback' };
-  } else {
-    return { success: false, error: 'Both Client ID and Client Secret are required' };
   }
 });
 
