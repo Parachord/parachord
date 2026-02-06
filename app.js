@@ -11520,6 +11520,10 @@ const Parachord = () => {
             if (response.ok || response.status === 204) {
               setIsPlaying(false);
               console.log('Paused Spotify playback');
+              // Stop polling so stale state checks don't trigger auto-advance
+              if (window.electron?.spotify?.polling) {
+                window.electron.spotify.polling.stop();
+              }
               return true;
             } else if (response.status === 401 && !isRetry) {
               // Token expired - try to refresh
