@@ -14302,7 +14302,7 @@ const Parachord = () => {
   // Load search history from electron-store
   const loadSearchHistory = async () => {
     try {
-      const history = await window.electron.invoke('search-history-load');
+      const history = await window.electron.searchHistory.load();
       setSearchHistory(history || []);
     } catch (error) {
       console.error('Failed to load search history:', error);
@@ -14325,7 +14325,7 @@ const Parachord = () => {
     };
 
     try {
-      await window.electron.invoke('search-history-save', entry);
+      await window.electron.searchHistory.save(entry);
       // Reload history to reflect update
       loadSearchHistory();
     } catch (error) {
@@ -14336,7 +14336,7 @@ const Parachord = () => {
   // Clear search history (single entry or all)
   const clearSearchHistory = async (entryQuery = null) => {
     try {
-      await window.electron.invoke('search-history-clear', entryQuery);
+      await window.electron.searchHistory.clear(entryQuery);
       loadSearchHistory();
     } catch (error) {
       console.error('Failed to clear search history:', error);
