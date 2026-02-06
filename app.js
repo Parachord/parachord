@@ -25110,17 +25110,14 @@ ${tracks}
       }
     }
 
-    // Clear from persistent storage. Set authorized to false (not delete) so startup
-    // can distinguish "user disconnected" from "never connected" and won't auto-reconnect
-    // based on macOS system keychain auth that persists across installs.
+    // Clear user auth from persistent storage. Set authorized to false (not delete) so
+    // startup can distinguish "user disconnected" from "never connected" and won't
+    // auto-reconnect based on macOS system keychain auth that persists across installs.
+    // Keep developer token intact — it's the app credential users authenticate against.
     if (window.electron?.store) {
       await window.electron.store.set('applemusic_authorized', false);
       await window.electron.store.delete('applemusic_user_token');
-      await window.electron.store.delete('applemusic_developer_token');
     }
-
-    // Also clear developer token from localStorage
-    localStorage.removeItem('musickit_developer_token');
 
     // Remove Apple Music sources from all tracks
     removeResolverSources('applemusic');
