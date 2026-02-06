@@ -1668,6 +1668,9 @@ ipcMain.handle('crypto-md5', (event, input) => {
 const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
 const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
 const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
+// SoundCloud fallback credentials - set these to your app's client ID/secret
+const FALLBACK_SOUNDCLOUD_CLIENT_ID = '';
+const FALLBACK_SOUNDCLOUD_CLIENT_SECRET = '';
 
 // PKCE (Proof Key for Code Exchange) helpers for Spotify OAuth
 // This avoids the need to ship or store a client_secret in a public app.
@@ -1816,7 +1819,16 @@ function getSoundCloudCredentials() {
     };
   }
 
-  // No fallback - SoundCloud API is deprecated
+  // Fallback to hardcoded app credentials
+  if (FALLBACK_SOUNDCLOUD_CLIENT_ID && FALLBACK_SOUNDCLOUD_CLIENT_SECRET) {
+    console.log('🔑 Using fallback SoundCloud credentials');
+    return {
+      clientId: FALLBACK_SOUNDCLOUD_CLIENT_ID,
+      clientSecret: FALLBACK_SOUNDCLOUD_CLIENT_SECRET,
+      source: 'fallback'
+    };
+  }
+
   console.log('⚠️ No SoundCloud credentials available');
   return {
     clientId: null,
@@ -3405,11 +3417,11 @@ ipcMain.handle('marketplace-get-manifest', async () => {
     const content = await fs.readFile(manifestPath, 'utf8');
     const manifest = JSON.parse(content);
 
-    console.log(`✅ Loaded ${manifest.resolvers.length} marketplace resolvers`);
+    console.log(`✅ Loaded ${manifest.plugins.length} marketplace plugins`);
     return { success: true, manifest };
   } catch (error) {
     console.error('Failed to load marketplace manifest:', error.message);
-    return { success: false, error: error.message, manifest: { version: '1.0.0', resolvers: [] } };
+    return { success: false, error: error.message, manifest: { version: '1.0.0', plugins: [] } };
   }
 });
 

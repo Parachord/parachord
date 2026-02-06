@@ -1757,6 +1757,8 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [tokenInput, setTokenInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
 
   const isConnected = config?.enabled && (config?.sessionKey || config?.userToken);
   const isPolling = config?.authPolling && config?.pendingToken;
@@ -1784,8 +1786,14 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         await scrobbler.connect(tokenInput);
         onConfigChange(scrobbler.id, await scrobbler.getConfig());
         setTokenInput('');
+      } else if (scrobbler.id === 'librefm') {
+        // Username/password auth for Libre.fm
+        await scrobbler.connectWithPassword(usernameInput, passwordInput);
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+        setUsernameInput('');
+        setPasswordInput('');
       } else {
-        // OAuth flow (Last.fm, Libre.fm)
+        // OAuth flow (Last.fm)
         const { authUrl } = await scrobbler.startAuth();
         window.electron.shell.openExternal(authUrl);
         // Update config to show pending state
@@ -1905,10 +1913,40 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         })
       ),
 
+      // Libre.fm username/password inputs
+      scrobbler.id === 'librefm' && React.createElement('div', { className: 'space-y-2' },
+        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' },
+          'Username',
+          React.createElement('a', {
+            href: '#',
+            onClick: (e) => {
+              e.preventDefault();
+              window.electron.shell.openExternal('https://libre.fm/');
+            },
+            className: 'ml-2 text-purple-600 hover:underline'
+          }, 'Create account')
+        ),
+        React.createElement('input', {
+          type: 'text',
+          value: usernameInput,
+          onChange: (e) => setUsernameInput(e.target.value),
+          placeholder: 'Your Libre.fm username',
+          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+        }),
+        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' }, 'Password'),
+        React.createElement('input', {
+          type: 'password',
+          value: passwordInput,
+          onChange: (e) => setPasswordInput(e.target.value),
+          placeholder: 'Your Libre.fm password',
+          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+        })
+      ),
+
       // Connect button
       React.createElement('button', {
         onClick: handleConnect,
-        disabled: connecting || (scrobbler.id === 'listenbrainz' && !tokenInput),
+        disabled: connecting || isPolling || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)),
         className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
       }, connecting ? 'Connecting...' : 'Connect'),
 
@@ -4430,8 +4468,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'applemusic', 'bandcamp', 'youtube']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'applemusic', 'bandcamp', 'youtube', 'soundcloud']);
+  const [activeResolvers, setActiveResolvers] = useState(['youtube']);
+  const [resolverOrder, setResolverOrder] = useState(['youtube']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
@@ -7009,24 +7047,6 @@ const Parachord = () => {
   useEffect(() => {
     loadedResolversRef.current = loadedResolvers;
   }, [loadedResolvers]);
-
-  // Auto-add newly loaded resolvers to activeResolvers and resolverOrder
-  // This runs when both resolvers are loaded AND settings are loaded from storage
-  useEffect(() => {
-    if (loadedResolvers.length === 0) return;
-    if (!cacheLoaded) return; // Wait for settings to load first
-
-    // Find resolvers that are loaded but not in resolverOrder
-    const newResolverIds = loadedResolvers
-      .map(r => r.id)
-      .filter(id => !resolverOrder.includes(id));
-
-    if (newResolverIds.length > 0) {
-      console.log(`📋 Adding new resolvers to order/active: ${newResolverIds.join(', ')}`);
-      setResolverOrder(prev => [...prev, ...newResolverIds]);
-      setActiveResolvers(prev => [...prev, ...newResolverIds]);
-    }
-  }, [loadedResolvers, cacheLoaded, resolverOrder]);
 
   // Load watch folders on initial app load (for needsConfiguration check)
   useEffect(() => {
@@ -13944,7 +13964,7 @@ const Parachord = () => {
     const enabledServices = chatServices.filter(s => {
       const config = metaServiceConfigs[s.id] || {};
       // Ollama doesn't need API key, others do
-      if (s.id === 'ollama') return config.enabled !== false;
+      if (s.id === 'ollama') return config.enabled === true;
       return config.enabled && config.apiKey;
     });
 
@@ -15028,6 +15048,16 @@ const Parachord = () => {
       if (savedMetaServiceConfigs) {
         setMetaServiceConfigs(savedMetaServiceConfigs);
         console.log('📦 Loaded meta service configs:', Object.keys(savedMetaServiceConfigs).join(', '));
+      } else {
+        // Fresh install: enable metadata services by default
+        const defaultConfigs = {
+          wikipedia: { enabled: true },
+          discogs: { enabled: true },
+          lastfm: { enabled: true }
+        };
+        setMetaServiceConfigs(defaultConfigs);
+        await window.electron.store.set('meta_service_configs', defaultConfigs);
+        console.log('📦 Set default meta service configs (wikipedia, discogs, lastfm)');
       }
 
       // Load Apple Music developer token
@@ -18923,7 +18953,7 @@ const Parachord = () => {
     console.log('  Found resolver:', resolver.name, isMetaService ? '(meta-service)' : '(content)');
 
     // Check if this plugin is available in the marketplace (can be reinstalled easily)
-    const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
+    const isInMarketplace = marketplaceManifest?.plugins?.some(r => r.id === resolverId);
 
     // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
     const confirmMessage = isInMarketplace
@@ -19011,14 +19041,14 @@ const Parachord = () => {
 
       if (result.success) {
         setMarketplaceManifest(result.manifest);
-        console.log(`✅ Loaded marketplace with ${result.manifest.resolvers.length} resolvers`);
+        console.log(`✅ Loaded marketplace with ${result.manifest.plugins.length} plugins`);
       } else {
         console.error('Failed to load marketplace:', result.error);
-        setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+        setMarketplaceManifest({ version: '1.0.0', plugins: [] });
       }
     } catch (error) {
       console.error('Marketplace load error:', error);
-      setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+      setMarketplaceManifest({ version: '1.0.0', plugins: [] });
     } finally {
       setMarketplaceLoading(false);
     }
@@ -19038,35 +19068,43 @@ const Parachord = () => {
     console.log(`📦 Installing ${name} from marketplace...`);
 
     try {
-      // For builtin resolvers, just enable them - they're already available as FALLBACK_RESOLVERS
+      // For builtin resolvers, enable them directly if already loaded
       if (builtin) {
-        // Check if already in allResolvers
         const existing = allResolvers.find(r => r.id === id);
         if (existing) {
+          // Already loaded - just enable it
+          if (!activeResolvers.includes(id)) {
+            setActiveResolvers(prev => [...prev, id]);
+            if (!resolverOrder.includes(id)) {
+              setResolverOrder(prev => [...prev, id]);
+            }
+            showToast(`${name} enabled`, 'success');
+          } else {
+            showToast(`${name} is already enabled`, 'info');
+          }
+          return;
+        }
+
+        // Check FALLBACK_RESOLVERS
+        const fallbackResolver = FALLBACK_RESOLVERS.find(r => r.manifest?.id === id);
+        if (fallbackResolver) {
+          setLoadedResolvers(prev => [...prev, { ...fallbackResolver, id, name, enabled: true, weight: prev.length }]);
+          setResolverOrder(prev => [...prev, id]);
+          setActiveResolvers(prev => [...prev, id]);
+          showToast(`${name} enabled`, 'success');
+          return;
+        }
+
+        // Not loaded and not in fallbacks - fall through to download if URL available
+        if (!downloadUrl) {
           showConfirmDialog({
             type: 'info',
-            title: 'Already Available',
-            message: `${name} is a built-in resolver and is already available. You can enable it in Settings > Resolvers.`
+            title: 'Not Available',
+            message: `${name} is not available in this build. Please update the app to get this feature.`
           });
-        } else {
-          // Find in FALLBACK_RESOLVERS and add to allResolvers
-          const fallbackResolver = FALLBACK_RESOLVERS.find(r => r.id === id);
-          if (fallbackResolver) {
-            setAllResolvers(prev => [...prev, { ...fallbackResolver, enabled: true, weight: prev.length }]);
-            showConfirmDialog({
-              type: 'success',
-              title: 'Resolver Enabled',
-              message: `${name} has been enabled. Configure it in Settings > Resolvers.`
-            });
-          } else {
-            showConfirmDialog({
-              type: 'info',
-              title: 'Built-in Resolver',
-              message: `${name} is a built-in resolver. Enable it in Settings > Resolvers.`
-            });
-          }
+          return;
         }
-        return;
+        // Fall through to download logic below
       }
 
       // Download resolver from URL
@@ -38324,7 +38362,7 @@ useEffect(() => {
                 },
                   (() => {
                     // Get all content resolvers from marketplace (non-meta-service)
-                    const marketplaceContentResolvers = (marketplaceManifest?.resolvers || [])
+                    const marketplaceContentResolvers = (marketplaceManifest?.plugins || [])
                       .filter(r => r.type !== 'meta-service');
 
                     // Build unified list: installed resolvers + marketplace-only resolvers
@@ -38466,7 +38504,7 @@ useEffect(() => {
                 },
                   (() => {
                     // Get all meta services from marketplace
-                    const marketplaceMetaServices = (marketplaceManifest?.resolvers || [])
+                    const marketplaceMetaServices = (marketplaceManifest?.plugins || [])
                       .filter(r => r.type === 'meta-service');
 
                     // Build unified list
@@ -39429,6 +39467,10 @@ useEffect(() => {
                             throw new Error('Store clear failed');
                           }
 
+                          // Clear localStorage tokens (MusicKit, etc.) that persist across resets
+                          localStorage.removeItem('musickit_developer_token');
+                          localStorage.removeItem('musickit_user_token');
+
                           // Reload the app (all React state reinitializes from defaults)
                           window.location.reload();
                         } catch (error) {
@@ -39643,7 +39685,7 @@ useEffect(() => {
             const hasEnabledChat = chatServices.some(s => {
               const config = metaServiceConfigs[s.id] || {};
               // Ollama doesn't require API key
-              if (s.id === 'ollama') return config.enabled !== false;
+              if (s.id === 'ollama') return config.enabled === true;
               return config.enabled && config.apiKey;
             });
 
@@ -40769,7 +40811,7 @@ useEffect(() => {
                 (() => {
                   const enabledServices = getChatServices().filter(s => {
                     const config = metaServiceConfigs[s.id] || {};
-                    if (s.id === 'ollama') return config.enabled !== false;
+                    if (s.id === 'ollama') return config.enabled === true;
                     return config.enabled && config.apiKey;
                   });
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
@@ -43913,7 +43955,7 @@ useEffect(() => {
           React.createElement('div', { className: 'flex items-center gap-2' },
             // Update button - show if marketplace has newer version
             (() => {
-              const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === selectedResolver.id);
+              const marketplaceResolver = marketplaceManifest?.plugins?.find(r => r.id === selectedResolver.id);
               const hasUpdate = marketplaceResolver &&
                 marketplaceResolver.version !== selectedResolver.version &&
                 marketplaceResolver.version > selectedResolver.version;
