@@ -21227,8 +21227,13 @@ ${tracks}
   saveFriendToCollectionRef.current = saveFriendToCollection;
 
   // Reorder pinned friends in sidebar (for drag-drop)
-  const reorderPinnedFriends = (fromIndex, toIndex) => {
+  // Uses friend IDs instead of indices since the sidebar sorts by on-air status,
+  // which means visual indices don't match the underlying array positions.
+  const reorderPinnedFriends = (draggedFriendId, targetFriendId) => {
     setPinnedFriendIds(prev => {
+      const fromIndex = prev.indexOf(draggedFriendId);
+      const toIndex = prev.indexOf(targetFriendId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
       const newOrder = [...prev];
       const [removed] = newOrder.splice(fromIndex, 1);
       newOrder.splice(toIndex, 0, removed);
@@ -26083,7 +26088,7 @@ useEffect(() => {
               draggable: true,
               onClick: () => navigateToFriend(friend),
               onDragStart: (e) => {
-                e.dataTransfer.setData('friendIndex', index.toString());
+                e.dataTransfer.setData('draggedFriendId', friend.id);
                 e.dataTransfer.effectAllowed = 'move';
               },
               onDragOver: (e) => {
@@ -26092,9 +26097,9 @@ useEffect(() => {
               },
               onDrop: (e) => {
                 e.preventDefault();
-                const fromIndex = parseInt(e.dataTransfer.getData('friendIndex'));
-                if (!isNaN(fromIndex) && fromIndex !== index) {
-                  reorderPinnedFriends(fromIndex, index);
+                const draggedFriendId = e.dataTransfer.getData('draggedFriendId');
+                if (draggedFriendId && draggedFriendId !== friend.id) {
+                  reorderPinnedFriends(draggedFriendId, friend.id);
                 }
               },
               onContextMenu: (e) => {
@@ -26669,6 +26674,7 @@ useEffect(() => {
               // Save to collection, then unpin
               saveFriendToCollection(pendingUnpinFriend.id);
               setPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
+              setAutoPinnedFriendIds(prev => prev.filter(id => id !== pendingUnpinFriend.id));
               showToast(`${pendingUnpinFriend.displayName} saved and unpinned`);
               setUnsavedFriendWarningOpen(false);
               setPendingUnpinFriend(null);
