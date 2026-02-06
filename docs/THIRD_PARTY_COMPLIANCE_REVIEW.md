@@ -30,22 +30,26 @@ Parachord integrates with approximately 20 third-party services spanning music s
 
 ---
 
-#### 2. Bandcamp — Web Scraping (HIGH RISK)
+#### 2. Bandcamp — Search Scraping (MEDIUM RISK)
 
-**Issue:** Bandcamp has no public API. Parachord scrapes Bandcamp's website in multiple ways:
-- **Search scraping** (`app.js`, fallback resolver): Fetches raw HTML from `bandcamp.com/search`, parses with DOMParser, extracts `.searchresult` elements
-- **DOM scraping** (`parachord-extension/content.js`, lines ~395-696): `scrapeBandcampTracks()` parses album/track/playlist pages
-- **CORS bypass** (`main.js`, lines ~2566-2624): Uses Electron's main process as a proxy to bypass browser CORS restrictions
-- **User-Agent spoofing**: Requests use `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36` to appear as a regular browser
+**Issue:** While most of the Bandcamp integration is compliant, the **search function** scrapes Bandcamp's website:
+- **Search scraping** (Bandcamp resolver in `app.js`): Fetches raw HTML from `bandcamp.com/search`, parses with DOMParser, extracts `.searchresult` elements
+- **CORS bypass** (`main.js`, `proxy-fetch` IPC handler): Uses Electron's main process to make these requests
+- **User-Agent spoofing**: Search requests use a browser-like UA string to disguise their origin
 
-**Why this is a problem:** Bandcamp's Terms of Use (Section 3) state:
+**What's compliant:**
+- **Playback** goes through Bandcamp's actual website in the user's browser (`shell.openExternal()`), preserving ads and purchase flows
+- **Browser extension DOM reading** (`scrapeBandcampTracks()` in `content.js`) reads pages the user is already viewing — standard browser extension behavior, same as screen readers, password managers, etc.
+- **Purchase links** are prominently surfaced, actively supporting Bandcamp's business model
+
+**Why the search scraping is a concern:** Bandcamp's Terms of Use (Section 3) state:
 > "You agree not to...use any robot, spider, scraper, or other automated means to access the Site for any purpose without our express written permission."
 
-User-Agent spoofing to disguise automated access compounds this.
+The search function makes automated HTTP requests with a spoofed User-Agent, which falls under this prohibition. However, this is limited to user-initiated searches, returns metadata that drives traffic to Bandcamp, and does not crawl or harvest data at scale.
 
-**Risk Level:** HIGH — Automated scraping with UA spoofing is a clear violation.
+**Risk Level:** MEDIUM — The search scraping technically violates TOS, but the overall integration is supportive of Bandcamp's model. The volume is low and user-initiated.
 
-**Recommendation:** Since Bandcamp has no public API, the options are: (a) request formal permission from Bandcamp, (b) limit integration to opening Bandcamp URLs in the browser without scraping metadata, or (c) remove the integration.
+**Recommendation:** Replace the search HTML scraping with Bandcamp's oEmbed endpoint or embedded player iframes for a fully compliant integration.
 
 ---
 
@@ -170,7 +174,7 @@ The browser extension can scrape Pitchfork review pages, but this is limited to 
 | Service | Status | Risk | Primary Issue |
 |---------|--------|------|---------------|
 | YouTube | **VIOLATION** | High | Automatic ad skipping |
-| Bandcamp | **VIOLATION** | High | Web scraping + UA spoofing |
+| Bandcamp (search) | **CONCERN** | Medium | Search scraping + UA spoofing |
 | Spotify (credentials) | **RESOLVED** | — | Migrated to PKCE; secret removed |
 | Qobuz | **CONCERN** | Medium | Shared demo App ID in production |
 | SoundCloud | **CONCERN** | Medium | Using deprecated API |
@@ -195,7 +199,7 @@ The browser extension can scrape Pitchfork review pages, but this is limited to 
 1. ~~**Immediate:** Remove the YouTube ad-skipping code from the browser extension~~ **DONE**
 2. **Immediate:** Rotate and remove the Apple MusicKit `.p8` private key from the repository
 3. ~~**Immediate:** Remove the hardcoded Spotify client secret; migrate to PKCE flow~~ **DONE**
-4. **Short-term:** Rearchitect Bandcamp integration to avoid scraping (or seek permission)
+4. **Short-term:** Replace Bandcamp search scraping with oEmbed or embedded player approach
 5. **Short-term:** Obtain a proper Qobuz production App ID or remove the integration
 6. ~~**Short-term:** Remove unnecessary Spotify OAuth scopes (`user-read-private`, `user-read-email`)~~ **DONE**
 7. **Ongoing:** Add deprecation warnings for SoundCloud integration
