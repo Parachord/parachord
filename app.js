@@ -3541,6 +3541,7 @@ const executeDjTool = async (name, args, context) => {
           r.artist?.toLowerCase() === args.artist.toLowerCase() &&
           r.title?.toLowerCase() === args.title.toLowerCase()
         ) || results[0];
+        context.clearQueue();
         await context.playTrack(bestMatch);
         return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
       }
