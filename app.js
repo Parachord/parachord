@@ -18958,6 +18958,16 @@ const Parachord = () => {
       // Hot-reload: Remove from state without restarting
       if (isMetaService) {
         setMetaServices(prev => prev.filter(s => s.id !== resolverId));
+        // Clear the service's config so dependent features (recommendations, weekly jams) stop
+        await clearMetaServiceConfig(resolverId);
+        // Clear cached data that depends on this service
+        if (resolverId === 'lastfm' || resolverId === 'listenbrainz') {
+          setRecommendations({ artists: [], tracks: [], loading: false, error: 'not_configured' });
+          recommendationsCache.current = { tracks: null, timestamp: 0 };
+        }
+        if (resolverId === 'listenbrainz') {
+          setHomeData(prev => ({ ...prev, weeklyJams: null }));
+        }
       } else {
         setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
       }
