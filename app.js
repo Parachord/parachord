@@ -42438,272 +42438,280 @@ useEffect(() => {
           ),
 
           // SoundCloud authentication section
-          selectedResolver.id === 'soundcloud' && React.createElement('div', {
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
-            }
-          },
-            React.createElement('div', { className: 'flex items-center justify-between' },
-              React.createElement('div', null,
-                React.createElement('span', {
-                  style: {
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: '#1f2937'
-                  }
-                }, 'SoundCloud Account'),
-                React.createElement('p', {
-                  style: {
-                    fontSize: '12px',
-                    color: '#6b7280',
-                    marginTop: '2px'
-                  }
-                },
-                  soundcloudConnected ? 'Connected and ready' : 'Sign in to enable search and streaming'
-                )
-              ),
-              soundcloudConnected
-                ? React.createElement('button', {
-                    onClick: disconnectSoundcloud,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#dc2626',
-                      backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Disconnect')
-                : React.createElement('button', {
-                    onClick: connectSoundcloud,
-                    className: 'transition-colors',
-                    style: {
-                      padding: '8px 14px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: '#FF5500',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Connect')
-            ),
-            soundcloudConnected && React.createElement('div', {
-              className: 'flex items-center gap-2',
+          selectedResolver.id === 'soundcloud' && (() => {
+            const hasCredentials = soundcloudCredentialsSource !== 'none' && soundcloudCredentialsSource !== undefined;
+            return React.createElement('div', {
               style: {
-                marginTop: '12px',
-                fontSize: '12px',
-                color: '#FF5500'
+                padding: '16px 0',
+                borderTop: '1px solid rgba(0, 0, 0, 0.06)'
               }
             },
-              React.createElement('span', null, '✓'),
-              React.createElement('span', null, 'SoundCloud connected')
-            ),
-            React.createElement('p', {
-              style: {
-                fontSize: '11px',
-                color: '#9ca3af',
-                marginTop: '12px',
-                lineHeight: '1.5'
-              }
-            },
-              'Note: Streaming availability depends on individual track permissions set by uploaders.'
-            ),
-            // Advanced accordion for custom credentials
-            React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('button', {
-                onClick: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen),
-                className: 'flex items-center gap-1',
-                style: {
-                  fontSize: '12px',
-                  color: '#6b7280',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0'
-                }
-              },
-                React.createElement('span', {
-                  className: `transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
-                }, '▶'),
-                'Advanced'
+              React.createElement('div', { className: 'flex items-center justify-between' },
+                React.createElement('div', null,
+                  React.createElement('span', {
+                    style: {
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#1f2937'
+                    }
+                  }, 'SoundCloud Account'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      marginTop: '2px'
+                    }
+                  },
+                    soundcloudConnected ? 'Connected and ready'
+                      : hasCredentials ? 'Sign in to enable search and streaming'
+                      : 'Requires API credentials to connect'
+                  )
+                ),
+                soundcloudConnected
+                  ? React.createElement('button', {
+                      onClick: disconnectSoundcloud,
+                      className: 'transition-colors',
+                      style: {
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }
+                    }, 'Disconnect')
+                  : hasCredentials && React.createElement('button', {
+                      onClick: connectSoundcloud,
+                      className: 'transition-colors',
+                      style: {
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        color: '#ffffff',
+                        backgroundColor: '#FF5500',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }
+                    }, 'Connect')
               ),
-              soundcloudAdvancedOpen && React.createElement('div', {
+              soundcloudConnected && React.createElement('div', {
+                className: 'flex items-center gap-2',
                 style: {
                   marginTop: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  fontSize: '12px',
+                  color: '#FF5500'
+                }
+              },
+                React.createElement('span', null, '✓'),
+                React.createElement('span', null, 'SoundCloud connected')
+              ),
+              soundcloudConnected && React.createElement('p', {
+                style: {
+                  fontSize: '11px',
+                  color: '#9ca3af',
+                  marginTop: '12px',
+                  lineHeight: '1.5'
+                }
+              },
+                'Note: Streaming availability depends on individual track permissions set by uploaders.'
+              ),
+
+              // API Credentials section
+              // Show inline (not behind Advanced) when no credentials exist
+              !soundcloudConnected && React.createElement('div', {
+                style: {
+                  marginTop: '16px',
+                  padding: hasCredentials ? '0' : '12px',
+                  backgroundColor: hasCredentials ? 'transparent' : 'rgba(0, 0, 0, 0.02)',
                   borderRadius: '8px'
                 }
               },
-                React.createElement('p', {
-                  style: {
-                    fontSize: '11px',
-                    color: '#6b7280',
-                    marginBottom: '12px',
-                    lineHeight: '1.5'
-                  }
-                },
-                  soundcloudCredentialsSource === 'user'
-                    ? 'Using your custom SoundCloud API credentials.'
-                    : soundcloudCredentialsSource === 'env'
-                    ? 'Using credentials from environment variables.'
-                    : 'SoundCloud API requires credentials. Register an app to get access.'
-                ),
-                React.createElement('div', { style: { marginBottom: '10px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Client ID'),
-                  React.createElement('input', {
-                    type: 'text',
-                    value: soundcloudClientIdInput,
-                    onChange: (e) => setSoundcloudClientIdInput(e.target.value),
-                    placeholder: 'Your SoundCloud Client ID',
-                    style: {
-                      width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: '#1f2937',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
-                      borderRadius: '6px',
-                      outline: 'none'
-                    }
-                  })
-                ),
-                React.createElement('div', { style: { marginBottom: '10px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Client Secret'),
-                  React.createElement('input', {
-                    type: 'password',
-                    value: soundcloudClientSecretInput,
-                    onChange: (e) => setSoundcloudClientSecretInput(e.target.value),
-                    placeholder: 'Your SoundCloud Client Secret',
-                    style: {
-                      width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      color: '#1f2937',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
-                      borderRadius: '6px',
-                      outline: 'none'
-                    }
-                  })
-                ),
-                React.createElement('div', { style: { marginBottom: '12px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Redirect URI'),
-                  React.createElement('div', {
-                    style: {
-                      display: 'flex',
-                      gap: '6px'
-                    }
-                  },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: 'http://127.0.0.1:8888/callback/soundcloud',
-                      readOnly: true,
-                      style: {
-                        flex: 1,
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                        borderRadius: '6px',
-                        outline: 'none'
-                      }
-                    }),
-                    React.createElement('button', {
-                      onClick: () => {
-                        navigator.clipboard.writeText('http://127.0.0.1:8888/callback/soundcloud');
+                // If has credentials, wrap in Advanced accordion
+                hasCredentials
+                  ? React.createElement('div', null,
+                      React.createElement('button', {
+                        onClick: () => setSoundcloudAdvancedOpen(!soundcloudAdvancedOpen),
+                        className: 'flex items-center gap-1',
+                        style: {
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '0'
+                        }
                       },
-                      title: 'Copy to clipboard',
-                      style: {
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }
-                    }, '📋')
-                  ),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '10px',
-                      color: '#9ca3af',
-                      marginTop: '4px'
-                    }
-                  }, 'Add this to your SoundCloud app\'s Redirect URI')
-                ),
-                React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('button', {
-                    onClick: saveSoundcloudCredentials,
-                    style: {
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: '#FF5500',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Save'),
-                  (soundcloudClientIdInput || soundcloudClientSecretInput) && React.createElement('button', {
-                    onClick: () => {
-                      setSoundcloudClientIdInput('');
-                      setSoundcloudClientSecretInput('');
-                      saveSoundcloudCredentials();
-                    },
-                    style: {
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      color: '#6b7280',
-                      backgroundColor: 'transparent',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Clear')
-                ),
-                React.createElement('p', {
-                  style: {
-                    fontSize: '10px',
-                    color: '#9ca3af',
-                    marginTop: '10px',
-                    lineHeight: '1.4'
-                  }
-                }, 'Note: SoundCloud API is deprecated. Register at soundcloud.com/you/apps')
+                        React.createElement('span', {
+                          className: `transform transition-transform ${soundcloudAdvancedOpen ? 'rotate-90' : ''}`
+                        }, '▶'),
+                        'API Credentials'
+                      ),
+                      soundcloudAdvancedOpen && React.createElement('div', {
+                        style: { marginTop: '12px' }
+                      },
+                        React.createElement('p', {
+                          style: { fontSize: '11px', color: '#22c55e', marginBottom: '12px' }
+                        },
+                          soundcloudCredentialsSource === 'user'
+                            ? '✓ Using your custom SoundCloud API credentials.'
+                            : '✓ Using credentials from environment variables.'
+                        )
+                      )
+                    )
+                  // No credentials: show fields directly
+                  : React.createElement('div', null,
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          color: '#1f2937',
+                          marginBottom: '8px'
+                        }
+                      }, 'API Credentials Required'),
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '11px',
+                          color: '#6b7280',
+                          marginBottom: '12px',
+                          lineHeight: '1.5'
+                        }
+                      },
+                        'SoundCloud requires your own API credentials. Register an app at soundcloud.com/you/apps, then enter your Client ID and Secret below.'
+                      ),
+                      React.createElement('div', { style: { marginBottom: '10px' } },
+                        React.createElement('label', {
+                          style: {
+                            fontSize: '11px',
+                            color: '#6b7280',
+                            display: 'block',
+                            marginBottom: '4px'
+                          }
+                        }, 'Client ID'),
+                        React.createElement('input', {
+                          type: 'text',
+                          value: soundcloudClientIdInput,
+                          onChange: (e) => setSoundcloudClientIdInput(e.target.value),
+                          placeholder: 'Your SoundCloud Client ID',
+                          style: {
+                            width: '100%',
+                            padding: '8px 10px',
+                            fontSize: '12px',
+                            color: '#1f2937',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            borderRadius: '6px',
+                            outline: 'none'
+                          }
+                        })
+                      ),
+                      React.createElement('div', { style: { marginBottom: '10px' } },
+                        React.createElement('label', {
+                          style: {
+                            fontSize: '11px',
+                            color: '#6b7280',
+                            display: 'block',
+                            marginBottom: '4px'
+                          }
+                        }, 'Client Secret'),
+                        React.createElement('input', {
+                          type: 'password',
+                          value: soundcloudClientSecretInput,
+                          onChange: (e) => setSoundcloudClientSecretInput(e.target.value),
+                          placeholder: 'Your SoundCloud Client Secret',
+                          style: {
+                            width: '100%',
+                            padding: '8px 10px',
+                            fontSize: '12px',
+                            color: '#1f2937',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            borderRadius: '6px',
+                            outline: 'none'
+                          }
+                        })
+                      ),
+                      React.createElement('div', { style: { marginBottom: '12px' } },
+                        React.createElement('label', {
+                          style: {
+                            fontSize: '11px',
+                            color: '#6b7280',
+                            display: 'block',
+                            marginBottom: '4px'
+                          }
+                        }, 'Redirect URI'),
+                        React.createElement('div', {
+                          style: {
+                            display: 'flex',
+                            gap: '6px'
+                          }
+                        },
+                          React.createElement('input', {
+                            type: 'text',
+                            value: 'http://127.0.0.1:8888/callback/soundcloud',
+                            readOnly: true,
+                            style: {
+                              flex: 1,
+                              padding: '8px 10px',
+                              fontSize: '12px',
+                              color: '#6b7280',
+                              backgroundColor: '#f9fafb',
+                              border: '1px solid rgba(0, 0, 0, 0.1)',
+                              borderRadius: '6px',
+                              outline: 'none'
+                            }
+                          }),
+                          React.createElement('button', {
+                            onClick: () => {
+                              navigator.clipboard.writeText('http://127.0.0.1:8888/callback/soundcloud');
+                              showToast('Redirect URI copied', 'success');
+                            },
+                            title: 'Copy to clipboard',
+                            style: {
+                              padding: '8px 10px',
+                              fontSize: '12px',
+                              color: '#6b7280',
+                              backgroundColor: '#f9fafb',
+                              border: '1px solid rgba(0, 0, 0, 0.1)',
+                              borderRadius: '6px',
+                              cursor: 'pointer'
+                            }
+                          }, '📋')
+                        ),
+                        React.createElement('p', {
+                          style: {
+                            fontSize: '10px',
+                            color: '#9ca3af',
+                            marginTop: '4px'
+                          }
+                        }, 'Add this to your SoundCloud app\'s Redirect URI')
+                      ),
+                      React.createElement('div', { className: 'flex gap-2' },
+                        React.createElement('button', {
+                          onClick: async () => {
+                            await saveSoundcloudCredentials();
+                            showToast('Credentials saved. Click Connect to sign in.', 'success');
+                          },
+                          disabled: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim(),
+                          style: {
+                            padding: '8px 14px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            color: '#ffffff',
+                            backgroundColor: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? '#9ca3af' : '#FF5500',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 'not-allowed' : 'pointer',
+                            opacity: !soundcloudClientIdInput.trim() || !soundcloudClientSecretInput.trim() ? 0.6 : 1
+                          }
+                        }, 'Save Credentials')
+                      )
+                    )
               )
-            )
-          ),
+            );
+          })(),
 
           // Qobuz authentication section
           selectedResolver.id === 'qobuz' && React.createElement('div', {
