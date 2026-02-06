@@ -18959,7 +18959,7 @@ const Parachord = () => {
     console.log('  Found resolver:', resolver.name, isMetaService ? '(meta-service)' : '(content)');
 
     // Check if this plugin is available in the marketplace (can be reinstalled easily)
-    const isInMarketplace = marketplaceManifest?.resolvers?.some(r => r.id === resolverId);
+    const isInMarketplace = marketplaceManifest?.plugins?.some(r => r.id === resolverId);
 
     // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
     const confirmMessage = isInMarketplace
@@ -19047,14 +19047,14 @@ const Parachord = () => {
 
       if (result.success) {
         setMarketplaceManifest(result.manifest);
-        console.log(`✅ Loaded marketplace with ${result.manifest.resolvers.length} resolvers`);
+        console.log(`✅ Loaded marketplace with ${result.manifest.plugins.length} plugins`);
       } else {
         console.error('Failed to load marketplace:', result.error);
-        setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+        setMarketplaceManifest({ version: '1.0.0', plugins: [] });
       }
     } catch (error) {
       console.error('Marketplace load error:', error);
-      setMarketplaceManifest({ version: '1.0.0', resolvers: [] });
+      setMarketplaceManifest({ version: '1.0.0', plugins: [] });
     } finally {
       setMarketplaceLoading(false);
     }
@@ -38354,7 +38354,7 @@ useEffect(() => {
                 },
                   (() => {
                     // Get all content resolvers from marketplace (non-meta-service)
-                    const marketplaceContentResolvers = (marketplaceManifest?.resolvers || [])
+                    const marketplaceContentResolvers = (marketplaceManifest?.plugins || [])
                       .filter(r => r.type !== 'meta-service');
 
                     // Build unified list: installed resolvers + marketplace-only resolvers
@@ -38496,7 +38496,7 @@ useEffect(() => {
                 },
                   (() => {
                     // Get all meta services from marketplace
-                    const marketplaceMetaServices = (marketplaceManifest?.resolvers || [])
+                    const marketplaceMetaServices = (marketplaceManifest?.plugins || [])
                       .filter(r => r.type === 'meta-service');
 
                     // Build unified list
@@ -43943,7 +43943,7 @@ useEffect(() => {
           React.createElement('div', { className: 'flex items-center gap-2' },
             // Update button - show if marketplace has newer version
             (() => {
-              const marketplaceResolver = marketplaceManifest?.resolvers?.find(r => r.id === selectedResolver.id);
+              const marketplaceResolver = marketplaceManifest?.plugins?.find(r => r.id === selectedResolver.id);
               const hasUpdate = marketplaceResolver &&
                 marketplaceResolver.version !== selectedResolver.version &&
                 marketplaceResolver.version > selectedResolver.version;

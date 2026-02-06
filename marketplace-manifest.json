@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "lastUpdated": "2026-01-24T20:00:00Z",
-  "resolvers": [
+  "plugins": [
     {
       "id": "spotify",
       "name": "Spotify",

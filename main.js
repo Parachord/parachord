@@ -2849,18 +2849,18 @@ ipcMain.handle('plugins-sync-marketplace', async () => {
 
   // Fetch manifest to get list of available plugins
   const manifest = await fetchPluginManifest();
-  if (!manifest || !manifest.resolvers) {
+  if (!manifest || !manifest.plugins) {
     console.log('  ❌ Could not fetch marketplace manifest');
     return { success: false, error: 'Could not reach marketplace' };
   }
 
-  console.log(`  Found ${manifest.resolvers.length} plugins in marketplace`);
+  console.log(`  Found ${manifest.plugins.length} plugins in marketplace`);
 
   const updated = [];
   const added = [];
   const failed = [];
 
-  for (const pluginInfo of manifest.resolvers) {
+  for (const pluginInfo of manifest.plugins) {
     const pluginId = pluginInfo.id;
     const marketplaceVersion = pluginInfo.version;
     const cacheFile = path.join(pluginsDir, `${pluginId}.axe`);
@@ -3405,11 +3405,11 @@ ipcMain.handle('marketplace-get-manifest', async () => {
     const content = await fs.readFile(manifestPath, 'utf8');
     const manifest = JSON.parse(content);
 
-    console.log(`✅ Loaded ${manifest.resolvers.length} marketplace resolvers`);
+    console.log(`✅ Loaded ${manifest.plugins.length} marketplace plugins`);
     return { success: true, manifest };
   } catch (error) {
     console.error('Failed to load marketplace manifest:', error.message);
-    return { success: false, error: error.message, manifest: { version: '1.0.0', resolvers: [] } };
+    return { success: false, error: error.message, manifest: { version: '1.0.0', plugins: [] } };
   }
 });
 
