@@ -33,9 +33,9 @@ describe('ResolutionScheduler', () => {
       expect(Math.min(...priorities)).toBe(CONTEXT_PRIORITY.queue);
     });
 
-    test('sidebar has lowest priority (highest number)', () => {
+    test('background has lowest priority (highest number)', () => {
       const priorities = Object.values(CONTEXT_PRIORITY);
-      expect(Math.max(...priorities)).toBe(CONTEXT_PRIORITY.sidebar);
+      expect(Math.max(...priorities)).toBe(CONTEXT_PRIORITY.background);
     });
   });
 
