@@ -40,6 +40,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Get package version
+        id: pkg
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
       # macOS: Import code signing certificate
       - name: Import Code Signing Certificate
         if: matrix.platform == 'mac' && env.CSC_LINK != ''
@@ -66,7 +71,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: parachord-${{ matrix.platform }}-${{ matrix.arch }}
+          name: parachord-${{ matrix.platform }}-${{ matrix.arch }}-v${{ steps.pkg.outputs.version }}
           path: |
             dist/*.dmg
             dist/*.zip
@@ -75,6 +80,7 @@ jobs:
             dist/*.deb
             dist/*.rpm
           if-no-files-found: ignore
+          retention-days: 30
 
   release:
     needs: build
