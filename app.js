@@ -11489,6 +11489,10 @@ const Parachord = () => {
         if (isPlaying) {
           await window.electron.musicKit.pause();
           setIsPlaying(false);
+          // Stop polling so stale state checks don't trigger auto-advance
+          if (window.electron.musicKit.polling) {
+            window.electron.musicKit.polling.stop();
+          }
           console.log('🍎 Paused Apple Music playback');
         } else {
           await window.electron.musicKit.resume();
