@@ -4271,6 +4271,7 @@ const Parachord = () => {
     youtube: -6,     // YouTube videos are often much louder
     qobuz: 0         // Qobuz is typically well mastered
   });
+  const resolverVolumeOffsetsRef = useRef(resolverVolumeOffsets);  // Ref to avoid stale closure in save
   // Per-track volume adjustments (trackId -> dB offset from resolver default)
   const trackVolumeAdjustments = useRef({});
 
@@ -9514,6 +9515,14 @@ const Parachord = () => {
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
+
+  // Keep volume offsets ref in sync and persist on change
+  useEffect(() => {
+    resolverVolumeOffsetsRef.current = resolverVolumeOffsets;
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
+    }
+  }, [resolverVolumeOffsets, cacheLoaded]);
 
   // Keep selectedPlaylistRef in sync for callbacks
   useEffect(() => {
@@ -15289,8 +15298,8 @@ const Parachord = () => {
       await window.electron.store.set('active_resolvers', activeResolversRef.current);
       await window.electron.store.set('resolver_order', resolverOrderRef.current);
 
-      // Save volume normalization offsets
-      await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsets);
+      // Save volume normalization offsets (use ref to avoid stale closure)
+      await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
 
       // Save playlists view mode
       await window.electron.store.set('playlists_view_mode', playlistsViewMode);
