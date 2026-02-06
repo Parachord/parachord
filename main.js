@@ -2849,18 +2849,18 @@ ipcMain.handle('plugins-sync-marketplace', async () => {
 
   // Fetch manifest to get list of available plugins
   const manifest = await fetchPluginManifest();
-  if (!manifest || !manifest.plugins) {
+  if (!manifest || !manifest.resolvers) {
     console.log('  ❌ Could not fetch marketplace manifest');
     return { success: false, error: 'Could not reach marketplace' };
   }
 
-  console.log(`  Found ${manifest.plugins.length} plugins in marketplace`);
+  console.log(`  Found ${manifest.resolvers.length} plugins in marketplace`);
 
   const updated = [];
   const added = [];
   const failed = [];
 
-  for (const pluginInfo of manifest.plugins) {
+  for (const pluginInfo of manifest.resolvers) {
     const pluginId = pluginInfo.id;
     const marketplaceVersion = pluginInfo.version;
     const cacheFile = path.join(pluginsDir, `${pluginId}.axe`);

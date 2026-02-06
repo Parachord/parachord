@@ -1757,6 +1757,8 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [tokenInput, setTokenInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
 
   const isConnected = config?.enabled && (config?.sessionKey || config?.userToken);
   const isPolling = config?.authPolling && config?.pendingToken;
@@ -1784,8 +1786,14 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         await scrobbler.connect(tokenInput);
         onConfigChange(scrobbler.id, await scrobbler.getConfig());
         setTokenInput('');
+      } else if (scrobbler.id === 'librefm') {
+        // Username/password auth for Libre.fm
+        await scrobbler.connectWithPassword(usernameInput, passwordInput);
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+        setUsernameInput('');
+        setPasswordInput('');
       } else {
-        // OAuth flow (Last.fm, Libre.fm)
+        // OAuth flow (Last.fm)
         const { authUrl } = await scrobbler.startAuth();
         window.electron.shell.openExternal(authUrl);
         // Update config to show pending state
@@ -1905,10 +1913,40 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         })
       ),
 
+      // Libre.fm username/password inputs
+      scrobbler.id === 'librefm' && React.createElement('div', { className: 'space-y-2' },
+        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' },
+          'Username',
+          React.createElement('a', {
+            href: '#',
+            onClick: (e) => {
+              e.preventDefault();
+              window.electron.shell.openExternal('https://libre.fm/');
+            },
+            className: 'ml-2 text-purple-600 hover:underline'
+          }, 'Create account')
+        ),
+        React.createElement('input', {
+          type: 'text',
+          value: usernameInput,
+          onChange: (e) => setUsernameInput(e.target.value),
+          placeholder: 'Your Libre.fm username',
+          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+        }),
+        React.createElement('label', { className: 'block text-sm text-gray-600 mb-1' }, 'Password'),
+        React.createElement('input', {
+          type: 'password',
+          value: passwordInput,
+          onChange: (e) => setPasswordInput(e.target.value),
+          placeholder: 'Your Libre.fm password',
+          className: 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent'
+        })
+      ),
+
       // Connect button
       React.createElement('button', {
         onClick: handleConnect,
-        disabled: connecting || (scrobbler.id === 'listenbrainz' && !tokenInput),
+        disabled: connecting || (scrobbler.id === 'listenbrainz' && !tokenInput) || (scrobbler.id === 'librefm' && (!usernameInput || !passwordInput)),
         className: 'w-full py-2 px-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
       }, connecting ? 'Connecting...' : 'Connect'),
 

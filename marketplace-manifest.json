@@ -160,7 +160,8 @@
       "color": "#10a37f",
       "homepage": "https://platform.openai.com",
       "capabilities": {
-        "generate": true
+        "generate": true,
+        "chat": true
       },
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/chatgpt.axe",
@@ -196,7 +197,8 @@
       "color": "#4285f4",
       "homepage": "https://ai.google.dev",
       "capabilities": {
-        "generate": true
+        "generate": true,
+        "chat": true
       },
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/gemini.axe",
