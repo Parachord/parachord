@@ -33284,82 +33284,89 @@ useEffect(() => {
                 );
               })(),
 
-              // SECTION: Quick Stats
-              React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
-                [
-                  { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: '#8b5cf6', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
-                  { label: 'Artists', value: collectionData.artists.length, icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', color: '#ec4899', onClick: () => { navigateTo('library'); setCollectionTab('artists'); } },
-                  { label: 'Playlists', value: playlists.length, icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: '#f59e0b', onClick: () => navigateTo('playlists') },
-                  { label: 'Friends', value: friends.length, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', color: '#10b981', onClick: () => { navigateTo('library'); setCollectionTab('friends'); } }
-                ].map((stat, index) =>
-                  React.createElement('button', {
-                    key: stat.label,
-                    className: 'release-card card-fade-up p-4 text-left',
-                    style: {
-                      backgroundColor: '#ffffff',
-                      borderRadius: '10px',
-                      border: 'none',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                      animationDelay: `${index * 50}ms`
-                    },
-                    onClick: stat.onClick
-                  },
-                    React.createElement('div', {
-                      className: 'w-10 h-10 rounded-lg flex items-center justify-center mb-3',
-                      style: { backgroundColor: `${stat.color}15` }
-                    },
-                      React.createElement('svg', { className: 'w-5 h-5', style: { color: stat.color }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: stat.icon })
-                      )
-                    ),
-                    React.createElement('p', { className: 'text-2xl font-bold text-gray-900' }, stat.value),
-                    React.createElement('p', { className: 'text-sm text-gray-500' }, stat.label)
-                  )
-                )
-              ),
-
-              // SECTION: Sync Your Collection (show when no sync provider is enabled)
-              !Object.values(resolverSyncSettings).some(s => s?.enabled) && React.createElement('div', {
-                className: 'rounded-xl overflow-hidden',
-                style: {
-                  background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f0f9ff 100%)',
-                  border: '1px solid rgba(0, 0, 0, 0.06)'
-                }
-              },
-                React.createElement('div', { className: 'p-5' },
-                  React.createElement('div', { className: 'flex items-center gap-2 mb-1' },
-                    React.createElement('svg', { className: 'w-5 h-5 text-green-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                    ),
-                    React.createElement('h3', { className: 'text-base font-semibold text-gray-900' }, 'Sync Your Collection')
-                  ),
-                  React.createElement('p', { className: 'text-sm text-gray-500 mb-4' },
-                    'Import your saved music from Spotify or Apple Music to build your Parachord collection. Your library stays in sync automatically.'
-                  ),
-                  React.createElement('div', { className: 'flex gap-3' },
+              // SECTION: Collection Stats & Sync
+              (() => {
+                const hasSyncEnabled = Object.values(resolverSyncSettings).some(s => s?.enabled);
+                const statsGrid = React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
+                  [
+                    { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: '#8b5cf6', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
+                    { label: 'Artists', value: collectionData.artists.length, icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', color: '#ec4899', onClick: () => { navigateTo('library'); setCollectionTab('artists'); } },
+                    { label: 'Playlists', value: playlists.length, icon: 'M4 6h16M4 10h16M4 14h16M4 18h16', color: '#f59e0b', onClick: () => navigateTo('playlists') },
+                    { label: 'Friends', value: friends.length, icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z', color: '#10b981', onClick: () => { navigateTo('library'); setCollectionTab('friends'); } }
+                  ].map((stat, index) =>
                     React.createElement('button', {
-                      className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
-                      style: { backgroundColor: '#1DB954', border: 'none', cursor: 'pointer' },
-                      onClick: () => openSyncSetupModal('spotify')
+                      key: stat.label,
+                      className: 'release-card card-fade-up p-4 text-left',
+                      style: {
+                        backgroundColor: hasSyncEnabled ? '#ffffff' : 'rgba(255, 255, 255, 0.7)',
+                        borderRadius: '10px',
+                        border: 'none',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                        animationDelay: `${index * 50}ms`
+                      },
+                      onClick: stat.onClick
                     },
-                      React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 24 24', fill: '#ffffff' },
-                        React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                      React.createElement('div', {
+                        className: 'w-10 h-10 rounded-lg flex items-center justify-center mb-3',
+                        style: { backgroundColor: `${stat.color}15` }
+                      },
+                        React.createElement('svg', { className: 'w-5 h-5', style: { color: stat.color }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: stat.icon })
+                        )
                       ),
-                      'Sync Spotify'
-                    ),
-                    React.createElement('button', {
-                      className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
-                      style: { backgroundColor: '#FA243C', border: 'none', cursor: 'pointer' },
-                      onClick: () => openSyncSetupModal('applemusic')
-                    },
-                      React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 122.88 122.88', fill: '#ffffff' },
-                        React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
-                      ),
-                      'Sync Apple Music'
+                      React.createElement('p', { className: 'text-2xl font-bold text-gray-900' }, stat.value),
+                      React.createElement('p', { className: 'text-sm text-gray-500' }, stat.label)
                     )
                   )
-                )
-              )
+                );
+
+                // When sync is already enabled, just show the stats grid
+                if (hasSyncEnabled) return statsGrid;
+
+                // When sync is not enabled, wrap stats inside the sync container
+                return React.createElement('div', {
+                  className: 'rounded-xl overflow-hidden',
+                  style: {
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f0f9ff 100%)',
+                    border: '1px solid rgba(0, 0, 0, 0.06)'
+                  }
+                },
+                  React.createElement('div', { className: 'p-5' },
+                    React.createElement('div', { className: 'flex items-center gap-2 mb-1' },
+                      React.createElement('svg', { className: 'w-5 h-5 text-green-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                      ),
+                      React.createElement('h3', { className: 'text-base font-semibold text-gray-900' }, 'Sync Your Collection')
+                    ),
+                    React.createElement('p', { className: 'text-sm text-gray-500 mb-4' },
+                      'Import your saved music from Spotify or Apple Music to build your Parachord collection. Your library stays in sync automatically.'
+                    ),
+                    statsGrid,
+                    React.createElement('div', { className: 'flex gap-3 mt-4' },
+                      React.createElement('button', {
+                        className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
+                        style: { backgroundColor: '#1DB954', border: 'none', cursor: 'pointer' },
+                        onClick: () => openSyncSetupModal('spotify')
+                      },
+                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 24 24', fill: '#ffffff' },
+                          React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                        ),
+                        'Sync Spotify'
+                      ),
+                      React.createElement('button', {
+                        className: 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90',
+                        style: { backgroundColor: '#FA243C', border: 'none', cursor: 'pointer' },
+                        onClick: () => openSyncSetupModal('applemusic')
+                      },
+                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: '0 0 122.88 122.88', fill: '#ffffff' },
+                          React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
+                        ),
+                        'Sync Apple Music'
+                      )
+                    )
+                  )
+                );
+              })()
             )
           )
         ),
