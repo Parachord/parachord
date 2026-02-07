@@ -560,13 +560,15 @@ const systemVolumeMonitor = {
     const { execFile } = require('child_process');
 
     this.interval = setInterval(() => {
-      execFile('osascript', ['-e', 'set v to (get volume settings)', '-e', 'return (output volume of v) & "," & (output muted of v)'], { timeout: 2000 }, (error, stdout) => {
+      execFile('osascript', ['-e', 'get volume settings'], { timeout: 2000 }, (error, stdout) => {
         if (error) return;
-        const parts = stdout.trim().split(',');
-        if (parts.length !== 2) return;
+        // Output: "output volume:70, output muted:false, alert volume:100, input volume:50"
+        const volMatch = stdout.match(/output volume:(\d+)/);
+        const muteMatch = stdout.match(/output muted:(true|false)/);
+        if (!volMatch || !muteMatch) return;
 
-        const volume = parseInt(parts[0], 10);
-        const muted = parts[1].trim() === 'true';
+        const volume = parseInt(volMatch[1], 10);
+        const muted = muteMatch[1] === 'true';
 
         if (isNaN(volume)) return;
 

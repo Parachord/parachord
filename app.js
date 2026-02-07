@@ -11871,14 +11871,29 @@ const Parachord = () => {
           await window.electron.musicKit.resume();
           // Resume preview audio if it was the active playback method
           if (window._appleMusicPreviewAudio && window._appleMusicPreviewAudio.src && window._appleMusicPreviewAudio.paused) {
-            await window._appleMusicPreviewAudio.play();
-            console.log('🍎 Resumed Apple Music preview audio');
+            try {
+              await window._appleMusicPreviewAudio.play();
+              console.log('🍎 Resumed Apple Music preview audio');
+            } catch (previewErr) {
+              console.warn('🍎 Could not resume preview audio:', previewErr.message);
+            }
           }
           setIsPlaying(true);
+          // Restart polling for progress updates and auto-advance
+          if (window.electron.musicKit.polling) {
+            window.electron.musicKit.polling.start({
+              songId: currentTrack.appleMusicId,
+              trackTitle: currentTrack.title,
+              trackArtist: currentTrack.artist,
+              duration: currentTrack.duration || 0
+            }).catch(err => console.warn('🍎 Could not restart polling:', err.message));
+          }
           console.log('🍎 Resumed Apple Music playback');
         }
       } catch (error) {
         console.error('Apple Music play/pause error:', error);
+        // Update UI state even on error to avoid stuck state
+        setIsPlaying(!isPlaying);
       }
       return;
     }
