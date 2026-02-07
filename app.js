@@ -6856,9 +6856,21 @@ const Parachord = () => {
         resolversToLoad = resolversToLoad.filter(axe => !hiddenResolvers.includes(axe.manifest?.id));
 
         // Filter out user-uninstalled resolvers (they can reinstall from marketplace)
+        // But don't filter meta services that the user has explicitly enabled in their config
         if (uninstalledResolvers.length > 0) {
+          const savedMetaConfigs = await window.electron.store.get('meta_service_configs') || {};
           const beforeCount = resolversToLoad.length;
-          resolversToLoad = resolversToLoad.filter(axe => !uninstalledResolvers.includes(axe.manifest?.id));
+          resolversToLoad = resolversToLoad.filter(axe => {
+            const id = axe.manifest?.id;
+            if (!uninstalledResolvers.includes(id)) return true;
+            // Keep meta services that are enabled in config (user explicitly enabled them)
+            const metaConfig = savedMetaConfigs[id];
+            if (axe.manifest?.type === 'meta-service' && (metaConfig?.enabled || metaConfig?.apiKey)) {
+              console.log(`  ✅ Keeping enabled meta service despite uninstall flag: ${id}`);
+              return true;
+            }
+            return false;
+          });
           const removedCount = beforeCount - resolversToLoad.length;
           if (removedCount > 0) {
             console.log(`🚫 Excluded ${removedCount} user-uninstalled resolver(s)`);
@@ -6984,6 +6996,23 @@ const Parachord = () => {
         configs[scrobbler.id] = await scrobbler.getConfig();
       }
       setScrobblerConfigs(configs);
+
+      // Sync Libre.fm scrobbler config to metaServiceConfigs (they use separate stores)
+      const libreFmConfig = configs['librefm'];
+      if (libreFmConfig?.username) {
+        const currentMeta = await window.electron.store.get('meta_service_configs') || {};
+        if (!currentMeta['librefm']?.username) {
+          const updatedMeta = {
+            ...currentMeta,
+            librefm: { ...currentMeta['librefm'], enabled: !!libreFmConfig.enabled, username: libreFmConfig.username }
+          };
+          await window.electron.store.set('meta_service_configs', updatedMeta);
+          setMetaServiceConfigs(prev => ({
+            ...prev,
+            librefm: { ...prev['librefm'], enabled: !!libreFmConfig.enabled, username: libreFmConfig.username }
+          }));
+        }
+      }
 
       // Load global scrobbling enabled state
       if (window.electron?.store) {
@@ -43882,11 +43911,27 @@ useEffect(() => {
                 React.createElement('input', {
                   type: 'checkbox',
                   checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
-                  onChange: (e) => {
+                  onChange: async (e) => {
                     saveMetaServiceConfig(selectedResolver.id, {
                       ...metaServiceConfigs[selectedResolver.id],
                       enabled: e.target.checked
                     });
+                    // When enabling, ensure the plugin is actually loaded
+                    if (e.target.checked) {
+                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
+                      if (!isLoaded) {
+                        // Remove from uninstalled list so it loads on next restart
+                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                        if (uninstalled.includes(selectedResolver.id)) {
+                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
+                        }
+                        // Also trigger install from marketplace to hot-load immediately
+                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                        if (marketplaceItem) {
+                          await handleInstallFromMarketplace(marketplaceItem);
+                        }
+                      }
+                    }
                   },
                   className: 'sr-only peer'
                 }),
@@ -43919,6 +43964,21 @@ useEffect(() => {
                 config: scrobblerConfigs['librefm'],
                 onConfigChange: (id, newConfig) => {
                   setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
+                  // Sync scrobbler config to metaServiceConfigs so the tile reflects connected state
+                  if (newConfig?.username) {
+                    saveMetaServiceConfig('librefm', {
+                      ...metaServiceConfigs['librefm'],
+                      enabled: !!newConfig.enabled,
+                      username: newConfig.username
+                    });
+                  } else {
+                    // Disconnected - clear meta service config
+                    saveMetaServiceConfig('librefm', {
+                      ...metaServiceConfigs['librefm'],
+                      enabled: false,
+                      username: undefined
+                    });
+                  }
                 }
               })
           ),
@@ -44251,6 +44311,13 @@ useEffect(() => {
                       const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
                       if (marketplaceItem) {
                         await handleInstallFromMarketplace(marketplaceItem);
+                        // Also enable the service after install (install alone doesn't set enabled)
+                        if (isMetaService) {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            enabled: true
+                          });
+                        }
                         setSelectedResolver(null);
                         return;
                       }
