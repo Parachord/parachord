@@ -33323,12 +33323,12 @@ useEffect(() => {
 
               // SECTION: Surprise Me (Shuffleupagus AI DJ)
               (() => {
-                const aiServices = getAiServices();
-                const enabledAiServices = aiServices.filter(s => {
+                const chatServices = getChatServices();
+                const hasEnabledChat = chatServices.some(s => {
                   const config = metaServiceConfigs[s.id] || {};
-                  return config.enabled && config.apiKey;
+                  if (s.id === 'ollama') return config.enabled === true;
+                  return !!config.apiKey;
                 });
-                const hasAiPlugin = enabledAiServices.length > 0;
 
                 return React.createElement('div', {
                   className: 'p-6 rounded-xl text-center',
@@ -33343,20 +33343,17 @@ useEffect(() => {
                   ),
                   React.createElement('h3', { className: 'text-xl font-bold text-white mb-2' }, 'Surprise Me'),
                   React.createElement('p', { className: 'text-white/70 text-sm mb-4 max-w-md mx-auto' },
-                    hasAiPlugin
+                    hasEnabledChat
                       ? 'Let Shuffleupagus, your AI DJ, create a personalized playlist based on your listening history'
                       : 'Shuffleupagus is your AI DJ that creates personalized playlists. Enable at least one AI plug-in (like ChatGPT, Gemini, or Claude) to get started.'
                   ),
-                  hasAiPlugin
+                  hasEnabledChat
                     ? React.createElement('button', {
-                        className: `px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors ${aiLoading ? 'opacity-50 cursor-not-allowed' : ''}`,
-                        disabled: aiLoading,
+                        className: 'px-6 py-2.5 bg-white text-purple-700 font-semibold rounded-full hover:bg-purple-50 transition-colors',
                         onClick: () => {
-                          if (!aiLoading) {
-                            handleAiGenerate('Surprise me! Based on my listening history, create a playlist of songs I might love but haven\'t discovered yet. Mix familiar vibes with fresh discoveries.');
-                          }
+                          openAiChat();
                         }
-                      }, aiLoading ? 'Generating...' : 'Generate Playlist')
+                      }, 'Chat with Shuffleupagus')
                     : React.createElement('button', {
                         className: 'px-6 py-2.5 bg-white/20 text-white font-semibold rounded-full hover:bg-white/30 transition-colors',
                         onClick: () => {
