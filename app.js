@@ -39296,8 +39296,9 @@ useEffect(() => {
                     loadedResolvers
                       .filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id))
                       .map(resolver => {
-                        // Browser-based resolvers can't have volume controlled
-                        const isBrowserBased = !resolver.capabilities?.stream;
+                        // Resolvers where in-app volume control is not available
+                        const isVolumeDisabled = !resolver.capabilities?.stream || resolver.id === 'applemusic';
+                        const disabledReason = resolver.id === 'applemusic' ? 'System vol' : 'Browser';
                         const offset = resolverVolumeOffsets[resolver.id] || 0;
 
                         return React.createElement('div', {
@@ -39307,7 +39308,7 @@ useEffect(() => {
                             padding: '10px 12px',
                             borderRadius: '8px',
                             backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                            opacity: isBrowserBased ? 0.5 : 1
+                            opacity: isVolumeDisabled ? 0.5 : 1
                           }
                         },
                           React.createElement('span', {
@@ -39315,7 +39316,7 @@ useEffect(() => {
                               width: '100px',
                               fontSize: '13px',
                               fontWeight: '500',
-                              color: isBrowserBased ? '#9ca3af' : '#374151'
+                              color: isVolumeDisabled ? '#9ca3af' : '#374151'
                             }
                           }, resolver.name),
                           React.createElement('input', {
@@ -39325,20 +39326,20 @@ useEffect(() => {
                             step: '1',
                             value: offset,
                             onChange: (e) => setResolverVolumeOffsets(prev => ({ ...prev, [resolver.id]: Number(e.target.value) })),
-                            className: `flex-1 h-2 bg-gray-200 rounded-full appearance-none ${isBrowserBased ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
-                            disabled: isBrowserBased,
-                            title: isBrowserBased ? 'Browser playback - volume control not available' : undefined
+                            className: `flex-1 h-2 bg-gray-200 rounded-full appearance-none ${isVolumeDisabled ? 'cursor-not-allowed' : 'cursor-pointer accent-purple-600'}`,
+                            disabled: isVolumeDisabled,
+                            title: isVolumeDisabled ? (resolver.id === 'applemusic' ? 'Use system volume to control Apple Music' : 'Browser playback - volume control not available') : undefined
                           }),
                           React.createElement('span', {
                             style: {
                               width: '56px',
-                              fontSize: isBrowserBased ? '11px' : '12px',
-                              color: isBrowserBased ? '#9ca3af' : '#6b7280',
+                              fontSize: isVolumeDisabled ? '11px' : '12px',
+                              color: isVolumeDisabled ? '#9ca3af' : '#6b7280',
                               textAlign: 'right',
-                              fontFamily: isBrowserBased ? 'inherit' : 'monospace',
-                              fontStyle: isBrowserBased ? 'italic' : 'normal'
+                              fontFamily: isVolumeDisabled ? 'inherit' : 'monospace',
+                              fontStyle: isVolumeDisabled ? 'italic' : 'normal'
                             }
-                          }, isBrowserBased ? 'Browser' : `${offset > 0 ? '+' : ''}${offset} dB`)
+                          }, isVolumeDisabled ? disabledReason : `${offset > 0 ? '+' : ''}${offset} dB`)
                         );
                       })
                   ),
