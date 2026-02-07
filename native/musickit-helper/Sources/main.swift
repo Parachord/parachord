@@ -70,7 +70,13 @@ struct AnyCodable: Codable {
 @available(macOS 14.0, *)
 @MainActor
 class MusicKitBridge {
-    private let player = ApplicationMusicPlayer.shared
+    // Use SystemMusicPlayer instead of ApplicationMusicPlayer so that audio
+    // routes through Music.app. This means:
+    // 1. AppleScript "set sound volume" controls the audio level
+    // 2. macOS system volume keys control the audio
+    // 3. Play/pause is handled reliably by Music.app
+    // Trade-off: Music.app will be visible when playing
+    private let player = SystemMusicPlayer.shared
     private var isAuthorized = false
 
     // Check current authorization status

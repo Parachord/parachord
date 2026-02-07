@@ -8548,6 +8548,7 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.system?.onVolumeChanged) return;
 
+    console.log('[SystemVolume] Registered system volume change listener');
     let systemMuted = false;
     let wasPlayingBeforeMute = false;
 
