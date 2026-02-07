@@ -47,14 +47,11 @@ In theory, Windows and Linux builds work too - but I've never tried either. So g
 
 If you want some technical background on what is going on, check out:
 - https://parachord.com/blog/2026/02/03/how-content-resolution-works/
-- 
-
-### 1. Onboarding Experience
-- Did it help? Did it leave you with more questions that needed to be answered?
   
-### 2. Enable Plug-ins
+  
+### 1. Configuring Plug-ins
 
-Go to **Settings > Plug-ins** and enable the sources you want to use:
+Go to **Settings > Plug-ins** and enable and configure the sources you want to use:
 
 **Recommended:**
 - **Spotify** (requires Premium and Spotify desktop to be running in the background) - Full playback and library sync
@@ -63,11 +60,13 @@ Go to **Settings > Plug-ins** and enable the sources you want to use:
 - **Bandcamp** - Stream and buy more directly from independent artists
 - **Local Files** - Your own music library
 
-**For metadata & discovery:**
-- **Last.fm** - Scrobbling, recommendations, and artist images
-- **MusicBrainz** - Artist discographies and release info
+Drag & Drop to reprioritize your music sources and put your default first. I'd recommend having Spotify or Apple Music as the first (or your local library if you have large one) and then backfill that with others.
 
-### 3. Connect Spotify (Recommended)
+**For metadata & discovery:**
+- **Last.fm** - Scrobbling and recommendations
+- **ListenBrainz** - Scrobbling and Weekly Jams/recommendations
+
+### 2a. Connect Spotify (Recommended)
 
 If you have Spotify Premium:
 1. Go to **Settings > Plug-ins > Spotify**
@@ -75,32 +74,44 @@ If you have Spotify Premium:
 3. Authorize in the browser
 4. Once connected, click **Sync Collection** to import your saved albums and playlists
 
-### 4. Connect Apple Music (Recommended)
+or 
+
+### 2b. Connect Apple Music (Recommended)
 
 1. Go to **Settings > Plug-ins > Apple Music**
 2. Click **Authorize** — you'll be prompted to sign in with your Apple ID
 3. Your Apple Music subscription will be available for full playback
 4. Once connected, click **Sync Collection** to import your saved albums and playlists
 
+### 3. Add ChatGPT
+If you want to check out the AI-enabled stuff I'd recommend ChatGPT as their free API keys support a lot of activity
+1. Go to **Settings > Plug-ins > Meta Services**
+2. Open ChatGPT plug-in and follow the link to create an API key
+3. Paste the key into the configuration settings of the plug-in
+4. Once connected, open the Shuffleupagus chat window from the (twinkly stars icon) in the playbar
+
+### 4. Add Friends
+See what others are listening to in real-time:
+1. Go to **Collection > Friends > Add Friend**
+2. Add friends by Last.fm and/or ListenBrainz username:
+   - `jherskowitz`
+   - *(add other testers)*
+  
 ### 5. Install the Browser Extension
 
 Send songs to Parachord directly from your browser:
-1. Download from [Chrome Web Store](#) or [Firefox Add-ons](#) *(links coming soon)*
+1. Download from [Chrome Web Store](#) or [Firefox Add-ons](#) *(not yet available, so do 2 below))*
 2. Or load unpacked from `parachord-extension/` in the repo
-3. Right-click any song link to send it to Parachord
+3. Right-click any song link to send it to Parachord (read more: https://github.com/Parachord/parachord-browser-extension/blob/main/README.md)
 
-### 6. Add Friends
-
-See what others are listening to in real-time:
-1. Go to **Collection > Friends > Add Friend**
-2. Add friends by Last.fm username:
-   - `jherskowitz`
-   - *(add other testers)*
 
 ## What to Test
 
 We're especially interested in feedback on:
 
+### Onboarding Experience
+- Did it help? Did it leave you with more questions that needed to be answered?
+- 
 ### Playback
 - Does playback work reliably across different sources?
 - Any audio glitches, gaps, or sync issues?
@@ -155,10 +166,10 @@ https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
 
-- **Apple Music**: Full playback and library sync on all platforms (macOS, Windows, Linux) via MusicKit
+- **Apple Music**: Volume only controllable via system volume on Mac
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
-- **YouTube**: Audio-only, quality varies - add the browser extension to improve the experience
-- **Auto-updates**: Enabled - you'll be prompted when a new version is available
+- **YouTube**: Pops open browser window in front of app, quality varies - add the browser extension to improve the experience
+  
 
 ## Keyboard Shortcuts
 
