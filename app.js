@@ -3942,9 +3942,8 @@ class AIChatService {
       return await this.handleToolCalls({ ...response, tool_calls: toolCalls }, systemPrompt);
     }
 
-    // Check if the response mentions playing but didn't use tools
-    // This can happen with smaller models that don't support tool calling well
-    let content = response.content;
+    // Convert plain-text music references to card syntax (fallback for smaller models)
+    let content = this.convertPlainTextToCards(response.content);
     const lowerContent = content.toLowerCase();
     const mentionsAction = lowerContent.includes("i'll play") ||
                           lowerContent.includes("i will play") ||
@@ -4015,7 +4014,8 @@ class AIChatService {
       }
     }
 
-    const finalContent = currentResponse.content || this.summarizeToolResults(toolResults);
+    const rawFinal = currentResponse.content || this.summarizeToolResults(toolResults);
+    const finalContent = this.convertPlainTextToCards(rawFinal);
     this.messages.push({ role: 'assistant', content: finalContent });
     return { content: finalContent, toolResults };
   }
@@ -4245,6 +4245,86 @@ class AIChatService {
     // Generic error - truncate long messages
     const shortMessage = message.length > 100 ? message.substring(0, 100) + '...' : message;
     return `Error: ${shortMessage}`;
+  }
+
+  /**
+   * Post-process AI response to convert plain-text music references into card
+   * syntax.  This is a fallback for models (e.g. smaller Ollama models) that
+   * ignore the card-syntax formatting instructions in the system prompt.
+   *
+   * If the response already contains at least one card token it is returned
+   * unchanged — we only kick in when the model produced zero cards.
+   */
+  convertPlainTextToCards(content) {
+    if (!content) return content;
+
+    // If the model already emitted card syntax, trust it
+    if (/\{\{(track|artist|album|playlist)\|/.test(content)) {
+      return content;
+    }
+
+    const lines = content.split('\n');
+    let currentArtist = null;
+
+    const processed = lines.map(line => {
+      let result = line;
+
+      // Detect bold text as artist name: **Artist Name** or **Artist (again!)**
+      const boldArtist = result.match(/\*\*([^*]+?)\*\*/);
+      if (boldArtist) {
+        const raw = boldArtist[1].trim();
+        // Skip common non-artist bold words
+        if (!/^(Note|Warning|Important|Recommendations?|Here\b|Summary|Tip):?/i.test(raw)) {
+          currentArtist = raw.replace(/\s*\(again!?\)\s*/gi, '').trim();
+        }
+      }
+
+      if (currentArtist) {
+        // 1. song/track "Title" from album "Album"
+        result = result.replace(
+          /(?:their\s+)?(?:song|track)\s+"([^"]+)"(?:\s+(?:from|off|on)\s+(?:the\s+)?(?:album|record|LP|EP)\s+"([^"]+)")?/gi,
+          (_m, track, album) => `{{track|${track}|${currentArtist}|${album || ''}}}`
+        );
+
+        // 2. album/record/LP/EP "Title"
+        result = result.replace(
+          /(?:the\s+)?(?:album|record|LP|EP)\s+"([^"]+)"/gi,
+          (_m, album) => `{{album|${album}|${currentArtist}|}}`
+        );
+
+        // 3. Convert the bold artist name itself to a card
+        result = result.replace(/\*\*([^*]+?)\*\*/g, (_m, name) => {
+          if (/^(Note|Warning|Important|Recommendations?|Here\b|Summary|Tip):?/i.test(name.trim())) return _m;
+          return `{{artist|${name.replace(/\s*\(again!?\)\s*/gi, '').trim()}|}}`;
+        });
+
+        // 4. Remaining quoted text near an artist → treat as track
+        result = result.replace(/"([^"]{2,80})"/g, (_m, title) => {
+          // Skip if this title already appears inside a card we just created
+          if (result.includes(`|${title}|`) || result.includes(`|${title}}`)) return _m;
+          return `{{track|${title}|${currentArtist}|}}`;
+        });
+      } else {
+        // No artist context yet — just convert bold names to artist cards
+        result = result.replace(/\*\*([^*]+?)\*\*/g, (_m, name) => {
+          if (/^(Note|Warning|Important|Recommendations?|Here\b|Summary|Tip):?/i.test(name.trim())) return _m;
+          return `{{artist|${name.trim()}|}}`;
+        });
+      }
+
+      // Standalone: "Title" by Artist Name (works without prior context)
+      result = result.replace(
+        /"([^"]{2,80})"\s+by\s+([A-Z][A-Za-z\s.''&-]+?)(?=[\s,.\n;)]|$)/g,
+        (_m, title, artist) => {
+          if (_m.includes('{{')) return _m;
+          return `{{track|${title.trim()}|${artist.trim()}|}}`;
+        }
+      );
+
+      return result;
+    });
+
+    return processed.join('\n');
   }
 
   clearHistory() { this.messages = []; }
