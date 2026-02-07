@@ -57,6 +57,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Wrap codesign with retry logic for transient Apple timestamp server failures
+      - name: Setup codesign retry wrapper
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cp scripts/codesign-retry.sh "$HOME/.local/bin/codesign"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Build for ${{ matrix.platform }}
         run: npm run build:${{ matrix.platform }} -- --publish never
         env:
