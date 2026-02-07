@@ -1,3 +1,5 @@
+# Parachord Alpha
+
 I'm excited - and nervous - to announce Parachord, a music player that builds on the legacy of Tomahawk and unifies all your music sources into one seamless experience.
 
 ![Parachord Screenshot](assets/artist-page2.png)
@@ -165,7 +167,7 @@ Please include:
 https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
-
+- **Windows** and **Linux**: I don't know if these work at all tbh, but there are builds for them
 - **Apple Music**: Volume only controllable via system volume on Mac
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
 - **YouTube**: Pops open browser window in front of app, quality varies - add the browser extension to improve the experience
