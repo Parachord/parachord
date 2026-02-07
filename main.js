@@ -2287,6 +2287,15 @@ ipcMain.handle('soundcloud-check-token', async () => {
 });
 
 // Disconnect SoundCloud (clear tokens)
+ipcMain.handle('spotify-disconnect', async () => {
+  console.log('=== Spotify Disconnect ===');
+  store.delete('spotify_token');
+  store.delete('spotify_refresh_token');
+  store.delete('spotify_token_expiry');
+  console.log('Spotify tokens cleared');
+  return { success: true };
+});
+
 ipcMain.handle('soundcloud-disconnect', async () => {
   console.log('=== SoundCloud Disconnect ===');
   store.delete('soundcloud_token');

@@ -24768,9 +24768,7 @@ ${tracks}
 
   const disconnectSpotify = async () => {
     if (window.electron?.spotify) {
-      await window.electron.store.delete('spotify_token');
-      await window.electron.store.delete('spotify_refresh_token');
-      await window.electron.store.delete('spotify_token_expiry');
+      await window.electron.spotify.disconnect();
       setSpotifyToken(null);
       setSpotifyConnected(false);
       // Remove Spotify sources from all tracks and remove from active resolvers
