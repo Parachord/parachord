@@ -4381,7 +4381,6 @@ const Parachord = () => {
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(70);
   const [isMuted, setIsMuted] = useState(false);
-  const volumeRef = useRef(70); // Ref for volume to avoid stale closures
   const preMuteVolumeRef = useRef(70); // Remember volume before muting
   const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
   const spotifyVolumeTimeoutRef = useRef(null); // Debounce Spotify volume API calls
@@ -5694,13 +5693,12 @@ const Parachord = () => {
   useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
-  useEffect(() => { volumeRef.current = volume; window._parachordVolume = isMuted ? 0 : volume; }, [volume, isMuted]);
-  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { isMutedRef.current = isMuted; window._parachordVolume = isMuted ? 0 : volumeRef.current; }, [isMuted]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
   useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
-  useEffect(() => { volumeRef.current = volume; }, [volume]);
+  useEffect(() => { volumeRef.current = volume; window._parachordVolume = isMutedRef.current ? 0 : volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
 
