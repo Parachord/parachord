@@ -544,6 +544,58 @@ const appleMusicPoller = {
   }
 };
 
+// macOS System Volume Monitor
+// Polls system output volume and mute state, sends changes to renderer
+const systemVolumeMonitor = {
+  interval: null,
+  lastVolume: null,
+  lastMuted: null,
+  POLL_INTERVAL: 1000, // 1 second
+
+  start() {
+    if (process.platform !== 'darwin') return;
+    if (this.interval) return;
+
+    console.log('[SystemVolume] Starting system volume monitoring');
+    const { execFile } = require('child_process');
+
+    this.interval = setInterval(() => {
+      execFile('osascript', ['-e', 'set v to (get volume settings)', '-e', 'return (output volume of v) & "," & (output muted of v)'], { timeout: 2000 }, (error, stdout) => {
+        if (error) return;
+        const parts = stdout.trim().split(',');
+        if (parts.length !== 2) return;
+
+        const volume = parseInt(parts[0], 10);
+        const muted = parts[1].trim() === 'true';
+
+        if (isNaN(volume)) return;
+
+        if (volume !== this.lastVolume || muted !== this.lastMuted) {
+          const wasNull = this.lastVolume === null;
+          this.lastVolume = volume;
+          this.lastMuted = muted;
+
+          // Don't send the initial reading as a "change"
+          if (wasNull) return;
+
+          console.log(`[SystemVolume] Changed: volume=${volume}, muted=${muted}`);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('system-volume-changed', { volume, muted });
+          }
+        }
+      });
+    }, this.POLL_INTERVAL);
+  },
+
+  stop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+      console.log('[SystemVolume] Stopped monitoring');
+    }
+  }
+};
+
 // Helper to wait for local files service to be ready
 async function waitForLocalFilesService() {
   // If already initialized, return immediately
@@ -1276,6 +1328,7 @@ app.whenReady().then(() => {
   createWindow();
   startAuthServer();
   startExtensionServer();
+  systemVolumeMonitor.start();
 
   // Set up application menu
   const isMac = process.platform === 'darwin';
@@ -4886,8 +4939,9 @@ ipcMain.handle('ollama:check', async () => {
   }
 });
 
-// Stop MusicKit helper on app quit
+// Stop MusicKit helper and system volume monitor on app quit
 app.on('will-quit', () => {
+  systemVolumeMonitor.stop();
   const bridge = getMusicKitBridge();
   bridge.stop();
 

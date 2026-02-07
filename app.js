@@ -8542,6 +8542,79 @@ const Parachord = () => {
     };
   }, []);
 
+  // System volume/mute monitoring (macOS)
+  // When the user mutes the system, pause Apple Music native playback and mute audio elements.
+  // When unmuted, restore previous state. This is a separate layer from Parachord's own mute.
+  useEffect(() => {
+    if (!window.electron?.system?.onVolumeChanged) return;
+
+    let systemMuted = false;
+    let wasPlayingBeforeMute = false;
+
+    window.electron.system.onVolumeChanged(({ volume, muted }) => {
+      if (muted && !systemMuted) {
+        // System just muted
+        systemMuted = true;
+        console.log('[SystemVolume] System muted - pausing audio');
+
+        // Mute HTML5 audio elements (local files, SoundCloud, Apple Music preview)
+        if (audioRef.current) {
+          audioRef.current.volume = 0;
+        }
+        if (window._appleMusicPreviewAudio) {
+          window._appleMusicPreviewAudio.volume = 0;
+        }
+
+        // Pause Apple Music native playback (separate process, can't control volume)
+        const track = currentTrackRef.current;
+        if (track?._activeResolver === 'applemusic' && isPlayingRef.current) {
+          wasPlayingBeforeMute = true;
+          if (window.electron?.musicKit?.pause) {
+            window.electron.musicKit.pause();
+          }
+        }
+
+        // Mute Spotify
+        if (track?._activeResolver === 'spotify') {
+          setSpotifyVolumeDebounced(0, false);
+        }
+      } else if (!muted && systemMuted) {
+        // System just unmuted
+        systemMuted = false;
+        console.log('[SystemVolume] System unmuted - restoring audio');
+
+        // Only restore if Parachord itself isn't muted
+        if (!isMutedRef.current) {
+          const currentVol = volumeRef.current;
+          const track = currentTrackRef.current;
+          const resolverId = track ? determineResolverIdFromTrack(track) : null;
+
+          // Restore HTML5 audio volume
+          if ((resolverId === 'localfiles' || resolverId === 'soundcloud') && audioRef.current) {
+            applyLocalFileVolume(currentVol, track?.id, resolverId);
+          }
+          if (resolverId === 'applemusic' && window._appleMusicPreviewAudio) {
+            const effectiveVol = getEffectiveVolume(currentVol, 'applemusic', track?.id);
+            window._appleMusicPreviewAudio.volume = effectiveVol / 100;
+          }
+
+          // Resume Apple Music native if it was playing before mute
+          if (wasPlayingBeforeMute) {
+            wasPlayingBeforeMute = false;
+            if (window.electron?.musicKit?.resume) {
+              window.electron.musicKit.resume();
+            }
+          }
+
+          // Restore Spotify volume
+          if (resolverId === 'spotify') {
+            setSpotifyVolumeDebounced(currentVol, true);
+          }
+        }
+      }
+    });
+  }, []);
+
   // Listen for context menu actions (only set up once)
   useEffect(() => {
     if (window.electron?.resolvers?.onContextMenuAction) {
