@@ -70,13 +70,7 @@ struct AnyCodable: Codable {
 @available(macOS 14.0, *)
 @MainActor
 class MusicKitBridge {
-    // Use SystemMusicPlayer instead of ApplicationMusicPlayer so that audio
-    // routes through Music.app. This means:
-    // 1. AppleScript "set sound volume" controls the audio level
-    // 2. macOS system volume keys control the audio
-    // 3. Play/pause is handled reliably by Music.app
-    // Trade-off: Music.app will be visible when playing
-    private let player = SystemMusicPlayer.shared
+    private let player = ApplicationMusicPlayer.shared
     private var isAuthorized = false
 
     // Check current authorization status
@@ -326,22 +320,12 @@ class MusicKitBridge {
         ]
     }
 
-    // Set volume via Music.app's AppleScript interface (non-blocking)
-    // ApplicationMusicPlayer routes audio through musicd, and Music.app's
-    // "sound volume" property controls that output level.
-    // Runs on a background thread to avoid blocking command processing.
-    // Only sets volume if Music.app is already running to avoid launching it.
+    // Volume control is not available for ApplicationMusicPlayer.
+    // Its audio routes through its own session, not Music.app, so neither
+    // AppleScript nor any API can control it. System volume is the only control.
+    // The in-app volume slider is disabled for Apple Music in the UI.
     func setVolume(_ volume: Float) -> [String: Any] {
-        let volumePercent = Int(max(0, min(100, volume * 100)))
-        DispatchQueue.global(qos: .userInitiated).async {
-            let script = NSAppleScript(source: """
-                if application "Music" is running then
-                    tell application "Music" to set sound volume to \(volumePercent)
-                end if
-            """)
-            script?.executeAndReturnError(nil)
-        }
-        return ["volume": volume, "appliedPercent": volumePercent]
+        return ["volume": volume, "note": "Use system volume"]
     }
 }
 
