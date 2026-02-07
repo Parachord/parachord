@@ -2844,14 +2844,15 @@ ipcMain.handle('resolvers-load-builtin', async () => {
               axe._filename = filename;
               axe._source = source;
               console.log(`  🔄 Upgraded: ${axe.manifest.name} v${existing.manifest.version} → v${axe.manifest.version} (${source})`);
-            } else if (versionCmp === 0 && source === 'cache') {
-              // Same version from cache - prefer cache (may have user customizations)
+            } else if (versionCmp === 0 && existing._source === 'cache' && source === 'app') {
+              // Same version but shipped app plugin is more authoritative than cache
+              // (cache may have stale format from old marketplace downloads)
               plugins[existingIdx] = axe;
               axe._filename = filename;
               axe._source = source;
-              console.log(`  🔄 Using cached: ${axe.manifest.name} v${axe.manifest.version}`);
+              console.log(`  🔄 Preferring shipped: ${axe.manifest.name} v${axe.manifest.version} over cached`);
             } else {
-              console.log(`  ⚠️  Skipping ${axe.manifest.name} v${axe.manifest.version} (already have v${existing.manifest.version} from ${existing._source})`);
+              console.log(`  ⚠️  Skipping ${axe.manifest.name} v${axe.manifest.version} from ${source} (already have v${existing.manifest.version} from ${existing._source})`);
             }
             continue;
           }

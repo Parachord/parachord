@@ -16,7 +16,7 @@ class LibreFmScrobbler extends LastFmScrobbler {
 
   // Override to use username/password auth instead of OAuth
   async connectWithPassword(username, password) {
-    // Libre.fm uses authToken = md5(username + md5(password)) instead of password
+    // Libre.fm (GNU FM) uses authToken = md5(username + md5(password))
     const passwordHash = await window.electron.crypto.md5(password);
     const authToken = await window.electron.crypto.md5(username.toLowerCase() + passwordHash);
 
@@ -44,7 +44,16 @@ class LibreFmScrobbler extends LastFmScrobbler {
       body: body.toString()
     });
 
-    const data = await response.json();
+    if (!response.success) {
+      throw new Error(`Libre.fm auth request failed: ${response.error || response.status}`);
+    }
+
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Libre.fm auth failed: ${data.message}`);
@@ -71,7 +80,17 @@ class LibreFmScrobbler extends LastFmScrobbler {
     const response = await window.electron.proxyFetch(
       `${this.apiBase}?method=auth.getToken&api_key=${this.apiKey}&format=json`
     );
-    const data = await response.json();
+
+    if (!response.success) {
+      throw new Error(`Failed to get auth token: ${response.error || response.status}`);
+    }
+
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
 
     if (data.error) {
       throw new Error(`Failed to get auth token: ${data.message}`);
@@ -81,8 +100,12 @@ class LibreFmScrobbler extends LastFmScrobbler {
 
     await this.setConfig({
       ...await this.getConfig(),
-      pendingToken: data.token
+      pendingToken: data.token,
+      authPolling: true
     });
+
+    // Start polling for auth completion (inherited from parent)
+    this.startAuthPolling(data.token);
 
     return { authUrl, token: data.token };
   }
