@@ -32326,12 +32326,12 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView)
+          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory'].includes(activeView) ? '' : 'p-6'
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -38362,10 +38362,10 @@ useEffect(() => {
           // Settings content area (right side) - refined styling
           React.createElement('div', {
             className: 'flex-1 overflow-y-auto scrollable-content',
-            style: { padding: '32px 40px' }
+            style: { padding: '32px 0 32px 40px' }
           },
             // Unified Plug-Ins Tab
-            settingsTab === 'plugins' && React.createElement('div', null,
+            settingsTab === 'plugins' && React.createElement('div', { style: { paddingRight: '40px' } },
               // Page Header with Add button
               React.createElement('div', {
                 className: 'flex items-center justify-between',
@@ -38949,7 +38949,7 @@ useEffect(() => {
             ),
 
             // General Tab - refined styling
-            settingsTab === 'general' && React.createElement('div', null,
+            settingsTab === 'general' && React.createElement('div', { style: { paddingRight: '40px' } },
               // Page Header - refined
               React.createElement('div', { style: { marginBottom: '32px' } },
                 React.createElement('h2', {
@@ -39710,7 +39710,7 @@ useEffect(() => {
             // About Tab
             settingsTab === 'about' && React.createElement('div', {
               className: 'flex flex-col items-center justify-center',
-              style: { paddingTop: '48px', paddingBottom: '48px' }
+              style: { paddingTop: '48px', paddingBottom: '48px', paddingRight: '40px' }
             },
               // Centered card container
               React.createElement('div', {
