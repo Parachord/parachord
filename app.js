@@ -14003,9 +14003,9 @@ const Parachord = () => {
     // Filter to only enabled services with required config
     const enabledServices = chatServices.filter(s => {
       const config = metaServiceConfigs[s.id] || {};
-      // Ollama doesn't need API key, others do
-      if (s.id === 'ollama') return config.enabled === true;
-      return !!config.apiKey;
+      // Services that don't require auth (e.g. Ollama) just need enabled toggle
+      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
     });
 
     if (enabledServices.length === 0) {
@@ -33326,8 +33326,8 @@ useEffect(() => {
                 const chatServices = getChatServices();
                 const hasEnabledChat = chatServices.some(s => {
                   const config = metaServiceConfigs[s.id] || {};
-                  if (s.id === 'ollama') return config.enabled === true;
-                  return !!config.apiKey;
+                  const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+                  return noKeyNeeded ? config.enabled === true : !!config.apiKey;
                 });
 
                 return React.createElement('div', {
@@ -39874,9 +39874,8 @@ useEffect(() => {
             // Check if chat providers are enabled
             const hasEnabledChat = chatServices.some(s => {
               const config = metaServiceConfigs[s.id] || {};
-              // Ollama doesn't require API key
-              if (s.id === 'ollama') return config.enabled === true;
-              return !!config.apiKey;
+              const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+              return noKeyNeeded ? config.enabled === true : !!config.apiKey;
             });
 
             // Check if generate providers are enabled (fallback)
@@ -41001,8 +41000,8 @@ useEffect(() => {
                 (() => {
                   const enabledServices = getChatServices().filter(s => {
                     const config = metaServiceConfigs[s.id] || {};
-                    if (s.id === 'ollama') return config.enabled === true;
-                    return !!config.apiKey;
+                    const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+                    return noKeyNeeded ? config.enabled === true : !!config.apiKey;
                   });
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
                   const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
