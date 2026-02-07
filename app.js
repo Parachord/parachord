@@ -8002,13 +8002,8 @@ const Parachord = () => {
         if (resolverId === 'spotify') {
           setSpotifyVolumeDebounced(newVolume, true);
         }
-        if (resolverId === 'applemusic') {
-          if (window.electron?.musicKit?.setVolume) {
-            window.electron.musicKit.setVolume(effectiveVolume / 100);
-          }
-          if (window._appleMusicPreviewAudio) {
-            window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
-          }
+        if (resolverId === 'applemusic' && window._appleMusicPreviewAudio) {
+          window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
         }
       }
     });
@@ -8548,6 +8543,7 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.system?.onVolumeChanged) return;
 
+    console.log('[SystemVolume] Registered system volume change listener');
     let systemMuted = false;
     let wasPlayingBeforeMute = false;
 
@@ -9850,13 +9846,8 @@ const Parachord = () => {
       if (resolverId === 'spotify') {
         setSpotifyVolumeDebounced(currentVol, true);
       }
-      if (resolverId === 'applemusic') {
-        if (window.electron?.musicKit?.setVolume) {
-          window.electron.musicKit.setVolume(effectiveVolume / 100);
-        }
-        if (window._appleMusicPreviewAudio) {
-          window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
-        }
+      if (resolverId === 'applemusic' && window._appleMusicPreviewAudio) {
+        window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
       }
     }
   }, [resolverVolumeOffsets, cacheLoaded]);
@@ -11103,17 +11094,11 @@ const Parachord = () => {
           setSpotifyVolume(volumeToApply, !isMutedRef.current); // Apply with normalization only if not muted
         }
 
-        // Apply volume for Apple Music (respect mute state)
+        // Apply volume for Apple Music preview audio (native MusicKit uses system volume)
         if (resolverId === 'applemusic') {
           const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
           const trackId = sourceToPlay.id || trackOrSource.id;
           const effectiveVolume = getEffectiveVolume(volumeToApply, 'applemusic', trackId);
-          console.log(`🔊 Applied Apple Music volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.applemusic || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
-          // Set volume on native MusicKit (Music.app)
-          if (window.electron?.musicKit?.setVolume) {
-            window.electron.musicKit.setVolume(effectiveVolume / 100);
-          }
-          // Set volume on preview audio element if active
           if (window._appleMusicPreviewAudio) {
             window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
           }
@@ -40833,7 +40818,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported) || isAppleMusic;
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -40854,14 +40839,9 @@ useEffect(() => {
                 if (activeResolverId === 'spotify') {
                   setSpotifyVolume(restoredVolume, true);
                 }
-                if (activeResolverId === 'applemusic') {
+                if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                   const effectiveVol = getEffectiveVolume(restoredVolume, 'applemusic', currentTrackRef.current?.id);
-                  if (window.electron?.musicKit?.setVolume) {
-                    window.electron.musicKit.setVolume(effectiveVol / 100);
-                  }
-                  if (window._appleMusicPreviewAudio) {
-                    window._appleMusicPreviewAudio.volume = effectiveVol / 100;
-                  }
+                  window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                 }
               } else {
                 // Mute: save current volume and set to 0
@@ -40873,13 +40853,8 @@ useEffect(() => {
                 if (activeResolverId === 'spotify') {
                   setSpotifyVolume(0, false);
                 }
-                if (activeResolverId === 'applemusic') {
-                  if (window.electron?.musicKit?.setVolume) {
-                    window.electron.musicKit.setVolume(0);
-                  }
-                  if (window._appleMusicPreviewAudio) {
-                    window._appleMusicPreviewAudio.volume = 0;
-                  }
+                if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
+                  window._appleMusicPreviewAudio.volume = 0;
                 }
               }
             };
@@ -40894,7 +40869,7 @@ useEffect(() => {
                   return `Volume control not available on ${spotifyDevice.name || spotifyDevice.type}`;
                 }
                 if (isAppleMusic) {
-                  return 'Volume control requires Music.app on macOS';
+                  return 'Use system volume to control Apple Music';
                 }
                 return 'Volume control not available';
               }
@@ -40951,15 +40926,10 @@ useEffect(() => {
                     if (activeResolverId === 'spotify') {
                       setSpotifyVolumeDebounced(newVolume, true);
                     }
-                    // Apple Music: apply normalized volume to both native and preview
-                    if (activeResolverId === 'applemusic') {
+                    // Apple Music: apply volume to preview audio only (native uses system volume)
+                    if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                       const effectiveVol = getEffectiveVolume(newVolume, 'applemusic', currentTrackRef.current?.id);
-                      if (window.electron?.musicKit?.setVolume) {
-                        window.electron.musicKit.setVolume(effectiveVol / 100);
-                      }
-                      if (window._appleMusicPreviewAudio) {
-                        window._appleMusicPreviewAudio.volume = effectiveVol / 100;
-                      }
+                      window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
