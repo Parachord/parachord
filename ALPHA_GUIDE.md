@@ -14,6 +14,10 @@ At its core, Parachord is a metadata-first music player. Instead of being locked
 
 Want to prioritize your local files? Done. Prefer Bandcamp when available to support artists directly? Easy. Fall back to YouTube for rare recordings that aren’t on streaming services? Automatic.
 
+
+If you want some technical background on what is going on, read this [blog post](https://parachord.com/blog/2026/02/03/how-content-resolution-works/).
+  
+
 # Key Features
 - **Rich Music Catalog Data:** Artist and album pages complete with biographies and artist information, full discographies including studio, live and compilations releases
 - **Recommendations and Related:** Related artist information, personalized recommendations (from Last.fm and Listenbrainz)
@@ -46,11 +50,6 @@ In theory, Windows and Linux builds work too - but I've never tried either. So g
 [Download from Releases](https://github.com/Parachord/parachord/releases)
 
 ## Getting Started
-
-If you want some technical background on what is going on, check out:
-- https://parachord.com/blog/2026/02/03/how-content-resolution-works/
-  
-  
 ### 1. Configuring Plug-ins
 
 Go to **Settings > Plug-ins** and enable and configure the sources you want to use:
@@ -88,7 +87,7 @@ or
 ### 3. Add ChatGPT
 If you want to check out the AI-enabled stuff I'd recommend ChatGPT as their free API keys support a lot of activity
 1. Go to **Settings > Plug-ins > Meta Services**
-2. Open ChatGPT plug-in and follow the link to create an API key
+2. Open ChatGPT plug-in and follow the link to create an API key (Gemini is pretty good too, Claude requires a paid API account and Ollama is local & private but not very good with music in my experience so far)
 3. Paste the key into the configuration settings of the plug-in
 4. Once connected, open the Shuffleupagus chat window from the (twinkly stars icon) in the playbar
 
@@ -113,7 +112,7 @@ We're especially interested in feedback on:
 
 ### Onboarding Experience
 - Did it help? Did it leave you with more questions that needed to be answered?
-- 
+  
 ### Playback
 - Does playback work reliably across different sources?
 - Any audio glitches, gaps, or sync issues?
