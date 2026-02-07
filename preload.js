@@ -423,5 +423,14 @@ contextBridge.exposeInMainWorld('electron', {
     check: () => ipcRenderer.invoke('ollama:check')
   },
 
+  // System volume monitoring (macOS)
+  system: {
+    onVolumeChanged: (callback) => {
+      ipcRenderer.on('system-volume-changed', (event, data) => {
+        callback(data);
+      });
+    }
+  },
+
   // Generic invoke removed for security — use specific API methods above
 });

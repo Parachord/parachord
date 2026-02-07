@@ -320,20 +320,14 @@ class MusicKitBridge {
         ]
     }
 
-    // Set volume via Music.app's AppleScript interface (non-blocking)
-    // Only sets volume if Music.app is already running to avoid launching it
+    // Set volume - no-op for native ApplicationMusicPlayer
+    // ApplicationMusicPlayer's audio output is controlled by macOS system volume,
+    // not by Music.app's "sound volume" AppleScript property. Setting Music.app's
+    // sound volume via AppleScript was interfering with system volume changes
+    // (user would hear brief change then volume would revert).
+    // Preview audio volume is handled separately via HTML5 Audio element.
     func setVolume(_ volume: Float) -> [String: Any] {
-        let volumePercent = Int(max(0, min(100, volume * 100)))
-        // Run AppleScript on background thread to avoid blocking command processing
-        DispatchQueue.global(qos: .userInitiated).async {
-            let script = NSAppleScript(source: """
-                if application "Music" is running then
-                    tell application "Music" to set sound volume to \(volumePercent)
-                end if
-            """)
-            script?.executeAndReturnError(nil)
-        }
-        return ["volume": volume, "appliedPercent": volumePercent]
+        return ["volume": volume, "note": "Native playback uses system volume"]
     }
 }
 
