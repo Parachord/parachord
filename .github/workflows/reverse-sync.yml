@@ -1,0 +1,276 @@
+name: Reverse Sync from Dedicated Repos
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Daily at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      sync_browser_extension:
+        description: 'Reverse sync browser extension'
+        required: false
+        type: boolean
+        default: true
+      sync_raycast_extension:
+        description: 'Reverse sync Raycast extension'
+        required: false
+        type: boolean
+        default: true
+      sync_plugins:
+        description: 'Reverse sync plugins'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  reverse-sync-browser-extension:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.sync_browser_extension == 'true'
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Clone browser extension repo
+        env:
+          SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::warning::REPO_SYNC_TOKEN not set, skipping"
+            exit 0
+          fi
+          git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-browser-extension.git" /tmp/browser-ext
+
+      - name: Copy changes into monorepo
+        run: |
+          # Copy everything except .git and .github from the dedicated repo
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            /tmp/browser-ext/ parachord-extension/
+
+      - name: Check for differences
+        id: diff
+        run: |
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard parachord-extension/)" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes to reverse sync"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat
+            git ls-files --others --exclude-standard parachord-extension/
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync/browser-extension-$(date +%Y%m%d)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add parachord-extension/
+          git commit -m "Reverse sync: browser extension repo → monorepo"
+
+          git push -u origin "$BRANCH"
+
+          # Check if a PR already exists for this sync
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "PR #${EXISTING} already exists, force-pushing update"
+          else
+            gh pr create \
+              --title "Reverse sync: browser extension" \
+              --body "$(cat <<'EOF'
+          ## Summary
+          Automated reverse sync of changes from [parachord-browser-extension](https://github.com/Parachord/parachord-browser-extension) into the monorepo.
+
+          These changes were contributed directly to the dedicated repo and need review before merging into the monorepo.
+          EOF
+          )"
+          fi
+
+  reverse-sync-raycast-extension:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.sync_raycast_extension == 'true'
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Clone Raycast extension repo
+        env:
+          SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::warning::REPO_SYNC_TOKEN not set, skipping"
+            exit 0
+          fi
+          git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-raycast.git" /tmp/raycast-ext
+
+      - name: Copy changes into monorepo
+        run: |
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            /tmp/raycast-ext/ raycast-extension/
+
+      - name: Check for differences
+        id: diff
+        run: |
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard raycast-extension/)" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes to reverse sync"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat
+            git ls-files --others --exclude-standard raycast-extension/
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync/raycast-extension-$(date +%Y%m%d)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add raycast-extension/
+          git commit -m "Reverse sync: Raycast extension repo → monorepo"
+
+          git push -u origin "$BRANCH"
+
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "PR #${EXISTING} already exists, force-pushing update"
+          else
+            gh pr create \
+              --title "Reverse sync: Raycast extension" \
+              --body "$(cat <<'EOF'
+          ## Summary
+          Automated reverse sync of changes from [parachord-raycast](https://github.com/Parachord/parachord-raycast) into the monorepo.
+
+          These changes were contributed directly to the dedicated repo and need review before merging into the monorepo.
+          EOF
+          )"
+          fi
+
+  reverse-sync-plugins:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' && github.event.inputs.sync_plugins == 'true'
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Clone plugins repo
+        env:
+          SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::warning::REPO_SYNC_TOKEN not set, skipping"
+            exit 0
+          fi
+          git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-plugins.git" /tmp/plugins-repo
+
+      - name: Merge plugin changes into monorepo
+        run: |
+          # Copy all .axe files (adds community plugins, updates existing ones)
+          cp /tmp/plugins-repo/*.axe plugins/ 2>/dev/null || true
+
+          # Merge manifest: bring in community-only entries, update existing ones
+          # if the plugins repo version is newer
+          node -e "
+            const fs = require('fs');
+
+            let remote = { plugins: [], categories: [] };
+            try { remote = JSON.parse(fs.readFileSync('/tmp/plugins-repo/manifest.json', 'utf8')); } catch {}
+
+            let local = { plugins: [], categories: [] };
+            try { local = JSON.parse(fs.readFileSync('marketplace-manifest.json', 'utf8')); } catch {}
+
+            // Index local (monorepo) plugins by id
+            const localById = new Map(local.plugins.map(p => [p.id, p]));
+
+            // Start with all local plugins
+            const merged = [...local.plugins];
+
+            // Append remote-only plugins (community contributions)
+            for (const p of remote.plugins) {
+              if (!localById.has(p.id)) {
+                merged.push(p);
+              }
+            }
+
+            // Merge categories
+            const cats = new Set([...(local.categories || []), ...(remote.categories || [])]);
+
+            const result = { ...local, plugins: merged, categories: [...cats] };
+            fs.writeFileSync('marketplace-manifest.json', JSON.stringify(result, null, 2) + '\n');
+          "
+
+      - name: Check for differences
+        id: diff
+        run: |
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard plugins/)" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes to reverse sync"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat
+            git ls-files --others --exclude-standard plugins/
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync/plugins-$(date +%Y%m%d)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add plugins/ marketplace-manifest.json
+          git commit -m "Reverse sync: plugins repo → monorepo"
+
+          git push -u origin "$BRANCH"
+
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "PR #${EXISTING} already exists, force-pushing update"
+          else
+            gh pr create \
+              --title "Reverse sync: plugins" \
+              --body "$(cat <<'EOF'
+          ## Summary
+          Automated reverse sync of changes from [parachord-plugins](https://github.com/Parachord/parachord-plugins) into the monorepo.
+
+          This may include community-contributed plugins and/or updates to existing built-in plugins. Please review before merging.
+          EOF
+          )"
+          fi

@@ -230,13 +230,36 @@ jobs:
           SOURCE_COMMIT=$(git rev-parse --short HEAD)
           SOURCE_MSG=$(git log -1 --pretty=format:"%s")
 
-          # Remove old plugin files from target (except .git, .github, and README)
           cd target-repo
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.github' ! -name 'README.md' ! -name 'LICENSE' -exec rm -rf {} +
 
-          # Copy plugin files and manifest to target
+          # Add/update .axe files from monorepo (does NOT delete community-contributed plugins)
           cp ../plugins/*.axe .
-          cp ../marketplace-manifest.json ./manifest.json
+
+          # Merge manifest: update/add monorepo entries, keep community-only entries
+          node -e "
+            const fs = require('fs');
+            const mono = JSON.parse(fs.readFileSync('../marketplace-manifest.json', 'utf8'));
+            let target = { version: '1.0.0', plugins: [], categories: [] };
+            try { target = JSON.parse(fs.readFileSync('manifest.json', 'utf8')); } catch {}
+
+            // Index monorepo plugins by id
+            const monoById = new Map(mono.plugins.map(p => [p.id, p]));
+
+            // Start with all target plugins, updating any that exist in monorepo
+            const merged = target.plugins.map(p => monoById.has(p.id) ? monoById.get(p.id) : p);
+
+            // Append monorepo plugins that are new (not in target)
+            const targetIds = new Set(target.plugins.map(p => p.id));
+            for (const p of mono.plugins) {
+              if (!targetIds.has(p.id)) merged.push(p);
+            }
+
+            // Merge categories
+            const cats = new Set([...(target.categories || []), ...(mono.categories || [])]);
+
+            const result = { ...mono, plugins: merged, categories: [...cats] };
+            fs.writeFileSync('manifest.json', JSON.stringify(result, null, 2) + '\n');
+          "
 
           # Check if there are changes to commit
           if git diff --quiet && git diff --staged --quiet; then
