@@ -6,6 +6,8 @@ on:
     paths:
       - 'parachord-extension/**'
       - 'raycast-extension/**'
+      - 'plugins/**'
+      - 'marketplace-manifest.json'
   workflow_dispatch:
     inputs:
       sync_browser_extension:
@@ -15,6 +17,11 @@ on:
         default: true
       sync_raycast_extension:
         description: 'Sync Raycast extension'
+        required: false
+        type: boolean
+        default: true
+      sync_plugins:
+        description: 'Sync plugins'
         required: false
         type: boolean
         default: true
@@ -169,3 +176,79 @@ jobs:
           git push origin main || git push origin master
 
           echo "Successfully synced Raycast extension to dedicated repo"
+
+  sync-plugins:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.sync_plugins == 'true' ||
+      github.event_name == 'push'
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for plugin changes
+        id: check_changes
+        if: github.event_name == 'push'
+        run: |
+          # Get the list of changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+
+          # Check if any plugin files or the manifest changed
+          if echo "$CHANGED_FILES" | grep -q "^plugins/\|^marketplace-manifest.json"; then
+            echo "plugins_changed=true" >> $GITHUB_OUTPUT
+            echo "Plugin files changed:"
+            echo "$CHANGED_FILES" | grep "^plugins/\|^marketplace-manifest.json"
+          else
+            echo "plugins_changed=false" >> $GITHUB_OUTPUT
+            echo "No plugin files changed"
+          fi
+
+      - name: Sync to parachord-plugins repo
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          steps.check_changes.outputs.plugins_changed == 'true'
+        env:
+          SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::REPO_SYNC_TOKEN secret is not set. Please add a personal access token with repo scope."
+            exit 1
+          fi
+
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone the target repo
+          TARGET_REPO="https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-plugins.git"
+          git clone "$TARGET_REPO" target-repo
+
+          # Get the source commit info for the sync commit message
+          SOURCE_COMMIT=$(git rev-parse --short HEAD)
+          SOURCE_MSG=$(git log -1 --pretty=format:"%s")
+
+          # Remove old plugin files from target (except .git, .github, and README)
+          cd target-repo
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.github' ! -name 'README.md' ! -name 'LICENSE' -exec rm -rf {} +
+
+          # Copy plugin files and manifest to target
+          cp ../plugins/*.axe .
+          cp ../marketplace-manifest.json ./manifest.json
+
+          # Check if there are changes to commit
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to sync"
+            exit 0
+          fi
+
+          # Stage and commit
+          git add -A
+          git commit -m "Sync from parachord monorepo (${SOURCE_COMMIT}): ${SOURCE_MSG}"
+
+          # Push changes
+          git push origin main || git push origin master
+
+          echo "Successfully synced plugins to dedicated repo"
