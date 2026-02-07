@@ -16,14 +16,13 @@ class LibreFmScrobbler extends LastFmScrobbler {
 
   // Override to use username/password auth instead of OAuth
   async connectWithPassword(username, password) {
-    // Libre.fm (GNU FM) uses authToken = md5(username + md5(password))
+    // MD5 hash the password for auth.getMobileSession
     const passwordHash = await window.electron.crypto.md5(password);
-    const authToken = await window.electron.crypto.md5(username.toLowerCase() + passwordHash);
 
     const params = {
       method: 'auth.getMobileSession',
       username: username,
-      authToken: authToken,
+      password: passwordHash,
       api_key: this.apiKey
     };
     const sig = await this.generateSignature(params);
@@ -31,7 +30,7 @@ class LibreFmScrobbler extends LastFmScrobbler {
     const body = new URLSearchParams();
     body.append('method', 'auth.getMobileSession');
     body.append('username', username);
-    body.append('authToken', authToken);
+    body.append('password', passwordHash);
     body.append('api_key', this.apiKey);
     body.append('api_sig', sig);
     body.append('format', 'json');
