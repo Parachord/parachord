@@ -32434,7 +32434,7 @@ useEffect(() => {
                 const suggestions = [];
 
                 // Check for uninstalled popular resolvers
-                const popularResolverIds = ['youtube', 'soundcloud', 'deezer'];
+                const popularResolverIds = ['youtube', 'soundcloud', 'bandcamp'];
                 const installedIds = allResolvers.map(r => r.id);
                 const uninstalledPopular = popularResolverIds.filter(id => !installedIds.includes(id));
 
