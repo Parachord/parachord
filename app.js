@@ -4817,6 +4817,7 @@ const Parachord = () => {
   const listenAlongFriendRef = useRef(null); // Ref for use in async callbacks
   const listenAlongLastTrackRef = useRef(null); // Track what we last played in listen-along to detect changes
   const listenAlongPendingTrackRef = useRef(null); // Track queued to play when current song ends (friend is ahead)
+  const listenAlongUserPausedRef = useRef(false); // True when user explicitly paused during listen-along
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
@@ -11783,6 +11784,29 @@ const Parachord = () => {
   const handlePlayPause = async () => {
     if (!currentTrack) return;
 
+    // Track explicit user pause/resume during listen-along
+    if (listenAlongFriendRef.current) {
+      if (isPlaying) {
+        // User is pausing
+        listenAlongUserPausedRef.current = true;
+        console.log('🎧 Listen-along: User paused playback');
+      } else {
+        // User is resuming — if friend moved to a different track while we were paused, play that instead
+        listenAlongUserPausedRef.current = false;
+        const pendingTrack = listenAlongPendingTrackRef.current;
+        if (pendingTrack) {
+          console.log(`🎧 Listen-along: Resuming with friend's current track "${pendingTrack.title}"`);
+          listenAlongPendingTrackRef.current = null;
+          listenAlongLastTrackRef.current = {
+            name: pendingTrack.title,
+            artist: pendingTrack.artist
+          };
+          handlePlay(pendingTrack);
+          return;
+        }
+      }
+    }
+
     // Check if this is a restored track that needs explicit start (not just resume)
     // This handles tracks restored from saved queue on app reopen
     if (!isPlaying && trackNeedsExplicitStart.current) {
@@ -12003,6 +12027,7 @@ const Parachord = () => {
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       listenAlongPendingTrackRef.current = null;
+      listenAlongUserPausedRef.current = false;
       setPlaybackContext(null);
       listenAlongEnded = true;
       // Fall through to play from queue
@@ -21743,6 +21768,7 @@ ${tracks}
           setListenAlongFriend(null);
           listenAlongLastTrackRef.current = null;
           listenAlongPendingTrackRef.current = null;
+          listenAlongUserPausedRef.current = false;
           setPlaybackContext(null);
           // Resume playback from queue if there are tracks
           if (currentQueueRef.current.length > 0) {
@@ -21795,8 +21821,18 @@ ${tracks}
                     data: { track, artistName: track.artist || 'Unknown Artist' }
                   }];
                   updateSchedulerVisibility('listen-along', poolTracks);
+                } else if (listenAlongUserPausedRef.current) {
+                  // User explicitly paused - don't auto-resume, just store the pending track
+                  console.log(`🎧 Listen-along: User is paused, storing "${track.title}" as pending`);
+                  listenAlongPendingTrackRef.current = track;
+
+                  const poolTracks = [{
+                    key: track.id || `${track.artist}-${track.title}`,
+                    data: { track, artistName: track.artist || 'Unknown Artist' }
+                  }];
+                  updateSchedulerVisibility('listen-along', poolTracks);
                 } else {
-                  // Not playing, so our track ended - play friend's track now
+                  // Not playing and not user-paused, so our track ended - play friend's track now
                   console.log(`🎧 Listen-along: Playing "${track.title}" immediately`);
                   listenAlongLastTrackRef.current = {
                     name: recentTrack.name,
@@ -21826,6 +21862,7 @@ ${tracks}
       name: friend.cachedRecentTrack.name,
       artist: friend.cachedRecentTrack.artist
     };
+    listenAlongUserPausedRef.current = false;
 
     // Set playback context to listen-along
     setPlaybackContext({
@@ -21865,6 +21902,7 @@ ${tracks}
     console.log(`🎧 Stopped listening along with ${friendName}`);
     setListenAlongFriend(null);
     listenAlongLastTrackRef.current = null;
+    listenAlongUserPausedRef.current = false;
 
     // Clear the listen-along context - will use queue's context when next track plays
     setPlaybackContext(null);
