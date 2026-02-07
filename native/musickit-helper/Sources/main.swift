@@ -320,16 +320,18 @@ class MusicKitBridge {
         ]
     }
 
-    // Set volume via Music.app's AppleScript interface
-    // ApplicationMusicPlayer routes audio through Music.app, so we control
-    // its per-app volume (0-100) independently of system volume
+    // Set volume via Music.app's AppleScript interface (non-blocking)
+    // Only sets volume if Music.app is already running to avoid launching it
     func setVolume(_ volume: Float) -> [String: Any] {
         let volumePercent = Int(max(0, min(100, volume * 100)))
-        let script = NSAppleScript(source: "tell application \"Music\" to set sound volume to \(volumePercent)")
-        var errorInfo: NSDictionary?
-        script?.executeAndReturnError(&errorInfo)
-        if let errorInfo = errorInfo {
-            return ["volume": volume, "error": "AppleScript error: \(errorInfo)"]
+        // Run AppleScript on background thread to avoid blocking command processing
+        DispatchQueue.global(qos: .userInitiated).async {
+            let script = NSAppleScript(source: """
+                if application "Music" is running then
+                    tell application "Music" to set sound volume to \(volumePercent)
+                end if
+            """)
+            script?.executeAndReturnError(nil)
         }
         return ["volume": volume, "appliedPercent": volumePercent]
     }
