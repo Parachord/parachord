@@ -34,6 +34,7 @@ const WebSocket = require('ws');
 
 const LocalFilesService = require('./local-files');
 const { getMusicKitBridge } = require('./musickit-bridge');
+const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./services/mcp-server');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -1318,6 +1319,7 @@ app.whenReady().then(() => {
   createWindow();
   startAuthServer();
   startExtensionServer();
+  startMcpServer(mainWindow);
   systemVolumeMonitor.start();
 
   // Set up application menu
@@ -1634,6 +1636,7 @@ app.on('window-all-closed', async () => {
   if (wss) {
     wss.close();
   }
+  stopMcpServer();
   if (localFilesService) {
     localFilesService.shutdown();
   }
@@ -3889,6 +3892,11 @@ ipcMain.handle('embed-response', (event, { requestId, data }) => {
 
 ipcMain.handle('embed-broadcast', (event, { eventType, data }) => {
   broadcastToEmbeds(eventType, data);
+});
+
+// MCP server IPC handler - receives tool call and state query results from renderer
+ipcMain.handle('mcp-response', (event, { requestId, data }) => {
+  handleRendererResponse(requestId, data);
 });
 
 // Local Files IPC handlers
