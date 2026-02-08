@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-02-05
+> Last updated: 2026-02-08
 
 ---
 
@@ -59,6 +59,12 @@
 
 ---
 
+## 🔧 Maintenance
+
+- [ ] **Rotate MusicKit .p8 key** - Old key (`437JVHZMMK`) exposed in git history; revoke in Apple Developer Portal, generate new key, update `MUSICKIT_PRIVATE_KEY` GitHub secret and key ID in `main.js`
+
+---
+
 ## 🐛 Known Issues
 
 - [ ] **Bandcamp autoplay** - Embedded player autoplay unreliable
@@ -81,12 +87,16 @@
 - Apple Music (search only), Wikipedia, Discogs
 - Local files resolver (scan user's music folder)
 - Plugin system (.axe format) with marketplace
+- Ship all resolvers as .axe files; marketplace cache overrides shipped versions
 - Hot-reload and auto-sync
 
 ### Playback
 - Seamless transitioning of mixed source playback, queuing and playlisting
 - Standard transport controls (prev/next/play/pause/shuffle) that work consistently across all playback sources (even those like YT that playback in browser)
 - Apple Music embedded playback with play/pause and seeking controls
+- Apple Music switched to SystemMusicPlayer with proper system volume monitoring
+- Volume normalization settings persisted between launches
+- Fixed Spotify/Apple Music phantom auto-play on pause (polling stopped)
 - "Top Loader" Queue with virtualization and option to save queue between sessions
 - "Spinoff" radio station from currently playing song while saving queue for when you return
 - Media Key support
@@ -130,6 +140,8 @@
 - Active Friends appear in sidebar with now playing info (or pin friends to always be in sidebar)
 - Auto-unpin friends from sidebar when they stop listening (unless manually pinned)
 - Listen Along to friends in almost-real-time (via Last.fm and Listenbrainz data)
+- Fixed listen-along auto-resuming playback when user explicitly paused
+- Friend pinning: drag-drop reorder and Save & Unpin cleanup
 
 ### Home Page
 - Dynamic home page of personlized content - both of stuff you love and stuff you may love
@@ -158,11 +170,13 @@
 
 ### UI/UX
 - Cinematic Light design system
-- First-run tutorial
+- First-run tutorial with fresh install UX overhaul (canonical resolver order, proper state management)
 - In-app drag/drop of objects to playbar, queue and playlists
 - Full keyboard navigation with shortcuts
 - Skeleton loading animations in History tabs
 - Advanced Settings UI for Apple Music developer token
+- Inline error states for Charts and Critics Picks (replaced modal dialogs)
+- Home page: Songs card and improved AI card
 
 ## Web
 - Embedded web player with smart links
@@ -177,10 +191,25 @@
 - Icon generation scripts for all platforms
 - DMG installer with Applications folder icon
 
+### Auth & API Management (v0.6.x)
+- Spotify OAuth migrated to PKCE flow (no client secret needed)
+- Spotify BYOK mandatory — each user registers their own Spotify Developer app (bypasses 5-user dev mode limit)
+- Rate limit detection (HTTP 429) with debounced BYOK toast for Last.fm and SoundCloud
+- MusicKit private key moved from repo to CI secrets (injected at build time)
+- SoundCloud fallback API credentials for out-of-box OAuth
+
+### Security (v0.6.x)
+- Comprehensive security and code review
+- Fixed critical, high, and medium severity vulnerabilities
+- MusicKit .p8 key removed from git tree, injected via GitHub Actions secret
+
 ## Development
 - Automated CI/CD pipeline
 - Automated builds for Mac/Windows/Linux
-- Jest tests for charts utilities
+- CI artifact names include version to prevent confusion
+- MusicKit key injected from `MUSICKIT_PRIVATE_KEY` GitHub secret during CI builds
+- Jest tests for charts utilities and comprehensive AI/chat test suite (130 tests)
+- Auto-updates enabled (publish releases as non-draft)
 
 ---
 
