@@ -11,23 +11,11 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
 });
 
-// Debug: Log environment variables on startup
-console.log('=== Environment Variables Check ===');
-console.log('Working directory:', __dirname);
-console.log('SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? '✅ Loaded' : '❌ MISSING');
-console.log('SPOTIFY_CLIENT_SECRET:', process.env.SPOTIFY_CLIENT_SECRET ? '✅ Loaded' : '❌ MISSING');
-console.log('SPOTIFY_REDIRECT_URI:', process.env.SPOTIFY_REDIRECT_URI || 'Using default');
-console.log('SOUNDCLOUD_CLIENT_ID:', process.env.SOUNDCLOUD_CLIENT_ID ? '✅ Loaded' : '⚪ Not set');
-console.log('SOUNDCLOUD_CLIENT_SECRET:', process.env.SOUNDCLOUD_CLIENT_SECRET ? '✅ Loaded' : '⚪ Not set');
-console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? '✅ Loaded' : '⚪ Will generate from .p8 key');
-if (!process.env.SPOTIFY_CLIENT_ID) {
-  console.error('');
-  console.error('⚠️  WARNING: .env file not found or SPOTIFY_CLIENT_ID not set!');
-  console.error('Expected .env location:', require('path').join(__dirname, '.env'));
-  console.error('');
-}
-console.log('====================================');
-console.log('');
+// Log .env credential status on startup
+console.log('=== Parachord Startup ===');
+console.log('SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? '✅ .env' : '⚪ Not in .env (user can configure in Settings)');
+console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? '✅ .env' : '⚪ Will generate from .p8 key');
+console.log('=========================');
 
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
 const path = require('path');
