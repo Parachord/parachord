@@ -9,8 +9,8 @@ I'm excited to onboard the first few people to Parachord, a music player that bu
 
 
 
-# The Problem We’re Solving
-If you’re like us, your music is scattered everywhere. You have playlists on Spotify, purchased albums on Bandcamp, rare live recordings on YouTube, and a carefully curated local library of FLAC files. Switching between apps to listen to a single playlist is exhausting.
+# The Problem to Solve is Returning
+If you’re like us, your music is scattered everywhere - and the growing trend of indie artists taking their catalogs off of streaming services is accelerating the problem. You have playlists on Spotify, purchased albums on Bandcamp, rare live recordings on YouTube, and a carefully curated local library of FLAC files. Switching between apps to listen to a single playlist is exhausting.
 
 Parachord changes that.
 
