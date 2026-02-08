@@ -29,8 +29,9 @@
       "clientId": {
         "type": "text",
         "label": "Client ID",
-        "default": "c040c0ee133344b282e6342198bcbeea",
-        "readonly": true
+        "placeholder": "Your Spotify Client ID",
+        "required": true,
+        "helpUrl": "https://developer.spotify.com/dashboard"
       }
     }
   },

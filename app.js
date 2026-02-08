@@ -4605,7 +4605,7 @@ const Parachord = () => {
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
   const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
   const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
-  const [spotifyCredentialsSource, setSpotifyCredentialsSource] = useState('fallback'); // 'user' | 'env' | 'fallback'
+  const [spotifyCredentialsSource, setSpotifyCredentialsSource] = useState('none'); // 'user' | 'env' | 'none'
   const [queueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [queueDrawerHeight, setQueueDrawerHeight] = useState(350); // Default height in pixels
   const [draggedQueueTrack, setDraggedQueueTrack] = useState(null); // For queue reordering
@@ -6774,6 +6774,26 @@ const Parachord = () => {
     return lastfmApiKey.current;
   };
 
+  // Wrapper for Last.fm API fetches that detects rate limiting and suggests BYOK
+  const lastfmRateLimitShown = useRef(0);
+  const lastfmFetch = async (url, options) => {
+    const response = await fetch(url, options);
+    if (response.status === 429) {
+      const now = Date.now();
+      // Debounce: show toast at most once per 5 minutes
+      if (now - lastfmRateLimitShown.current > 5 * 60 * 1000) {
+        lastfmRateLimitShown.current = now;
+        const isUsingOwnKey = !!metaServiceConfigs.lastfm?.apiKey;
+        if (!isUsingOwnKey) {
+          showToast('Last.fm rate limit hit. Add your own API key in Settings to avoid this.', 'error');
+        } else {
+          showToast('Last.fm rate limit hit. Try again in a moment.', 'error');
+        }
+      }
+    }
+    return response;
+  };
+
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
@@ -8746,8 +8766,6 @@ const Parachord = () => {
     };
     return configs[resolverId] || {};
   };
-
-  const SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
 
   useEffect(() => {
     // Load local files into library instead of placeholder tracks
@@ -10750,6 +10768,11 @@ const Parachord = () => {
         try {
           const testResponse = await fetch(directStreamUrl, { method: 'HEAD' });
           if (!testResponse.ok) {
+            // Detect auth/rate limit failures on the direct stream
+            if (testResponse.status === 429 || testResponse.status === 401 || testResponse.status === 403) {
+              console.error('🎵 SoundCloud API rejected:', testResponse.status);
+              showToast('SoundCloud API credentials may be invalid or rate limited. Try adding your own in Settings.', 'error');
+            }
             console.log('🎵 Direct stream not available, trying /streams endpoint');
             // Fall back to /streams endpoint
             const streamsResponse = await fetch(`https://api.soundcloud.com/tracks/${sourceToPlay.soundcloudId}/streams`, {
@@ -12835,9 +12858,9 @@ const Parachord = () => {
           // Fetch all periods in parallel (artists, tracks, albums)
           const periodPromises = periods.map(async (period) => {
             const [artistsRes, tracksRes, albumsRes] = await Promise.all([
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
-              fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
+              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
+              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
+              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
             ]);
 
             if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
@@ -12861,7 +12884,7 @@ const Parachord = () => {
           // Use cached recently played if available, otherwise fetch
           let recentlyPlayed = cachedRecentlyPlayed || [];
           if (!cachedRecentlyPlayed) {
-            const recentRes = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
+            const recentRes = await lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
             if (recentRes.ok) {
               const recentData = await recentRes.json();
               recentlyPlayed = (recentData.recenttracks?.track || [])
@@ -20100,7 +20123,7 @@ ${tracks}
       }
 
       console.log(logMessage);
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch Last.fm charts: ${response.status}`);
@@ -21095,7 +21118,7 @@ ${tracks}
 
     try {
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
 
       if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
 
@@ -21145,7 +21168,7 @@ ${tracks}
       }
 
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
 
       if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
 
@@ -21218,7 +21241,7 @@ ${tracks}
       }
 
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
 
       if (!response.ok) throw new Error(`Failed to fetch top albums: ${response.status}`);
 
@@ -21269,7 +21292,7 @@ ${tracks}
     if (!apiKey) throw new Error('Last.fm API key not configured');
 
     const url = `https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json`;
-    const response = await fetch(url);
+    const response = await lastfmFetch(url);
 
     if (!response.ok) {
       if (response.status === 404) throw new Error('User not found on Last.fm');
@@ -21320,7 +21343,7 @@ ${tracks}
         if (!apiKey) return null;
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
-        const response = await fetch(url);
+        const response = await lastfmFetch(url);
         if (!response.ok) return null;
 
         const data = await response.json();
@@ -21374,8 +21397,8 @@ ${tracks}
 
         // Fetch top artists and tracks in parallel
         const [artistsRes, tracksRes] = await Promise.all([
-          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`),
-          fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`)
+          lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`),
+          lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=7day&limit=5`)
         ]);
 
         if (artistsRes.ok) {
@@ -21944,7 +21967,7 @@ ${tracks}
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
-        const response = await fetch(url);
+        const response = await lastfmFetch(url);
         if (!response.ok) throw new Error(`Failed to fetch recent tracks: ${response.status}`);
 
         const data = await response.json();
@@ -22003,7 +22026,7 @@ ${tracks}
       if (!apiKey) throw new Error('Last.fm API key not configured');
 
       const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) throw new Error(`Failed to fetch top tracks: ${response.status}`);
 
       const data = await response.json();
@@ -22081,7 +22104,7 @@ ${tracks}
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-        const response = await fetch(url);
+        const response = await lastfmFetch(url);
         if (!response.ok) throw new Error(`Failed to fetch top artists: ${response.status}`);
 
         const data = await response.json();
@@ -22169,7 +22192,7 @@ ${tracks}
         if (!apiKey) throw new Error('Last.fm API key not configured');
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&period=${period}&limit=50`;
-        const response = await fetch(url);
+        const response = await lastfmFetch(url);
         if (!response.ok) throw new Error(`Failed to fetch top albums: ${response.status}`);
 
         const data = await response.json();
@@ -22297,7 +22320,7 @@ ${tracks}
   // Load listening history from Last.fm
   const loadLastfmHistory = async (username, apiKey) => {
     const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=50`;
-    const response = await fetch(url);
+    const response = await lastfmFetch(url);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch Last.fm listening history: ${response.status}`);
@@ -23226,7 +23249,7 @@ ${tracks}
 
       try {
         const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
-        const response = await fetch(url);
+        const response = await lastfmFetch(url);
         if (!response.ok) {
           setSearchPreviewArtistBio(null);
           return;
@@ -23266,7 +23289,7 @@ ${tracks}
     try {
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json`;
 
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) {
         console.error('Last.fm artist info request failed:', response.status);
         return null;
@@ -23823,7 +23846,7 @@ ${tracks}
     try {
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=20`;
 
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) {
         console.error('Last.fm similar artists request failed:', response.status);
         return [];
@@ -23863,7 +23886,7 @@ ${tracks}
       const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist=${encodeURIComponent(artistName)}&api_key=${apiKey}&format=json&limit=${limit}`;
 
       console.log(`🎤 Fetching top tracks for "${artistName}"`);
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) {
         console.error('Last.fm artist top tracks request failed:', response.status);
         return [];
@@ -23907,7 +23930,7 @@ ${tracks}
       const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=20`;
 
       console.log(`🔀 Fetching similar tracks for "${trackName}" by ${artistName}`);
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) {
         console.error('Last.fm similar tracks request failed:', response.status);
         return [];
@@ -23951,7 +23974,7 @@ ${tracks}
       // Request just 1 track to check if any similar tracks exist
       const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=1`;
 
-      const response = await fetch(url);
+      const response = await lastfmFetch(url);
       if (!response.ok) {
         console.log('🔀 Spinoff availability check failed:', response.status);
         return false;
@@ -25008,18 +25031,30 @@ ${tracks}
     console.log('=== Connect Spotify Clicked ===');
     console.log('window.electron:', !!window.electron);
     console.log('window.electron.spotify:', !!window.electron?.spotify);
-    
+
     if (window.electron?.spotify) {
       try {
         console.log('Calling authenticate...');
         const result = await window.electron.spotify.authenticate();
         console.log('Authenticate result:', result);
         if (!result.success) {
-          showConfirmDialog({
-            type: 'error',
-            title: 'Authentication Failed',
-            message: result.error || 'Spotify authentication failed. Please check your configuration.'
-          });
+          if (result.error === 'no_client_id') {
+            showConfirmDialog({
+              type: 'info',
+              title: 'Spotify Client ID Required',
+              message: 'To use Spotify, you need to create a free Spotify Developer app and enter your Client ID below.\n\n' +
+                '1. Go to developer.spotify.com/dashboard\n' +
+                '2. Create an app (name it anything)\n' +
+                '3. Add redirect URI: http://127.0.0.1:8888/callback\n' +
+                '4. Copy your Client ID and paste it in Settings'
+            });
+          } else {
+            showConfirmDialog({
+              type: 'error',
+              title: 'Authentication Failed',
+              message: result.error || 'Spotify authentication failed. Please check your configuration.'
+            });
+          }
         }
       } catch (error) {
         console.error('Spotify auth error:', error);
@@ -25073,7 +25108,7 @@ ${tracks}
           message: 'Your Spotify Client ID has been saved. Please disconnect and reconnect to use your new credentials.'
         });
       } else if (!clientId) {
-        showToast('Using default Spotify credentials', 'info');
+        showToast('Spotify Client ID removed', 'info');
       } else {
         showToast('Spotify Client ID saved', 'success');
       }
@@ -42540,167 +42575,197 @@ useEffect(() => {
               React.createElement('span', null, '✓'),
               React.createElement('span', null, 'Spotify Premium connected')
             ),
-            // Advanced accordion for custom credentials
-            React.createElement('div', { style: { marginTop: '16px' } },
-              React.createElement('button', {
-                onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen),
-                className: 'flex items-center gap-1',
+            // Spotify API credentials — BYOK required
+            !spotifyConnected && React.createElement('div', {
+              style: {
+                marginTop: '16px',
+                padding: '12px',
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                borderRadius: '8px'
+              }
+            },
+              spotifyCredentialsSource === 'env'
+                ? React.createElement('p', {
+                    style: { fontSize: '11px', color: '#22c55e', marginBottom: '8px', lineHeight: '1.5' }
+                  }, 'Using Client ID from environment variable.')
+                : React.createElement('p', {
+                    style: { fontSize: '11px', color: '#6b7280', marginBottom: '12px', lineHeight: '1.5' }
+                  },
+                    'Spotify requires your own API credentials. Create a free app at ',
+                    React.createElement('a', {
+                      href: '#',
+                      onClick: (e) => { e.preventDefault(); window.electron?.openExternal?.('https://developer.spotify.com/dashboard') || window.open('https://developer.spotify.com/dashboard', '_blank'); },
+                      style: { color: '#1DB954', textDecoration: 'underline' }
+                    }, 'developer.spotify.com/dashboard'),
+                    ' to get your Client ID.'
+                  ),
+              // Setup steps (only shown when no key configured)
+              spotifyCredentialsSource === 'none' && React.createElement('div', {
                 style: {
-                  fontSize: '12px',
+                  fontSize: '11px',
                   color: '#6b7280',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0'
+                  marginBottom: '12px',
+                  lineHeight: '1.8',
+                  paddingLeft: '4px'
                 }
               },
-                React.createElement('span', {
-                  className: `transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
-                }, '▶'),
-                'Advanced'
-              ),
-              spotifyAdvancedOpen && React.createElement('div', {
-                style: {
-                  marginTop: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                  borderRadius: '8px'
-                }
-              },
-                React.createElement('p', {
-                  style: {
-                    fontSize: '11px',
-                    color: '#6b7280',
-                    marginBottom: '12px',
-                    lineHeight: '1.5'
-                  }
-                },
-                  spotifyCredentialsSource === 'user'
-                    ? 'Using your custom Spotify API credentials.'
-                    : spotifyCredentialsSource === 'env'
-                    ? 'Using credentials from environment variables.'
-                    : 'Using default app credentials. Add your own for higher rate limits.'
+                React.createElement('div', null, '1. Create a new app (name it anything)'),
+                React.createElement('div', null, '2. Set Redirect URI to: ',
+                  React.createElement('code', {
+                    onClick: () => navigator.clipboard.writeText('http://127.0.0.1:8888/callback'),
+                    title: 'Click to copy',
+                    style: { cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.05)', padding: '1px 4px', borderRadius: '3px' }
+                  }, 'http://127.0.0.1:8888/callback')
                 ),
-                React.createElement('div', { style: { marginBottom: '10px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Client ID'),
+                React.createElement('div', null, '3. Copy your Client ID and paste it below')
+              ),
+              // Client ID input
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement('input', {
+                  type: 'text',
+                  value: spotifyClientIdInput,
+                  onChange: (e) => setSpotifyClientIdInput(e.target.value),
+                  placeholder: 'Paste your Spotify Client ID here',
+                  style: {
+                    width: '100%',
+                    padding: '8px 10px',
+                    fontSize: '12px',
+                    color: '#1f2937',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    borderRadius: '6px',
+                    outline: 'none'
+                  }
+                })
+              ),
+              // Redirect URI (always visible for reference)
+              React.createElement('div', { style: { marginBottom: '12px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px' }
+                }, 'Redirect URI'),
+                React.createElement('div', { style: { display: 'flex', gap: '6px' } },
                   React.createElement('input', {
                     type: 'text',
-                    value: spotifyClientIdInput,
-                    onChange: (e) => setSpotifyClientIdInput(e.target.value),
-                    placeholder: 'Your Spotify Client ID',
+                    value: 'http://127.0.0.1:8888/callback',
+                    readOnly: true,
                     style: {
-                      width: '100%',
+                      flex: 1,
                       padding: '8px 10px',
                       fontSize: '12px',
-                      color: '#1f2937',
-                      backgroundColor: '#ffffff',
+                      color: '#6b7280',
+                      backgroundColor: '#f9fafb',
                       border: '1px solid rgba(0, 0, 0, 0.1)',
                       borderRadius: '6px',
                       outline: 'none'
                     }
-                  })
-                ),
-                React.createElement('div', { style: { marginBottom: '12px' } },
-                  React.createElement('label', {
-                    style: {
-                      fontSize: '11px',
-                      color: '#6b7280',
-                      display: 'block',
-                      marginBottom: '4px'
-                    }
-                  }, 'Redirect URI'),
-                  React.createElement('div', {
-                    style: {
-                      display: 'flex',
-                      gap: '6px'
-                    }
-                  },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: 'http://127.0.0.1:8888/callback',
-                      readOnly: true,
-                      style: {
-                        flex: 1,
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                        borderRadius: '6px',
-                        outline: 'none'
-                      }
-                    }),
-                    React.createElement('button', {
-                      onClick: () => {
-                        navigator.clipboard.writeText('http://127.0.0.1:8888/callback');
-                      },
-                      title: 'Copy to clipboard',
-                      style: {
-                        padding: '8px 10px',
-                        fontSize: '12px',
-                        color: '#6b7280',
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }
-                    }, '📋')
-                  ),
-                  React.createElement('p', {
-                    style: {
-                      fontSize: '10px',
-                      color: '#9ca3af',
-                      marginTop: '4px'
-                    }
-                  }, 'Add this to your Spotify app\'s Redirect URIs')
-                ),
-                React.createElement('div', { className: 'flex gap-2' },
+                  }),
                   React.createElement('button', {
-                    onClick: saveSpotifyCredentials,
-                    style: {
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: '#22c55e',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }
-                  }, 'Save'),
-                  spotifyClientIdInput && React.createElement('button', {
                     onClick: () => {
-                      setSpotifyClientIdInput('');
-                      saveSpotifyCredentials();
+                      navigator.clipboard.writeText('http://127.0.0.1:8888/callback');
+                      showToast('Copied to clipboard', 'success');
                     },
+                    title: 'Copy to clipboard',
                     style: {
-                      padding: '6px 12px',
+                      padding: '8px 10px',
                       fontSize: '12px',
-                      fontWeight: '500',
                       color: '#6b7280',
-                      backgroundColor: 'transparent',
+                      backgroundColor: '#f9fafb',
                       border: '1px solid rgba(0, 0, 0, 0.1)',
                       borderRadius: '6px',
                       cursor: 'pointer'
                     }
-                  }, 'Use Default')
+                  }, 'Copy')
                 ),
                 React.createElement('p', {
+                  style: { fontSize: '10px', color: '#9ca3af', marginTop: '4px' }
+                }, 'Add this exact URL to your Spotify app\'s Redirect URIs')
+              ),
+              // Save / Clear buttons
+              React.createElement('div', { className: 'flex gap-2' },
+                React.createElement('button', {
+                  onClick: saveSpotifyCredentials,
+                  disabled: !spotifyClientIdInput.trim(),
                   style: {
-                    fontSize: '10px',
-                    color: '#9ca3af',
-                    marginTop: '10px',
-                    lineHeight: '1.4'
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: '#ffffff',
+                    backgroundColor: spotifyClientIdInput.trim() ? '#22c55e' : '#9ca3af',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default',
+                    opacity: spotifyClientIdInput.trim() ? 1 : 0.6
                   }
-                }, 'Get credentials from developer.spotify.com/dashboard')
+                }, 'Save'),
+                spotifyClientIdInput && React.createElement('button', {
+                  onClick: () => {
+                    setSpotifyClientIdInput('');
+                    saveSpotifyCredentials();
+                  },
+                  style: {
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    color: '#6b7280',
+                    backgroundColor: 'transparent',
+                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }
+                }, 'Clear')
               )
+            ),
+            // Show credentials source when connected
+            spotifyConnected && spotifyCredentialsSource === 'user' && React.createElement('button', {
+              onClick: () => setSpotifyAdvancedOpen(!spotifyAdvancedOpen),
+              className: 'flex items-center gap-1',
+              style: {
+                marginTop: '12px',
+                fontSize: '11px',
+                color: '#6b7280',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '0'
+              }
+            },
+              React.createElement('span', {
+                className: `transform transition-transform ${spotifyAdvancedOpen ? 'rotate-90' : ''}`
+              }, '▶'),
+              'Change Client ID'
+            ),
+            spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
+              style: { marginTop: '8px', padding: '12px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+            },
+              React.createElement('div', { style: { marginBottom: '10px' } },
+                React.createElement('label', {
+                  style: { fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px' }
+                }, 'Client ID'),
+                React.createElement('input', {
+                  type: 'text',
+                  value: spotifyClientIdInput,
+                  onChange: (e) => setSpotifyClientIdInput(e.target.value),
+                  placeholder: 'Your Spotify Client ID',
+                  style: {
+                    width: '100%', padding: '8px 10px', fontSize: '12px', color: '#1f2937',
+                    backgroundColor: '#ffffff', border: '1px solid rgba(0, 0, 0, 0.1)',
+                    borderRadius: '6px', outline: 'none'
+                  }
+                })
+              ),
+              React.createElement('button', {
+                onClick: saveSpotifyCredentials,
+                disabled: !spotifyClientIdInput.trim(),
+                style: {
+                  padding: '6px 12px', fontSize: '12px', fontWeight: '500', color: '#ffffff',
+                  backgroundColor: spotifyClientIdInput.trim() ? '#22c55e' : '#9ca3af',
+                  border: 'none', borderRadius: '6px',
+                  cursor: spotifyClientIdInput.trim() ? 'pointer' : 'default'
+                }
+              }, 'Save')
             )
           ),
 
