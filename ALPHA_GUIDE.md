@@ -1,8 +1,13 @@
-# Parachord Alpha
+# Parachord
 
 I'm excited - and nervous - to announce Parachord, a music player that builds on the legacy of Tomahawk and unifies all your music sources into one seamless experience.
 
 ![Parachord Screenshot](assets/artist-page2.png)
+
+# Alpha Release
+- [Download latest](https://github.com/Parachord/parachord/releases)
+
+
 
 # The Problem We’re Solving
 If you’re like us, your music is scattered everywhere. You have playlists on Spotify, purchased albums on Bandcamp, rare live recordings on YouTube, and a carefully curated local library of FLAC files. Switching between apps to listen to a single playlist is exhausting.
@@ -52,7 +57,7 @@ In theory, Windows and Linux builds work too - but I've never tried either. So g
 ## Getting Started
 ### 1. Configuring Plug-ins
 
-Go to **Settings > Plug-ins** and enable and configure the sources you want to use:
+Go to **Settings > Plug-ins** and enable and configure the sources you want to use. Many of the plug-ins require you create and enter your own API keys from each services developers site - particularly Spotify who continues [further restritcing thei API](https://techcrunch.com/2026/02/06/spotify-changes-developer-mode-api-to-require-premium-accounts-limits-test-users/).
 
 **Recommended:**
 - **Spotify** (requires Premium and Spotify desktop to be running in the background) - Full playback and library sync
