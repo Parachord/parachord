@@ -70,7 +70,7 @@ jobs:
       - name: Create pull request
         if: steps.diff.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
           BRANCH="sync/browser-extension-$(date +%Y%m%d)"
 
@@ -142,7 +142,7 @@ jobs:
       - name: Create pull request
         if: steps.diff.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
           BRANCH="sync/raycast-extension-$(date +%Y%m%d)"
 
@@ -247,7 +247,7 @@ jobs:
       - name: Create pull request
         if: steps.diff.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
           BRANCH="sync/plugins-$(date +%Y%m%d)"
 
