@@ -1,6 +1,6 @@
 # Parachord
 
-I'm excited - and nervous - to announce Parachord, a music player that builds on the legacy of Tomahawk and unifies all your music sources into one seamless experience.
+I'm excited - and nervous - to announce Parachord, a music player that builds on the legacy of [Tomahawk](https://github.com/tomahawk-player/tomahawk?tab=readme-ov-file) and unifies all your music sources into one seamless experience.
 
 ![Parachord Screenshot](assets/artist-page2.png)
 
