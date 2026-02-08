@@ -54,6 +54,16 @@ jobs:
         run: |
           echo "Code signing certificate configured"
 
+      # Restore MusicKit private key from secret (enables auto token generation)
+      - name: Restore MusicKit key
+        if: env.MUSICKIT_PRIVATE_KEY != ''
+        env:
+          MUSICKIT_PRIVATE_KEY: ${{ secrets.MUSICKIT_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p resources/keys
+          echo "$MUSICKIT_PRIVATE_KEY" > resources/keys/AuthKey_437JVHZMMK.p8
+
       - name: Install dependencies
         run: npm ci
 

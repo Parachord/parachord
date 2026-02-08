@@ -46,3 +46,6 @@ collection.json
 .worktrees/
 builtin/
 resources/bin/
+
+# MusicKit private keys (injected from CI secrets for builds)
+resources/keys/*.p8
