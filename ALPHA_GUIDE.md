@@ -175,7 +175,7 @@ https://github.com/Parachord/parachord/discussions
 - **Apple Music**: Volume only controllable via system volume on Mac
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
 - **YouTube**: Pops open browser window in front of app, quality varies - add the browser extension to improve the experience
-  
+- **MCP Server**: Not included in this build - but the in app AI chat functions work 
 
 ## Keyboard Shortcuts
 
