@@ -29,13 +29,15 @@ npm start
 
 ## 📋 Required Credentials
 
-### ✅ **Spotify** (Required for playback)
+### ✅ **Spotify** (BYOK — Bring Your Own Key)
 
-**Status:** Required for Spotify search and playback
+**Status:** Each user must provide their own Spotify Client ID
+
+Spotify limits developer apps to 5 users in development mode. To work around this, each Parachord user registers their own free Spotify Developer app (you are the only user of your own app, so you'll never hit the limit).
 
 **How to Get:**
 1. Go to: https://developer.spotify.com/dashboard
-2. Log in with your Spotify account
+2. Log in with your **Spotify Premium** account
 3. Click **"Create App"**
 4. Fill in:
    - **App Name:** "Parachord" (or your choice)
@@ -44,20 +46,21 @@ npm start
    - **API:** Check "Web API"
 5. Click **"Save"**
 6. Click **"Settings"**
-7. Copy your **Client ID**
-8. Click **"View client secret"** and copy it
+7. Copy your **Client ID** (you do NOT need the client secret)
 
-**Add to .env:**
+**Option A — Configure in Settings (recommended):**
+Open Parachord Settings, paste your Client ID in the Spotify section, and click Save.
+
+**Option B — Add to .env:**
 ```bash
 SPOTIFY_CLIENT_ID=your_client_id_here
-SPOTIFY_CLIENT_SECRET=your_client_secret_here
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
 
 **Important Notes:**
-- **Never commit your client secret** to GitHub
-- Tokens expire after 1 hour (auto-refresh not implemented yet)
-- Requires Spotify Premium for playback
+- **No client secret needed** — Parachord uses the PKCE OAuth flow
+- Requires **Spotify Premium** for playback
+- Tokens refresh automatically
 
 ---
 
@@ -179,9 +182,8 @@ QOBUZ_SECRET=your_secret_here
 ### Complete .env File Structure:
 
 ```bash
-# Spotify API Credentials (REQUIRED)
+# Spotify API Credentials (BYOK — each user needs their own)
 SPOTIFY_CLIENT_ID=your_client_id_here
-SPOTIFY_CLIENT_SECRET=your_client_secret_here
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 
 # YouTube API Credentials (optional - for future implementation)
@@ -202,25 +204,16 @@ AUTH_SERVER_PORT=8888
 
 ## 🐛 Troubleshooting
 
-### "Missing Spotify credentials in .env file"
+### "Please enter your Spotify Client ID"
 
-**Problem:** The `.env` file doesn't exist or doesn't have credentials
-
-**Solution:**
-1. Make sure `.env` file exists in project root
-2. Make sure it has `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`
-3. Restart the app completely
-
-### "Invalid client secret"
-
-**Problem:** The client secret is wrong or has extra spaces
+**Problem:** No Spotify Client ID configured
 
 **Solution:**
-1. Go back to Spotify Dashboard
-2. Click "View client secret" again
-3. Copy it carefully (no extra spaces)
-4. Paste into `.env` file
-5. Restart app
+1. Go to https://developer.spotify.com/dashboard and create an app
+2. Add redirect URI: `http://127.0.0.1:8888/callback`
+3. Copy your Client ID
+4. Either paste it in Parachord Settings or add to `.env` file
+5. Restart the app if using `.env`
 
 ### Environment variables not loading
 
@@ -279,7 +272,6 @@ Add this to the top of `main.js` temporarily:
 ```javascript
 require('dotenv').config();
 console.log('Spotify Client ID:', process.env.SPOTIFY_CLIENT_ID ? 'Found' : 'Missing');
-console.log('Spotify Client Secret:', process.env.SPOTIFY_CLIENT_SECRET ? 'Found' : 'Missing');
 ```
 
 ### 2. Test Spotify Connection:

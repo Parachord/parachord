@@ -1722,7 +1722,8 @@ ipcMain.handle('crypto-md5', (event, input) => {
 // Fallback API keys for services that support shared app credentials
 const FALLBACK_LASTFM_API_KEY = '3b09ef20686c217dbd8e2e8e5da1ec7a';
 const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
-const FALLBACK_SPOTIFY_CLIENT_ID = 'c040c0ee133344b282e6342198bcbeea';
+// Spotify requires BYOK (Bring Your Own Key) — each user must register their own app
+// at developer.spotify.com/dashboard due to Spotify's 5-user dev mode limit
 // SoundCloud fallback credentials - app's registered OAuth client
 const FALLBACK_SOUNDCLOUD_CLIENT_ID = 'O2HcIaRQu87Kbf4CP34FpDi87nR2XTcr';
 const FALLBACK_SOUNDCLOUD_CLIENT_SECRET = 'ylYKJ1OW7YKqd3iSPreTc1wTeHcZRAMD';
@@ -1818,7 +1819,8 @@ async function generateMusicKitDeveloperToken() {
   }
 }
 
-// Helper to get Spotify credentials with priority: user-stored > env > fallback
+// Helper to get Spotify credentials with priority: user-stored > env
+// No fallback — Spotify requires BYOK due to 5-user dev mode limit
 function getSpotifyCredentials() {
   // First check user-configured Client ID (stored via UI)
   const userClientId = store.get('spotify_client_id');
@@ -1840,11 +1842,11 @@ function getSpotifyCredentials() {
     };
   }
 
-  // Fall back to bundled Client ID (safe to expose publicly with PKCE)
-  console.log('🔑 Using fallback Spotify Client ID');
+  // No fallback — user must provide their own Client ID
+  console.log('🔑 No Spotify Client ID configured');
   return {
-    clientId: FALLBACK_SPOTIFY_CLIENT_ID,
-    source: 'fallback'
+    clientId: null,
+    source: 'none'
   };
 }
 
@@ -2053,10 +2055,18 @@ ipcMain.handle('config-get', (event, key) => {
 
 // Spotify OAuth handler
 ipcMain.handle('spotify-auth', async () => {
-  // Get credentials with fallback chain: user-stored > env > bundled
   const { clientId, source } = getSpotifyCredentials();
   const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
   console.log('🔑 Spotify auth using credentials from:', source);
+
+  // Require user-provided Client ID — no fallback
+  if (!clientId) {
+    return {
+      success: false,
+      error: 'no_client_id',
+      message: 'Please enter your Spotify Client ID in Settings before connecting. You can get one at developer.spotify.com/dashboard.'
+    };
+  }
 
   const scopes = [
     'streaming',
@@ -2173,11 +2183,11 @@ ipcMain.handle('spotify-set-credentials', (event, { clientId }) => {
     console.log('💾 Saved user Spotify Client ID');
     return { success: true, source: 'user' };
   } else {
-    // Clear user credentials to use fallback
+    // Clear user credentials — Spotify will be unavailable until a new key is provided
     store.delete('spotify_client_id');
     store.delete('spotify_client_secret');
-    console.log('🗑️ Cleared user Spotify Client ID, will use fallback');
-    return { success: true, source: 'fallback' };
+    console.log('🗑️ Cleared user Spotify Client ID');
+    return { success: true, source: 'none' };
   }
 });
 

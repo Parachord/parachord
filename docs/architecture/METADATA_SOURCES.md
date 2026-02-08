@@ -6,7 +6,7 @@ This document describes all external data sources used by Parachord for fetching
 
 | Metadata Type | Primary Provider | Fallback 1 | Fallback 2 | Fallback 3 |
 |---------------|------------------|------------|------------|------------|
-| **Artist Images** | Spotify | MusicKit (Apple Music) | Wikipedia | Discogs |
+| **Artist Images** | Spotify (if connected) | MusicKit (Apple Music) | Wikipedia | Discogs |
 | **Artist Bios** | Last.fm | Wikipedia | Discogs | - |
 | **Related Artists** | Last.fm + ListenBrainz (merged) | - | - | - |
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
