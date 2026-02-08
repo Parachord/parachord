@@ -1,0 +1,33 @@
+{
+  "manifest": {
+    "id": "discogs",
+    "name": "Discogs",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Artist biographies and images from Discogs",
+    "icon": "📀",
+    "color": "#333333",
+    "homepage": "https://www.discogs.com"
+  },
+  "capabilities": {
+    "metadata": true,
+    "biography": true,
+    "artistImages": true
+  },
+  "settings": {
+    "requiresAuth": false,
+    "authType": "token",
+    "configurable": {
+      "personalAccessToken": {
+        "type": "password",
+        "label": "Personal Access Token",
+        "required": false,
+        "advanced": true,
+        "placeholder": "Optional - improves rate limits",
+        "description": "Get a token from discogs.com/settings/developers",
+        "helpUrl": "https://www.discogs.com/settings/developers"
+      }
+    }
+  }
+}
