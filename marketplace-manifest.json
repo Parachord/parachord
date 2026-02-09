@@ -22,7 +22,11 @@
       "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/spotify.axe",
       "category": "streaming",
-      "tags": ["streaming", "subscription", "premium"]
+      "tags": [
+        "streaming",
+        "subscription",
+        "premium"
+      ]
     },
     {
       "id": "bandcamp",
@@ -44,7 +48,12 @@
       "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/bandcamp.axe",
       "category": "streaming",
-      "tags": ["streaming", "purchase", "independent", "discovery"]
+      "tags": [
+        "streaming",
+        "purchase",
+        "independent",
+        "discovery"
+      ]
     },
     {
       "id": "soundcloud",
@@ -66,7 +75,13 @@
       "builtin": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/soundcloud.axe",
       "category": "streaming",
-      "tags": ["streaming", "free", "indie", "soundcloud", "oauth"]
+      "tags": [
+        "streaming",
+        "free",
+        "indie",
+        "soundcloud",
+        "oauth"
+      ]
     },
     {
       "id": "youtube",
@@ -87,7 +102,12 @@
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/youtube.axe",
       "category": "streaming",
-      "tags": ["streaming", "free", "video", "youtube"]
+      "tags": [
+        "streaming",
+        "free",
+        "video",
+        "youtube"
+      ]
     },
     {
       "id": "applemusic",
@@ -108,7 +128,13 @@
       "requiresAuth": true,
       "builtin": true,
       "category": "streaming",
-      "tags": ["streaming", "subscription", "apple", "musickit", "url-lookup"]
+      "tags": [
+        "streaming",
+        "subscription",
+        "apple",
+        "musickit",
+        "url-lookup"
+      ]
     },
     {
       "id": "localfiles",
@@ -129,7 +155,13 @@
       "requiresAuth": false,
       "builtin": true,
       "category": "local",
-      "tags": ["local", "files", "library", "offline", "free"]
+      "tags": [
+        "local",
+        "files",
+        "library",
+        "offline",
+        "free"
+      ]
     },
     {
       "id": "claude",
@@ -147,7 +179,12 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/claude.axe",
       "category": "ai",
-      "tags": ["ai", "chat", "anthropic", "claude"]
+      "tags": [
+        "ai",
+        "chat",
+        "anthropic",
+        "claude"
+      ]
     },
     {
       "id": "chatgpt",
@@ -166,7 +203,13 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/chatgpt.axe",
       "category": "ai",
-      "tags": ["ai", "playlist", "generation", "openai", "chatgpt"]
+      "tags": [
+        "ai",
+        "playlist",
+        "generation",
+        "openai",
+        "chatgpt"
+      ]
     },
     {
       "id": "ollama",
@@ -184,7 +227,14 @@
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/ollama.axe",
       "category": "ai",
-      "tags": ["ai", "chat", "local", "ollama", "free", "offline"]
+      "tags": [
+        "ai",
+        "chat",
+        "local",
+        "ollama",
+        "free",
+        "offline"
+      ]
     },
     {
       "id": "gemini",
@@ -203,7 +253,13 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/gemini.axe",
       "category": "ai",
-      "tags": ["ai", "playlist", "generation", "google", "gemini"]
+      "tags": [
+        "ai",
+        "playlist",
+        "generation",
+        "google",
+        "gemini"
+      ]
     },
     {
       "id": "lastfm",
@@ -222,7 +278,12 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/lastfm.axe",
       "category": "social",
-      "tags": ["social", "scrobbling", "recommendations", "metadata"]
+      "tags": [
+        "social",
+        "scrobbling",
+        "recommendations",
+        "metadata"
+      ]
     },
     {
       "id": "listenbrainz",
@@ -242,7 +303,13 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/listenbrainz.axe",
       "category": "social",
-      "tags": ["social", "scrobbling", "recommendations", "open-source", "metadata"]
+      "tags": [
+        "social",
+        "scrobbling",
+        "recommendations",
+        "open-source",
+        "metadata"
+      ]
     },
     {
       "id": "librefm",
@@ -260,7 +327,12 @@
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/librefm.axe",
       "category": "social",
-      "tags": ["social", "scrobbling", "open-source", "free"]
+      "tags": [
+        "social",
+        "scrobbling",
+        "open-source",
+        "free"
+      ]
     },
     {
       "id": "wikipedia",
@@ -280,7 +352,13 @@
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/wikipedia.axe",
       "category": "metadata",
-      "tags": ["metadata", "biography", "images", "free", "open-source"]
+      "tags": [
+        "metadata",
+        "biography",
+        "images",
+        "free",
+        "open-source"
+      ]
     },
     {
       "id": "discogs",
@@ -300,8 +378,21 @@
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/discogs.axe",
       "category": "metadata",
-      "tags": ["metadata", "biography", "images", "discography", "vinyl"]
+      "tags": [
+        "metadata",
+        "biography",
+        "images",
+        "discography",
+        "vinyl"
+      ]
     }
   ],
-  "categories": ["streaming", "purchase", "metadata", "social", "local", "ai"]
+  "categories": [
+    "streaming",
+    "purchase",
+    "metadata",
+    "social",
+    "local",
+    "ai"
+  ]
 }
