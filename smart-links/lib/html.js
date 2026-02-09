@@ -280,7 +280,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
   const { title, artist, albumArt, urls } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
 
-  // Find the first available service URL for the play button
+  // Find the first available service URL for fallback
   const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
 
   return `<!DOCTYPE html>
@@ -356,6 +356,8 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       font-weight: 500;
       text-decoration: none;
       transition: all 0.2s;
+      cursor: pointer;
+      border: none;
     }
     .btn-primary {
       background: #8b5cf6;
@@ -383,11 +385,50 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       <div class="title">${escapeHtml(title)}</div>
       ${artist ? `<div class="artist">${escapeHtml(artist)}</div>` : ''}
       <div class="actions">
-        ${firstUrl ? `<a href="${escapeHtml(firstUrl)}" target="_blank" class="btn btn-primary">Play</a>` : ''}
+        <button id="play-btn" class="btn btn-primary" onclick="playTrack()">Play</button>
         <a href="${linkUrl}" target="_blank" class="btn btn-secondary">More</a>
       </div>
     </div>
   </div>
+  <script>
+    const trackData = {
+      title: ${JSON.stringify(title || '')},
+      artist: ${JSON.stringify(artist || '')},
+      albumArt: ${JSON.stringify(albumArt || null)},
+      urls: ${JSON.stringify(urls || {})}
+    };
+    const fallbackUrl = ${JSON.stringify(firstUrl || '')};
+    let ws = null;
+    let parachordConnected = false;
+
+    function connectToParachord() {
+      try {
+        ws = new WebSocket('ws://localhost:9876');
+        ws.onopen = () => {
+          parachordConnected = true;
+        };
+        ws.onclose = () => {
+          parachordConnected = false;
+          setTimeout(connectToParachord, 3000);
+        };
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch (e) {
+        setTimeout(connectToParachord, 3000);
+      }
+    }
+
+    function playTrack() {
+      if (parachordConnected && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: trackData } }));
+      } else if (fallbackUrl) {
+        window.open(fallbackUrl, '_blank');
+      }
+    }
+
+    connectToParachord();
+  </script>
 </body>
 </html>`;
 }
