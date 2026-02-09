@@ -9214,6 +9214,10 @@ const Parachord = () => {
               url = firstResult.soundcloudUrl;
             } else if (firstResult.bandcampUrl) {
               url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
             }
           }
 
@@ -9225,6 +9229,7 @@ const Parachord = () => {
             else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
             else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
             else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
 
             if (service) {
               resolvedUrls[service] = url;
@@ -9240,6 +9245,7 @@ const Parachord = () => {
     // Generate HTML
     const services = [
       { id: 'spotify', name: 'Spotify', color: '#1DB954', icon: '●' },
+      { id: 'appleMusic', name: 'Apple Music', color: '#FA243C', icon: '♪' },
       { id: 'youtube', name: 'YouTube', color: '#FF0000', icon: '▶' },
       { id: 'soundcloud', name: 'SoundCloud', color: '#FF5500', icon: '☁' },
       { id: 'bandcamp', name: 'Bandcamp', color: '#629AA9', icon: '♫' }
@@ -9601,6 +9607,10 @@ const Parachord = () => {
               url = firstResult.soundcloudUrl;
             } else if (firstResult.bandcampUrl) {
               url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
             }
           }
 
