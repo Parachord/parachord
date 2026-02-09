@@ -18,8 +18,13 @@ console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? 
 console.log('=========================');
 
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
-app.name = 'Parachord';
 const path = require('path');
+
+// Preserve the userData path before changing app.name, since Electron
+// derives the userData directory from app.name. Without this, changing
+// the name would move the data directory and lose all user settings.
+app.setPath('userData', path.join(app.getPath('appData'), 'parachord-desktop'));
+app.name = 'Parachord';
 
 // electron-updater is optional - may not be available in development
 let autoUpdater = null;
