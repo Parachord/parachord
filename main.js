@@ -3376,29 +3376,35 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
-  // Add "Generate Smart Link" option for tracks and releases
+  // Add Smart Link options for tracks and releases
   if (data.type === 'track' || data.type === 'release') {
     menuItems.push({ type: 'separator' });
+
+    // Build track data for smart link
+    const smartLinkTrack = data.type === 'track' ? data.track : {
+      title: data.name,
+      artist: data.artist,
+      albumArt: data.albumArt,
+      album: data.name
+    };
+
     menuItems.push({
-      label: 'Generate Smart Link',
+      label: 'Publish Smart Link',
       click: () => {
-        if (data.type === 'track') {
-          mainWindow.webContents.send('track-context-menu-action', {
-            action: 'generate-smart-link',
-            track: data.track
-          });
-        } else {
-          // For releases, use the album/release info
-          mainWindow.webContents.send('track-context-menu-action', {
-            action: 'generate-smart-link',
-            track: {
-              title: data.name,
-              artist: data.artist,
-              albumArt: data.albumArt,
-              album: data.name
-            }
-          });
-        }
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'publish-smart-link',
+          track: smartLinkTrack
+        });
+      }
+    });
+
+    menuItems.push({
+      label: 'Download Smart Link',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'generate-smart-link',
+          track: smartLinkTrack
+        });
       }
     });
   }
