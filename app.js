@@ -9578,6 +9578,7 @@ const Parachord = () => {
     const resolvers = loadedResolversRef.current || [];
     const activeResolverIds = activeResolversRef.current || [];
     const resolvedUrls = {};
+    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
 
     for (const resolver of resolvers) {
       if (!activeResolverIds.includes(resolver.id)) continue;
@@ -9588,6 +9589,11 @@ const Parachord = () => {
         const results = await resolver.search(query, config);
         if (Array.isArray(results) && results.length > 0) {
           const firstResult = results[0];
+
+          // Capture albumArt from search results if we don't have it yet
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
 
           // Extract URL from various properties
           let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
@@ -9650,7 +9656,7 @@ const Parachord = () => {
         body: JSON.stringify({
           title: track.title || query,
           artist: track.artist || null,
-          albumArt: track.albumArt || null,
+          albumArt: track.albumArt || resolvedAlbumArt || null,
           type: 'track',
           urls: resolvedUrls
         })
@@ -9704,6 +9710,7 @@ const Parachord = () => {
     const resolvers = loadedResolversRef.current || [];
     const activeResolverIds = activeResolversRef.current || [];
     const resolvedUrls = {};
+    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
 
     for (const resolver of resolvers) {
       if (!activeResolverIds.includes(resolver.id)) continue;
@@ -9714,6 +9721,11 @@ const Parachord = () => {
         const results = await resolver.search(query, config);
         if (Array.isArray(results) && results.length > 0) {
           const firstResult = results[0];
+
+          // Capture albumArt from search results if we don't have it yet
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
 
           let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
 
@@ -9772,7 +9784,7 @@ const Parachord = () => {
         body: JSON.stringify({
           title: track.title || query,
           artist: track.artist || null,
-          albumArt: track.albumArt || null,
+          albumArt: track.albumArt || resolvedAlbumArt || null,
           type: 'track',
           urls: resolvedUrls
         })
