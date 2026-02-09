@@ -139,15 +139,25 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     }
     .footer {
       margin-top: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       color: var(--text-secondary);
       font-size: 0.85rem;
     }
     .footer a {
-      color: var(--accent);
-      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      opacity: 0.7;
+      transition: opacity 0.2s;
     }
     .footer a:hover {
-      text-decoration: underline;
+      opacity: 1;
+    }
+    .footer img {
+      height: 18px;
+      width: auto;
     }
     .parachord-section {
       margin-top: 24px;
@@ -207,7 +217,10 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     </div>
 
     <div class="footer">
-      <p>Powered by <a href="https://parachord.app" onclick="window.open(this.href, 'parachord', 'width=1024,height=768'); return false;">Parachord</a></p>
+      <span>Powered by</span>
+      <a href="https://parachord.com" target="_blank" rel="noopener">
+        <img src="${baseUrl}/parachord-wordmark.png" alt="Parachord" />
+      </a>
     </div>
   </div>
 
