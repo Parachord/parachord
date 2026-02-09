@@ -295,3 +295,89 @@ wrangler kv:namespace create LINKS
 - 100k KV reads/day (~100k link views)
 - 1k KV writes/day (~1k new links)
 - 1 GB storage (~500k+ links)
+
+---
+
+## oEmbed Support (for Threads/Discord/etc embeds)
+
+### What's Already There
+The generated HTML includes Open Graph tags for basic link previews:
+```html
+<meta property="og:title" content="Song - Artist">
+<meta property="og:description" content="Listen on your favorite streaming service">
+<meta property="og:image" content="[album art]">
+```
+
+### Full oEmbed Implementation
+
+**1. Add oEmbed endpoint** (`functions/api/oembed.js`):
+```javascript
+export async function onRequestGet({ request, env }) {
+  const url = new URL(request.url);
+  const linkUrl = url.searchParams.get('url');
+
+  if (!linkUrl) {
+    return Response.json({ error: 'Missing url parameter' }, { status: 400 });
+  }
+
+  // Extract ID from URL (e.g., https://links.parachord.app/abc123)
+  const id = linkUrl.split('/').pop();
+  const data = await env.LINKS.get(id, 'json');
+
+  if (!data) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  return Response.json({
+    version: '1.0',
+    type: 'rich',
+    provider_name: 'Parachord',
+    provider_url: 'https://parachord.app',
+    title: `${data.title}${data.artist ? ' - ' + data.artist : ''}`,
+    thumbnail_url: data.albumArt || null,
+    thumbnail_width: 300,
+    thumbnail_height: 300,
+    html: `<iframe src="${linkUrl}/embed" width="400" height="152" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>`,
+    width: 400,
+    height: 152
+  });
+}
+```
+
+**2. Add discovery tag** to generated HTML `<head>`:
+```html
+<link rel="alternate" type="application/json+oembed"
+      href="https://links.parachord.app/api/oembed?url=https://links.parachord.app/${id}"
+      title="${title} - ${artist}">
+```
+
+**3. Add embed-only route** (`functions/[[id]]/embed.js`):
+```javascript
+// Returns minimal player iframe content
+export async function onRequestGet({ params, env }) {
+  const data = await env.LINKS.get(params.id, 'json');
+  if (!data) return new Response('Not found', { status: 404 });
+  return new Response(generateEmbedHtml(data), {
+    headers: { 'Content-Type': 'text/html' }
+  });
+}
+```
+
+### Platform Allowlisting
+
+**Important**: Most platforms (Threads, Twitter, Discord) maintain allowlists of oEmbed providers. To get full rich embeds:
+
+1. **Discord** - Uses oEmbed discovery, may work automatically
+2. **Threads/Instagram** - Requires applying to Meta's allowlist
+3. **Twitter/X** - Uses Twitter Cards (different system, needs `twitter:` meta tags)
+4. **Slack** - Uses oEmbed discovery, often works automatically
+
+For platforms that don't recognize us, Open Graph tags still provide a basic card preview with image/title/description.
+
+### Twitter Cards (add to HTML head)
+```html
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${title} - ${artist}">
+<meta name="twitter:description" content="Listen on your favorite streaming service">
+<meta name="twitter:image" content="${albumArt}">
+```
