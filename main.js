@@ -3399,10 +3399,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
 
     menuItems.push({
-      label: 'Download Smart Link',
+      label: 'Copy Embed Code',
       click: () => {
         mainWindow.webContents.send('track-context-menu-action', {
-          action: 'generate-smart-link',
+          action: 'copy-embed-code',
           track: smartLinkTrack
         });
       }

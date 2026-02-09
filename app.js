@@ -9690,6 +9690,118 @@ const Parachord = () => {
     }
   }, [showToast]);
 
+  // Copy embed code for a track (publishes first, then copies iframe snippet)
+  const copyEmbedCode = useCallback(async (track) => {
+    const query = `${track.artist || ''} ${track.title || ''}`.trim();
+    if (!query) {
+      showToast('Cannot create embed: missing track info', 'error');
+      return;
+    }
+
+    showToast('Creating embed code...', 'info');
+
+    // Search all active resolvers to get URLs
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          if (!url) {
+            if (firstResult.spotifyId) {
+              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            } else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            } else if (firstResult.youtubeId) {
+              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            } else if (firstResult.youtubeUrl) {
+              url = firstResult.youtubeUrl;
+            } else if (firstResult.soundcloudUrl) {
+              url = firstResult.soundcloudUrl;
+            } else if (firstResult.bandcampUrl) {
+              url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
+            }
+          }
+
+          if (url) {
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
+            else if (id.includes('tidal')) service = 'tidal';
+            else if (id.includes('deezer')) service = 'deezer';
+
+            if (service) {
+              resolvedUrls[service] = url;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    if (Object.keys(resolvedUrls).length === 0) {
+      showToast('No service links found for this track', 'error');
+      return;
+    }
+
+    // POST to smart links API
+    try {
+      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: track.title || query,
+          artist: track.artist || null,
+          albumArt: track.albumArt || null,
+          type: 'track',
+          urls: resolvedUrls
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const { url, id } = await response.json();
+
+      // Generate iframe embed code
+      const embedCode = `<iframe src="${url}/embed" width="400" height="152" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"></iframe>`;
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(embedCode);
+        showToast('Embed code copied to clipboard!');
+      } catch (e) {
+        // Fallback: show in prompt
+        window.prompt('Copy this embed code:', embedCode);
+      }
+
+    } catch (error) {
+      console.error('[CopyEmbedCode] Error:', error);
+      showToast('Failed to create embed. Is the backend running?', 'error');
+    }
+  }, [showToast]);
+
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
     if (window.electron?.collection?.save) {
@@ -10369,16 +10481,16 @@ const Parachord = () => {
           if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
-        } else if (data.action === 'generate-smart-link' && data.track) {
-          // Generate smart link by searching all resolvers (download HTML file)
-          generateSmartLink(data.track);
         } else if (data.action === 'publish-smart-link' && data.track) {
           // Publish smart link to cloud backend
           publishSmartLink(data.track);
+        } else if (data.action === 'copy-embed-code' && data.track) {
+          // Copy iframe embed code to clipboard
+          copyEmbedCode(data.track);
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, generateSmartLink, publishSmartLink]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, copyEmbedCode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
