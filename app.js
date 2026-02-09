@@ -1759,6 +1759,88 @@ const ResolverCard = React.memo(({
   );
 });
 
+// MCP Settings Section - Claude Desktop integration setup
+const McpSettingsSection = () => {
+  const [mcpInfo, setMcpInfo] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (window.electron?.mcp?.getInfo) {
+      window.electron.mcp.getInfo().then(setMcpInfo);
+    }
+  }, []);
+
+  const configSnippet = mcpInfo ? JSON.stringify({
+    mcpServers: {
+      parachord: {
+        command: 'node',
+        args: [mcpInfo.stdioPath]
+      }
+    }
+  }, null, 2) : '';
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(configSnippet).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return React.createElement('div', {
+    className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
+  },
+    React.createElement('div', { className: 'mb-5' },
+      React.createElement('h3', {
+        className: 'text-sm font-semibold text-gray-700 uppercase tracking-wider'
+      }, 'Claude Desktop'),
+      React.createElement('p', {
+        className: 'text-xs text-gray-500 mt-1'
+      }, 'Control Parachord from Claude Desktop using MCP')
+    ),
+    React.createElement('p', {
+      className: 'text-sm text-gray-600 mb-4 leading-relaxed'
+    }, 'Parachord runs an MCP server that lets Claude Desktop play music, search tracks, manage your queue, and control playback. Add the following to your Claude Desktop config:'),
+    mcpInfo && React.createElement('div', { className: 'relative' },
+      React.createElement('pre', {
+        style: {
+          backgroundColor: '#f8f9fa',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          fontSize: '12px',
+          lineHeight: '1.6',
+          color: '#1f2937',
+          overflow: 'auto',
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all'
+        }
+      }, configSnippet),
+      React.createElement('button', {
+        onClick: handleCopy,
+        style: {
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          padding: '4px 10px',
+          fontSize: '11px',
+          fontWeight: '500',
+          color: copied ? '#059669' : '#6b7280',
+          backgroundColor: copied ? '#ecfdf5' : '#f3f4f6',
+          border: '1px solid ' + (copied ? '#a7f3d0' : '#d1d5db'),
+          borderRadius: '6px',
+          cursor: 'pointer',
+          transition: 'all 0.15s'
+        }
+      }, copied ? 'Copied!' : 'Copy')
+    ),
+    React.createElement('p', {
+      className: 'text-xs text-gray-500 mt-3',
+      style: { lineHeight: '1.5' }
+    }, 'Parachord must be running for Claude Desktop to connect. The config file is typically located at ~/Library/Application Support/Claude/claude_desktop_config.json on macOS.')
+  );
+};
+
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
 const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange }) => {
   const [connecting, setConnecting] = useState(false);
@@ -39921,6 +40003,9 @@ useEffect(() => {
                     className: 'text-xs text-gray-500 mt-4 text-center'
                   }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
                 ),
+
+                // Claude Desktop Integration Section
+                React.createElement(McpSettingsSection),
 
                 // Developer Settings Section
                 React.createElement('div', {

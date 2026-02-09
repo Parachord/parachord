@@ -3899,6 +3899,14 @@ ipcMain.handle('mcp-response', (event, { requestId, data }) => {
   handleRendererResponse(requestId, data);
 });
 
+// MCP server info - expose path for Claude Desktop config UI
+ipcMain.handle('mcp-get-info', () => {
+  return {
+    stdioPath: path.join(__dirname, 'mcp-stdio.js'),
+    port: 9421
+  };
+});
+
 // Local Files IPC handlers
 ipcMain.handle('localFiles:addWatchFolder', async () => {
   console.log('=== Add Watch Folder ===');
