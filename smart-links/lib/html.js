@@ -235,7 +235,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'play', track: trackData }));
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: trackData } }));
       }
     }
 
