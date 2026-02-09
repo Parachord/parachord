@@ -1,8 +1,17 @@
 // Dynamic route handler for /:id and /:id/embed
 import { generateLinkPageHtml, generateEmbedHtml } from '../lib/html.js';
 
+// Static file extensions to pass through to assets
+const STATIC_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2'];
+
 export async function onRequestGet({ params, request, env }) {
   const pathParts = params.path || [];
+  const fullPath = '/' + pathParts.join('/');
+
+  // Check if this is a static file request - pass through to assets
+  if (STATIC_EXTENSIONS.some(ext => fullPath.toLowerCase().endsWith(ext))) {
+    return env.ASSETS.fetch(request);
+  }
 
   // Handle /:id/embed
   if (pathParts.length === 2 && pathParts[1] === 'embed') {
