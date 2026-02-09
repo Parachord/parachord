@@ -373,6 +373,22 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
     .btn-secondary:hover {
       background: #444;
     }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      display: inline-block;
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .btn-connected {
+      background: #22c55e;
+    }
   </style>
 </head>
 <body>
@@ -401,14 +417,27 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
     let ws = null;
     let parachordConnected = false;
 
+    function updatePlayButton() {
+      const btn = document.getElementById('play-btn');
+      if (parachordConnected) {
+        btn.innerHTML = '<span class="status-dot"></span>Play';
+        btn.classList.add('btn-connected');
+      } else {
+        btn.innerHTML = 'Play';
+        btn.classList.remove('btn-connected');
+      }
+    }
+
     function connectToParachord() {
       try {
         ws = new WebSocket('ws://localhost:9876');
         ws.onopen = () => {
           parachordConnected = true;
+          updatePlayButton();
         };
         ws.onclose = () => {
           parachordConnected = false;
+          updatePlayButton();
           setTimeout(connectToParachord, 3000);
         };
         ws.onerror = () => {
