@@ -18,6 +18,7 @@ console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? 
 console.log('=========================');
 
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
+app.name = 'Parachord';
 const path = require('path');
 
 // electron-updater is optional - may not be available in development
