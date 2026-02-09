@@ -12018,7 +12018,11 @@ const Parachord = () => {
     }
 
     // Handle local file or SoundCloud playback (both use HTML5 Audio)
-    if (audioRef.current && (currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud')) {
+    // IMPORTANT: Check _activeResolver (not sources) to determine what's actually playing.
+    // A track may have sources.soundcloud from resolution but be playing via Apple Music.
+    // Previously this checked sources.localfiles/soundcloud which caused it to hijack
+    // pause for Apple Music tracks when audioRef.current lingered from a prior play.
+    if (audioRef.current && (currentTrack?._activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud')) {
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -12031,7 +12035,10 @@ const Parachord = () => {
 
     // Check _activeResolver first to determine what's actually playing
     // Handle Apple Music playback (must check before Spotify since tracks can have both sources)
-    const isAppleMusicActive = currentTrack._activeResolver === 'applemusic';
+    // Also detect Apple Music if preview audio is actively playing (defensive fallback
+    // for cases where _activeResolver was lost, e.g. after source switching)
+    const isAppleMusicActive = currentTrack._activeResolver === 'applemusic' ||
+      (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused && currentTrack.sources?.applemusic);
     if (isAppleMusicActive && window.electron?.musicKit) {
       try {
         if (isPlaying) {
@@ -12081,7 +12088,7 @@ const Parachord = () => {
     }
 
     const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
-      (!currentTrack._activeResolver && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
+      (!currentTrack._activeResolver && !isAppleMusicActive && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
