@@ -18,6 +18,7 @@ console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? 
 console.log('=========================');
 
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
+app.name = 'Parachord';
 const path = require('path');
 
 // electron-updater is optional - may not be available in development
@@ -40,6 +41,7 @@ const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./ser
 if (autoUpdater) {
   autoUpdater.autoDownload = false; // Don't download automatically, let user decide
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = true;
 }
 
 const store = new Store();
@@ -1531,7 +1533,7 @@ app.whenReady().then(() => {
       console.error('❌ Auto-updater error:', err.message);
       mainWindow?.webContents.send('updater-status', {
         status: 'error',
-        message: err.message
+        error: err.message
       });
     });
 
