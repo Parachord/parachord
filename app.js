@@ -84,6 +84,10 @@ window.iTunesRateLimiter = (() => {
   };
 })();
 
+// Smart Links API URL - change this after deploying to Cloudflare
+// Default to the local dev server or deployed URL
+const SMART_LINKS_API_URL = 'https://go.parachord.com';
+
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 20) => {
@@ -9167,6 +9171,636 @@ const Parachord = () => {
     setToast({ message, type, action });
   }, []);
 
+  // Generate smart link for a track
+  const generateSmartLink = useCallback(async (track) => {
+    const query = `${track.artist || ''} ${track.title || ''}`.trim();
+    if (!query) {
+      showToast('Cannot generate link: missing track info', 'error');
+      return;
+    }
+
+    showToast('Generating smart link...', 'info');
+
+    // Search all active resolvers
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          // Extract URL from various properties
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          // Construct URL from resolver-specific IDs if no direct URL
+          if (!url) {
+            if (firstResult.spotifyId) {
+              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            } else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            } else if (firstResult.youtubeId) {
+              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            } else if (firstResult.youtubeUrl) {
+              url = firstResult.youtubeUrl;
+            } else if (firstResult.soundcloudUrl) {
+              url = firstResult.soundcloudUrl;
+            } else if (firstResult.bandcampUrl) {
+              url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
+            }
+          }
+
+          if (url) {
+            // Map resolver ID to service name
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
+
+            if (service) {
+              resolvedUrls[service] = url;
+              console.log(`[SmartLink] Resolved ${service}: ${url}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    // Generate HTML
+    const services = [
+      { id: 'spotify', name: 'Spotify', color: '#1DB954', icon: '●' },
+      { id: 'appleMusic', name: 'Apple Music', color: '#FA243C', icon: '♪' },
+      { id: 'youtube', name: 'YouTube', color: '#FF0000', icon: '▶' },
+      { id: 'soundcloud', name: 'SoundCloud', color: '#FF5500', icon: '☁' },
+      { id: 'bandcamp', name: 'Bandcamp', color: '#629AA9', icon: '♫' }
+    ];
+
+    const serviceLinksHtml = services.map(s => {
+      const url = resolvedUrls[s.id];
+      if (!url) return '';
+      return `
+        <a href="${url}" onclick="window.open(this.href, '${s.id}', 'width=1024,height=768,menubar=no,toolbar=no,location=yes,status=no'); return false;" class="service-link" style="--service-color: ${s.color}">
+          <span class="service-icon">${s.icon}</span>
+          <span class="service-name">${s.name}</span>
+        </a>`;
+    }).filter(Boolean).join('\n');
+
+    if (!serviceLinksHtml) {
+      showToast('No service links found for this track', 'error');
+      return;
+    }
+
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
+    // Embed track data for Play in Parachord
+    const trackData = JSON.stringify(track).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(track.title || query)}${track.artist ? ' - ' + escapeHtml(track.artist) : ''} | Listen Now</title>
+  <meta property="og:title" content="${escapeHtml(track.title || query)}${track.artist ? ' - ' + escapeHtml(track.artist) : ''}">
+  <meta property="og:description" content="Listen on your favorite streaming service">
+  ${track.albumArt ? `<meta property="og:image" content="${track.albumArt}">` : ''}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
+      --accent: #8b5cf6;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 400px;
+      width: 100%;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .album-art {
+      width: 200px;
+      height: 200px;
+      border-radius: 12px;
+      margin: 0 auto 24px;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 4rem;
+    }
+    .album-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .track-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .track-artist {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+    .parachord-section {
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #333;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    .status-dot.connected {
+      background: #22c55e;
+    }
+    .play-btn {
+      width: 100%;
+      padding: 16px 24px;
+      background: linear-gradient(135deg, var(--accent), #ec4899);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, opacity 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .play-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+    }
+    .play-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .services-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .services {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .service-link {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .service-link:hover {
+      background: #252525;
+      transform: translateY(-2px);
+    }
+    .service-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--service-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    .service-name {
+      flex: 1;
+      font-weight: 500;
+      text-align: left;
+    }
+    .footer {
+      margin-top: 40px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="album-art">
+      ${track.albumArt ? `<img src="${track.albumArt}" alt="Album art">` : '♫'}
+    </div>
+    <h1 class="track-title">${escapeHtml(track.title || query)}</h1>
+    ${track.artist ? `<p class="track-artist">${escapeHtml(track.artist)}</p>` : ''}
+
+    <div class="parachord-section">
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Checking for Parachord...</span>
+      </div>
+      <button class="play-btn" id="playBtn" disabled>
+        ▶ Play in Parachord
+      </button>
+    </div>
+
+    <p class="services-header">Also Available On</p>
+    <div class="services">
+      ${serviceLinksHtml}
+    </div>
+    <p class="footer">Created with <a href="https://parachord.app" target="_blank" rel="noopener">Parachord</a></p>
+  </div>
+
+  <script>
+    const TRACK = ${trackData};
+    const WS_URL = 'ws://127.0.0.1:9876';
+
+    let socket = null;
+    let isConnected = false;
+    let requestId = 0;
+    const pending = new Map();
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const playBtn = document.getElementById('playBtn');
+
+    function connect() {
+      try {
+        socket = new WebSocket(WS_URL);
+
+        socket.onopen = () => {
+          isConnected = true;
+          statusDot.classList.add('connected');
+          statusText.textContent = 'Connected to Parachord';
+          playBtn.disabled = false;
+        };
+
+        socket.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.requestId && pending.has(msg.requestId)) {
+              pending.get(msg.requestId)(msg);
+              pending.delete(msg.requestId);
+            }
+          } catch (err) {}
+        };
+
+        socket.onclose = () => {
+          isConnected = false;
+          statusDot.classList.remove('connected');
+          statusText.textContent = 'Parachord not detected';
+          playBtn.disabled = true;
+          setTimeout(connect, 3000);
+        };
+
+        socket.onerror = () => {};
+      } catch (err) {
+        statusText.textContent = 'Parachord not detected';
+        setTimeout(connect, 3000);
+      }
+    }
+
+    function send(msg) {
+      return new Promise((resolve) => {
+        const id = 'req-' + (++requestId);
+        msg.requestId = id;
+        pending.set(id, resolve);
+        socket.send(JSON.stringify(msg));
+        setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            resolve({ success: false });
+          }
+        }, 5000);
+      });
+    }
+
+    playBtn.addEventListener('click', async () => {
+      if (!isConnected || !TRACK) return;
+      playBtn.textContent = 'Playing...';
+      playBtn.disabled = true;
+
+      await send({
+        type: 'embed',
+        action: 'play',
+        payload: { track: TRACK }
+      });
+
+      playBtn.textContent = '✓ Sent to Parachord';
+      setTimeout(() => {
+        playBtn.textContent = '▶ Play in Parachord';
+        playBtn.disabled = false;
+      }, 2000);
+    });
+
+    connect();
+  </script>
+</body>
+</html>`;
+
+    // Download the file
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+
+    const filename = (query || 'smart-link').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') + '.html';
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    const resolvedCount = Object.keys(resolvedUrls).length;
+    showToast(`Smart link generated with ${resolvedCount} service${resolvedCount !== 1 ? 's' : ''}`);
+  }, [showToast]);
+
+  // Publish smart link to cloud backend
+  const publishSmartLink = useCallback(async (track) => {
+    const query = `${track.artist || ''} ${track.title || ''}`.trim();
+    if (!query) {
+      showToast('Cannot publish link: missing track info', 'error');
+      return;
+    }
+
+    showToast('Publishing smart link...', 'info');
+
+    // Search all active resolvers to get URLs
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          // Capture albumArt from search results if we don't have it yet
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
+
+          // Extract URL from various properties
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          // Construct URL from resolver-specific IDs if no direct URL
+          if (!url) {
+            if (firstResult.spotifyId) {
+              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            } else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            } else if (firstResult.youtubeId) {
+              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            } else if (firstResult.youtubeUrl) {
+              url = firstResult.youtubeUrl;
+            } else if (firstResult.soundcloudUrl) {
+              url = firstResult.soundcloudUrl;
+            } else if (firstResult.bandcampUrl) {
+              url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
+            }
+          }
+
+          if (url) {
+            // Map resolver ID to service name
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
+            else if (id.includes('tidal')) service = 'tidal';
+            else if (id.includes('deezer')) service = 'deezer';
+
+            if (service) {
+              resolvedUrls[service] = url;
+              console.log(`[PublishSmartLink] Resolved ${service}: ${url}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    if (Object.keys(resolvedUrls).length === 0) {
+      showToast('No service links found for this track', 'error');
+      return;
+    }
+
+    // POST to smart links API
+    try {
+      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: track.title || query,
+          artist: track.artist || null,
+          albumArt: track.albumArt || resolvedAlbumArt || null,
+          type: 'track',
+          urls: resolvedUrls
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const { url } = await response.json();
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Smart link URL copied to clipboard!');
+      } catch (e) {
+        // Fallback: show in prompt
+        window.prompt('Copy this smart link URL:', url);
+      }
+
+    } catch (error) {
+      console.error('[PublishSmartLink] Error:', error);
+      showToast('Failed to publish link. Is the backend running?', 'error');
+    }
+  }, [showToast]);
+
+  // Copy embed code for a track (publishes first, then copies iframe snippet)
+  const copyEmbedCode = useCallback(async (track) => {
+    const query = `${track.artist || ''} ${track.title || ''}`.trim();
+    if (!query) {
+      showToast('Cannot create embed: missing track info', 'error');
+      return;
+    }
+
+    showToast('Creating embed code...', 'info');
+
+    // Search all active resolvers to get URLs
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          // Capture albumArt from search results if we don't have it yet
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
+
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+
+          if (!url) {
+            if (firstResult.spotifyId) {
+              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            } else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            } else if (firstResult.youtubeId) {
+              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            } else if (firstResult.youtubeUrl) {
+              url = firstResult.youtubeUrl;
+            } else if (firstResult.soundcloudUrl) {
+              url = firstResult.soundcloudUrl;
+            } else if (firstResult.bandcampUrl) {
+              url = firstResult.bandcampUrl;
+            } else if (firstResult.appleMusicUrl) {
+              url = firstResult.appleMusicUrl;
+            } else if (firstResult.appleMusicId) {
+              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
+            }
+          }
+
+          if (url) {
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
+            else if (id.includes('tidal')) service = 'tidal';
+            else if (id.includes('deezer')) service = 'deezer';
+
+            if (service) {
+              resolvedUrls[service] = url;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Resolver ${resolver.id} search error:`, err);
+      }
+    }
+
+    if (Object.keys(resolvedUrls).length === 0) {
+      showToast('No service links found for this track', 'error');
+      return;
+    }
+
+    // POST to smart links API
+    try {
+      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: track.title || query,
+          artist: track.artist || null,
+          albumArt: track.albumArt || resolvedAlbumArt || null,
+          type: 'track',
+          urls: resolvedUrls
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const { url, id } = await response.json();
+
+      // Generate iframe embed code
+      const embedCode = `<iframe src="${url}/embed" width="400" height="152" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"></iframe>`;
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(embedCode);
+        showToast('Embed code copied to clipboard!');
+      } catch (e) {
+        // Fallback: show in prompt
+        window.prompt('Copy this embed code:', embedCode);
+      }
+
+    } catch (error) {
+      console.error('[CopyEmbedCode] Error:', error);
+      showToast('Failed to create embed. Is the backend running?', 'error');
+    }
+  }, [showToast]);
+
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
     if (window.electron?.collection?.save) {
@@ -9846,10 +10480,16 @@ const Parachord = () => {
           if (activateListenAlongRef.current) activateListenAlongRef.current(data.friend);
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
+        } else if (data.action === 'publish-smart-link' && data.track) {
+          // Publish smart link to cloud backend
+          publishSmartLink(data.track);
+        } else if (data.action === 'copy-embed-code' && data.track) {
+          // Copy iframe embed code to clipboard
+          copyEmbedCode(data.track);
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, copyEmbedCode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {

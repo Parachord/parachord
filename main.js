@@ -3376,6 +3376,39 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
+  // Add Smart Link options for tracks and releases
+  if (data.type === 'track' || data.type === 'release') {
+    menuItems.push({ type: 'separator' });
+
+    // Build track data for smart link
+    const smartLinkTrack = data.type === 'track' ? data.track : {
+      title: data.name,
+      artist: data.artist,
+      albumArt: data.albumArt,
+      album: data.name
+    };
+
+    menuItems.push({
+      label: 'Publish Smart Link',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'publish-smart-link',
+          track: smartLinkTrack
+        });
+      }
+    });
+
+    menuItems.push({
+      label: 'Copy Embed Code',
+      click: () => {
+        mainWindow.webContents.send('track-context-menu-action', {
+          action: 'copy-embed-code',
+          track: smartLinkTrack
+        });
+      }
+    });
+  }
+
   // Add friend-specific menu items
   if (data.type === 'friend') {
     menuItems.push({
