@@ -1,0 +1,15 @@
+{
+  "name": "parachord-smart-links",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shareable smart links for Parachord - like feature.fm/linkfire",
+  "scripts": {
+    "dev": "wrangler pages dev . --kv=LINKS",
+    "deploy": "wrangler pages deploy .",
+    "kv:create": "wrangler kv:namespace create LINKS",
+    "kv:create:preview": "wrangler kv:namespace create LINKS --preview"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

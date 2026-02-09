@@ -1,0 +1,70 @@
+// POST /api/create - Create a new smart link
+
+export async function onRequestPost({ request, env }) {
+  // CORS headers
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+
+  try {
+    const data = await request.json();
+
+    // Validate required fields
+    if (!data.title) {
+      return Response.json(
+        { error: 'Missing required field: title' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    if (!data.urls || Object.keys(data.urls).length === 0) {
+      return Response.json(
+        { error: 'Missing required field: urls (must have at least one service URL)' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Generate short ID
+    const id = crypto.randomUUID().slice(0, 8);
+
+    // Store link data
+    const linkData = {
+      title: data.title,
+      artist: data.artist || null,
+      albumArt: data.albumArt || null,
+      type: data.type || 'track',
+      urls: data.urls,
+      createdAt: Date.now()
+    };
+
+    await env.LINKS.put(id, JSON.stringify(linkData));
+
+    // Determine base URL from request or use default
+    const url = new URL(request.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+
+    return Response.json({
+      id,
+      url: `${baseUrl}/${id}`
+    }, { headers: corsHeaders });
+
+  } catch (error) {
+    return Response.json(
+      { error: 'Invalid request body' },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+}
+
+// Handle CORS preflight
+export async function onRequestOptions() {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    }
+  });
+}

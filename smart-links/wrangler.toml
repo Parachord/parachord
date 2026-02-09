@@ -1,0 +1,19 @@
+# Parachord Smart Links - Cloudflare Pages configuration
+name = "parachord-links"
+compatibility_date = "2024-01-01"
+
+# KV namespace binding - will be created during deployment
+# Run: wrangler kv:namespace create LINKS
+# Then add the ID below
+[[kv_namespaces]]
+binding = "LINKS"
+id = "" # TODO: Add KV namespace ID after creation
+
+# For local development, use preview ID
+# Run: wrangler kv:namespace create LINKS --preview
+# preview_id = ""
+
+# Custom domain (optional)
+# routes = [
+#   { pattern = "links.parachord.app", custom_domain = true }
+# ]
