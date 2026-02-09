@@ -4,7 +4,7 @@ Connect your browser to [Parachord](https://github.com/Parachord/parachord) desk
 
 ## Features
 
-- **Send to Parachord** - Right-click any link to send it to Parachord for playback
+- **Send to Parachord** - Right-click any link to send it to Parachord for playback - or pin the extension to your browser toolbar and just click it
 - **Now Playing Detection** - Automatically detects what's playing on supported sites
 - **Quick Add** - Add tracks from supported sites directly to your Parachord queue
 
