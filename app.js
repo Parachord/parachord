@@ -9669,25 +9669,24 @@ const Parachord = () => {
       const { url } = await response.json();
       const resolvedCount = Object.keys(resolvedUrls).length;
 
-      // Show toast with copy action
-      showToast(`Link published with ${resolvedCount} service${resolvedCount !== 1 ? 's' : ''}`, 'success', {
-        label: 'Copy URL',
-        onClick: () => {
-          navigator.clipboard.writeText(url).then(() => {
-            showToast('URL copied to clipboard!');
-          }).catch(() => {
-            // Fallback: show the URL in a prompt
-            window.prompt('Copy this URL:', url);
-          });
-        }
-      });
-
-      // Also copy to clipboard automatically
+      // Copy to clipboard automatically
       try {
         await navigator.clipboard.writeText(url);
         console.log('[PublishSmartLink] URL copied to clipboard:', url);
+        showToast(`Link copied! (${resolvedCount} service${resolvedCount !== 1 ? 's' : ''})`, 'success');
       } catch (e) {
         console.log('[PublishSmartLink] Could not auto-copy:', e);
+        // Fallback: show toast with manual copy button
+        showToast(`Link published with ${resolvedCount} service${resolvedCount !== 1 ? 's' : ''}`, 'success', {
+          label: 'Copy URL',
+          onClick: () => {
+            navigator.clipboard.writeText(url).then(() => {
+              showToast('URL copied to clipboard!');
+            }).catch(() => {
+              window.prompt('Copy this URL:', url);
+            });
+          }
+        });
       }
 
     } catch (error) {
