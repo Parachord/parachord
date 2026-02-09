@@ -86,7 +86,7 @@ window.iTunesRateLimiter = (() => {
 
 // Smart Links API URL - change this after deploying to Cloudflare
 // Default to the local dev server or deployed URL
-const SMART_LINKS_API_URL = 'https://parachord-links.pages.dev';
+const SMART_LINKS_API_URL = 'https://go.parachord.com';
 
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
