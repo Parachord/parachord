@@ -41,6 +41,7 @@ const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./ser
 if (autoUpdater) {
   autoUpdater.autoDownload = false; // Don't download automatically, let user decide
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = true;
 }
 
 const store = new Store();
