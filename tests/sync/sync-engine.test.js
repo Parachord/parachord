@@ -712,6 +712,75 @@ describe('Two-Way Playlist Sync', () => {
   });
 });
 
+describe('Spotify API Migration (Feb 2026)', () => {
+  describe('URI Conversion for /me/library', () => {
+    const toTrackUris = (ids) =>
+      ids.map(id => id.startsWith('spotify:') ? id : `spotify:track:${id}`);
+    const toAlbumUris = (ids) =>
+      ids.map(id => id.startsWith('spotify:') ? id : `spotify:album:${id}`);
+
+    test('converts track IDs to spotify: URIs', () => {
+      const ids = ['abc123', 'def456'];
+      const uris = toTrackUris(ids);
+
+      expect(uris).toEqual([
+        'spotify:track:abc123',
+        'spotify:track:def456'
+      ]);
+    });
+
+    test('converts album IDs to spotify: URIs', () => {
+      const ids = ['album1', 'album2'];
+      const uris = toAlbumUris(ids);
+
+      expect(uris).toEqual([
+        'spotify:album:album1',
+        'spotify:album:album2'
+      ]);
+    });
+
+    test('passes through values that are already URIs', () => {
+      const ids = ['spotify:track:abc123', 'def456'];
+      const uris = toTrackUris(ids);
+
+      expect(uris).toEqual([
+        'spotify:track:abc123',
+        'spotify:track:def456'
+      ]);
+    });
+
+    test('handles empty array', () => {
+      expect(toTrackUris([])).toEqual([]);
+      expect(toAlbumUris([])).toEqual([]);
+    });
+  });
+
+  describe('Playlist trackCount field fallback', () => {
+    const getTrackCount = (playlist) =>
+      playlist.tracks?.total ?? playlist.items?.total ?? 0;
+
+    test('reads from tracks.total (legacy response)', () => {
+      const playlist = { tracks: { total: 42 } };
+      expect(getTrackCount(playlist)).toBe(42);
+    });
+
+    test('reads from items.total (Feb 2026 response)', () => {
+      const playlist = { items: { total: 42 } };
+      expect(getTrackCount(playlist)).toBe(42);
+    });
+
+    test('prefers tracks.total when both are present', () => {
+      const playlist = { tracks: { total: 42 }, items: { total: 99 } };
+      expect(getTrackCount(playlist)).toBe(42);
+    });
+
+    test('returns 0 when neither field exists', () => {
+      const playlist = {};
+      expect(getTrackCount(playlist)).toBe(0);
+    });
+  });
+});
+
 describe('Collection Two-Way Sync', () => {
   describe('Track Sync', () => {
     test('saves tracks to Spotify', async () => {

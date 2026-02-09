@@ -180,7 +180,7 @@ const transformPlaylist = (playlist, folderId = null, folderName = null) => {
     name: playlist.name,
     description: playlist.description || '',
     image: playlist.images?.[0]?.url || null,
-    trackCount: playlist.tracks?.total || 0,
+    trackCount: playlist.tracks?.total ?? playlist.items?.total ?? 0,
     snapshotId: playlist.snapshot_id,
     folderId,
     folderName,
@@ -451,6 +451,7 @@ const SpotifySyncProvider = {
 
   /**
    * Save tracks to user's Spotify library (Liked Songs)
+   * Uses the unified PUT /me/library endpoint (Feb 2026 API update)
    * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean }
@@ -460,17 +461,20 @@ const SpotifySyncProvider = {
       return { success: true, saved: 0 };
     }
 
-    // Spotify allows max 50 tracks per request
+    // Convert IDs to Spotify URIs for the unified /me/library endpoint
+    const uris = trackIds.map(id => id.startsWith('spotify:') ? id : `spotify:track:${id}`);
+
+    // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < trackIds.length; i += 50) {
-      batches.push(trackIds.slice(i, i + 50));
+    for (let i = 0; i < uris.length; i += 50) {
+      batches.push(uris.slice(i, i + 50));
     }
 
     let totalSaved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/tracks', token, {
+      await spotifyRequest('/me/library', token, {
         method: 'PUT',
-        body: { ids: batch }
+        body: { uris: batch }
       });
       totalSaved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
@@ -481,6 +485,7 @@ const SpotifySyncProvider = {
 
   /**
    * Remove tracks from user's Spotify library
+   * Uses the unified DELETE /me/library endpoint (Feb 2026 API update)
    * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean }
@@ -490,17 +495,20 @@ const SpotifySyncProvider = {
       return { success: true, removed: 0 };
     }
 
-    // Spotify allows max 50 tracks per request
+    // Convert IDs to Spotify URIs for the unified /me/library endpoint
+    const uris = trackIds.map(id => id.startsWith('spotify:') ? id : `spotify:track:${id}`);
+
+    // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < trackIds.length; i += 50) {
-      batches.push(trackIds.slice(i, i + 50));
+    for (let i = 0; i < uris.length; i += 50) {
+      batches.push(uris.slice(i, i + 50));
     }
 
     let totalRemoved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/tracks', token, {
+      await spotifyRequest('/me/library', token, {
         method: 'DELETE',
-        body: { ids: batch }
+        body: { uris: batch }
       });
       totalRemoved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
@@ -511,6 +519,7 @@ const SpotifySyncProvider = {
 
   /**
    * Remove albums from Spotify library
+   * Uses the unified DELETE /me/library endpoint (Feb 2026 API update)
    * @param {string[]} albumIds - Array of Spotify album IDs
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean, removed: number }
@@ -520,17 +529,20 @@ const SpotifySyncProvider = {
       return { success: true, removed: 0 };
     }
 
-    // Spotify allows max 50 albums per request
+    // Convert IDs to Spotify URIs for the unified /me/library endpoint
+    const uris = albumIds.map(id => id.startsWith('spotify:') ? id : `spotify:album:${id}`);
+
+    // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < albumIds.length; i += 50) {
-      batches.push(albumIds.slice(i, i + 50));
+    for (let i = 0; i < uris.length; i += 50) {
+      batches.push(uris.slice(i, i + 50));
     }
 
     let totalRemoved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/albums', token, {
+      await spotifyRequest('/me/library', token, {
         method: 'DELETE',
-        body: { ids: batch }
+        body: { uris: batch }
       });
       totalRemoved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
