@@ -246,6 +246,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // MCP server operations (Claude Desktop integration)
   mcp: {
+    getInfo: () => ipcRenderer.invoke('mcp-get-info'),
     respond: (requestId, data) => ipcRenderer.invoke('mcp-response', { requestId, data }),
     onToolCall: (callback) => {
       ipcRenderer.on('mcp-tool-call', (event, data) => {
