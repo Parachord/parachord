@@ -8040,6 +8040,69 @@ const Parachord = () => {
     });
   }, [currentTrack, isPlaying, volume]);
 
+  // MCP server event handlers (Claude Desktop integration)
+  useEffect(() => {
+    if (!window.electron?.mcp) return;
+
+    console.log('🔌 Setting up MCP server event handlers...');
+
+    // Handle tool call requests from MCP server
+    window.electron.mcp.onToolCall(async ({ requestId, toolName, args }) => {
+      console.log('🔧 MCP tool call:', toolName, args);
+      try {
+        const context = {
+          search: async (query, options = {}) => {
+            const results = await searchResolvers(query, options);
+            return results || [];
+          },
+          playTrack: async (track) => await handlePlayRef.current(track),
+          addToQueue: (tracks, position) => {
+            const tracksWithIds = tracks.map((t, i) => ({
+              ...t,
+              id: t.id || `mcp-queue-${Date.now()}-${i}-${t.artist?.slice(0, 10)}-${t.title?.slice(0, 10)}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+              sources: t.sources || {}
+            }));
+            addToQueue(tracksWithIds, { type: 'aiPlaylist', name: 'Claude' }, { skipAutoPlay: true });
+          },
+          clearQueue: () => clearQueue(),
+          handlePause: () => handlePlayPauseRef.current(),
+          handleResume: () => handlePlayPauseRef.current(),
+          handleNext: () => handleNextRef.current(),
+          handlePrevious: () => handlePreviousRef.current(),
+          setShuffle: (enabled) => setShuffleMode(enabled),
+          createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+          getCurrentTrack: () => currentTrackRef.current,
+          getQueue: () => currentQueueRef.current || [],
+          getIsPlaying: () => isPlayingRef.current,
+          blockRecommendation: () => {}
+        };
+        const result = await executeDjTool(toolName, args, context);
+        window.electron.mcp.respond(requestId, result);
+      } catch (error) {
+        console.error('MCP tool call error:', error);
+        window.electron.mcp.respond(requestId, { success: false, error: error.message });
+      }
+    });
+
+    // Handle state requests from MCP server
+    window.electron.mcp.onGetState(async ({ requestId }) => {
+      console.log('📡 MCP requesting state');
+      const state = {
+        currentTrack: currentTrackRef.current,
+        isPlaying: isPlayingRef.current,
+        currentTime: audioRef.current?.currentTime || 0,
+        duration: audioRef.current?.duration || currentTrackRef.current?.duration || 0,
+        queue: (currentQueueRef.current || []).slice(0, 50).map(t => ({
+          artist: t.artist,
+          title: t.title,
+          album: t.album,
+          source: t.source
+        }))
+      };
+      window.electron.mcp.respond(requestId, state);
+    });
+  }, []);
+
   // Application menu action handlers
   useEffect(() => {
     if (!window.electron?.onMenuAction) return;

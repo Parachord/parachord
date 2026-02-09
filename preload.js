@@ -244,6 +244,21 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // MCP server operations (Claude Desktop integration)
+  mcp: {
+    respond: (requestId, data) => ipcRenderer.invoke('mcp-response', { requestId, data }),
+    onToolCall: (callback) => {
+      ipcRenderer.on('mcp-tool-call', (event, data) => {
+        callback(data);
+      });
+    },
+    onGetState: (callback) => {
+      ipcRenderer.on('mcp-get-state', (event, data) => {
+        callback(data);
+      });
+    }
+  },
+
   // Track/playlist context menu operations
   contextMenu: {
     showTrackMenu: (data) => ipcRenderer.invoke('show-track-context-menu', data),
