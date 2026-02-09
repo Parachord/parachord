@@ -1,0 +1,54 @@
+{
+  "manifest": {
+    "id": "youtube",
+    "name": "YouTube",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
+    "icon": "🎥",
+    "color": "#FF0000",
+    "homepage": "https://youtube.com",
+    "email": "support@parachord.com"
+  },
+
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": false,
+    "browse": false,
+    "urlLookup": true
+  },
+
+  "urlPatterns": [
+    "youtube.com/watch?v=*",
+    "www.youtube.com/watch?v=*",
+    "youtu.be/*",
+    "music.youtube.com/watch?v=*",
+    "m.youtube.com/watch?v=*",
+    "youtube.com/playlist?list=*",
+    "www.youtube.com/playlist?list=*",
+    "music.youtube.com/playlist?list=*"
+  ],
+
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  },
+
+  "implementation": {
+    "search": "async function(query, config) { try { console.log('Searching YouTube for:', query); const response = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' music')}&sp=EgIQAQ%253D%253D`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('YouTube search failed:', response.status); return []; } const html = await response.text(); const results = []; const videoDataMatches = html.matchAll(/\"videoId\":\"([^\"]+)\",\"thumbnail\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"ownerText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoDataMatches) { if (count >= 20) break; const [, videoId, title, channel] = match; if (videoId && title && channel) { results.push({ id: `youtube-${videoId}`, title: title, artist: channel, album: 'YouTube', duration: 180, sources: ['youtube'], youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/default.jpg`, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` }); count++; } } console.log(`Found ${results.length} YouTube results`); return results; } catch (error) { console.error('YouTube search error:', error); return []; } }",
+
+    "resolve": "async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }",
+
+    "play": "async function(track, config) { if (!track.youtubeUrl) { console.error('No YouTube URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.youtubeUrl); return result && result.success; } else { const newWindow = window.open(track.youtubeUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open YouTube link:', error); return false; } }",
+
+    "init": "async function(config) { console.log('YouTube resolver initialized'); }",
+
+    "cleanup": "async function() { console.log('YouTube resolver cleanup'); }",
+
+    "lookupUrl": "async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }",
+
+    "lookupPlaylist": "async function(url, config) { try { const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/); if (!listMatch) return null; const playlistId = listMatch[1]; const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const tracks = []; let playlistName = 'YouTube Playlist'; const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/); if (titleMatch) { playlistName = titleMatch[1]; } const videoMatches = html.matchAll(/\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoMatches) { if (count >= 100) break; const [, videoId, title, channel] = match; if (videoId && title) { let trackTitle = title; let artist = channel || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); trackTitle = dashMatch[2].trim(); } tracks.push({ title: trackTitle, artist: artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }); count++; } } if (tracks.length === 0) return null; return { type: 'playlist', name: playlistName, albumArt: tracks[0]?.albumArt, tracks: tracks }; } catch (error) { console.error('YouTube playlist lookup error:', error); return null; } }"
+  }
+}
