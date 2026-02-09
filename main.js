@@ -1532,7 +1532,7 @@ app.whenReady().then(() => {
       console.error('❌ Auto-updater error:', err.message);
       mainWindow?.webContents.send('updater-status', {
         status: 'error',
-        message: err.message
+        error: err.message
       });
     });
 
