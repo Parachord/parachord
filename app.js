@@ -10919,10 +10919,9 @@ const Parachord = () => {
         try {
           const testResponse = await fetch(directStreamUrl, { method: 'HEAD' });
           if (!testResponse.ok) {
-            // Detect auth/rate limit failures on the direct stream
-            if (testResponse.status === 429 || testResponse.status === 401 || testResponse.status === 403) {
-              console.error('🎵 SoundCloud API rejected:', testResponse.status);
-              showToast('SoundCloud API credentials may be invalid or rate limited. Try adding your own in Settings.', 'error');
+            const directStatus = testResponse.status;
+            if (directStatus === 429 || directStatus === 401 || directStatus === 403) {
+              console.error('🎵 SoundCloud API rejected direct stream:', directStatus);
             }
             console.log('🎵 Direct stream not available, trying /streams endpoint');
             // Fall back to /streams endpoint
@@ -10944,6 +10943,9 @@ const Parachord = () => {
               if (streamUrl) {
                 console.log('🎵 Using stream URL (pre-signed, no token needed)');
               }
+            } else if (directStatus === 429 || directStatus === 401 || directStatus === 403) {
+              // Only show credential error toast if the fallback also failed
+              showToast('SoundCloud API credentials may be invalid or rate limited. Try adding your own in Settings.', 'error');
             }
           }
         } catch (testError) {
