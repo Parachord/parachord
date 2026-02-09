@@ -4894,6 +4894,9 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
+  const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
+  const pinnedFriendIdsRef = useRef(pinnedFriendIds); // Ref for pinned IDs to avoid stale closures in polling
+  const autoPinnedFriendIdsRef = useRef(autoPinnedFriendIds); // Ref for auto-pinned IDs to avoid stale closures in polling
   const [listenAlongFriend, setListenAlongFriend] = useState(null); // Friend object when in listen-along mode
   const listenAlongFriendRef = useRef(null); // Ref for use in async callbacks
   const listenAlongLastTrackRef = useRef(null); // Track what we last played in listen-along to detect changes
@@ -5782,6 +5785,9 @@ const Parachord = () => {
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { volumeRef.current = volume; window._parachordVolume = isMutedRef.current ? 0 : volume; }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
+  useEffect(() => { friendsRef.current = friends; }, [friends]);
+  useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
+  useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
 
   // Handle album art crossfade transitions in playbar
@@ -21844,14 +21850,17 @@ ${tracks}
 
   // Refresh recent tracks for friends (for polling)
   // Polls: all pinned friends + all saved friends (to check if they become active)
+  // Uses refs instead of closure variables to avoid stale state in setInterval callbacks
   const refreshPinnedFriends = async () => {
     const listenAlongFriendNow = listenAlongFriendRef.current;
+    const currentFriends = friendsRef.current;
+    const currentPinnedIds = pinnedFriendIdsRef.current;
 
     // Get all friends we need to poll:
     // 1. All pinned friends (manual or auto-pinned)
     // 2. All saved friends (even if not pinned, to detect when they become active)
-    const friendsToCheck = friends.filter(f =>
-      pinnedFriendIds.includes(f.id) || f.savedToCollection
+    const friendsToCheck = currentFriends.filter(f =>
+      currentPinnedIds.includes(f.id) || f.savedToCollection
     );
 
     for (const friend of friendsToCheck) {
@@ -21868,7 +21877,7 @@ ${tracks}
         const wasOnAir = previousTrack?.timestamp && (Date.now() - previousTrack.timestamp) < 10 * 60 * 1000;
 
         // Track on-air status change for animation (friend will move in sorted list)
-        if (isOnAirNow !== wasOnAir && pinnedFriendIds.includes(friend.id)) {
+        if (isOnAirNow !== wasOnAir && pinnedFriendIdsRef.current.includes(friend.id)) {
           setMovedFriendIds(prev => new Set([...prev, friend.id]));
           setTimeout(() => {
             setMovedFriendIds(prev => {
@@ -21902,8 +21911,9 @@ ${tracks}
         ));
 
         // Auto-pin/unpin saved friends based on on-air status
-        const isPinned = pinnedFriendIds.includes(friend.id);
-        const isAutoPinned = autoPinnedFriendIds.includes(friend.id);
+        // Read from refs to get latest state (avoids stale closure in setInterval)
+        const isPinned = pinnedFriendIdsRef.current.includes(friend.id);
+        const isAutoPinned = autoPinnedFriendIdsRef.current.includes(friend.id);
 
         if (friend.savedToCollection && isOnAirNow && !isPinned) {
           // Saved friend became active - auto-pin them to sidebar
