@@ -1186,6 +1186,9 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   discogs: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z' })
+  ),
+  threads: React.createElement('svg', { viewBox: '0 0 16 16', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M6.321 6.016c-.27-.18-1.166-.802-1.166-.802.756-1.081 1.753-1.502 3.132-1.502.975 0 1.803.327 2.394.948s.928 1.509 1.005 2.644q.492.207.905.484c1.109.745 1.719 1.86 1.719 3.137 0 2.716-2.226 5.075-6.256 5.075C4.594 16 1 13.987 1 7.994 1 2.034 4.482 0 8.044 0 9.69 0 13.55.243 15 5.036l-1.36.353C12.516 1.974 10.163 1.43 8.006 1.43c-3.565 0-5.582 2.171-5.582 6.79 0 4.143 2.254 6.343 5.63 6.343 2.777 0 4.847-1.443 4.847-3.556 0-1.438-1.208-2.127-1.27-2.127-.236 1.234-.868 3.31-3.644 3.31-1.618 0-3.013-1.118-3.013-2.582 0-2.09 1.984-2.847 3.55-2.847.586 0 1.294.04 1.663.114 0-.637-.54-1.728-1.9-1.728-1.25 0-1.566.405-1.967.868ZM8.716 8.19c-2.04 0-2.304.87-2.304 1.416 0 .878 1.043 1.168 1.6 1.168 1.02 0 2.067-.282 2.232-2.423a6.2 6.2 0 0 0-1.528-.161' })
   )
 };
 
@@ -39969,10 +39972,10 @@ useEffect(() => {
                   (() => {
                     // Social feed provider data (from .axe manifests)
                     const socialFeedPlugins = [
-                      { id: 'threads', name: 'Threads', icon: '🧵', color: '#000000', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Threads feed', type: 'social-feed', settings: { requiresAuth: true, authType: 'oauth2', configurable: { appId: { type: 'text', label: 'Threads App ID', required: true, description: 'Create a Threads app at developers.facebook.com' }, appSecret: { type: 'password', label: 'Threads App Secret', required: true } } } },
-                      { id: 'bluesky', name: 'Bluesky', icon: '🦋', color: '#0085FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
-                      { id: 'x', name: 'X', icon: '𝕏', color: '#000000', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { clientId: { type: 'text', label: 'X API Client ID' } } } },
-                      { id: 'mastodon', name: 'Mastodon', icon: '🐘', color: '#6364FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { instanceUrl: { type: 'text', label: 'Instance URL', placeholder: 'https://mastodon.social' } } } }
+                      { id: 'threads', name: 'Threads', color: '#000000', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Threads feed', type: 'social-feed', settings: { requiresAuth: true, authType: 'oauth2', configurable: { appId: { type: 'text', label: 'Threads App ID', required: true, description: 'Create a Threads app at', descriptionLinkText: 'developers.facebook.com', descriptionLinkUrl: 'https://developers.facebook.com/apps/' }, appSecret: { type: 'password', label: 'Threads App Secret', required: true } } } },
+                      { id: 'bluesky', name: 'Bluesky', color: '#0085FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
+                      { id: 'x', name: 'X', color: '#000000', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { clientId: { type: 'text', label: 'X API Client ID' } } } },
+                      { id: 'mastodon', name: 'Mastodon', color: '#6364FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { instanceUrl: { type: 'text', label: 'Instance URL', placeholder: 'https://mastodon.social' } } } }
                     ];
 
                     return socialFeedPlugins
@@ -45459,7 +45462,7 @@ useEffect(() => {
           // Social Feed configuration
           selectedResolver._socialFeed && React.createElement('div', {
             style: {
-              padding: '16px 0',
+              padding: '20px 0',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
@@ -45474,8 +45477,8 @@ useEffect(() => {
               style: {
                 fontSize: '12px',
                 color: '#6b7280',
-                marginTop: '4px',
-                marginBottom: '16px',
+                marginTop: '6px',
+                marginBottom: '20px',
                 lineHeight: '1.5'
               }
             }, selectedResolver.description),
@@ -45518,7 +45521,15 @@ useEffect(() => {
                       color: '#9ca3af',
                       marginBottom: '6px'
                     }
-                  }, field.description),
+                  },
+                    field.description,
+                    field.descriptionLinkUrl && ' ',
+                    field.descriptionLinkUrl && React.createElement('a', {
+                      href: '#',
+                      onClick: (e) => { e.preventDefault(); window.electron?.shell?.openExternal?.(field.descriptionLinkUrl); },
+                      style: { color: '#7c3aed', textDecoration: 'underline', cursor: 'pointer' }
+                    }, field.descriptionLinkText || field.descriptionLinkUrl)
+                  ),
                   React.createElement('input', {
                     type: field.type === 'password' ? 'password' : 'text',
                     defaultValue: socialFeedConfigs[selectedResolver.id]?.[fieldKey === 'appId' ? 'clientId' : fieldKey === 'appSecret' ? 'clientSecret' : fieldKey] || '',
@@ -45574,7 +45585,9 @@ useEffect(() => {
                     color: '#374151',
                     wordBreak: 'break-all'
                   }
-                }, `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
+                }, selectedResolver.id === 'threads'
+                    ? `https://127.0.0.1:8889/callback/${selectedResolver.id}`
+                    : `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
               ),
 
               // Connect / Disconnect button

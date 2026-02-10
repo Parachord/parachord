@@ -36,6 +36,7 @@ try {
 const fs = require('fs');
 const Store = require('electron-store');
 const express = require('express');
+const https = require('https');
 const WebSocket = require('ws');
 
 const LocalFilesService = require('./local-files');
@@ -54,6 +55,7 @@ const store = new Store();
 const feedPlaylistManager = createFeedPlaylistManager(store);
 let mainWindow;
 let authServer;
+let httpsAuthServer;
 let wss; // WebSocket server for browser extension
 let extensionSocket = null; // Current connected extension
 let embedSockets = new Set(); // Connected embed players
@@ -830,7 +832,7 @@ function startAuthServer() {
         const provider = feedPlaylistManager.getProvider('threads');
         const clientId = store.get('social-feed-threads-client-id') || process.env.THREADS_APP_ID;
         const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
-        const redirectUri = `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/threads`;
+        const redirectUri = `https://127.0.0.1:8889/callback/threads`;
 
         const result = await provider.handleAuthCallback(
           { code, clientId, clientSecret, redirectUri },
@@ -868,6 +870,65 @@ function startAuthServer() {
   authServer = expressApp.listen(8888, '127.0.0.1', () => {
     console.log('Auth server running on http://127.0.0.1:8888');
   });
+
+  // Start HTTPS auth server for providers that require secure redirect URIs (e.g. Threads)
+  try {
+    const { generateKeyPairSync, createSign, randomBytes } = require('crypto');
+    const forge = (() => { try { return require('node-forge'); } catch { return null; } })();
+
+    let sslKey, sslCert;
+
+    if (forge) {
+      // Use node-forge if available for self-signed cert generation
+      const keys = forge.pki.rsa.generateKeyPair(2048);
+      const cert = forge.pki.createCertificate();
+      cert.publicKey = keys.publicKey;
+      cert.serialNumber = '01';
+      cert.validity.notBefore = new Date();
+      cert.validity.notAfter = new Date();
+      cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+      const attrs = [{ name: 'commonName', value: '127.0.0.1' }];
+      cert.setSubject(attrs);
+      cert.setIssuer(attrs);
+      cert.setExtensions([
+        { name: 'subjectAltName', altNames: [{ type: 7, ip: '127.0.0.1' }] }
+      ]);
+      cert.sign(keys.privateKey);
+      sslKey = forge.pki.privateKeyToPem(keys.privateKey);
+      sslCert = forge.pki.certificateToPem(cert);
+    } else {
+      // Fallback: use Node.js built-in crypto (requires Node 15+)
+      const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+      });
+      // Create a minimal self-signed certificate using built-in crypto
+      // For a proper cert we'd need node-forge, but this works for localhost
+      const { X509Certificate } = require('crypto');
+      // Use exec to generate with openssl as a fallback
+      const { execSync } = require('child_process');
+      try {
+        execSync('openssl req -x509 -newkey rsa:2048 -keyout /tmp/parachord-key.pem -out /tmp/parachord-cert.pem -days 365 -nodes -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null');
+        sslKey = require('fs').readFileSync('/tmp/parachord-key.pem', 'utf-8');
+        sslCert = require('fs').readFileSync('/tmp/parachord-cert.pem', 'utf-8');
+        // Clean up temp files
+        try { require('fs').unlinkSync('/tmp/parachord-key.pem'); } catch {}
+        try { require('fs').unlinkSync('/tmp/parachord-cert.pem'); } catch {}
+      } catch (certErr) {
+        console.warn('[Auth] Could not generate self-signed cert:', certErr.message);
+      }
+    }
+
+    if (sslKey && sslCert) {
+      httpsAuthServer = https.createServer({ key: sslKey, cert: sslCert }, expressApp);
+      httpsAuthServer.listen(8889, '127.0.0.1', () => {
+        console.log('HTTPS Auth server running on https://127.0.0.1:8889');
+      });
+    }
+  } catch (err) {
+    console.warn('[Auth] HTTPS auth server not started:', err.message);
+  }
 }
 
 // WebSocket server for browser extension communication
@@ -5074,7 +5135,11 @@ ipcMain.handle('social-feed:auth', async (event, providerId) => {
 
   try {
     const clientId = store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`];
-    const redirectUri = `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
+    // Threads requires HTTPS redirect URI; other providers use HTTP
+    const useHttps = providerId === 'threads' && httpsAuthServer;
+    const redirectUri = useHttps
+      ? `https://127.0.0.1:8889/callback/${providerId}`
+      : `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
 
     if (!clientId) {
       return {
@@ -5169,6 +5234,7 @@ ipcMain.handle('social-feed:remove-playlist-item', async (event, providerId, url
 // Stop MusicKit helper and system volume monitor on app quit
 app.on('will-quit', () => {
   feedPlaylistManager.stopAllPolling();
+  if (httpsAuthServer) { try { httpsAuthServer.close(); } catch {} }
   systemVolumeMonitor.stop();
   const bridge = getMusicKitBridge();
   bridge.stop();
