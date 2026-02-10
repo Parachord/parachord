@@ -7263,6 +7263,23 @@ const Parachord = () => {
             console.log('[SocialFeed] Created Social Feed playlist on startup');
             return [emptyPlaylist, ...prev];
           });
+
+          // Scan connected providers on startup
+          for (const provider of providers) {
+            if (configs[provider.id]?.hasToken) {
+              console.log(`[SocialFeed] Scanning ${provider.name} feed on startup...`);
+              try {
+                const result = await window.electron.socialFeeds.scanNow(provider.id);
+                if (result.success) {
+                  console.log(`[SocialFeed] Startup scan of ${provider.name}: ${result.postsScanned || 0} post(s), ${result.items?.length || 0} new music link(s)`);
+                } else {
+                  console.error(`[SocialFeed] Startup scan of ${provider.name} failed:`, result.error);
+                }
+              } catch (err) {
+                console.error(`[SocialFeed] Startup scan of ${provider.name} error:`, err.message);
+              }
+            }
+          }
         }
       } catch (err) {
         console.error('[App] Failed to init social feeds:', err);
@@ -33025,7 +33042,48 @@ useEffect(() => {
                         }, text)
                       )
                     )
-                  )
+                  ),
+                  // Scan Now button
+                  React.createElement('button', {
+                    onClick: async () => {
+                      if (!window.electron?.socialFeeds) return;
+                      const providers = await window.electron.socialFeeds.getProviders();
+                      let totalLinks = 0;
+                      let totalPosts = 0;
+                      for (const provider of providers) {
+                        const creds = await window.electron.socialFeeds.getCredentials(provider.id);
+                        if (!creds.hasToken) continue;
+                        console.log(`[SocialFeed] Manual scan: ${provider.name}...`);
+                        try {
+                          const result = await window.electron.socialFeeds.scanNow(provider.id);
+                          if (result.success) {
+                            totalPosts += result.postsScanned || 0;
+                            totalLinks += result.items?.length || 0;
+                            console.log(`[SocialFeed] ${provider.name}: ${result.postsScanned || 0} posts, ${result.items?.length || 0} new links`);
+                          } else {
+                            console.error(`[SocialFeed] ${provider.name} scan failed:`, result.error);
+                          }
+                        } catch (err) {
+                          console.error(`[SocialFeed] ${provider.name} scan error:`, err.message);
+                        }
+                      }
+                      if (totalLinks === 0) {
+                        showToast(`Scanned ${totalPosts} post(s) — no new music links found`);
+                      }
+                    },
+                    className: 'transition-colors',
+                    style: {
+                      marginTop: '24px',
+                      padding: '10px 24px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: '#7c3aed',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Scan Now')
                 )
               :
                 // Skeleton loaders while tracks are loading
