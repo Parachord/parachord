@@ -4735,6 +4735,11 @@ const Parachord = () => {
   const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
   const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
 
+  // Social Feeds state (Threads, Bluesky, X, Mastodon)
+  const [socialFeedProviders, setSocialFeedProviders] = useState([]); // { id, name, status: { connected, username, expired }, polling }
+  const [socialFeedConfigs, setSocialFeedConfigs] = useState({}); // { threads: { clientId, clientSecret }, ... }
+  const [socialFeedConnecting, setSocialFeedConnecting] = useState(null); // provider id currently connecting
+
   // Scrobbler settings state
   const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
   const [scrobblerConfigs, setScrobblerConfigs] = useState({});
@@ -7216,6 +7221,50 @@ const Parachord = () => {
     };
     loadScrobblerConfigs();
   }, [scrobblersInitialized]);
+
+  // Initialize social feed providers
+  useEffect(() => {
+    const initSocialFeeds = async () => {
+      if (!window.electron?.socialFeeds) return;
+      try {
+        const providers = await window.electron.socialFeeds.getProviders();
+        setSocialFeedProviders(providers);
+
+        // Load saved credentials for each provider
+        const configs = {};
+        for (const provider of providers) {
+          const creds = await window.electron.socialFeeds.getCredentials(provider.id);
+          configs[provider.id] = creds;
+        }
+        setSocialFeedConfigs(configs);
+      } catch (err) {
+        console.error('[App] Failed to init social feeds:', err);
+      }
+    };
+    initSocialFeeds();
+
+    // Listen for auth events
+    if (window.electron?.socialFeeds) {
+      window.electron.socialFeeds.onAuthSuccess(async (data) => {
+        console.log(`[SocialFeed] Auth success for ${data.provider}:`, data.username);
+        setSocialFeedConnecting(null);
+        // Refresh provider status
+        const providers = await window.electron.socialFeeds.getProviders();
+        setSocialFeedProviders(providers);
+      });
+
+      window.electron.socialFeeds.onAuthError((data) => {
+        console.error(`[SocialFeed] Auth error for ${data.provider}:`, data.error);
+        setSocialFeedConnecting(null);
+      });
+
+      window.electron.socialFeeds.onUpdate((data) => {
+        console.log(`[SocialFeed] ${data.providerId}: ${data.newItems.length} new music link(s) found`);
+        // Refresh provider status (polling state may have changed)
+        window.electron.socialFeeds.getProviders().then(setSocialFeedProviders);
+      });
+    }
+  }, []);
 
   // Register scrobble callback to update listening history cache when you scrobble
   useEffect(() => {
@@ -39892,6 +39941,70 @@ useEffect(() => {
                 )
               ),
 
+              // Social Feeds Section
+              !marketplaceLoading && React.createElement('div', { style: { marginTop: '40px', marginBottom: '40px' } },
+                React.createElement('div', { style: { marginBottom: '16px' } },
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em'
+                    }
+                  }, 'Social Feeds'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '4px'
+                    }
+                  },
+                    'Build playlists from music links shared on your social feeds'
+                  )
+                ),
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+                },
+                  (() => {
+                    // Social feed provider data (from .axe manifests)
+                    const socialFeedPlugins = [
+                      { id: 'threads', name: 'Threads', icon: '🧵', color: '#000000', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Threads feed', type: 'social-feed', settings: { requiresAuth: true, authType: 'oauth2', configurable: { appId: { type: 'text', label: 'Threads App ID', required: true, description: 'Create a Threads app at developers.facebook.com' }, appSecret: { type: 'password', label: 'Threads App Secret', required: true } } } },
+                      { id: 'bluesky', name: 'Bluesky', icon: '🦋', color: '#0085FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
+                      { id: 'x', name: 'X', icon: '𝕏', color: '#000000', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { clientId: { type: 'text', label: 'X API Client ID' } } } },
+                      { id: 'mastodon', name: 'Mastodon', icon: '🐘', color: '#6364FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { instanceUrl: { type: 'text', label: 'Instance URL', placeholder: 'https://mastodon.social' } } } }
+                    ];
+
+                    return socialFeedPlugins
+                      .filter(plugin => {
+                        if (marketplaceSearchQuery) {
+                          const query = marketplaceSearchQuery.toLowerCase();
+                          if (!plugin.name.toLowerCase().includes(query) && !plugin.description.toLowerCase().includes(query)) return false;
+                        }
+                        if (marketplaceCategory !== 'all' && marketplaceCategory !== 'social') return false;
+                        const providerStatus = socialFeedProviders.find(p => p.id === plugin.id);
+                        const isConnected = providerStatus?.status?.connected;
+                        if (pluginsFilter === 'installed' && !isConnected) return false;
+                        if (pluginsFilter === 'available' && isConnected) return false;
+                        return true;
+                      })
+                      .map(plugin => {
+                        const providerStatus = socialFeedProviders.find(p => p.id === plugin.id);
+                        const isConnected = providerStatus?.status?.connected;
+                        const isComingSoon = plugin.version === '0.1.0';
+
+                        return React.createElement(ResolverCard, {
+                          key: plugin.id,
+                          resolver: plugin,
+                          isActive: isConnected,
+                          needsConfiguration: isConnected && !socialFeedConfigs[plugin.id]?.clientId,
+                          onClick: () => setSelectedResolver({ ...plugin, _socialFeed: true })
+                        });
+                      });
+                  })()
+                )
+              ),
+
               // Extensions Section
               !marketplaceLoading && React.createElement('div', { style: { marginTop: '40px' } },
                 React.createElement('div', { style: { marginBottom: '16px' } },
@@ -45343,6 +45456,235 @@ useEffect(() => {
           )
         ),
 
+          // Social Feed configuration
+          selectedResolver._socialFeed && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#1f2937'
+              }
+            }, `${selectedResolver.name} Configuration`),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: '#6b7280',
+                marginTop: '4px',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }
+            }, selectedResolver.description),
+
+            // Coming soon banner for stub providers
+            selectedResolver.version === '0.1.0' && React.createElement('div', {
+              style: {
+                padding: '12px 14px',
+                backgroundColor: 'rgba(99, 100, 255, 0.06)',
+                borderRadius: '10px',
+                marginBottom: '16px',
+                border: '1px solid rgba(99, 100, 255, 0.12)'
+              }
+            },
+              React.createElement('p', {
+                style: { fontSize: '12px', fontWeight: '500', color: '#374151' }
+              }, 'Coming Soon'),
+              React.createElement('p', {
+                style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginTop: '4px' }
+              }, `${selectedResolver.name} integration is under development. Stay tuned for updates!`)
+            ),
+
+            // Configurable fields (only for implemented providers)
+            selectedResolver.version !== '0.1.0' && React.createElement('div', null,
+              // Render each configurable field from the .axe manifest
+              ...Object.entries(selectedResolver.settings?.configurable || {}).map(([fieldKey, field]) =>
+                React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
+                  React.createElement('label', {
+                    style: {
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: '#374151',
+                      marginBottom: '6px'
+                    }
+                  }, field.label || fieldKey),
+                  field.description && React.createElement('p', {
+                    style: {
+                      fontSize: '11px',
+                      color: '#9ca3af',
+                      marginBottom: '6px'
+                    }
+                  }, field.description),
+                  React.createElement('input', {
+                    type: field.type === 'password' ? 'password' : 'text',
+                    defaultValue: socialFeedConfigs[selectedResolver.id]?.[fieldKey === 'appId' ? 'clientId' : fieldKey === 'appSecret' ? 'clientSecret' : fieldKey] || '',
+                    onBlur: async (e) => {
+                      // Map .axe field names to IPC credential keys
+                      const credKey = fieldKey === 'appId' ? 'client-id' : fieldKey === 'appSecret' ? 'client-secret' : fieldKey;
+                      await window.electron.socialFeeds.setCredentials(selectedResolver.id, { [credKey]: e.target.value });
+                      // Update local state
+                      const configKey = fieldKey === 'appId' ? 'clientId' : fieldKey === 'appSecret' ? 'clientSecret' : fieldKey;
+                      setSocialFeedConfigs(prev => ({
+                        ...prev,
+                        [selectedResolver.id]: { ...prev[selectedResolver.id], [configKey]: e.target.value }
+                      }));
+                    },
+                    placeholder: field.placeholder || '',
+                    style: {
+                      width: '100%',
+                      padding: '10px 12px',
+                      fontSize: '13px',
+                      color: '#1f2937',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderRadius: '8px',
+                      outline: 'none'
+                    }
+                  })
+                )
+              ),
+
+              // Redirect URI info box
+              React.createElement('div', {
+                style: {
+                  padding: '12px 14px',
+                  backgroundColor: 'rgba(124, 58, 237, 0.06)',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  border: '1px solid rgba(124, 58, 237, 0.12)'
+                }
+              },
+                React.createElement('p', {
+                  style: { fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '4px' }
+                }, 'Redirect URI'),
+                React.createElement('p', {
+                  style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '4px' }
+                }, 'Add this redirect URI to your app settings:'),
+                React.createElement('code', {
+                  style: {
+                    display: 'block',
+                    padding: '8px 10px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    color: '#374151',
+                    wordBreak: 'break-all'
+                  }
+                }, `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
+              ),
+
+              // Connect / Disconnect button
+              (() => {
+                const providerStatus = socialFeedProviders.find(p => p.id === selectedResolver.id);
+                const isConnected = providerStatus?.status?.connected;
+                const username = providerStatus?.status?.username;
+                const isConnecting = socialFeedConnecting === selectedResolver.id;
+                const hasCredentials = !!(socialFeedConfigs[selectedResolver.id]?.clientId);
+
+                return React.createElement('div', null,
+                  // Connection status
+                  isConnected && React.createElement('div', {
+                    className: 'flex items-center gap-2 mb-3',
+                    style: { fontSize: '13px', color: '#16a34a' }
+                  },
+                    React.createElement('span', null, '\u2713'),
+                    React.createElement('span', null, `Connected${username ? ` as @${username}` : ''}`)
+                  ),
+
+                  // Connect button
+                  !isConnected && React.createElement('button', {
+                    onClick: async () => {
+                      setSocialFeedConnecting(selectedResolver.id);
+                      await window.electron.socialFeeds.auth(selectedResolver.id);
+                    },
+                    disabled: isConnecting || !hasCredentials,
+                    style: {
+                      width: '100%',
+                      padding: '10px 16px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#ffffff',
+                      backgroundColor: isConnecting || !hasCredentials ? '#9ca3af' : selectedResolver.color || '#7c3aed',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: isConnecting || !hasCredentials ? 'not-allowed' : 'pointer',
+                      opacity: isConnecting || !hasCredentials ? 0.6 : 1,
+                      marginBottom: '8px'
+                    }
+                  }, isConnecting ? 'Connecting...' : `Connect ${selectedResolver.name}`),
+
+                  !isConnected && !hasCredentials && React.createElement('p', {
+                    style: { fontSize: '11px', color: '#9ca3af', textAlign: 'center' }
+                  }, 'Enter your credentials above to connect'),
+
+                  // Disconnect button
+                  isConnected && React.createElement('button', {
+                    onClick: async () => {
+                      await window.electron.socialFeeds.disconnect(selectedResolver.id);
+                      const providers = await window.electron.socialFeeds.getProviders();
+                      setSocialFeedProviders(providers);
+                    },
+                    style: {
+                      width: '100%',
+                      padding: '10px 16px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#dc2626',
+                      backgroundColor: 'transparent',
+                      border: '1px solid rgba(220, 38, 38, 0.2)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      marginBottom: '16px'
+                    }
+                  }, 'Disconnect'),
+
+                  // Polling controls (only when connected)
+                  isConnected && React.createElement('div', {
+                    style: {
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+                    }
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
+                      React.createElement('span', { style: { fontSize: '13px', color: '#374151' } }, 'Monitor Feed'),
+                      React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                        React.createElement('input', {
+                          type: 'checkbox',
+                          checked: providerStatus?.polling || false,
+                          onChange: async (e) => {
+                            if (e.target.checked) {
+                              await window.electron.socialFeeds.startPolling(selectedResolver.id);
+                            } else {
+                              await window.electron.socialFeeds.stopPolling(selectedResolver.id);
+                            }
+                            const providers = await window.electron.socialFeeds.getProviders();
+                            setSocialFeedProviders(providers);
+                          },
+                          className: 'sr-only peer'
+                        }),
+                        React.createElement('div', {
+                          className: 'w-full h-full rounded-full transition-colors',
+                          style: { backgroundColor: providerStatus?.polling ? '#7c3aed' : 'rgba(0, 0, 0, 0.15)' }
+                        }),
+                        React.createElement('div', {
+                          className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                          style: { transform: providerStatus?.polling ? 'translateX(20px)' : 'translateX(0)' }
+                        })
+                      )
+                    ),
+                    React.createElement('p', {
+                      style: { fontSize: '11px', color: '#9ca3af' }
+                    }, 'Automatically scan your feed for music links every 5 minutes')
+                  )
+                );
+              })()
+            )
+          ),
+
         // Modal footer with action buttons
         React.createElement('div', {
           className: 'flex items-center justify-between',
@@ -45352,10 +45694,10 @@ useEffect(() => {
             borderTop: '1px solid rgba(0, 0, 0, 0.06)'
           }
         },
-          // Left side: Remove button (only for user-installed resolvers)
+          // Left side: Remove button (only for user-installed resolvers, not social feeds)
           React.createElement('div', null,
-            // Check if this is a user-installed resolver (not built-in core plugins)
-            !['spotify', 'localfiles'].includes(selectedResolver.id) &&
+            // Check if this is a user-installed resolver (not built-in core plugins or social feeds)
+            !['spotify', 'localfiles'].includes(selectedResolver.id) && !selectedResolver._socialFeed &&
               React.createElement('button', {
                 onClick: async () => {
                   await handleUninstallResolver(selectedResolver.id);
@@ -45406,6 +45748,24 @@ useEffect(() => {
               return null;
             })(),
             (() => {
+              // Social feed plugins just get a Done button — auth is handled in the config section
+              if (selectedResolver._socialFeed) {
+                return React.createElement('button', {
+                  onClick: () => setSelectedResolver(null),
+                  className: 'transition-colors',
+                  style: {
+                    padding: '8px 16px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#374151',
+                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }
+                }, 'Done');
+              }
+
               // Determine if this resolver/service needs an "Enable" button
               const isContentResolver = selectedResolver.capabilities?.resolve && !selectedResolver.type;
               const isMetaService = selectedResolver.type === 'meta-service';
