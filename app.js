@@ -10657,6 +10657,14 @@ const Parachord = () => {
             return newTracks;
           });
 
+          // Also update editedPlaylistData if in edit mode
+          setEditedPlaylistData(prev => {
+            if (!prev) return prev;
+            const newTracks = [...prev.tracks];
+            newTracks.splice(trackIndex, 1);
+            return { ...prev, tracks: newTracks };
+          });
+
           // Update the playlist in playlists state and save to disk
           setPlaylists(prev => {
             const updatedPlaylists = prev.map(p => {
