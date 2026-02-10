@@ -5190,9 +5190,9 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
     console.log(`[SocialFeed:scan] ${provider.name}: fetched ${posts.length} post(s)`);
     if (posts.length === 0) return { success: true, items: [], postsScanned: 0 };
 
-    // Log post text snippets for debugging
-    for (const post of posts.slice(0, 5)) {
-      console.log(`[SocialFeed:scan]   Post ${post.id}: "${(post.text || '').slice(0, 120)}..."`);
+    // Log all post text for debugging
+    for (const post of posts) {
+      console.log(`[SocialFeed:scan]   Post ${post.id} [${post.createdAt || '?'}]: "${(post.text || '(empty)')}"`);
     }
 
     const { extractLinksFromPosts } = require('./social-feeds/link-extractor');
