@@ -25400,7 +25400,8 @@ ${tracks}
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
     if (isSocialFeed && playlist.tracks?.length > 0) {
-      console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks (with socialContext)`);
+      console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks`);
+      playlist.tracks.forEach((t, i) => console.log(`  Track ${i}: "${t.title}" socialContext=${JSON.stringify(t.socialContext || null)}`));
       const tracksWithIds = playlist.tracks.map(track => ({
         ...track,
         id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
@@ -32914,7 +32915,7 @@ useEffect(() => {
                       }, track.artist),
 
                       // "Shared by" column - only for Social Feed playlist
-                      selectedPlaylist?.source === 'social-feed' && track.socialContext ?
+                      selectedPlaylist?.source === 'social-feed' ?
                         React.createElement('span', {
                           className: 'truncate flex-shrink-0',
                           style: {
@@ -32923,7 +32924,7 @@ useEffect(() => {
                             color: '#9ca3af'
                           }
                         },
-                          track.socialContext.postUrl ?
+                          track.socialContext?.postUrl ?
                             React.createElement('a', {
                               href: '#',
                               onClick: (e) => {
@@ -32935,11 +32936,10 @@ useEffect(() => {
                               style: { color: 'inherit' },
                               title: `Open post by ${track.socialContext.author || 'unknown'} on ${(track.socialContext.network || '').charAt(0).toUpperCase() + (track.socialContext.network || '').slice(1)}`
                             }, `${track.socialContext.author || 'unknown'}`)
-                          :
-                            `${track.socialContext.author || 'unknown'}`
+                          : track.socialContext?.author ?
+                            `${track.socialContext.author}`
+                          : null
                         )
-                      : selectedPlaylist?.source === 'social-feed' ?
-                        React.createElement('span', { style: { width: '140px', flexShrink: 0 } })
                       : null,
 
                       // Duration - fixed width column (before resolver icons)
