@@ -5203,7 +5203,14 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
     }
     if (links.length === 0) return { success: true, items: [], postsScanned: posts.length, postSamples: posts.slice(0, 10).map(p => ({ id: p.id, text: p.text || '(empty)', date: p.createdAt })) };
 
-    // Dedup against existing playlist
+    // Dedup against existing playlist — but if the Social Feed playlist
+    // has 0 resolved tracks, clear the raw link cache so we re-process them
+    const socialFeedPlaylist = (store.get('local_playlists') || []).find(p => p.id === 'social-feed-playlist');
+    if (socialFeedPlaylist && (!socialFeedPlaylist.tracks || socialFeedPlaylist.tracks.length === 0)) {
+      console.log(`[SocialFeed:scan] Social Feed playlist empty — clearing link cache for ${providerId}`);
+      store.set(`social-feed-playlist-${providerId}`, []);
+    }
+
     const playlist = feedPlaylistManager.getPlaylist(providerId);
     const existingUrls = new Set(playlist.map(item => item.url));
     const newItems = links.filter(l => !existingUrls.has(l.url));
