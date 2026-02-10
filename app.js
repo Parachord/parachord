@@ -7235,11 +7235,35 @@ const Parachord = () => {
 
         // Load saved credentials for each provider
         const configs = {};
+        let hasConnectedProvider = false;
         for (const provider of providers) {
           const creds = await window.electron.socialFeeds.getCredentials(provider.id);
           configs[provider.id] = creds;
+          if (creds.hasToken) hasConnectedProvider = true;
         }
         setSocialFeedConfigs(configs);
+
+        // Ensure Social Feed playlist exists if any provider is connected
+        if (hasConnectedProvider) {
+          const SOCIAL_FEED_PLAYLIST_ID = 'social-feed-playlist';
+          setPlaylists(prev => {
+            if (prev.find(p => p.id === SOCIAL_FEED_PLAYLIST_ID)) return prev;
+            const emptyPlaylist = {
+              id: SOCIAL_FEED_PLAYLIST_ID,
+              title: 'Social Feed',
+              creator: 'Parachord',
+              tracks: [],
+              source: 'social-feed',
+              xspf: '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n<title>Social Feed</title>\n<trackList>\n</trackList>\n</playlist>',
+              createdAt: Date.now(),
+              addedAt: Date.now(),
+              lastModified: Date.now()
+            };
+            window.electron.playlists.save(emptyPlaylist);
+            console.log('[SocialFeed] Created Social Feed playlist on startup');
+            return [emptyPlaylist, ...prev];
+          });
+        }
       } catch (err) {
         console.error('[App] Failed to init social feeds:', err);
       }
@@ -7254,9 +7278,39 @@ const Parachord = () => {
         // Refresh provider status
         const providers = await window.electron.socialFeeds.getProviders();
         setSocialFeedProviders(providers);
+
+        // Create the Social Feed playlist immediately (even if empty) so the user can see it
+        const SOCIAL_FEED_PLAYLIST_ID = 'social-feed-playlist';
+        setPlaylists(prev => {
+          if (prev.find(p => p.id === SOCIAL_FEED_PLAYLIST_ID)) return prev; // already exists
+          const emptyPlaylist = {
+            id: SOCIAL_FEED_PLAYLIST_ID,
+            title: 'Social Feed',
+            creator: 'Parachord',
+            tracks: [],
+            source: 'social-feed',
+            xspf: '<?xml version="1.0" encoding="UTF-8"?>\n<playlist version="1" xmlns="http://xspf.org/ns/0/">\n<title>Social Feed</title>\n<trackList>\n</trackList>\n</playlist>',
+            createdAt: Date.now(),
+            addedAt: Date.now(),
+            lastModified: Date.now()
+          };
+          window.electron.playlists.save(emptyPlaylist);
+          console.log('[SocialFeed] Created empty Social Feed playlist');
+          return [emptyPlaylist, ...prev];
+        });
+
         // Immediately scan existing posts to build the Social Feed playlist
         console.log(`[SocialFeed] Scanning existing ${data.provider} posts...`);
-        window.electron.socialFeeds.scanNow(data.provider);
+        try {
+          const result = await window.electron.socialFeeds.scanNow(data.provider);
+          if (result.success) {
+            console.log(`[SocialFeed] Scan complete: ${result.items?.length || 0} music link(s) found`);
+          } else {
+            console.error(`[SocialFeed] Scan failed:`, result.error);
+          }
+        } catch (err) {
+          console.error(`[SocialFeed] Scan error:`, err.message);
+        }
       });
 
       window.electron.socialFeeds.onAuthError((data) => {
@@ -7270,7 +7324,7 @@ const Parachord = () => {
         window.electron.socialFeeds.getProviders().then(setSocialFeedProviders);
 
         // Resolve music links and add to a persistent "Social Feed" playlist
-        if (data.newItems.length > 0 && resolverLoaderRef.current) {
+        if (data.newItems.length > 0) {
           const SOCIAL_FEED_PLAYLIST_ID = 'social-feed-playlist';
           const networkName = data.providerId.charAt(0).toUpperCase() + data.providerId.slice(1);
 
@@ -7285,66 +7339,83 @@ const Parachord = () => {
                 originalUrl: item.url
               };
 
-              if (item.type === 'playlist' || item.type === 'album') {
-                // Try to expand playlist/album URLs into individual tracks
-                const lookupMethod = item.type === 'playlist' ? 'lookupPlaylist' : 'lookupAlbum';
-                let expanded = null;
-                try {
-                  const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
-                  expanded = await resolverLoaderRef.current[lookupMethod]?.(item.url, config);
-                } catch (e) {
-                  console.log(`[SocialFeed] ${lookupMethod} failed for ${item.url}:`, e.message);
-                }
+              let resolved = false;
 
-                if (expanded?.tracks?.length > 0) {
-                  for (const track of expanded.tracks) {
-                    const trackId = `${track.artist}-${track.title}-${track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-                    resolvedTracks.push({
-                      ...track,
-                      id: trackId,
-                      sources: track.sources || {},
-                      socialContext
-                    });
+              if (resolverLoaderRef.current) {
+                if (item.type === 'playlist' || item.type === 'album') {
+                  // Try to expand playlist/album URLs into individual tracks
+                  const lookupMethod = item.type === 'playlist' ? 'lookupPlaylist' : 'lookupAlbum';
+                  let expanded = null;
+                  try {
+                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
+                    expanded = await resolverLoaderRef.current[lookupMethod]?.(item.url, config);
+                  } catch (e) {
+                    console.log(`[SocialFeed] ${lookupMethod} failed for ${item.url}:`, e.message);
+                  }
+
+                  if (expanded?.tracks?.length > 0) {
+                    for (const track of expanded.tracks) {
+                      const trackId = `${track.artist}-${track.title}-${track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                      resolvedTracks.push({
+                        ...track,
+                        id: trackId,
+                        sources: track.sources || {},
+                        socialContext
+                      });
+                    }
+                    resolved = true;
+                  } else {
+                    // Couldn't expand — try single URL lookup as fallback
+                    try {
+                      const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
+                      const result = await resolverLoaderRef.current.lookupUrl(item.url, config);
+                      if (result?.track) {
+                        const trackId = `${result.track.artist}-${result.track.title}-${result.track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                        resolvedTracks.push({
+                          ...result.track,
+                          id: trackId,
+                          sources: {},
+                          socialContext
+                        });
+                        resolved = true;
+                      }
+                    } catch (e) {
+                      console.log(`[SocialFeed] lookupUrl failed for ${item.url}:`, e.message);
+                    }
                   }
                 } else {
-                  // Couldn't expand — try single URL lookup as fallback
-                  const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
-                  const result = await resolverLoaderRef.current.lookupUrl(item.url, config);
-                  if (result?.track) {
-                    const trackId = `${result.track.artist}-${result.track.title}-${result.track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-                    resolvedTracks.push({
-                      ...result.track,
-                      id: trackId,
-                      sources: {},
-                      socialContext
-                    });
+                  // Single track URL
+                  try {
+                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
+                    const result = await resolverLoaderRef.current.lookupUrl(item.url, config);
+                    if (result?.track) {
+                      const trackId = `${result.track.artist}-${result.track.title}-${result.track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+                      resolvedTracks.push({
+                        ...result.track,
+                        id: trackId,
+                        sources: {},
+                        socialContext
+                      });
+                      resolved = true;
+                    }
+                  } catch (e) {
+                    console.log(`[SocialFeed] lookupUrl failed for ${item.url}:`, e.message);
                   }
                 }
-              } else {
-                // Single track URL
-                const config = getResolverConfigRef.current ? await getResolverConfigRef.current(item.service) : {};
-                const result = await resolverLoaderRef.current.lookupUrl(item.url, config);
-                if (result?.track) {
-                  const trackId = `${result.track.artist}-${result.track.title}-${result.track.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-                  resolvedTracks.push({
-                    ...result.track,
-                    id: trackId,
-                    sources: {},
-                    socialContext
-                  });
-                } else {
-                  // Couldn't resolve — add as unresolved placeholder
-                  resolvedTracks.push({
-                    id: `unresolved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                    title: item.url,
-                    artist: `Shared by ${item.post?.author || 'unknown'} on ${networkName}`,
-                    album: 'Social Feed',
-                    duration: 0,
-                    sources: {},
-                    sourceUrl: item.url,
-                    socialContext
-                  });
-                }
+              }
+
+              // Always add as unresolved placeholder if resolution failed
+              if (!resolved) {
+                resolvedTracks.push({
+                  id: `unresolved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  title: item.url,
+                  artist: `Shared by ${item.post?.author || 'unknown'} on ${networkName}`,
+                  album: 'Social Feed',
+                  duration: 0,
+                  sources: {},
+                  sourceUrl: item.url,
+                  socialContext
+                });
               }
             } catch (err) {
               console.error(`[SocialFeed] Failed to resolve ${item.url}:`, err.message);
@@ -45595,15 +45666,10 @@ useEffect(() => {
                 className: 'mt-4 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
               }, 'Rescan All Folders')
             )
-          )
-        ),
+          ),
 
           // Social Feed configuration
-          selectedResolver._socialFeed && React.createElement('div', {
-            style: {
-              paddingBottom: '20px'
-            }
-          },
+          selectedResolver._socialFeed && React.createElement('div', null,
             React.createElement('span', {
               style: {
                 fontSize: '13px',
@@ -45909,7 +45975,8 @@ useEffect(() => {
                 );
               })()
             )
-          ),
+          )
+        ),
 
         // Modal footer with action buttons
         React.createElement('div', {

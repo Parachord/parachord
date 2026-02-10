@@ -118,6 +118,14 @@ describe('extractMusicLinks', () => {
     expect(links[0].service).toBe('parachord');
   });
 
+  test('extracts go.parachord.com smart link URLs', () => {
+    const text = 'Check this out https://go.parachord.com/s/abc123def';
+    const links = extractMusicLinks(text);
+    expect(links).toHaveLength(1);
+    expect(links[0].service).toBe('parachord');
+    expect(links[0].url).toBe('https://go.parachord.com/s/abc123def');
+  });
+
   test('extracts multiple links from a single post', () => {
     const text = 'Spotify: https://open.spotify.com/track/abc123 and YouTube: https://www.youtube.com/watch?v=xyz789';
     const links = extractMusicLinks(text);

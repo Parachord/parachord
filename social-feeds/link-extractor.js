@@ -56,9 +56,10 @@ const SERVICE_PATTERNS = [
   },
   {
     service: 'parachord',
-    // Parachord smart links
+    // Parachord smart links (parachord.link and go.parachord.com)
     patterns: [
-      /https?:\/\/(?:www\.)?parachord\.link\/[^\s)}\]"]*/g
+      /https?:\/\/(?:www\.)?parachord\.link\/[^\s)}\]"]*/g,
+      /https?:\/\/go\.parachord\.com\/[^\s)}\]"]*/g
     ]
   }
 ];
