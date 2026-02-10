@@ -241,7 +241,7 @@ class MusicKitBridge extends EventEmitter {
   /**
    * Send a command to the helper
    */
-  async send(action, params = {}) {
+  async send(action, params = {}, timeoutMs = 30000) {
     if (!this.process || !this.isReady) {
       // Try to start if not running
       const started = await this.start();
@@ -262,7 +262,7 @@ class MusicKitBridge extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new Error(`Request timeout: ${action}`));
-      }, 30000);
+      }, timeoutMs);
 
       this.pendingRequests.set(id, {
         resolve: (data) => {
@@ -338,7 +338,9 @@ class MusicKitBridge extends EventEmitter {
    * Request authorization (updates cache)
    */
   async authorize() {
-    const result = await this.send('authorize');
+    // Use a longer timeout for authorize since it requires user interaction
+    // (Apple ID sign-in dialog with potential 2FA)
+    const result = await this.send('authorize', {}, 300000);
     // Update cache
     this._authStatus = result;
     this._authCheckedAt = Date.now();
@@ -347,7 +349,8 @@ class MusicKitBridge extends EventEmitter {
   }
 
   async fetchUserToken(developerToken) {
-    return this.send('fetchUserToken', { developerToken });
+    // User token fetch may require authorization, use longer timeout
+    return this.send('fetchUserToken', { developerToken }, 300000);
   }
 
   async search(query, limit = 25) {
