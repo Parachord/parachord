@@ -20846,6 +20846,7 @@ ${tracks}
         creator: playlist.creator,
         tracks: playlist.tracks,
         xspf: xspfContent,
+        source: playlist.source,
         createdAt: playlist.createdAt || Date.now(),
         addedAt: playlist.addedAt || Date.now(),
         lastModified: Date.now(),
