@@ -454,7 +454,7 @@ contextBridge.exposeInMainWorld('electron', {
     auth: (providerId) => ipcRenderer.invoke('social-feed:auth', providerId),
     checkAuth: (providerId) => ipcRenderer.invoke('social-feed:check-auth', providerId),
     disconnect: (providerId) => ipcRenderer.invoke('social-feed:disconnect', providerId),
-    saveToken: (providerId, accessToken) => ipcRenderer.invoke('social-feed:save-token', providerId, accessToken),
+    saveToken: (providerId, accessToken, appPassword) => ipcRenderer.invoke('social-feed:save-token', providerId, accessToken, appPassword),
     scanNow: (providerId) => ipcRenderer.invoke('social-feed:scan-now', providerId),
     setCredentials: (providerId, credentials) => ipcRenderer.invoke('social-feed:set-credentials', providerId, credentials),
     getCredentials: (providerId) => ipcRenderer.invoke('social-feed:get-credentials', providerId),

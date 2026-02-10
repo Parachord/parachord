@@ -3,9 +3,9 @@
     "id": "bluesky-feed",
     "name": "Bluesky Feed",
     "type": "social-feed",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "author": "Parachord Team",
-    "description": "Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)",
+    "description": "Build a dynamic playlist from music links shared on your Bluesky Following feed — posts and replies from everyone you follow",
     "icon": "🦋",
     "color": "#0085FF",
     "homepage": "https://bsky.app"

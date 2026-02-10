@@ -5137,12 +5137,15 @@ ipcMain.handle('social-feed:disconnect', async (event, providerId) => {
 });
 
 // Save a manually-provided access token (from Meta developer console)
-ipcMain.handle('social-feed:save-token', async (event, providerId, accessToken) => {
+ipcMain.handle('social-feed:save-token', async (event, providerId, accessToken, appPassword) => {
   const provider = feedPlaylistManager.getProvider(providerId);
   if (!provider) return { success: false, error: `Unknown provider: ${providerId}` };
 
   try {
-    const result = await provider.saveManualToken(store, accessToken);
+    // Bluesky uses handle + app password; Threads uses a single access token
+    const result = appPassword
+      ? await provider.saveManualToken(store, accessToken, appPassword)
+      : await provider.saveManualToken(store, accessToken);
     mainWindow?.webContents.send('social-feed-auth-success', { provider: providerId, username: result.username });
     return { success: true, username: result.username };
   } catch (err) {
@@ -5164,11 +5167,12 @@ ipcMain.handle('social-feed:get-credentials', async (event, providerId) => {
   if (!provider) return {};
 
   const token = provider.getStoredToken(store);
+  const username = store.get(`social-feed-${providerId}-username`) || '';
   return {
     clientId: store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`] || '',
     clientSecret: store.get(`social-feed-${providerId}-client-secret`) || process.env[`${providerId.toUpperCase()}_APP_SECRET`] || '',
     hasToken: !!token,
-    tokenPreview: token ? token.slice(0, 6) + '...' + token.slice(-4) : ''
+    tokenPreview: username ? `@${username}` : (token ? token.slice(0, 6) + '...' + token.slice(-4) : '')
   };
 });
 
@@ -5190,18 +5194,10 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
     console.log(`[SocialFeed:scan] ${provider.name}: fetched ${posts.length} post(s)`);
     if (posts.length === 0) return { success: true, items: [], postsScanned: 0 };
 
-    // Log all post text for debugging
-    for (const post of posts) {
-      console.log(`[SocialFeed:scan]   Post ${post.id} [${post.createdAt || '?'}]: "${(post.text || '(empty)')}"`);
-    }
-
     const { extractLinksFromPosts } = require('./social-feeds/link-extractor');
     const links = extractLinksFromPosts(posts);
-    console.log(`[SocialFeed:scan] ${provider.name}: extracted ${links.length} music link(s) from ${posts.length} posts`);
-    for (const link of links) {
-      console.log(`[SocialFeed:scan]   ${link.service} (${link.type}): ${link.url}`);
-    }
-    if (links.length === 0) return { success: true, items: [], postsScanned: posts.length, postSamples: posts.slice(0, 10).map(p => ({ id: p.id, text: p.text || '(empty)', date: p.createdAt })) };
+    console.log(`[SocialFeed:scan] ${provider.name}: ${links.length} music link(s) from ${posts.length} post(s)`);
+    if (links.length === 0) return { success: true, items: [], postsScanned: posts.length };
 
     // Dedup against existing playlist — but if the Social Feed playlist
     // has 0 resolved tracks, clear the raw link cache so we re-process them

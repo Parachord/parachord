@@ -1189,6 +1189,9 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   threads: React.createElement('svg', { viewBox: '0 0 16 16', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M6.321 6.016c-.27-.18-1.166-.802-1.166-.802.756-1.081 1.753-1.502 3.132-1.502.975 0 1.803.327 2.394.948s.928 1.509 1.005 2.644q.492.207.905.484c1.109.745 1.719 1.86 1.719 3.137 0 2.716-2.226 5.075-6.256 5.075C4.594 16 1 13.987 1 7.994 1 2.034 4.482 0 8.044 0 9.69 0 13.55.243 15 5.036l-1.36.353C12.516 1.974 10.163 1.43 8.006 1.43c-3.565 0-5.582 2.171-5.582 6.79 0 4.143 2.254 6.343 5.63 6.343 2.777 0 4.847-1.443 4.847-3.556 0-1.438-1.208-2.127-1.27-2.127-.236 1.234-.868 3.31-3.644 3.31-1.618 0-3.013-1.118-3.013-2.582 0-2.09 1.984-2.847 3.55-2.847.586 0 1.294.04 1.663.114 0-.637-.54-1.728-1.9-1.728-1.25 0-1.566.405-1.967.868ZM8.716 8.19c-2.04 0-2.304.87-2.304 1.416 0 .878 1.043 1.168 1.6 1.168 1.02 0 2.067-.282 2.232-2.423a6.2 6.2 0 0 0-1.528-.161' })
+  ),
+  bluesky: React.createElement('svg', { viewBox: '0 0 568 501', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M123.121 33.664C188.241 82.553 258.281 181.68 284 234.873c25.719-53.192 95.759-152.32 160.879-201.21C491.866-1.611 568-28.906 568 57.947c0 17.346-9.945 145.713-15.778 166.555-20.275 72.453-94.155 90.933-159.875 79.748C507.222 323.8 536.444 388.56 473.333 453.32c-119.86 122.992-172.272-30.859-185.702-70.281-2.462-7.227-3.614-10.608-3.631-7.733-.017-2.875-1.169.506-3.631 7.733-13.43 39.422-65.842 193.273-185.702 70.281-63.111-64.76-33.89-129.52 80.986-149.07-65.72 11.185-139.6-7.295-159.875-79.748C9.945 203.659 0 75.291 0 57.946 0-28.906 76.135-1.612 123.121 33.664Z' })
   )
 };
 
@@ -7321,10 +7324,7 @@ const Parachord = () => {
         try {
           const result = await window.electron.socialFeeds.scanNow(data.provider);
           if (result.success) {
-            console.log(`[SocialFeed] Scan complete: ${result.postsScanned || 0} post(s) scanned, ${result.items?.length || 0} music link(s) found`);
-            if (result.items?.length > 0) {
-              result.items.forEach(item => console.log(`[SocialFeed]   ${item.service} (${item.type}): ${item.url}`));
-            }
+            console.log(`[SocialFeed] Scan: ${result.postsScanned || 0} post(s), ${result.items?.length || 0} music link(s)`);
           } else {
             console.error(`[SocialFeed] Scan failed:`, result.error);
           }
@@ -33060,10 +33060,6 @@ useEffect(() => {
                             totalPosts += result.postsScanned || 0;
                             totalLinks += result.items?.length || 0;
                             console.log(`[SocialFeed] ${provider.name}: ${result.postsScanned || 0} posts, ${result.items?.length || 0} new links`);
-                            if (result.postSamples) {
-                              console.log(`[SocialFeed] Post samples from ${provider.name}:`);
-                              result.postSamples.forEach(p => console.log(`  [${p.date}] ${p.text}`));
-                            }
                           } else {
                             console.error(`[SocialFeed] ${provider.name} scan failed:`, result.error);
                           }
@@ -40347,8 +40343,7 @@ useEffect(() => {
                   (() => {
                     // Social feed provider data (from .axe manifests)
                     const socialFeedPlugins = [
-                      { id: 'threads', name: 'Threads', color: '#000000', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Threads feed', type: 'social-feed', settings: { requiresAuth: true, authType: 'oauth2', configurable: { appId: { type: 'text', label: 'Threads App ID', required: true, description: 'Create a Threads app at', descriptionLinkText: 'developers.facebook.com', descriptionLinkUrl: 'https://developers.facebook.com/apps/' }, appSecret: { type: 'password', label: 'Threads App Secret', required: true } } } },
-                      { id: 'bluesky', name: 'Bluesky', color: '#0085FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
+                      { id: 'bluesky', name: 'Bluesky', color: '#0085FF', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Bluesky Following feed — posts and replies from everyone you follow', type: 'social-feed', settings: { requiresAuth: true, authType: 'app-password', configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
                       { id: 'x', name: 'X', color: '#000000', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { clientId: { type: 'text', label: 'X API Client ID' } } } },
                       { id: 'mastodon', name: 'Mastodon', color: '#6364FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { instanceUrl: { type: 'text', label: 'Instance URL', placeholder: 'https://mastodon.social' } } } }
                     ];
@@ -45933,9 +45928,8 @@ useEffect(() => {
                 )
               ),
 
-              // Access Token section (for providers like Threads that need manual token)
-              // or Redirect URI info box for other providers
-              selectedResolver.id === 'threads'
+              // Auth credentials section — app password flow (Bluesky) or redirect URI (others)
+              selectedResolver.settings?.authType === 'app-password'
                 ? React.createElement('div', {
                     style: {
                       padding: '12px 14px',
@@ -45947,28 +45941,50 @@ useEffect(() => {
                   },
                     React.createElement('p', {
                       style: { fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '4px' }
-                    }, 'Access Token'),
+                    }, 'Sign In'),
                     React.createElement('p', {
-                      style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '8px' }
+                      style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '10px' }
                     },
-                      'Generate a token using the User Token Generator in your ',
+                      'Create an app password in your ',
                       React.createElement('a', {
                         href: '#',
-                        onClick: (e) => { e.preventDefault(); window.electron.openExternal('https://developers.facebook.com/apps'); },
+                        onClick: (e) => { e.preventDefault(); window.electron.openExternal('https://bsky.app/settings/app-passwords'); },
                         style: { color: '#7c3aed', textDecoration: 'underline' }
-                      }, 'Meta App Dashboard'),
-                      '.'
+                      }, 'Bluesky Settings'),
+                      ', then enter your handle and app password below.'
                     ),
                     React.createElement('input', {
-                      type: 'password',
+                      type: 'text',
                       placeholder: socialFeedConfigs[selectedResolver.id]?.hasToken
                         ? socialFeedConfigs[selectedResolver.id].tokenPreview
-                        : 'Paste your access token here',
-                      value: socialFeedConfigs[selectedResolver.id]?.accessToken || '',
+                        : 'your-handle.bsky.social',
+                      value: socialFeedConfigs[selectedResolver.id]?.handle || '',
                       onChange: (e) => {
                         setSocialFeedConfigs(prev => ({
                           ...prev,
-                          [selectedResolver.id]: { ...prev[selectedResolver.id], accessToken: e.target.value }
+                          [selectedResolver.id]: { ...prev[selectedResolver.id], handle: e.target.value }
+                        }));
+                      },
+                      style: {
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        backgroundColor: '#ffffff',
+                        boxSizing: 'border-box',
+                        outline: 'none',
+                        marginBottom: '8px'
+                      }
+                    }),
+                    React.createElement('input', {
+                      type: 'password',
+                      placeholder: 'App password (e.g. xxxx-xxxx-xxxx-xxxx)',
+                      value: socialFeedConfigs[selectedResolver.id]?.appPassword || '',
+                      onChange: (e) => {
+                        setSocialFeedConfigs(prev => ({
+                          ...prev,
+                          [selectedResolver.id]: { ...prev[selectedResolver.id], appPassword: e.target.value }
                         }));
                       },
                       style: {
@@ -46030,34 +46046,40 @@ useEffect(() => {
                     React.createElement('span', null, `Connected${username ? ` as @${username}` : ''}`)
                   ),
 
-                  // Save Token button (Threads) or Connect button (others)
-                  !isConnected && selectedResolver.id === 'threads'
+                  // Connect button — app-password flow (Bluesky) or OAuth (others)
+                  !isConnected && selectedResolver.settings?.authType === 'app-password'
                     ? React.createElement('button', {
                         onClick: async () => {
-                          const token = socialFeedConfigs[selectedResolver.id]?.accessToken;
-                          if (!token) return;
+                          const cfg = socialFeedConfigs[selectedResolver.id] || {};
+                          if (!cfg.handle || !cfg.appPassword) return;
                           setSocialFeedConnecting(selectedResolver.id);
-                          const result = await window.electron.socialFeeds.saveToken(selectedResolver.id, token);
+                          const result = await window.electron.socialFeeds.saveToken(selectedResolver.id, cfg.handle, cfg.appPassword);
                           setSocialFeedConnecting(null);
                           if (!result.success) {
-                            alert('Failed to save token: ' + (result.error || 'Unknown error'));
+                            alert('Failed to connect: ' + (result.error || 'Unknown error'));
+                          } else {
+                            // Clear the password from state after successful connect
+                            setSocialFeedConfigs(prev => ({
+                              ...prev,
+                              [selectedResolver.id]: { ...prev[selectedResolver.id], appPassword: '' }
+                            }));
                           }
                         },
-                        disabled: isConnecting || !hasToken,
+                        disabled: isConnecting || !socialFeedConfigs[selectedResolver.id]?.handle || !socialFeedConfigs[selectedResolver.id]?.appPassword,
                         style: {
                           width: '100%',
                           padding: '10px 16px',
                           fontSize: '13px',
                           fontWeight: '500',
                           color: '#ffffff',
-                          backgroundColor: isConnecting || !hasToken ? '#9ca3af' : selectedResolver.color || '#7c3aed',
+                          backgroundColor: isConnecting || !socialFeedConfigs[selectedResolver.id]?.handle || !socialFeedConfigs[selectedResolver.id]?.appPassword ? '#9ca3af' : selectedResolver.color || '#7c3aed',
                           border: 'none',
                           borderRadius: '8px',
-                          cursor: isConnecting || !hasToken ? 'not-allowed' : 'pointer',
-                          opacity: isConnecting || !hasToken ? 0.6 : 1,
+                          cursor: isConnecting || !socialFeedConfigs[selectedResolver.id]?.handle || !socialFeedConfigs[selectedResolver.id]?.appPassword ? 'not-allowed' : 'pointer',
+                          opacity: isConnecting || !socialFeedConfigs[selectedResolver.id]?.handle || !socialFeedConfigs[selectedResolver.id]?.appPassword ? 0.6 : 1,
                           marginBottom: '8px'
                         }
-                      }, isConnecting ? 'Saving...' : 'Save Token')
+                      }, isConnecting ? 'Connecting...' : `Connect ${selectedResolver.name}`)
                     : !isConnected && React.createElement('button', {
                         onClick: async () => {
                           setSocialFeedConnecting(selectedResolver.id);
@@ -46078,10 +46100,6 @@ useEffect(() => {
                           marginBottom: '8px'
                         }
                       }, isConnecting ? 'Connecting...' : `Connect ${selectedResolver.name}`),
-
-                  !isConnected && !hasCredentials && selectedResolver.id !== 'threads' && React.createElement('p', {
-                    style: { fontSize: '11px', color: '#9ca3af', textAlign: 'center' }
-                  }, 'Enter your credentials above to connect'),
 
                   // Disconnect button
                   isConnected && React.createElement('button', {
