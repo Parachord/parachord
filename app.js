@@ -33060,6 +33060,10 @@ useEffect(() => {
                             totalPosts += result.postsScanned || 0;
                             totalLinks += result.items?.length || 0;
                             console.log(`[SocialFeed] ${provider.name}: ${result.postsScanned || 0} posts, ${result.items?.length || 0} new links`);
+                            if (result.postSamples) {
+                              console.log(`[SocialFeed] Post samples from ${provider.name}:`);
+                              result.postSamples.forEach(p => console.log(`  [${p.date}] ${p.text}`));
+                            }
                           } else {
                             console.error(`[SocialFeed] ${provider.name} scan failed:`, result.error);
                           }

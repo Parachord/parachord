@@ -5201,7 +5201,7 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
     for (const link of links) {
       console.log(`[SocialFeed:scan]   ${link.service} (${link.type}): ${link.url}`);
     }
-    if (links.length === 0) return { success: true, items: [], postsScanned: posts.length };
+    if (links.length === 0) return { success: true, items: [], postsScanned: posts.length, postSamples: posts.slice(0, 10).map(p => ({ id: p.id, text: p.text || '(empty)', date: p.createdAt })) };
 
     // Dedup against existing playlist
     const playlist = feedPlaylistManager.getPlaylist(providerId);
