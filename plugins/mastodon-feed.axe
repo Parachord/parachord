@@ -1,0 +1,30 @@
+{
+  "manifest": {
+    "id": "mastodon-feed",
+    "name": "Mastodon Feed",
+    "type": "social-feed",
+    "version": "0.1.0",
+    "author": "Parachord Team",
+    "description": "Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)",
+    "icon": "🐘",
+    "color": "#6364FF",
+    "homepage": "https://joinmastodon.org"
+  },
+  "capabilities": {
+    "socialFeed": true,
+    "auth": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth2",
+    "configurable": {
+      "instanceUrl": {
+        "type": "text",
+        "label": "Instance URL",
+        "required": true,
+        "placeholder": "https://mastodon.social",
+        "description": "Your Mastodon instance URL"
+      }
+    }
+  }
+}

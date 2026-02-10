@@ -1,0 +1,35 @@
+{
+  "manifest": {
+    "id": "bluesky-feed",
+    "name": "Bluesky Feed",
+    "type": "social-feed",
+    "version": "0.1.0",
+    "author": "Parachord Team",
+    "description": "Build a dynamic playlist from music links shared on your Bluesky feed (coming soon)",
+    "icon": "🦋",
+    "color": "#0085FF",
+    "homepage": "https://bsky.app"
+  },
+  "capabilities": {
+    "socialFeed": true,
+    "auth": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "app-password",
+    "configurable": {
+      "handle": {
+        "type": "text",
+        "label": "Bluesky Handle",
+        "required": true,
+        "placeholder": "you.bsky.social"
+      },
+      "appPassword": {
+        "type": "password",
+        "label": "App Password",
+        "required": true,
+        "description": "Generate at bsky.app/settings/app-passwords"
+      }
+    }
+  }
+}

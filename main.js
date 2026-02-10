@@ -41,6 +41,7 @@ const WebSocket = require('ws');
 const LocalFilesService = require('./local-files');
 const { getMusicKitBridge } = require('./musickit-bridge');
 const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./services/mcp-server');
+const { createFeedPlaylistManager } = require('./social-feeds');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -50,6 +51,7 @@ if (autoUpdater) {
 }
 
 const store = new Store();
+const feedPlaylistManager = createFeedPlaylistManager(store);
 let mainWindow;
 let authServer;
 let wss; // WebSocket server for browser extension
@@ -790,6 +792,56 @@ function startAuthServer() {
 
       // Exchange code for token
       exchangeSoundCloudCodeForToken(code);
+    }
+  });
+
+  // Threads OAuth callback
+  expressApp.get('/callback/threads', async (req, res) => {
+    const code = req.query.code;
+    const error = req.query.error;
+
+    if (error) {
+      const safeError = String(error).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      res.send(`
+        <html>
+          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>Authentication Failed</h1>
+            <p>${safeError}</p>
+            <p>You can close this window.</p>
+          </body>
+        </html>
+      `);
+      mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error });
+      return;
+    }
+
+    if (code) {
+      res.send(`
+        <html>
+          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>Success!</h1>
+            <p>Threads authentication successful. You can close this window.</p>
+            <script>setTimeout(() => window.close(), 2000);</script>
+          </body>
+        </html>
+      `);
+
+      try {
+        const provider = feedPlaylistManager.getProvider('threads');
+        const clientId = store.get('social-feed-threads-client-id') || process.env.THREADS_APP_ID;
+        const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
+        const redirectUri = `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/threads`;
+
+        const result = await provider.handleAuthCallback(
+          { code, clientId, clientSecret, redirectUri },
+          store
+        );
+
+        mainWindow?.webContents.send('social-feed-auth-success', { provider: 'threads', username: result.username });
+      } catch (err) {
+        console.error('[Threads] Auth callback error:', err.message);
+        mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error: err.message });
+      }
     }
   });
 
@@ -4995,8 +5047,128 @@ ipcMain.handle('ollama:check', async () => {
   }
 });
 
+// ---- Social Feed IPC Handlers ----
+
+// Notify renderer when new music links are found during polling
+feedPlaylistManager.onUpdate = (providerId, newItems, fullPlaylist) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('social-feed-update', { providerId, newItems, fullPlaylist });
+  }
+};
+
+// Get status of all social feed providers
+ipcMain.handle('social-feed:get-providers', async () => {
+  const providers = feedPlaylistManager.getAllProviders();
+  return providers.map(p => ({
+    id: p.id,
+    name: p.name,
+    status: p.getConnectionStatus(store),
+    polling: feedPlaylistManager.isPolling(p.id)
+  }));
+});
+
+// Start auth for a social feed provider
+ipcMain.handle('social-feed:auth', async (event, providerId) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return { success: false, error: `Unknown provider: ${providerId}` };
+
+  try {
+    const clientId = store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`];
+    const redirectUri = `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
+
+    if (!clientId) {
+      return {
+        success: false,
+        error: 'no_client_id',
+        message: `Please configure your ${provider.name} App ID in Settings before connecting.`
+      };
+    }
+
+    const { authUrl } = await provider.startAuth(store, clientId, redirectUri);
+    shell.openExternal(authUrl);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Check auth status for a provider
+ipcMain.handle('social-feed:check-auth', async (event, providerId) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return { authenticated: false, error: `Unknown provider: ${providerId}` };
+  return provider.checkAuth(store);
+});
+
+// Disconnect a provider
+ipcMain.handle('social-feed:disconnect', async (event, providerId) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return { success: false };
+
+  feedPlaylistManager.stopPolling(providerId);
+  await provider.disconnect(store);
+  return { success: true };
+});
+
+// Set credentials for a social feed provider (from Settings UI)
+ipcMain.handle('social-feed:set-credentials', async (event, providerId, credentials) => {
+  for (const [key, value] of Object.entries(credentials)) {
+    store.set(`social-feed-${providerId}-${key}`, value);
+  }
+  return { success: true };
+});
+
+// Get credentials for a social feed provider
+ipcMain.handle('social-feed:get-credentials', async (event, providerId) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return {};
+
+  return {
+    clientId: store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`] || '',
+    clientSecret: store.get(`social-feed-${providerId}-client-secret`) || process.env[`${providerId.toUpperCase()}_APP_SECRET`] || ''
+  };
+});
+
+// Start polling a provider's feed
+ipcMain.handle('social-feed:start-polling', async (event, providerId, intervalMs) => {
+  try {
+    feedPlaylistManager.startPolling(providerId, intervalMs || undefined);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Stop polling
+ipcMain.handle('social-feed:stop-polling', async (event, providerId) => {
+  feedPlaylistManager.stopPolling(providerId);
+  return { success: true };
+});
+
+// Get the discovered playlist for a provider
+ipcMain.handle('social-feed:get-playlist', async (event, providerId) => {
+  return feedPlaylistManager.getPlaylist(providerId);
+});
+
+// Get merged playlist across all providers
+ipcMain.handle('social-feed:get-merged-playlist', async () => {
+  return feedPlaylistManager.getMergedPlaylist();
+});
+
+// Clear playlist for a provider
+ipcMain.handle('social-feed:clear-playlist', async (event, providerId) => {
+  feedPlaylistManager.clearPlaylist(providerId);
+  return { success: true };
+});
+
+// Remove a single item from a playlist
+ipcMain.handle('social-feed:remove-playlist-item', async (event, providerId, url) => {
+  const updated = feedPlaylistManager.removePlaylistItem(providerId, url);
+  return { success: true, playlist: updated };
+});
+
 // Stop MusicKit helper and system volume monitor on app quit
 app.on('will-quit', () => {
+  feedPlaylistManager.stopAllPolling();
   systemVolumeMonitor.stop();
   const bridge = getMusicKitBridge();
   bridge.stop();

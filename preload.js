@@ -448,5 +448,38 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Social feed operations (Threads, Bluesky, X, Mastodon)
+  socialFeeds: {
+    getProviders: () => ipcRenderer.invoke('social-feed:get-providers'),
+    auth: (providerId) => ipcRenderer.invoke('social-feed:auth', providerId),
+    checkAuth: (providerId) => ipcRenderer.invoke('social-feed:check-auth', providerId),
+    disconnect: (providerId) => ipcRenderer.invoke('social-feed:disconnect', providerId),
+    setCredentials: (providerId, credentials) => ipcRenderer.invoke('social-feed:set-credentials', providerId, credentials),
+    getCredentials: (providerId) => ipcRenderer.invoke('social-feed:get-credentials', providerId),
+    startPolling: (providerId, intervalMs) => ipcRenderer.invoke('social-feed:start-polling', providerId, intervalMs),
+    stopPolling: (providerId) => ipcRenderer.invoke('social-feed:stop-polling', providerId),
+    getPlaylist: (providerId) => ipcRenderer.invoke('social-feed:get-playlist', providerId),
+    getMergedPlaylist: () => ipcRenderer.invoke('social-feed:get-merged-playlist'),
+    clearPlaylist: (providerId) => ipcRenderer.invoke('social-feed:clear-playlist', providerId),
+    removePlaylistItem: (providerId, url) => ipcRenderer.invoke('social-feed:remove-playlist-item', providerId, url),
+
+    // Events from main process
+    onAuthSuccess: (callback) => {
+      ipcRenderer.on('social-feed-auth-success', (event, data) => {
+        callback(data);
+      });
+    },
+    onAuthError: (callback) => {
+      ipcRenderer.on('social-feed-auth-error', (event, data) => {
+        callback(data);
+      });
+    },
+    onUpdate: (callback) => {
+      ipcRenderer.on('social-feed-update', (event, data) => {
+        callback(data);
+      });
+    }
+  },
+
   // Generic invoke removed for security — use specific API methods above
 });

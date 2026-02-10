@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "x-feed",
+    "name": "X Feed",
+    "type": "social-feed",
+    "version": "0.1.0",
+    "author": "Parachord Team",
+    "description": "Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)",
+    "icon": "𝕏",
+    "color": "#000000",
+    "homepage": "https://x.com"
+  },
+  "capabilities": {
+    "socialFeed": true,
+    "auth": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth2-pkce",
+    "configurable": {
+      "clientId": {
+        "type": "text",
+        "label": "X API Client ID",
+        "required": true,
+        "description": "Create an app at developer.x.com"
+      }
+    }
+  }
+}

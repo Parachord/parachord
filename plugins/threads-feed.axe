@@ -1,0 +1,34 @@
+{
+  "manifest": {
+    "id": "threads-feed",
+    "name": "Threads Feed",
+    "type": "social-feed",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Build a dynamic playlist from music links shared on your Threads feed",
+    "icon": "🧵",
+    "color": "#000000",
+    "homepage": "https://threads.net"
+  },
+  "capabilities": {
+    "socialFeed": true,
+    "auth": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth2",
+    "configurable": {
+      "appId": {
+        "type": "text",
+        "label": "Threads App ID",
+        "required": true,
+        "description": "Create a Threads app at developers.facebook.com"
+      },
+      "appSecret": {
+        "type": "password",
+        "label": "Threads App Secret",
+        "required": true
+      }
+    }
+  }
+}
