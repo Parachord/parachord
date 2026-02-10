@@ -45586,7 +45586,7 @@ useEffect(() => {
                     wordBreak: 'break-all'
                   }
                 }, selectedResolver.id === 'threads'
-                    ? `https://127.0.0.1:8889/callback/${selectedResolver.id}`
+                    ? `https://localhost:8889/callback/${selectedResolver.id}`
                     : `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
               ),
 

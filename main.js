@@ -832,7 +832,7 @@ function startAuthServer() {
         const provider = feedPlaylistManager.getProvider('threads');
         const clientId = store.get('social-feed-threads-client-id') || process.env.THREADS_APP_ID;
         const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
-        const redirectUri = `https://127.0.0.1:8889/callback/threads`;
+        const redirectUri = `https://localhost:8889/callback/threads`;
 
         const result = await provider.handleAuthCallback(
           { code, clientId, clientSecret, redirectUri },
@@ -872,60 +872,60 @@ function startAuthServer() {
   });
 
   // Start HTTPS auth server for providers that require secure redirect URIs (e.g. Threads).
-  // Uses an embedded self-signed certificate for 127.0.0.1 — no runtime dependencies needed.
+  // Uses an embedded self-signed certificate for localhost — no runtime dependencies needed.
   try {
     const LOCALHOST_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDYRI+KxSYPheHN
-up13wVFnoIzH7UXXhyeJNcDOo82s32BUiVwt33mJce/4jliBbH711PAvT1rqUQz6
-nTBgrSOzo/jPGF//TT8g3HrMeai19sUxVrA//AaJvuApSZZaKQN4IrCb27TBoALp
-qAcmRIK/LKiC9UVsfp2h0qPys3HxrRdkRHHgq/PZJ0ZhbXBO23LFtVVHnUP73C/S
-qpQ8EDI3uyjr3Q0xyIONSecfv1YC2lUq8N+mjsV14FH1NEBMWwdxKIkRjd/nMMBd
-srVhC1BThC5NgZ3Of/F6c7aWgK8jOhh1y21pDJQjW3mpl0FepORG/NOhiFoV/4SF
-m/E327r1AgMBAAECggEAEdYNtJcv3WXgSpRSelbyPMar9a0m7nCSHSnWvfQaeWBu
-1GoDtTDSGDjSXsB2oi3thp7KNEyqJdsLY/vkyoRdBmrGkWXkPO0FANPOOODrvh4d
-A0WwAYbqjx+z4xPTl5n8VEMgJ6qGDNYCh3y5IjnSQqwPNcW+tQT4QSlbJiAQjKrf
-/OmIZlCbhpHb3ikufLdkXVx0s6SvfGoPcaxGScuJt7+0G3Hvkon3GLo/KNGVSdHj
-JAgvvOkleL3vHRkiUU1oSvRHQbQkI29T8soqUHLXmEj2urE45duYLZ4MjNq0Lw8L
-TPVFdOlgmzZNeye7Gr5/gdUjQFdllmlC2uMhEEBlYQKBgQD4uo6+tDjzGklWahwJ
-iODLzCSInsYmj9nEflvQpRGLUjvska0XR62R4FcCTM/S2KIavaPL4/efdcvniogy
-uFGqX82xmTgxV7T5DOYisK/WVRO8n6MksJgFqJ1bsyRw12wKspcqv/r879y7Miwz
-Xcxw1GqLbWkVT+BjQU6jMbrMKQKBgQDelxI7xv8EYlkDtzuVYkjYe0FqR95nHWhO
-Ej+0ScDFVnBq83QpzWzCFvrC9LfOyRGU2Qmkc3+vdGKqyEAvwQuDmsbeMlABd37W
-zEVAGur8bVaVN9djU2dHsedNoYNRBBXvQqHjKrXq6XhdTVlsVDlkaupTsLR3mqYm
-nKLAPy4R7QKBgQDyCK/w+PTV80VcFqMz0ANXrU37t+0AB0kUgRUdQhOBbEMtoFA7
-8B8BbbmdXlt5RB7yQImMVUhX3kvOAysnl964GMPTR1K8CSnsk9W5+g8RVPaAvSMH
-B+TW1M5TNk6Gk8np2wFosyosSciUTG1giqzvOnR3Or9f4rtqOlmoSjMIiQKBgCK2
-FFXWFnasj40Qye3lwc5gijb0ti4GW/mwxtZqmfEsJaPIC1lpe4hY5Qn595/7ow4/
-Ok225TaLQ8e2KqxHwm/ndxO3bNqNs+3zNOlmSTbMJjBm4OPQYc7AY32rrjq4FGOX
-VH+EbZIQjoCeS0+lYr3SHnCmob31E+v5iTfJonmRAoGBAK9lBBeB7e5hvW9RbFaB
-q0mK3jsQ6jlmerzN3Fw6mbwYtpE0ztiUfb3Erwxm7m+PgMksZo7YsixOb1otrwPp
-xtQqbp+bryVnnlHqU8cMzj9jB2RckYtng6R7R9SG+X5vAyBRCIei+FwYp9ACM9Qz
-nbgU7gi61yzr1zekjupO9ofp
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3kFuEjlX+xmWo
+hHa9Yz+n9BgI2Dv5PiOyJcAnZh/ghz3HqyJCG+6iPvKYCXfpilnGuIPgQOkSippe
+4eX1TGDUmI7uWce5bqDZHPyZIg5v/V6KHmQGixwkWxP2SOqi+ckjJ2KCxgtd3eCh
+IxPlT7vH+mquWELVxwxTXg8qHJiK87onZdwB4mEGq8SI7Dpw3aAmpLL5yQ7bl8XW
+/drhQDoEDiIsR9409o/inRKtW6zIOdfVoa0l9x9SpmQhvXAVICO/OccIDbehvi1P
+PupQ12g5GC72eHc5KwEq+lkZiiyzgixkR44OPAlptpaqs7m2HcVfP+6YBKcWu7yY
+bWAipAmdAgMBAAECggEACTPhRrASbciurDK3N4+cJMnXEkscQfFZ0vKouMDvsa8O
+C5klM/PDCbAcCOpr8CckZj2gt5OBgSa2OQdcYukZRKdA/oA9RABgwNRpcdg+1DdQ
+r/N4l8m4bOEtCxtE5Mv0MmvlI4HAFvdf7YF88UbcoZizaaSuoG7ky7bVjfVWN3G4
+DBtE+Rqsgi1bl4xYJDOw97edDy7IeBd6EN4d9QcHluC7lrjNaM3fBaKiqHqcPi0r
+ZFbIKGglFoexFI7fpqKPPqIqY7AquK4v0mah8MVP6ZLVrrprroyIMl4Io+Qlhudv
+8KRBRhugYY/h2cF+3OxrP1fPK0IKGK7mk5Ut/UpHOQKBgQDfNLIvT9L/Ez6g8ogI
+jQ6hy6ePa6qlJUw3MuGMPHMw1EkB7WM+w3fmUjbvwj4J6+2GWnRtYwpC4/7vyS7l
+s5GAiFoG5tie/Ah8NDp/4ufIqs+Xrpo9LARISQyCZwzn2pH7rGudLKwHkTh8ky2S
+UsVt12jnYgX3IaFJlGiiog+YOQKBgQDSiKIf0EK4eAl7lo1b2cHnR6ceDU2f8esP
+Ch1SHobFuz2lNo7aVvLu7AJ1ct0eB7XyoW0xR8FTaNjYP1duWZ6KtSnizQIUy71u
+alvh6jZKu8YZs3MCFyjpIip7mYBYtKHRnYpvKvr0WFHJlK0ErR2/ptH4HANZAVEg
+TXDm1tGUhQKBgQDN7n9rOTmRTv8cXUd2pDXYvt20bAB/535++vmveeJJLcLB/XPw
+Z0WLAVVgNZUpcDuwFmqOta608ke2kaYsFVVsAeEVtwwq+psVhNZoQT/aGwX2iwgQ
+4jh9PLBG666zhyviyDxtQdbiEHDONrf35VfztKc7u2uHi8aT7VHwopbCuQKBgCy1
+86hJ9EF0zJ7AhFjDUBir8OPC839KQx84iK2N6hVIBHl3srLP0FvJJ2SF9kuQW6Wh
+fqz+jiIGnDagjRLUWYUfoDuYSh7cfehbEhRSRyFr61A9+eixvnB0Xw1MtiMgiVUY
+3fNp703BC+2Bc5UQpsayyNimKlfWncH8cEO1z2B5AoGBAMf/kTEpC0YS35pbOGui
+bimTqCBmKTSzjUEQjkCsshlEBkRfb25fxZFrftJZs+MNxKXovqUOW7yFFGadWcF0
+4I1saWDJ1NQBPyAZGDEVKxTsmBic4W2ljshQLqKBicNyVR/OsB7uj0IYO1LWgtfG
+9i4GBccMFPW6b3YuG4eaOhNg
 -----END PRIVATE KEY-----`;
 
     const LOCALHOST_CERT = `-----BEGIN CERTIFICATE-----
-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
+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
 -----END CERTIFICATE-----`;
 
     httpsAuthServer = https.createServer({ key: LOCALHOST_KEY, cert: LOCALHOST_CERT }, expressApp);
     httpsAuthServer.listen(8889, '127.0.0.1', () => {
-      console.log('HTTPS Auth server running on https://127.0.0.1:8889');
+      console.log('HTTPS Auth server running on https://localhost:8889');
     });
   } catch (err) {
     console.warn('[Auth] HTTPS auth server not started:', err.message);
@@ -5139,7 +5139,7 @@ ipcMain.handle('social-feed:auth', async (event, providerId) => {
     // Threads requires HTTPS redirect URI; other providers use HTTP
     const useHttps = providerId === 'threads' && httpsAuthServer;
     const redirectUri = useHttps
-      ? `https://127.0.0.1:8889/callback/${providerId}`
+      ? `https://localhost:8889/callback/${providerId}`
       : `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
 
     if (!clientId) {
