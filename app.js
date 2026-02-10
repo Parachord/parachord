@@ -25380,6 +25380,12 @@ ${tracks}
 
     console.log('📋 Found playlist:', playlist.title);
 
+    // Social Feed playlists: ensure source is set (may be missing from older saves)
+    const isSocialFeed = playlist.source === 'social-feed' || playlist.id === 'social-feed-playlist';
+    if (isSocialFeed && !playlist.source) {
+      playlist = { ...playlist, source: 'social-feed' };
+    }
+
     setSelectedPlaylist(playlist);
     setPlaylistCoverArt([]); // Reset cover art
     if (!skipNavigation) {
@@ -25387,8 +25393,7 @@ ${tracks}
     }
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
-    // Social Feed playlists: use tracks array directly (has socialContext metadata)
-    if (playlist.source === 'social-feed' && playlist.tracks?.length > 0) {
+    if (isSocialFeed && playlist.tracks?.length > 0) {
       console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks (with socialContext)`);
       const tracksWithIds = playlist.tracks.map(track => ({
         ...track,
