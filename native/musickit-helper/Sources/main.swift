@@ -85,7 +85,16 @@ class MusicKitBridge {
 
     // Request authorization
     func authorize() async -> [String: Any] {
+        // Temporarily become a regular app so macOS shows the authorization dialog.
+        // Background/accessory apps can't present system auth prompts.
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
         let status = await MusicAuthorization.request()
+
+        // Revert to background accessory (no dock icon)
+        NSApp.setActivationPolicy(.accessory)
+
         isAuthorized = status == .authorized
         return [
             "authorized": isAuthorized,
