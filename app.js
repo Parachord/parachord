@@ -43269,6 +43269,9 @@ useEffect(() => {
           maxWidth: '440px',
           width: '100%',
           margin: '0 16px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
           overflow: 'hidden'
         }
       },
@@ -43277,7 +43280,8 @@ useEffect(() => {
           className: 'flex items-center gap-4',
           style: {
             padding: '24px',
-            backgroundColor: selectedResolver.color || '#6B7280'
+            backgroundColor: selectedResolver.color || '#6B7280',
+            flexShrink: 0
           }
         },
           // Logo
@@ -43334,8 +43338,9 @@ useEffect(() => {
           className: 'scrollable-content',
           style: {
             padding: '24px',
-            maxHeight: '60vh',
-            overflowY: 'auto'
+            flex: '1 1 auto',
+            overflowY: 'auto',
+            minHeight: 0
           }
         },
           // Description
@@ -45462,7 +45467,8 @@ useEffect(() => {
           // Social Feed configuration
           selectedResolver._socialFeed && React.createElement('div', {
             style: {
-              padding: '20px 0',
+              paddingTop: '20px',
+              paddingBottom: '20px',
               borderTop: '1px solid rgba(0, 0, 0, 0.06)'
             }
           },
@@ -45777,7 +45783,8 @@ useEffect(() => {
           style: {
             padding: '16px 24px',
             backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            flexShrink: 0
           }
         },
           // Left side: Remove button (only for user-installed resolvers, not social feeds)
