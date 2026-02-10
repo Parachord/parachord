@@ -45574,7 +45574,7 @@ useEffect(() => {
                 }, 'Redirect URI'),
                 React.createElement('p', {
                   style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '4px' }
-                }, 'Add this redirect URI to your app settings:'),
+                }, 'Add this as a Redirect Callback URL in your app settings:'),
                 React.createElement('code', {
                   style: {
                     display: 'block',
@@ -45586,7 +45586,7 @@ useEffect(() => {
                     wordBreak: 'break-all'
                   }
                 }, selectedResolver.id === 'threads'
-                    ? `https://localhost:8889/callback/${selectedResolver.id}`
+                    ? 'https://www.facebook.com/connect/login_success.html'
                     : `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
               ),
 

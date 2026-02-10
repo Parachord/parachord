@@ -36,7 +36,6 @@ try {
 const fs = require('fs');
 const Store = require('electron-store');
 const express = require('express');
-const https = require('https');
 const WebSocket = require('ws');
 
 const LocalFilesService = require('./local-files');
@@ -55,7 +54,6 @@ const store = new Store();
 const feedPlaylistManager = createFeedPlaylistManager(store);
 let mainWindow;
 let authServer;
-let httpsAuthServer;
 let wss; // WebSocket server for browser extension
 let extensionSocket = null; // Current connected extension
 let embedSockets = new Set(); // Connected embed players
@@ -797,56 +795,6 @@ function startAuthServer() {
     }
   });
 
-  // Threads OAuth callback
-  expressApp.get('/callback/threads', async (req, res) => {
-    const code = req.query.code;
-    const error = req.query.error;
-
-    if (error) {
-      const safeError = String(error).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      res.send(`
-        <html>
-          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
-            <h1>Authentication Failed</h1>
-            <p>${safeError}</p>
-            <p>You can close this window.</p>
-          </body>
-        </html>
-      `);
-      mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error });
-      return;
-    }
-
-    if (code) {
-      res.send(`
-        <html>
-          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
-            <h1>Success!</h1>
-            <p>Threads authentication successful. You can close this window.</p>
-            <script>setTimeout(() => window.close(), 2000);</script>
-          </body>
-        </html>
-      `);
-
-      try {
-        const provider = feedPlaylistManager.getProvider('threads');
-        const clientId = store.get('social-feed-threads-client-id') || process.env.THREADS_APP_ID;
-        const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
-        const redirectUri = `https://localhost:8889/callback/threads`;
-
-        const result = await provider.handleAuthCallback(
-          { code, clientId, clientSecret, redirectUri },
-          store
-        );
-
-        mainWindow?.webContents.send('social-feed-auth-success', { provider: 'threads', username: result.username });
-      } catch (err) {
-        console.error('[Threads] Auth callback error:', err.message);
-        mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error: err.message });
-      }
-    }
-  });
-
   // Protocol command endpoint for Raycast/external control
   expressApp.get('/protocol', (req, res) => {
     const url = req.query.url;
@@ -871,65 +819,6 @@ function startAuthServer() {
     console.log('Auth server running on http://127.0.0.1:8888');
   });
 
-  // Start HTTPS auth server for providers that require secure redirect URIs (e.g. Threads).
-  // Uses an embedded self-signed certificate for localhost — no runtime dependencies needed.
-  try {
-    const LOCALHOST_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3kFuEjlX+xmWo
-hHa9Yz+n9BgI2Dv5PiOyJcAnZh/ghz3HqyJCG+6iPvKYCXfpilnGuIPgQOkSippe
-4eX1TGDUmI7uWce5bqDZHPyZIg5v/V6KHmQGixwkWxP2SOqi+ckjJ2KCxgtd3eCh
-IxPlT7vH+mquWELVxwxTXg8qHJiK87onZdwB4mEGq8SI7Dpw3aAmpLL5yQ7bl8XW
-/drhQDoEDiIsR9409o/inRKtW6zIOdfVoa0l9x9SpmQhvXAVICO/OccIDbehvi1P
-PupQ12g5GC72eHc5KwEq+lkZiiyzgixkR44OPAlptpaqs7m2HcVfP+6YBKcWu7yY
-bWAipAmdAgMBAAECggEACTPhRrASbciurDK3N4+cJMnXEkscQfFZ0vKouMDvsa8O
-C5klM/PDCbAcCOpr8CckZj2gt5OBgSa2OQdcYukZRKdA/oA9RABgwNRpcdg+1DdQ
-r/N4l8m4bOEtCxtE5Mv0MmvlI4HAFvdf7YF88UbcoZizaaSuoG7ky7bVjfVWN3G4
-DBtE+Rqsgi1bl4xYJDOw97edDy7IeBd6EN4d9QcHluC7lrjNaM3fBaKiqHqcPi0r
-ZFbIKGglFoexFI7fpqKPPqIqY7AquK4v0mah8MVP6ZLVrrprroyIMl4Io+Qlhudv
-8KRBRhugYY/h2cF+3OxrP1fPK0IKGK7mk5Ut/UpHOQKBgQDfNLIvT9L/Ez6g8ogI
-jQ6hy6ePa6qlJUw3MuGMPHMw1EkB7WM+w3fmUjbvwj4J6+2GWnRtYwpC4/7vyS7l
-s5GAiFoG5tie/Ah8NDp/4ufIqs+Xrpo9LARISQyCZwzn2pH7rGudLKwHkTh8ky2S
-UsVt12jnYgX3IaFJlGiiog+YOQKBgQDSiKIf0EK4eAl7lo1b2cHnR6ceDU2f8esP
-Ch1SHobFuz2lNo7aVvLu7AJ1ct0eB7XyoW0xR8FTaNjYP1duWZ6KtSnizQIUy71u
-alvh6jZKu8YZs3MCFyjpIip7mYBYtKHRnYpvKvr0WFHJlK0ErR2/ptH4HANZAVEg
-TXDm1tGUhQKBgQDN7n9rOTmRTv8cXUd2pDXYvt20bAB/535++vmveeJJLcLB/XPw
-Z0WLAVVgNZUpcDuwFmqOta608ke2kaYsFVVsAeEVtwwq+psVhNZoQT/aGwX2iwgQ
-4jh9PLBG666zhyviyDxtQdbiEHDONrf35VfztKc7u2uHi8aT7VHwopbCuQKBgCy1
-86hJ9EF0zJ7AhFjDUBir8OPC839KQx84iK2N6hVIBHl3srLP0FvJJ2SF9kuQW6Wh
-fqz+jiIGnDagjRLUWYUfoDuYSh7cfehbEhRSRyFr61A9+eixvnB0Xw1MtiMgiVUY
-3fNp703BC+2Bc5UQpsayyNimKlfWncH8cEO1z2B5AoGBAMf/kTEpC0YS35pbOGui
-bimTqCBmKTSzjUEQjkCsshlEBkRfb25fxZFrftJZs+MNxKXovqUOW7yFFGadWcF0
-4I1saWDJ1NQBPyAZGDEVKxTsmBic4W2ljshQLqKBicNyVR/OsB7uj0IYO1LWgtfG
-9i4GBccMFPW6b3YuG4eaOhNg
------END PRIVATE KEY-----`;
-
-    const LOCALHOST_CERT = `-----BEGIN CERTIFICATE-----
-MIIDJTCCAg2gAwIBAgIUZB0gA0d8xfvf157YqJyaG0yzknswDQYJKoZIhvcNAQEL
-BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDIxMDEzMTkwNFoXDTM2MDIw
-ODEzMTkwNFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
-AAOCAQ8AMIIBCgKCAQEAt5BbhI5V/sZlqIR2vWM/p/QYCNg7+T4jsiXAJ2Yf4Ic9
-x6siQhvuoj7ymAl36YpZxriD4EDpEoqaXuHl9Uxg1JiO7lnHuW6g2Rz8mSIOb/1e
-ih5kBoscJFsT9kjqovnJIydigsYLXd3goSMT5U+7x/pqrlhC1ccMU14PKhyYivO6
-J2XcAeJhBqvEiOw6cN2gJqSy+ckO25fF1v3a4UA6BA4iLEfeNPaP4p0SrVusyDnX
-1aGtJfcfUqZkIb1wFSAjvznHCA23ob4tTz7qUNdoORgu9nh3OSsBKvpZGYoss4Is
-ZEeODjwJabaWqrO5th3FXz/umASnFru8mG1gIqQJnQIDAQABo28wbTAdBgNVHQ4E
-FgQUYLy+Li9x1FI3pbcqKxLsIF7S9RYwHwYDVR0jBBgwFoAUYLy+Li9x1FI3pbcq
-KxLsIF7S9RYwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SH
-BH8AAAEwDQYJKoZIhvcNAQELBQADggEBAGwa4eiMbgQWAkPIoCYwwjMgJxJohRlo
-eH5TqoarzeFPBeYbp8Bl9tZk9BqrPBcEPsDuhg8fDVMBJeFv1/EApuWv171mB2+b
-Je0eJpbcmMRm0bH0JzLid+TmKAKGCBd5pPkP1V/zGd0r0Q4TZRriAZWRToBAWoyD
-UdAPvuVMD2kFal7FTQjGaF224UlQOr5fwi5R8Wnn6pk4Y9FDVuRstGlRdjw2ek8U
-zAS2lnExIOHz514rrvGauHmPCVRtSoGI+R2i2RmL/0gTCjf1/2z6rOPxWDZNjHau
-ZCIn1KjyjCHxnH3CJQeNYAPgdwgf6vC6YA1FBIGmWESM2t5oveC7aEQ=
------END CERTIFICATE-----`;
-
-    httpsAuthServer = https.createServer({ key: LOCALHOST_KEY, cert: LOCALHOST_CERT }, expressApp);
-    httpsAuthServer.listen(8889, '127.0.0.1', () => {
-      console.log('HTTPS Auth server running on https://localhost:8889');
-    });
-  } catch (err) {
-    console.warn('[Auth] HTTPS auth server not started:', err.message);
-  }
 }
 
 // WebSocket server for browser extension communication
@@ -5136,11 +5025,6 @@ ipcMain.handle('social-feed:auth', async (event, providerId) => {
 
   try {
     const clientId = store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`];
-    // Threads requires HTTPS redirect URI; other providers use HTTP
-    const useHttps = providerId === 'threads' && httpsAuthServer;
-    const redirectUri = useHttps
-      ? `https://localhost:8889/callback/${providerId}`
-      : `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
 
     if (!clientId) {
       return {
@@ -5150,6 +5034,83 @@ ipcMain.handle('social-feed:auth', async (event, providerId) => {
       };
     }
 
+    // Threads uses a BrowserWindow-based flow since Meta doesn't allow
+    // localhost redirect URIs. We redirect to Meta's own success page
+    // and intercept the navigation to extract the auth code.
+    if (providerId === 'threads') {
+      const redirectUri = 'https://www.facebook.com/connect/login_success.html';
+      const { authUrl } = await provider.startAuth(store, clientId, redirectUri);
+      const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
+
+      const authWindow = new BrowserWindow({
+        width: 600,
+        height: 750,
+        show: true,
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
+      });
+      authWindow.setMenu(null);
+
+      authWindow.webContents.on('will-redirect', async (e, url) => {
+        if (url.startsWith(redirectUri)) {
+          e.preventDefault();
+          const parsed = new URL(url);
+          const code = parsed.searchParams.get('code');
+          const error = parsed.searchParams.get('error');
+          authWindow.close();
+
+          if (error) {
+            mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error });
+            return;
+          }
+          if (code) {
+            try {
+              const result = await provider.handleAuthCallback(
+                { code, clientId, clientSecret, redirectUri },
+                store
+              );
+              mainWindow?.webContents.send('social-feed-auth-success', { provider: 'threads', username: result.username });
+            } catch (err) {
+              console.error('[Threads] Auth callback error:', err.message);
+              mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error: err.message });
+            }
+          }
+        }
+      });
+
+      // Also handle the case where the URL changes via navigation (not redirect)
+      authWindow.webContents.on('will-navigate', async (e, url) => {
+        if (url.startsWith(redirectUri)) {
+          e.preventDefault();
+          const parsed = new URL(url);
+          const code = parsed.searchParams.get('code');
+          const error = parsed.searchParams.get('error');
+          authWindow.close();
+
+          if (error) {
+            mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error });
+            return;
+          }
+          if (code) {
+            try {
+              const result = await provider.handleAuthCallback(
+                { code, clientId, clientSecret, redirectUri },
+                store
+              );
+              mainWindow?.webContents.send('social-feed-auth-success', { provider: 'threads', username: result.username });
+            } catch (err) {
+              console.error('[Threads] Auth callback error:', err.message);
+              mainWindow?.webContents.send('social-feed-auth-error', { provider: 'threads', error: err.message });
+            }
+          }
+        }
+      });
+
+      authWindow.loadURL(authUrl);
+      return { success: true };
+    }
+
+    // Other providers use the local HTTP callback server
+    const redirectUri = `http://127.0.0.1:${process.env.AUTH_SERVER_PORT || 8888}/callback/${providerId}`;
     const { authUrl } = await provider.startAuth(store, clientId, redirectUri);
     shell.openExternal(authUrl);
     return { success: true };
@@ -5235,7 +5196,6 @@ ipcMain.handle('social-feed:remove-playlist-item', async (event, providerId, url
 // Stop MusicKit helper and system volume monitor on app quit
 app.on('will-quit', () => {
   feedPlaylistManager.stopAllPolling();
-  if (httpsAuthServer) { try { httpsAuthServer.close(); } catch {} }
   systemVolumeMonitor.stop();
   const bridge = getMusicKitBridge();
   bridge.stop();
