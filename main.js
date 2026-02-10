@@ -5187,11 +5187,21 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
     }
 
     const posts = await provider.fetchFeed(token, null);
-    if (posts.length === 0) return { success: true, items: [] };
+    console.log(`[SocialFeed:scan] ${provider.name}: fetched ${posts.length} post(s)`);
+    if (posts.length === 0) return { success: true, items: [], postsScanned: 0 };
+
+    // Log post text snippets for debugging
+    for (const post of posts.slice(0, 5)) {
+      console.log(`[SocialFeed:scan]   Post ${post.id}: "${(post.text || '').slice(0, 120)}..."`);
+    }
 
     const { extractLinksFromPosts } = require('./social-feeds/link-extractor');
     const links = extractLinksFromPosts(posts);
-    if (links.length === 0) return { success: true, items: [] };
+    console.log(`[SocialFeed:scan] ${provider.name}: extracted ${links.length} music link(s) from ${posts.length} posts`);
+    for (const link of links) {
+      console.log(`[SocialFeed:scan]   ${link.service} (${link.type}): ${link.url}`);
+    }
+    if (links.length === 0) return { success: true, items: [], postsScanned: posts.length };
 
     // Dedup against existing playlist
     const playlist = feedPlaylistManager.getPlaylist(providerId);
@@ -5208,8 +5218,9 @@ ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
       }
     }
 
-    return { success: true, items: newItems };
+    return { success: true, items: newItems, postsScanned: posts.length };
   } catch (err) {
+    console.error(`[SocialFeed:scan] Error:`, err.message);
     return { success: false, error: err.message };
   }
 });

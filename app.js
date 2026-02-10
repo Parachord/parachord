@@ -7304,7 +7304,10 @@ const Parachord = () => {
         try {
           const result = await window.electron.socialFeeds.scanNow(data.provider);
           if (result.success) {
-            console.log(`[SocialFeed] Scan complete: ${result.items?.length || 0} music link(s) found`);
+            console.log(`[SocialFeed] Scan complete: ${result.postsScanned || 0} post(s) scanned, ${result.items?.length || 0} music link(s) found`);
+            if (result.items?.length > 0) {
+              result.items.forEach(item => console.log(`[SocialFeed]   ${item.service} (${item.type}): ${item.url}`));
+            }
           } else {
             console.error(`[SocialFeed] Scan failed:`, result.error);
           }
@@ -32918,6 +32921,111 @@ useEffect(() => {
                       )
                     );
                   })
+                )
+              :
+                // Empty state for Social Feed playlist
+                selectedPlaylist?.source === 'social-feed' ?
+                React.createElement('div', {
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '60px 40px',
+                    textAlign: 'center',
+                    maxWidth: '480px',
+                    margin: '0 auto'
+                  }
+                },
+                  // Icon
+                  React.createElement('div', {
+                    style: {
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '16px',
+                      backgroundColor: 'rgba(124, 58, 237, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '20px'
+                    }
+                  },
+                    React.createElement('svg', {
+                      width: '28', height: '28', viewBox: '0 0 24 24', fill: 'none',
+                      stroke: '#7c3aed', strokeWidth: '1.5', strokeLinecap: 'round', strokeLinejoin: 'round'
+                    },
+                      React.createElement('path', { d: 'M9 18V5l12-2v13' }),
+                      React.createElement('circle', { cx: '6', cy: '18', r: '3' }),
+                      React.createElement('circle', { cx: '18', cy: '16', r: '3' })
+                    )
+                  ),
+                  // Title
+                  React.createElement('h3', {
+                    style: {
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: '#1f2937',
+                      marginBottom: '8px'
+                    }
+                  }, 'No tracks yet'),
+                  // Description
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '13px',
+                      color: '#6b7280',
+                      lineHeight: '1.6',
+                      marginBottom: '24px'
+                    }
+                  }, 'This playlist automatically fills with music shared on your connected social feeds. When someone posts a Spotify, Apple Music, YouTube, SoundCloud, Bandcamp, Tidal, Deezer, or Parachord link, it gets picked up and added here.'),
+                  // Steps
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      width: '100%',
+                      textAlign: 'left'
+                    }
+                  },
+                    [
+                      { step: '1', text: 'Connect a social account in Settings > Plugins' },
+                      { step: '2', text: 'Post or share music links on your feed' },
+                      { step: '3', text: 'Parachord scans your feed and resolves each link into a playable track' }
+                    ].map(({ step, text }) =>
+                      React.createElement('div', {
+                        key: step,
+                        style: {
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '12px'
+                        }
+                      },
+                        React.createElement('span', {
+                          style: {
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                            color: '#7c3aed',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            marginTop: '1px'
+                          }
+                        }, step),
+                        React.createElement('span', {
+                          style: {
+                            fontSize: '13px',
+                            color: '#4b5563',
+                            lineHeight: '1.5'
+                          }
+                        }, text)
+                      )
+                    )
+                  )
                 )
               :
                 // Skeleton loaders while tracks are loading
