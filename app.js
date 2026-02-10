@@ -25400,8 +25400,7 @@ ${tracks}
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
     if (isSocialFeed && playlist.tracks?.length > 0) {
-      console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks`);
-      playlist.tracks.forEach((t, i) => console.log(`  Track ${i}: "${t.title}" socialContext=${JSON.stringify(t.socialContext || null)}`));
+      console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks (with socialContext)`);
       const tracksWithIds = playlist.tracks.map(track => ({
         ...track,
         id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
