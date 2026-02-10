@@ -7424,40 +7424,27 @@ const Parachord = () => {
                 }
               }
 
-              // Always add as unresolved placeholder if resolution failed
+              // Skip unresolved tracks — only show tracks with proper artist/title
               if (!resolved) {
-                // Try to extract a human-readable title from the URL
-                let urlTitle = item.url;
-                try {
-                  const urlObj = new URL(item.url);
-                  const pathParts = urlObj.pathname.split('/').filter(Boolean);
-                  const lastPart = pathParts[pathParts.length - 1] || '';
-                  // Decode and clean up the path segment
-                  const decoded = decodeURIComponent(lastPart).replace(/[-_]/g, ' ').replace(/\.[a-z0-9]+$/i, '');
-                  if (decoded && decoded.length > 2) {
-                    urlTitle = decoded;
-                  } else {
-                    urlTitle = urlObj.hostname.replace('www.', '') + urlObj.pathname;
-                  }
-                } catch {}
-
-                resolvedTracks.push({
-                  id: `unresolved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                  title: urlTitle,
-                  artist: 'Unknown Artist',
-                  album: 'Social Feed',
-                  duration: 0,
-                  sources: {},
-                  sourceUrl: item.url,
-                  socialContext
-                });
+                console.log(`[SocialFeed] Skipping unresolved link: ${item.url}`);
               }
             } catch (err) {
               console.error(`[SocialFeed] Failed to resolve ${item.url}:`, err.message);
             }
           }
 
-          if (resolvedTracks.length > 0) {
+          // Dedup within the batch itself (same URL = keep first occurrence)
+          const seenUrls = new Set();
+          const dedupedTracks = resolvedTracks.filter(t => {
+            const url = t.sourceUrl || t.socialContext?.originalUrl;
+            if (url) {
+              if (seenUrls.has(url)) return false;
+              seenUrls.add(url);
+            }
+            return true;
+          });
+
+          if (dedupedTracks.length > 0) {
             // Build XSPF for the playlist so it persists
             const buildSocialFeedXspf = (tracks) => {
               const escXml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -7475,9 +7462,15 @@ const Parachord = () => {
             setPlaylists(prev => {
               const existing = prev.find(p => p.id === SOCIAL_FEED_PLAYLIST_ID);
               const existingTracks = existing?.tracks || [];
-              // Dedup by track ID
+              // Dedup by track ID and by source URL (same link from same person = same track)
               const existingIds = new Set(existingTracks.map(t => t.id));
-              const newTracks = resolvedTracks.filter(t => !existingIds.has(t.id));
+              const existingUrls = new Set(existingTracks.map(t => t.sourceUrl || t.socialContext?.originalUrl).filter(Boolean));
+              const newTracks = dedupedTracks.filter(t => {
+                if (existingIds.has(t.id)) return false;
+                const url = t.sourceUrl || t.socialContext?.originalUrl;
+                if (url && existingUrls.has(url)) return false;
+                return true;
+              });
               if (newTracks.length === 0) return prev;
 
               const allTracks = [...newTracks, ...existingTracks];
