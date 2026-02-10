@@ -7426,10 +7426,25 @@ const Parachord = () => {
 
               // Always add as unresolved placeholder if resolution failed
               if (!resolved) {
+                // Try to extract a human-readable title from the URL
+                let urlTitle = item.url;
+                try {
+                  const urlObj = new URL(item.url);
+                  const pathParts = urlObj.pathname.split('/').filter(Boolean);
+                  const lastPart = pathParts[pathParts.length - 1] || '';
+                  // Decode and clean up the path segment
+                  const decoded = decodeURIComponent(lastPart).replace(/[-_]/g, ' ').replace(/\.[a-z0-9]+$/i, '');
+                  if (decoded && decoded.length > 2) {
+                    urlTitle = decoded;
+                  } else {
+                    urlTitle = urlObj.hostname.replace('www.', '') + urlObj.pathname;
+                  }
+                } catch {}
+
                 resolvedTracks.push({
                   id: `unresolved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                  title: item.url,
-                  artist: `Shared by ${item.post?.author || 'unknown'} on ${networkName}`,
+                  title: urlTitle,
+                  artist: 'Unknown Artist',
                   album: 'Social Feed',
                   duration: 0,
                   sources: {},
@@ -25370,8 +25385,41 @@ ${tracks}
     }
     console.log(`📋 Loading playlist: ${playlist.title}`);
 
+    // Social Feed playlists: use tracks array directly (has socialContext metadata)
+    if (playlist.source === 'social-feed' && playlist.tracks?.length > 0) {
+      console.log(`🎵 Loading ${playlist.tracks.length} Social Feed tracks (with socialContext)`);
+      const tracksWithIds = playlist.tracks.map(track => ({
+        ...track,
+        id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+        sources: track.sources || {}
+      }));
+      setPlaylistTracks(tracksWithIds);
+
+      // Fetch playlist cover art
+      getPlaylistCovers(playlist.id, tracksWithIds).then(covers => {
+        setPlaylistCoverArt(covers);
+      });
+
+      // Fetch album art for tracks that don't have it
+      tracksWithIds.forEach(async (track) => {
+        if (!track.albumArt && track.album) {
+          const artUrl = await getAlbumArt(track.artist, track.album);
+          if (artUrl) {
+            setPlaylistTracks(prevTracks =>
+              prevTracks.map(t =>
+                t.id === track.id && !t.albumArt
+                  ? { ...t, albumArt: artUrl }
+                  : t
+              )
+            );
+          }
+        }
+      });
+
+      console.log(`✅ Loaded ${tracksWithIds.length} Social Feed tracks (resolution via scheduler)`);
+    }
     // Parse XSPF if we have the content
-    if (playlist.xspf) {
+    else if (playlist.xspf) {
       const parsed = parseXSPF(playlist.xspf);
       if (parsed) {
         console.log(`🎵 Parsed ${parsed.tracks.length} tracks from XSPF`);
@@ -32851,6 +32899,35 @@ useEffect(() => {
                           fetchArtistData(track.artist);
                         }
                       }, track.artist),
+
+                      // "Shared by" column - only for Social Feed playlist
+                      selectedPlaylist?.source === 'social-feed' && track.socialContext ?
+                        React.createElement('span', {
+                          className: 'truncate flex-shrink-0',
+                          style: {
+                            width: '140px',
+                            fontSize: '11px',
+                            color: '#9ca3af'
+                          }
+                        },
+                          track.socialContext.postUrl ?
+                            React.createElement('a', {
+                              href: '#',
+                              onClick: (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                window.electron?.shell?.openExternal(track.socialContext.postUrl);
+                              },
+                              className: 'hover:text-purple-500 hover:underline cursor-pointer transition-colors',
+                              style: { color: 'inherit' },
+                              title: `Open post by ${track.socialContext.author || 'unknown'} on ${(track.socialContext.network || '').charAt(0).toUpperCase() + (track.socialContext.network || '').slice(1)}`
+                            }, `${track.socialContext.author || 'unknown'}`)
+                          :
+                            `${track.socialContext.author || 'unknown'}`
+                        )
+                      : selectedPlaylist?.source === 'social-feed' ?
+                        React.createElement('span', { style: { width: '140px', flexShrink: 0 } })
+                      : null,
 
                       // Duration - fixed width column (before resolver icons)
                       React.createElement('span', {
