@@ -178,6 +178,23 @@ class ThreadsProvider extends BaseSocialProvider {
     return posts;
   }
 
+  // ---- Manual token ----
+
+  // Save a manually-provided access token (from the Meta developer console
+  // User Token Generator). Validates by fetching the profile first.
+  async saveManualToken(store, accessToken) {
+    const profile = await this._fetchProfile(accessToken);
+
+    this.saveTokens(store, {
+      accessToken,
+      expiresIn: 5184000, // 60 days for long-lived tokens
+      username: profile.username,
+      userId: profile.id
+    });
+
+    return { username: profile.username };
+  }
+
   // ---- Internal helpers ----
 
   async _fetchProfile(token) {

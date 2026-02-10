@@ -5136,6 +5136,20 @@ ipcMain.handle('social-feed:disconnect', async (event, providerId) => {
   return { success: true };
 });
 
+// Save a manually-provided access token (from Meta developer console)
+ipcMain.handle('social-feed:save-token', async (event, providerId, accessToken) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return { success: false, error: `Unknown provider: ${providerId}` };
+
+  try {
+    const result = await provider.saveManualToken(store, accessToken);
+    mainWindow?.webContents.send('social-feed-auth-success', { provider: providerId, username: result.username });
+    return { success: true, username: result.username };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // Set credentials for a social feed provider (from Settings UI)
 ipcMain.handle('social-feed:set-credentials', async (event, providerId, credentials) => {
   for (const [key, value] of Object.entries(credentials)) {

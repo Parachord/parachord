@@ -45559,36 +45559,81 @@ useEffect(() => {
                 )
               ),
 
-              // Redirect URI info box
-              React.createElement('div', {
-                style: {
-                  padding: '12px 14px',
-                  backgroundColor: 'rgba(124, 58, 237, 0.06)',
-                  borderRadius: '10px',
-                  marginBottom: '16px',
-                  border: '1px solid rgba(124, 58, 237, 0.12)'
-                }
-              },
-                React.createElement('p', {
-                  style: { fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '4px' }
-                }, 'Redirect URI'),
-                React.createElement('p', {
-                  style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '4px' }
-                }, 'Add this as a Redirect Callback URL in your app settings:'),
-                React.createElement('code', {
-                  style: {
-                    display: 'block',
-                    padding: '8px 10px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    color: '#374151',
-                    wordBreak: 'break-all'
-                  }
-                }, selectedResolver.id === 'threads'
-                    ? 'https://parachord.com/auth/threads/callback'
-                    : `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
-              ),
+              // Access Token section (for providers like Threads that need manual token)
+              // or Redirect URI info box for other providers
+              selectedResolver.id === 'threads'
+                ? React.createElement('div', {
+                    style: {
+                      padding: '12px 14px',
+                      backgroundColor: 'rgba(124, 58, 237, 0.06)',
+                      borderRadius: '10px',
+                      marginBottom: '16px',
+                      border: '1px solid rgba(124, 58, 237, 0.12)'
+                    }
+                  },
+                    React.createElement('p', {
+                      style: { fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '4px' }
+                    }, 'Access Token'),
+                    React.createElement('p', {
+                      style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '8px' }
+                    },
+                      'Generate a token using the User Token Generator in your ',
+                      React.createElement('a', {
+                        href: '#',
+                        onClick: (e) => { e.preventDefault(); window.electron.openExternal('https://developers.facebook.com/apps'); },
+                        style: { color: '#7c3aed', textDecoration: 'underline' }
+                      }, 'Meta App Dashboard'),
+                      '.'
+                    ),
+                    React.createElement('input', {
+                      type: 'password',
+                      placeholder: 'Paste your access token here',
+                      value: socialFeedConfigs[selectedResolver.id]?.accessToken || '',
+                      onChange: (e) => {
+                        setSocialFeedConfigs(prev => ({
+                          ...prev,
+                          [selectedResolver.id]: { ...prev[selectedResolver.id], accessToken: e.target.value }
+                        }));
+                      },
+                      style: {
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        backgroundColor: '#ffffff',
+                        boxSizing: 'border-box',
+                        outline: 'none'
+                      }
+                    })
+                  )
+                : React.createElement('div', {
+                    style: {
+                      padding: '12px 14px',
+                      backgroundColor: 'rgba(124, 58, 237, 0.06)',
+                      borderRadius: '10px',
+                      marginBottom: '16px',
+                      border: '1px solid rgba(124, 58, 237, 0.12)'
+                    }
+                  },
+                    React.createElement('p', {
+                      style: { fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '4px' }
+                    }, 'Redirect URI'),
+                    React.createElement('p', {
+                      style: { fontSize: '11px', color: '#6b7280', lineHeight: '1.5', marginBottom: '4px' }
+                    }, 'Add this redirect URI to your app settings:'),
+                    React.createElement('code', {
+                      style: {
+                        display: 'block',
+                        padding: '8px 10px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        color: '#374151',
+                        wordBreak: 'break-all'
+                      }
+                    }, `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
+                  ),
 
               // Connect / Disconnect button
               (() => {
@@ -45597,6 +45642,7 @@ useEffect(() => {
                 const username = providerStatus?.status?.username;
                 const isConnecting = socialFeedConnecting === selectedResolver.id;
                 const hasCredentials = !!(socialFeedConfigs[selectedResolver.id]?.clientId);
+                const hasToken = !!(socialFeedConfigs[selectedResolver.id]?.accessToken);
 
                 return React.createElement('div', null,
                   // Connection status
@@ -45608,29 +45654,56 @@ useEffect(() => {
                     React.createElement('span', null, `Connected${username ? ` as @${username}` : ''}`)
                   ),
 
-                  // Connect button
-                  !isConnected && React.createElement('button', {
-                    onClick: async () => {
-                      setSocialFeedConnecting(selectedResolver.id);
-                      await window.electron.socialFeeds.auth(selectedResolver.id);
-                    },
-                    disabled: isConnecting || !hasCredentials,
-                    style: {
-                      width: '100%',
-                      padding: '10px 16px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#ffffff',
-                      backgroundColor: isConnecting || !hasCredentials ? '#9ca3af' : selectedResolver.color || '#7c3aed',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: isConnecting || !hasCredentials ? 'not-allowed' : 'pointer',
-                      opacity: isConnecting || !hasCredentials ? 0.6 : 1,
-                      marginBottom: '8px'
-                    }
-                  }, isConnecting ? 'Connecting...' : `Connect ${selectedResolver.name}`),
+                  // Save Token button (Threads) or Connect button (others)
+                  !isConnected && selectedResolver.id === 'threads'
+                    ? React.createElement('button', {
+                        onClick: async () => {
+                          const token = socialFeedConfigs[selectedResolver.id]?.accessToken;
+                          if (!token) return;
+                          setSocialFeedConnecting(selectedResolver.id);
+                          const result = await window.electron.socialFeeds.saveToken(selectedResolver.id, token);
+                          setSocialFeedConnecting(null);
+                          if (!result.success) {
+                            alert('Failed to save token: ' + (result.error || 'Unknown error'));
+                          }
+                        },
+                        disabled: isConnecting || !hasToken,
+                        style: {
+                          width: '100%',
+                          padding: '10px 16px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: '#ffffff',
+                          backgroundColor: isConnecting || !hasToken ? '#9ca3af' : selectedResolver.color || '#7c3aed',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: isConnecting || !hasToken ? 'not-allowed' : 'pointer',
+                          opacity: isConnecting || !hasToken ? 0.6 : 1,
+                          marginBottom: '8px'
+                        }
+                      }, isConnecting ? 'Saving...' : 'Save Token')
+                    : !isConnected && React.createElement('button', {
+                        onClick: async () => {
+                          setSocialFeedConnecting(selectedResolver.id);
+                          await window.electron.socialFeeds.auth(selectedResolver.id);
+                        },
+                        disabled: isConnecting || !hasCredentials,
+                        style: {
+                          width: '100%',
+                          padding: '10px 16px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          color: '#ffffff',
+                          backgroundColor: isConnecting || !hasCredentials ? '#9ca3af' : selectedResolver.color || '#7c3aed',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: isConnecting || !hasCredentials ? 'not-allowed' : 'pointer',
+                          opacity: isConnecting || !hasCredentials ? 0.6 : 1,
+                          marginBottom: '8px'
+                        }
+                      }, isConnecting ? 'Connecting...' : `Connect ${selectedResolver.name}`),
 
-                  !isConnected && !hasCredentials && React.createElement('p', {
+                  !isConnected && !hasCredentials && selectedResolver.id !== 'threads' && React.createElement('p', {
                     style: { fontSize: '11px', color: '#9ca3af', textAlign: 'center' }
                   }, 'Enter your credentials above to connect'),
 
