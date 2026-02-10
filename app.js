@@ -39657,7 +39657,9 @@ useEffect(() => {
 
                     // Then, add all other resolvers (loaded but not enabled + marketplace-only)
                     // User sees no distinction - they're all just "Available"
-                    const addedIds = new Set(resolverOrder);
+                    // Only track IDs actually added above (not all of resolverOrder) so that
+                    // resolvers in resolverOrder but not in allResolvers still appear from marketplace
+                    const addedIds = new Set(unifiedResolvers.map(r => r.id));
 
                     // Loaded but not enabled
                     allResolvers.forEach(resolver => {
