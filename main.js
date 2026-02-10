@@ -871,61 +871,62 @@ function startAuthServer() {
     console.log('Auth server running on http://127.0.0.1:8888');
   });
 
-  // Start HTTPS auth server for providers that require secure redirect URIs (e.g. Threads)
+  // Start HTTPS auth server for providers that require secure redirect URIs (e.g. Threads).
+  // Uses an embedded self-signed certificate for 127.0.0.1 — no runtime dependencies needed.
   try {
-    const { generateKeyPairSync, createSign, randomBytes } = require('crypto');
-    const forge = (() => { try { return require('node-forge'); } catch { return null; } })();
+    const LOCALHOST_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDYRI+KxSYPheHN
+up13wVFnoIzH7UXXhyeJNcDOo82s32BUiVwt33mJce/4jliBbH711PAvT1rqUQz6
+nTBgrSOzo/jPGF//TT8g3HrMeai19sUxVrA//AaJvuApSZZaKQN4IrCb27TBoALp
+qAcmRIK/LKiC9UVsfp2h0qPys3HxrRdkRHHgq/PZJ0ZhbXBO23LFtVVHnUP73C/S
+qpQ8EDI3uyjr3Q0xyIONSecfv1YC2lUq8N+mjsV14FH1NEBMWwdxKIkRjd/nMMBd
+srVhC1BThC5NgZ3Of/F6c7aWgK8jOhh1y21pDJQjW3mpl0FepORG/NOhiFoV/4SF
+m/E327r1AgMBAAECggEAEdYNtJcv3WXgSpRSelbyPMar9a0m7nCSHSnWvfQaeWBu
+1GoDtTDSGDjSXsB2oi3thp7KNEyqJdsLY/vkyoRdBmrGkWXkPO0FANPOOODrvh4d
+A0WwAYbqjx+z4xPTl5n8VEMgJ6qGDNYCh3y5IjnSQqwPNcW+tQT4QSlbJiAQjKrf
+/OmIZlCbhpHb3ikufLdkXVx0s6SvfGoPcaxGScuJt7+0G3Hvkon3GLo/KNGVSdHj
+JAgvvOkleL3vHRkiUU1oSvRHQbQkI29T8soqUHLXmEj2urE45duYLZ4MjNq0Lw8L
+TPVFdOlgmzZNeye7Gr5/gdUjQFdllmlC2uMhEEBlYQKBgQD4uo6+tDjzGklWahwJ
+iODLzCSInsYmj9nEflvQpRGLUjvska0XR62R4FcCTM/S2KIavaPL4/efdcvniogy
+uFGqX82xmTgxV7T5DOYisK/WVRO8n6MksJgFqJ1bsyRw12wKspcqv/r879y7Miwz
+Xcxw1GqLbWkVT+BjQU6jMbrMKQKBgQDelxI7xv8EYlkDtzuVYkjYe0FqR95nHWhO
+Ej+0ScDFVnBq83QpzWzCFvrC9LfOyRGU2Qmkc3+vdGKqyEAvwQuDmsbeMlABd37W
+zEVAGur8bVaVN9djU2dHsedNoYNRBBXvQqHjKrXq6XhdTVlsVDlkaupTsLR3mqYm
+nKLAPy4R7QKBgQDyCK/w+PTV80VcFqMz0ANXrU37t+0AB0kUgRUdQhOBbEMtoFA7
+8B8BbbmdXlt5RB7yQImMVUhX3kvOAysnl964GMPTR1K8CSnsk9W5+g8RVPaAvSMH
+B+TW1M5TNk6Gk8np2wFosyosSciUTG1giqzvOnR3Or9f4rtqOlmoSjMIiQKBgCK2
+FFXWFnasj40Qye3lwc5gijb0ti4GW/mwxtZqmfEsJaPIC1lpe4hY5Qn595/7ow4/
+Ok225TaLQ8e2KqxHwm/ndxO3bNqNs+3zNOlmSTbMJjBm4OPQYc7AY32rrjq4FGOX
+VH+EbZIQjoCeS0+lYr3SHnCmob31E+v5iTfJonmRAoGBAK9lBBeB7e5hvW9RbFaB
+q0mK3jsQ6jlmerzN3Fw6mbwYtpE0ztiUfb3Erwxm7m+PgMksZo7YsixOb1otrwPp
+xtQqbp+bryVnnlHqU8cMzj9jB2RckYtng6R7R9SG+X5vAyBRCIei+FwYp9ACM9Qz
+nbgU7gi61yzr1zekjupO9ofp
+-----END PRIVATE KEY-----`;
 
-    let sslKey, sslCert;
+    const LOCALHOST_CERT = `-----BEGIN CERTIFICATE-----
+MIIDGjCCAgKgAwIBAgIUdMfAshSOcVMrNudeIvNREqwhSm0wDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJMTI3LjAuMC4xMB4XDTI2MDIxMDEzMTMyOFoXDTM2MDIw
+ODEzMTMyOFowFDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA2ESPisUmD4Xhzbqdd8FRZ6CMx+1F14cniTXAzqPNrN9g
+VIlcLd95iXHv+I5YgWx+9dTwL09a6lEM+p0wYK0js6P4zxhf/00/INx6zHmotfbF
+MVawP/wGib7gKUmWWikDeCKwm9u0waAC6agHJkSCvyyogvVFbH6dodKj8rNx8a0X
+ZERx4Kvz2SdGYW1wTttyxbVVR51D+9wv0qqUPBAyN7so690NMciDjUnnH79WAtpV
+KvDfpo7FdeBR9TRATFsHcSiJEY3f5zDAXbK1YQtQU4QuTYGdzn/xenO2loCvIzoY
+dcttaQyUI1t5qZdBXqTkRvzToYhaFf+EhZvxN9u69QIDAQABo2QwYjAdBgNVHQ4E
+FgQUxON3FbHg4xfqZBM/RhSpWoE/0ZowHwYDVR0jBBgwFoAUxON3FbHg4xfqZBM/
+RhSpWoE/0ZowDwYDVR0TAQH/BAUwAwEB/zAPBgNVHREECDAGhwR/AAABMA0GCSqG
+SIb3DQEBCwUAA4IBAQADu7GIv1bWYZrz5uUnfyPad6eFsfcSGk5gVXwdRNfZdjM9
+CfokxicIAY5joCj4eX+U9cPGz74Li22HDtVrTOImHcxIt4btr+xqe+tQZO08Y0iB
+6lEfv2HNQ18zl9Hw+nZ21Jf0cjKIRSgyPJX3qVLNhG7v9NiOuaqXOS+ynA/2+sx/
+5S3DuRcdfEMskev+nvAlhBeyoN6CQO/JUaDepU4WA2IW4Mx1esZpAAaUmZe+N7pi
+BeeeukyuY6b4JZbY+uQklQwT3a1CV/8vnA4lhoq/vduJAWKWIomentkj9ed1qGQi
+GuoQ/krqt0VX+EZ1dov6d7VLt52wKo/3Mj9xP5s0
+-----END CERTIFICATE-----`;
 
-    if (forge) {
-      // Use node-forge if available for self-signed cert generation
-      const keys = forge.pki.rsa.generateKeyPair(2048);
-      const cert = forge.pki.createCertificate();
-      cert.publicKey = keys.publicKey;
-      cert.serialNumber = '01';
-      cert.validity.notBefore = new Date();
-      cert.validity.notAfter = new Date();
-      cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-      const attrs = [{ name: 'commonName', value: '127.0.0.1' }];
-      cert.setSubject(attrs);
-      cert.setIssuer(attrs);
-      cert.setExtensions([
-        { name: 'subjectAltName', altNames: [{ type: 7, ip: '127.0.0.1' }] }
-      ]);
-      cert.sign(keys.privateKey);
-      sslKey = forge.pki.privateKeyToPem(keys.privateKey);
-      sslCert = forge.pki.certificateToPem(cert);
-    } else {
-      // Fallback: use Node.js built-in crypto (requires Node 15+)
-      const { privateKey, publicKey } = generateKeyPairSync('rsa', {
-        modulusLength: 2048,
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-      });
-      // Create a minimal self-signed certificate using built-in crypto
-      // For a proper cert we'd need node-forge, but this works for localhost
-      const { X509Certificate } = require('crypto');
-      // Use exec to generate with openssl as a fallback
-      const { execSync } = require('child_process');
-      try {
-        execSync('openssl req -x509 -newkey rsa:2048 -keyout /tmp/parachord-key.pem -out /tmp/parachord-cert.pem -days 365 -nodes -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" 2>/dev/null');
-        sslKey = require('fs').readFileSync('/tmp/parachord-key.pem', 'utf-8');
-        sslCert = require('fs').readFileSync('/tmp/parachord-cert.pem', 'utf-8');
-        // Clean up temp files
-        try { require('fs').unlinkSync('/tmp/parachord-key.pem'); } catch {}
-        try { require('fs').unlinkSync('/tmp/parachord-cert.pem'); } catch {}
-      } catch (certErr) {
-        console.warn('[Auth] Could not generate self-signed cert:', certErr.message);
-      }
-    }
-
-    if (sslKey && sslCert) {
-      httpsAuthServer = https.createServer({ key: sslKey, cert: sslCert }, expressApp);
-      httpsAuthServer.listen(8889, '127.0.0.1', () => {
-        console.log('HTTPS Auth server running on https://127.0.0.1:8889');
-      });
-    }
+    httpsAuthServer = https.createServer({ key: LOCALHOST_KEY, cert: LOCALHOST_CERT }, expressApp);
+    httpsAuthServer.listen(8889, '127.0.0.1', () => {
+      console.log('HTTPS Auth server running on https://127.0.0.1:8889');
+    });
   } catch (err) {
     console.warn('[Auth] HTTPS auth server not started:', err.message);
   }
