@@ -5038,7 +5038,7 @@ ipcMain.handle('social-feed:auth', async (event, providerId) => {
     // localhost redirect URIs. We redirect to Meta's own success page
     // and intercept the navigation to extract the auth code.
     if (providerId === 'threads') {
-      const redirectUri = 'https://www.facebook.com/connect/login_success.html';
+      const redirectUri = 'https://parachord.com/auth/threads/callback';
       const { authUrl } = await provider.startAuth(store, clientId, redirectUri);
       const clientSecret = store.get('social-feed-threads-client-secret') || process.env.THREADS_APP_SECRET;
 

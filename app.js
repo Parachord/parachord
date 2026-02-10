@@ -45586,7 +45586,7 @@ useEffect(() => {
                     wordBreak: 'break-all'
                   }
                 }, selectedResolver.id === 'threads'
-                    ? 'https://www.facebook.com/connect/login_success.html'
+                    ? 'https://parachord.com/auth/threads/callback'
                     : `http://127.0.0.1:8888/callback/${selectedResolver.id}`)
               ),
 
