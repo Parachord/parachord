@@ -9246,7 +9246,13 @@ const Parachord = () => {
 
         if (loadedPlaylists.length > 0) {
           // Playlists are already stored as full objects, just use them directly
-          setPlaylists(loadedPlaylists);
+          // Fix up social-feed playlist source if missing from older saves
+          const fixedPlaylists = loadedPlaylists.map(p =>
+            p.id === 'social-feed-playlist' && !p.source
+              ? { ...p, source: 'social-feed' }
+              : p
+          );
+          setPlaylists(fixedPlaylists);
         } else {
           console.log('📋 No playlists found in local storage');
         }
