@@ -40343,7 +40343,7 @@ useEffect(() => {
                   (() => {
                     // Social feed provider data (from .axe manifests)
                     const socialFeedPlugins = [
-                      { id: 'bluesky', name: 'Bluesky', color: '#0085FF', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Bluesky Following feed — posts and replies from everyone you follow', type: 'social-feed', settings: { requiresAuth: true, authType: 'app-password', configurable: { handle: { type: 'text', label: 'Bluesky Handle', placeholder: 'you.bsky.social' }, appPassword: { type: 'password', label: 'App Password' } } } },
+                      { id: 'bluesky', name: 'Bluesky', color: '#0085FF', version: '1.0.0', description: 'Build a dynamic playlist from music links shared on your Bluesky Following feed — posts and replies from everyone you follow', type: 'social-feed', settings: { requiresAuth: true, authType: 'app-password' } },
                       { id: 'x', name: 'X', color: '#000000', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your X (Twitter) feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { clientId: { type: 'text', label: 'X API Client ID' } } } },
                       { id: 'mastodon', name: 'Mastodon', color: '#6364FF', version: '0.1.0', description: 'Build a dynamic playlist from music links shared on your Mastodon feed (coming soon)', type: 'social-feed', settings: { requiresAuth: true, configurable: { instanceUrl: { type: 'text', label: 'Instance URL', placeholder: 'https://mastodon.social' } } } }
                     ];
@@ -40370,7 +40370,7 @@ useEffect(() => {
                           key: plugin.id,
                           resolver: plugin,
                           isActive: isConnected,
-                          needsConfiguration: isConnected && !socialFeedConfigs[plugin.id]?.clientId,
+                          needsConfiguration: false,
                           onClick: () => setSelectedResolver({ ...plugin, _socialFeed: true })
                         });
                       });
@@ -45948,7 +45948,7 @@ useEffect(() => {
                       'Create an app password in your ',
                       React.createElement('a', {
                         href: '#',
-                        onClick: (e) => { e.preventDefault(); window.electron.openExternal('https://bsky.app/settings/app-passwords'); },
+                        onClick: (e) => { e.preventDefault(); window.electron.shell.openExternal('https://bsky.app/settings/app-passwords'); },
                         style: { color: '#7c3aed', textDecoration: 'underline' }
                       }, 'Bluesky Settings'),
                       ', then enter your handle and app password below.'
