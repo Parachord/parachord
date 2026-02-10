@@ -7254,6 +7254,9 @@ const Parachord = () => {
         // Refresh provider status
         const providers = await window.electron.socialFeeds.getProviders();
         setSocialFeedProviders(providers);
+        // Immediately scan existing posts to build the Social Feed playlist
+        console.log(`[SocialFeed] Scanning existing ${data.provider} posts...`);
+        window.electron.socialFeeds.scanNow(data.provider);
       });
 
       window.electron.socialFeeds.onAuthError((data) => {
@@ -43474,8 +43477,8 @@ useEffect(() => {
             minHeight: 0
           }
         },
-          // Description
-          React.createElement('p', {
+          // Description (skip for social feed plugins - shown in their own config section)
+          !selectedResolver._socialFeed && React.createElement('p', {
             style: {
               fontSize: '13px',
               color: '#6b7280',
@@ -43484,8 +43487,8 @@ useEffect(() => {
             }
           }, selectedResolver.description),
 
-          // Capabilities
-          React.createElement('div', { style: { marginBottom: '24px' } },
+          // Capabilities (skip for social feed plugins)
+          !selectedResolver._socialFeed && React.createElement('div', { style: { marginBottom: '24px' } },
             React.createElement('h3', {
               style: {
                 fontSize: '11px',
@@ -43527,8 +43530,8 @@ useEffect(() => {
             )
           ),
 
-          // Enable/Disable toggle (only for content resolvers, not meta services)
-          selectedResolver.type !== 'meta-service' && React.createElement('div', {
+          // Enable/Disable toggle (only for content resolvers, not meta services or social feeds)
+          selectedResolver.type !== 'meta-service' && !selectedResolver._socialFeed && React.createElement('div', {
             className: 'flex items-center justify-between',
             style: {
               padding: '16px 0',
@@ -45598,9 +45601,7 @@ useEffect(() => {
           // Social Feed configuration
           selectedResolver._socialFeed && React.createElement('div', {
             style: {
-              paddingTop: '20px',
-              paddingBottom: '20px',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              paddingBottom: '20px'
             }
           },
             React.createElement('span', {
@@ -45724,7 +45725,9 @@ useEffect(() => {
                     ),
                     React.createElement('input', {
                       type: 'password',
-                      placeholder: 'Paste your access token here',
+                      placeholder: socialFeedConfigs[selectedResolver.id]?.hasToken
+                        ? socialFeedConfigs[selectedResolver.id].tokenPreview
+                        : 'Paste your access token here',
                       value: socialFeedConfigs[selectedResolver.id]?.accessToken || '',
                       onChange: (e) => {
                         setSocialFeedConfigs(prev => ({

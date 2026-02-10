@@ -5163,10 +5163,55 @@ ipcMain.handle('social-feed:get-credentials', async (event, providerId) => {
   const provider = feedPlaylistManager.getProvider(providerId);
   if (!provider) return {};
 
+  const token = provider.getStoredToken(store);
   return {
     clientId: store.get(`social-feed-${providerId}-client-id`) || process.env[`${providerId.toUpperCase()}_APP_ID`] || '',
-    clientSecret: store.get(`social-feed-${providerId}-client-secret`) || process.env[`${providerId.toUpperCase()}_APP_SECRET`] || ''
+    clientSecret: store.get(`social-feed-${providerId}-client-secret`) || process.env[`${providerId.toUpperCase()}_APP_SECRET`] || '',
+    hasToken: !!token,
+    tokenPreview: token ? token.slice(0, 6) + '...' + token.slice(-4) : ''
   };
+});
+
+// One-time scan of a provider's feed (fetch existing posts immediately)
+ipcMain.handle('social-feed:scan-now', async (event, providerId) => {
+  const provider = feedPlaylistManager.getProvider(providerId);
+  if (!provider) return { success: false, error: `Unknown provider: ${providerId}` };
+
+  try {
+    let token = provider.getStoredToken(store);
+    if (!token) return { success: false, error: 'Not authenticated' };
+
+    // Auto-refresh expired tokens
+    if (provider.isTokenExpired(store)) {
+      token = await provider.refreshToken(store);
+    }
+
+    const posts = await provider.fetchFeed(token, null);
+    if (posts.length === 0) return { success: true, items: [] };
+
+    const { extractLinksFromPosts } = require('./social-feeds/link-extractor');
+    const links = extractLinksFromPosts(posts);
+    if (links.length === 0) return { success: true, items: [] };
+
+    // Dedup against existing playlist
+    const playlist = feedPlaylistManager.getPlaylist(providerId);
+    const existingUrls = new Set(playlist.map(item => item.url));
+    const newItems = links.filter(l => !existingUrls.has(l.url));
+
+    if (newItems.length > 0) {
+      const updatedPlaylist = [...newItems, ...playlist];
+      store.set(`social-feed-playlist-${providerId}`, updatedPlaylist);
+
+      // Notify renderer with the new items
+      if (mainWindow) {
+        mainWindow.webContents.send('social-feed-update', { providerId, newItems, fullPlaylist: updatedPlaylist });
+      }
+    }
+
+    return { success: true, items: newItems };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 // Start polling a provider's feed
