@@ -108,11 +108,11 @@ class BlueskyProvider extends BaseSocialProvider {
   // ---- Feed ----
 
   // Fetch the user's home timeline — posts and replies from people they follow.
+  // `since` is a post URI used to filter out already-seen posts client-side.
+  // Note: Bluesky's cursor is an opaque pagination token, NOT a post URI,
+  // so we always fetch the latest posts and filter locally.
   async fetchFeed(token, since) {
-    let url = `${BLUESKY_API_BASE}/app.bsky.feed.getTimeline?limit=50`;
-    if (since) {
-      url += `&cursor=${since}`;
-    }
+    const url = `${BLUESKY_API_BASE}/app.bsky.feed.getTimeline?limit=50`;
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` }
@@ -161,6 +161,14 @@ class BlueskyProvider extends BaseSocialProvider {
         url: `https://bsky.app/profile/${post.author?.handle}/post/${post.uri.split('/').pop()}`
       };
     });
+
+    // Filter out posts we've already seen (client-side since check)
+    if (since) {
+      const sinceIndex = posts.findIndex(p => p.id === since);
+      if (sinceIndex !== -1) {
+        return posts.slice(0, sinceIndex);
+      }
+    }
 
     return posts;
   }

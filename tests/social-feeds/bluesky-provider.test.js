@@ -194,17 +194,59 @@ describe('BlueskyProvider', () => {
       expect(posts[0].text).toContain('https://soundcloud.com/artist/track-name');
     });
 
-    test('passes cursor for pagination', async () => {
+    test('always fetches latest posts without passing since as cursor', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ feed: [] })
       });
 
-      await provider.fetchFeed('test-token', 'cursor123');
+      await provider.fetchFeed('test-token', 'at://did:plc:abc/app.bsky.feed.post/123');
+      // Should NOT pass the post URI as a cursor — Bluesky cursors are opaque pagination tokens
       expect(fetch).toHaveBeenCalledWith(
-        'https://bsky.social/xrpc/app.bsky.feed.getTimeline?limit=50&cursor=cursor123',
+        'https://bsky.social/xrpc/app.bsky.feed.getTimeline?limit=50',
         expect.any(Object)
       );
+    });
+
+    test('filters out already-seen posts when since is provided', async () => {
+      const mockTimeline = {
+        feed: [
+          {
+            post: {
+              uri: 'at://did:plc:abc/app.bsky.feed.post/new1',
+              author: { handle: 'user1.bsky.social' },
+              record: { text: 'New post 1', createdAt: '2026-02-10T14:00:00Z' },
+              indexedAt: '2026-02-10T14:00:01Z'
+            }
+          },
+          {
+            post: {
+              uri: 'at://did:plc:abc/app.bsky.feed.post/seen',
+              author: { handle: 'user2.bsky.social' },
+              record: { text: 'Already seen post', createdAt: '2026-02-10T13:00:00Z' },
+              indexedAt: '2026-02-10T13:00:01Z'
+            }
+          },
+          {
+            post: {
+              uri: 'at://did:plc:abc/app.bsky.feed.post/old',
+              author: { handle: 'user3.bsky.social' },
+              record: { text: 'Old post', createdAt: '2026-02-10T12:00:00Z' },
+              indexedAt: '2026-02-10T12:00:01Z'
+            }
+          }
+        ]
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockTimeline)
+      });
+
+      const posts = await provider.fetchFeed('test-token', 'at://did:plc:abc/app.bsky.feed.post/seen');
+      // Should only return posts newer than the 'since' marker
+      expect(posts).toHaveLength(1);
+      expect(posts[0].id).toBe('at://did:plc:abc/app.bsky.feed.post/new1');
     });
 
     test('throws on 401 with session expired message', async () => {
@@ -218,17 +260,19 @@ describe('BlueskyProvider', () => {
   });
 
   describe('disconnect', () => {
-    test('clears all stored data', async () => {
+    test('clears all stored data including polling-enabled flag', async () => {
       store.set('social-feed-bluesky-token', 'test-token');
       store.set('social-feed-bluesky-refresh-token', 'test-refresh');
       store.set('social-feed-bluesky-username', 'test.bsky.social');
       store.set('social-feed-bluesky-user-id', 'did:plc:test');
+      store.set('social-feed-bluesky-polling-enabled', true);
 
       await provider.disconnect(store);
       expect(store.get('social-feed-bluesky-token')).toBeNull();
       expect(store.get('social-feed-bluesky-refresh-token')).toBeNull();
       expect(store.get('social-feed-bluesky-username')).toBeNull();
       expect(store.get('social-feed-bluesky-user-id')).toBeNull();
+      expect(store.get('social-feed-bluesky-polling-enabled')).toBeNull();
     });
   });
 
