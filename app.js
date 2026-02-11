@@ -6981,39 +6981,38 @@ const Parachord = () => {
     const initResolvers = async () => {
       console.log('🔌 Initializing resolver plugin system...');
 
-      // Load API keys from environment via IPC
-      if (window.electron?.config?.get) {
-        try {
-          const lfmKey = await window.electron.config.get('LASTFM_API_KEY');
-          if (lfmKey) {
-            lastfmApiKey.current = lfmKey;
-            console.log('🔑 Last.fm API key loaded from environment');
-          } else {
-            console.warn('⚠️ LASTFM_API_KEY not found in .env file');
-          }
-        } catch (error) {
-          console.error('❌ Failed to load API keys from config:', error);
-        }
-      }
-
       // Check if ResolverLoader is available
       if (typeof ResolverLoader === 'undefined') {
         console.error('❌ ResolverLoader not found! Make sure resolver-loader.js is loaded.');
         return;
       }
-      
+
       // Create resolver loader
       resolverLoader.current = new ResolverLoader();
-      
-      try {
-        // Try to load built-in resolvers from resolvers/builtin/ directory
-        console.log('📁 Loading resolver .axe files from resolvers/builtin/...');
-        const builtinAxeFiles = await loadBuiltinResolvers();
-        
-        let resolversToLoad = builtinAxeFiles;
 
-        // Get list of user-uninstalled resolvers to exclude
-        const uninstalledResolvers = await window.electron.store.get('uninstalled_resolvers') || [];
+      // Kick off all independent IPC calls in parallel
+      const apiKeyPromise = window.electron?.config?.get
+        ? window.electron.config.get('LASTFM_API_KEY').catch(() => null)
+        : Promise.resolve(null);
+      const builtinPromise = loadBuiltinResolvers();
+      const uninstalledPromise = window.electron?.store?.get
+        ? window.electron.store.get('uninstalled_resolvers').catch(() => [])
+        : Promise.resolve([]);
+      const metaConfigsPromise = window.electron?.store?.get
+        ? window.electron.store.get('meta_service_configs').catch(() => ({}))
+        : Promise.resolve({});
+
+      const [lfmKey, builtinAxeFiles, uninstalledResolvers, savedMetaConfigs] = await Promise.all([
+        apiKeyPromise, builtinPromise, uninstalledPromise, metaConfigsPromise
+      ]);
+
+      if (lfmKey) {
+        lastfmApiKey.current = lfmKey;
+        console.log('🔑 Last.fm API key loaded from environment');
+      }
+
+      try {
+        let resolversToLoad = builtinAxeFiles;
 
         if (builtinAxeFiles.length === 0) {
           console.warn('⚠️  No .axe files found in resolvers/builtin/');
@@ -7053,7 +7052,6 @@ const Parachord = () => {
         // Filter out user-uninstalled resolvers (they can reinstall from marketplace)
         // But don't filter meta services that the user has explicitly enabled in their config
         if (uninstalledResolvers.length > 0) {
-          const savedMetaConfigs = await window.electron.store.get('meta_service_configs') || {};
           const beforeCount = resolversToLoad.length;
           resolversToLoad = resolversToLoad.filter(axe => {
             const id = axe.manifest?.id;
@@ -7100,23 +7098,21 @@ const Parachord = () => {
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
 
-        // Also load meta services with URL lookup into the resolver loader (for URL pattern matching)
-        if (metaServicesWithUrlLookup.length > 0) {
-          await resolverLoader.current.loadResolvers(metaServicesWithUrlLookup);
-          console.log(`📎 Loaded ${metaServicesWithUrlLookup.length} meta service(s) with URL lookup:`, metaServicesWithUrlLookup.map(s => s.manifest.name).join(', '));
-        }
-
-        // Load meta services with generate capability (AI playlist generation)
-        if (metaServicesWithGenerate.length > 0) {
-          const loadedAiServices = await resolverLoader.current.loadResolvers(metaServicesWithGenerate);
-          console.log(`🤖 Loaded ${loadedAiServices.length} AI service(s):`, loadedAiServices.map(s => s.name).join(', '));
-        }
-
-        // Load meta services with chat capability (Conversational DJ)
-        if (metaServicesWithChat.length > 0) {
-          const loadedChatServices = await resolverLoader.current.loadResolvers(metaServicesWithChat);
-          console.log(`💬 Loaded ${loadedChatServices.length} chat service(s):`, loadedChatServices.map(s => s.name).join(', '));
-        }
+        // Load meta services in parallel (URL lookup, AI generate, chat are independent)
+        await Promise.all([
+          metaServicesWithUrlLookup.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithUrlLookup).then(r =>
+                console.log(`📎 Loaded ${r.length} meta service(s) with URL lookup:`, metaServicesWithUrlLookup.map(s => s.manifest.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithGenerate.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithGenerate).then(r =>
+                console.log(`🤖 Loaded ${r.length} AI service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithChat.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithChat).then(r =>
+                console.log(`💬 Loaded ${r.length} chat service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve()
+        ]);
 
         // Set meta services directly (they don't need the resolver pipeline for playback)
         if (metaServiceAxes.length > 0) {
@@ -8951,9 +8947,8 @@ const Parachord = () => {
 
     loadLocalFilesLibrary();
 
-    const context = new (window.AudioContext || window.webkitAudioContext)();
-    setAudioContext(context);
-    
+    // AudioContext is created lazily on first playback (see effect below)
+
     // Load playlists from electron-store
     const loadPlaylistsFromStore = async () => {
       try {
@@ -8993,10 +8988,17 @@ const Parachord = () => {
     }
 
     return () => {
-      context.close();
       if (libraryChangeCleanup) libraryChangeCleanup();
     };
   }, []);
+
+  // Lazily create AudioContext on first playback (avoids browser autoplay policy + speeds up startup)
+  useEffect(() => {
+    if (isPlaying && !audioContext) {
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      setAudioContext(context);
+    }
+  }, [isPlaying, audioContext]);
 
   // Load collection data on startup
   useEffect(() => {

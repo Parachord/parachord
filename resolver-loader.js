@@ -54,17 +54,12 @@ class ResolverLoader {
    * Load multiple resolvers from an array of .axe contents
    */
   async loadResolvers(axeContents) {
-    const results = [];
-    for (const axeContent of axeContents) {
-      try {
-        const resolver = await this.loadResolver(axeContent);
-        results.push(resolver);
-      } catch (error) {
-        console.error('Failed to load resolver:', error);
-        // Continue loading other resolvers
-      }
-    }
-    return results;
+    const settled = await Promise.allSettled(
+      axeContents.map(axeContent => this.loadResolver(axeContent))
+    );
+    return settled
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value);
   }
 
   /**
