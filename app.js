@@ -16185,8 +16185,42 @@ const Parachord = () => {
       if (savedActiveResolvers) {
         // Deduplicate in case of corrupted data
         const dedupedActive = [...new Set(savedActiveResolvers)];
-        setActiveResolvers(dedupedActive);
-        console.log(`📦 Loaded ${dedupedActive.length} active resolvers from storage`);
+
+        // Filter out auth-requiring resolvers whose tokens are missing/expired
+        const authChecks = {
+          spotify: async () => {
+            const td = await window.electron?.spotify?.checkToken();
+            return !!(td && td.token);
+          },
+          soundcloud: async () => {
+            const td = await window.electron?.soundcloud?.checkToken();
+            return !!(td && td.token);
+          },
+          applemusic: async () => {
+            const authorized = await window.electron?.store?.get('applemusic_authorized');
+            return !!authorized;
+          }
+        };
+
+        const validActive = [];
+        for (const id of dedupedActive) {
+          if (authChecks[id]) {
+            try {
+              if (await authChecks[id]()) {
+                validActive.push(id);
+              } else {
+                console.log(`⏭️ Skipping resolver '${id}' — no valid token`);
+              }
+            } catch {
+              console.log(`⏭️ Skipping resolver '${id}' — token check failed`);
+            }
+          } else {
+            validActive.push(id); // No auth required
+          }
+        }
+
+        setActiveResolvers(validActive);
+        console.log(`📦 Loaded ${validActive.length} active resolvers from storage (${dedupedActive.length - validActive.length} skipped — no auth)`);
       }
 
       if (savedResolverOrder) {
