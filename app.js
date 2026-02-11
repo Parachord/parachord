@@ -4643,8 +4643,8 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
-  const [activeResolvers, setActiveResolvers] = useState(['spotify', 'bandcamp', 'localfiles']);
-  const [resolverOrder, setResolverOrder] = useState(['spotify', 'bandcamp', 'localfiles']);
+  const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
+  const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
@@ -26207,6 +26207,19 @@ ${tracks}
         }
 
         showToast('Apple Music connected successfully', 'success');
+      } else if (authResult.needsSystemSettings) {
+        // Previously denied — user must toggle permission in System Settings
+        showConfirmDialog({
+          type: 'info',
+          title: 'Apple Music Access Denied',
+          message: 'Apple Music access was previously denied. Please enable it in System Settings → Privacy & Security → Media & Apple Music, then try again.',
+          confirmLabel: 'Open System Settings',
+          onConfirm: () => {
+            if (window.electron?.shell?.openExternal) {
+              window.electron.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_MediaAppleMusic');
+            }
+          }
+        });
       } else {
         // User denied or other status
         showConfirmDialog({
