@@ -85,8 +85,30 @@ class MusicKitBridge {
 
     // Request authorization
     func authorize() async -> [String: Any] {
-        // Temporarily become a regular app so macOS shows the authorization dialog.
-        // Background/accessory apps can't present system auth prompts.
+        let currentStatus = MusicAuthorization.currentStatus
+
+        // If already authorized, return immediately
+        if currentStatus == .authorized {
+            isAuthorized = true
+            return [
+                "authorized": true,
+                "status": "authorized"
+            ]
+        }
+
+        // If previously denied, the system won't re-prompt — user must
+        // enable access in System Settings > Privacy & Security > Media & Apple Music
+        if currentStatus == .denied {
+            return [
+                "authorized": false,
+                "status": "denied",
+                "needsSystemSettings": true
+            ]
+        }
+
+        // Status is .notDetermined — we can request and macOS will show the dialog.
+        // Temporarily become a regular app so macOS presents the prompt.
+        // (Background/accessory apps can't present system auth prompts.)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
