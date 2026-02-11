@@ -5742,6 +5742,7 @@ const Parachord = () => {
   const visiblePlaylistTrackIds = useRef(new Set());
   const playlistScrollContainerRef = useRef(null);
   const playlistTracksRef = useRef([]); // Ref to access current tracks in observer callback
+  const allPlaylistsRef = useRef([]); // Ref to access all playlists without stale closures
   const [playlistScrollContainerReady, setPlaylistScrollContainerReady] = useState(false);
 
   // Refs for collection tracks scroll container
@@ -17915,7 +17916,7 @@ const Parachord = () => {
 
     // Use track.id as the key for trackSources state - this matches what views use to look up resolved sources
     const trackKey = track.id;
-    const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}|${track.position || 0}`;
+    const cacheKey = `${artistName.toLowerCase()}|${track.title.toLowerCase()}`;
     const currentResolverHash = getResolverSettingsHash();
 
     // Check cache first (unless force refresh)
@@ -18429,8 +18430,8 @@ const Parachord = () => {
       // Collect tracks that need resolution
       const tracksToResolve = [];
 
-      // First, check collection tracks
-      const allCollectionTracks = [...(library || []), ...(collectionData?.tracks || [])];
+      // First, check collection tracks (read from ref to avoid stale closures)
+      const allCollectionTracks = collectionTracksRef.current || [];
       let collectionIdx = backgroundResolutionIndex.current;
 
       while (tracksToResolve.length < backgroundBatchSize && collectionIdx < allCollectionTracks.length) {
@@ -18440,7 +18441,7 @@ const Parachord = () => {
         if (!track?.id) continue;
 
         // Check if track needs resolution for any active resolver
-        const trackKey = `bg-${track.id}`;
+        const trackKey = track.id;
         if (resolutionScheduler.hasResolved(trackKey) || resolutionScheduler.hasPending(trackKey)) {
           continue;
         }
@@ -18475,7 +18476,7 @@ const Parachord = () => {
 
       // If we've finished collection, move to playlists
       if (collectionIdx >= allCollectionTracks.length && tracksToResolve.length < backgroundBatchSize) {
-        const playlistList = playlists || [];
+        const playlistList = allPlaylistsRef.current || [];
         let { playlistIdx, trackIdx } = backgroundPlaylistIndex.current;
 
         while (tracksToResolve.length < backgroundBatchSize && playlistIdx < playlistList.length) {
@@ -18488,7 +18489,7 @@ const Parachord = () => {
 
             if (!track?.id) continue;
 
-            const trackKey = `bg-pl-${playlist.id}-${track.id}`;
+            const trackKey = track.id;
             if (resolutionScheduler.hasResolved(trackKey) || resolutionScheduler.hasPending(trackKey)) {
               continue;
             }
@@ -18541,7 +18542,7 @@ const Parachord = () => {
       resolutionScheduler.setOnIdleCallback(null);
       resolutionScheduler.unregisterContext('background');
     };
-  }, [library, collectionData, playlists]);
+  }, []); // Stable effect - idle callback reads from refs for fresh data
 
   // Register page context for collection tracks resolution
   useEffect(() => {
@@ -18555,10 +18556,14 @@ const Parachord = () => {
     }
   }, [activeView, collectionTab, registerPageContext, abortSchedulerContext]);
 
-  // Keep ref in sync with collection tracks for observer callback
+  // Keep refs in sync for observer and background resolution callbacks
   useEffect(() => {
     collectionTracksRef.current = [...library, ...collectionData.tracks];
   }, [library, collectionData.tracks]);
+
+  useEffect(() => {
+    allPlaylistsRef.current = playlists;
+  }, [playlists]);
 
   // IntersectionObserver for collection tracks visibility
   useEffect(() => {
@@ -19377,7 +19382,7 @@ const Parachord = () => {
                 data: { track, artistName: track.artist || 'Unknown Artist' }
               });
               // Check if this track has cached sources but isn't in trackSources state
-              const cacheKey = `${(track.artist || 'Unknown Artist').toLowerCase()}|${track.title.toLowerCase()}|${track.position || 0}`;
+              const cacheKey = `${(track.artist || 'Unknown Artist').toLowerCase()}|${track.title.toLowerCase()}`;
               const cached = trackSourcesCache.current[cacheKey];
               if (cached?.sources && Object.keys(cached.sources).length > 0) {
                 sourcesToSync[trackId] = cached.sources;
