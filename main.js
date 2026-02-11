@@ -1331,6 +1331,7 @@ app.whenReady().then(() => {
   startExtensionServer();
   startMcpServer(mainWindow);
   systemVolumeMonitor.start();
+  feedPlaylistManager.restorePolling();
 
   // Set up application menu
   const isMac = process.platform === 'darwin';

@@ -131,6 +131,56 @@ describe('FeedPlaylistManager', () => {
       expect(manager.isPolling('second')).toBe(false);
     });
 
+    test('startPolling persists polling-enabled flag in store', () => {
+      store.set('social-feed-test-token', 'token123');
+      store.set('social-feed-test-token-expiry', Date.now() + 3600000);
+      manager.startPolling('test', 60000);
+      expect(store.get('social-feed-test-polling-enabled')).toBe(true);
+    });
+
+    test('stopPolling clears polling-enabled flag from store', () => {
+      store.set('social-feed-test-token', 'token123');
+      store.set('social-feed-test-token-expiry', Date.now() + 3600000);
+      manager.startPolling('test', 60000);
+      manager.stopPolling('test');
+      expect(store.get('social-feed-test-polling-enabled')).toBeNull();
+    });
+
+    test('stopAllPolling preserves polling-enabled flags for restore', () => {
+      store.set('social-feed-test-token', 'token123');
+      store.set('social-feed-test-token-expiry', Date.now() + 3600000);
+      manager.startPolling('test', 60000);
+      manager.stopAllPolling();
+      // stopAllPolling should NOT clear the persisted flag
+      expect(store.get('social-feed-test-polling-enabled')).toBe(true);
+    });
+
+    test('restorePolling resumes polling for providers with saved state', () => {
+      store.set('social-feed-test-token', 'token123');
+      store.set('social-feed-test-token-expiry', Date.now() + 3600000);
+      store.set('social-feed-test-polling-enabled', true);
+
+      manager.restorePolling();
+      expect(manager.isPolling('test')).toBe(true);
+    });
+
+    test('restorePolling skips providers without saved polling state', () => {
+      store.set('social-feed-test-token', 'token123');
+      store.set('social-feed-test-token-expiry', Date.now() + 3600000);
+      // No polling-enabled flag set
+
+      manager.restorePolling();
+      expect(manager.isPolling('test')).toBe(false);
+    });
+
+    test('restorePolling skips providers without a valid token', () => {
+      store.set('social-feed-test-polling-enabled', true);
+      // No token set
+
+      manager.restorePolling();
+      expect(manager.isPolling('test')).toBe(false);
+    });
+
     test('polling collects music links from posts', async () => {
       store.set('social-feed-test-token', 'token123');
       store.set('social-feed-test-token-expiry', Date.now() + 3600000);

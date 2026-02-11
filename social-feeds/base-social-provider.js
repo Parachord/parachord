@@ -43,6 +43,7 @@ class BaseSocialProvider {
     store.delete(`social-feed-${this.id}-username`);
     store.delete(`social-feed-${this.id}-user-id`);
     store.delete(`social-feed-${this.id}-last-post-id`);
+    store.delete(`social-feed-${this.id}-polling-enabled`);
   }
 
   // ---- Feed operations ----

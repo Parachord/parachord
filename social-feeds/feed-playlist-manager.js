@@ -99,6 +99,7 @@ class FeedPlaylistManager {
 
     provider.startPolling(intervalMs, fetchFn, onNewPosts);
     this.activePollers.set(providerId, true);
+    this.store.set(`social-feed-${providerId}-polling-enabled`, true);
 
     console.log(`[FeedPlaylistManager] Started polling ${provider.name} every ${intervalMs / 1000}s`);
   }
@@ -109,11 +110,34 @@ class FeedPlaylistManager {
       provider.stopPolling();
     }
     this.activePollers.delete(providerId);
+    this.store.delete(`social-feed-${providerId}-polling-enabled`);
   }
 
+  // Stop all active pollers without clearing persisted state.
+  // Used during app quit so polling resumes on next launch.
   stopAllPolling() {
     for (const providerId of this.activePollers.keys()) {
-      this.stopPolling(providerId);
+      const provider = this.providers.get(providerId);
+      if (provider) {
+        provider.stopPolling();
+      }
+    }
+    this.activePollers.clear();
+  }
+
+  // Restore polling for providers that had it enabled (e.g. after app restart).
+  restorePolling() {
+    for (const provider of this.providers.values()) {
+      const enabled = this.store.get(`social-feed-${provider.id}-polling-enabled`);
+      const token = provider.getStoredToken(this.store);
+      if (enabled && token) {
+        try {
+          this.startPolling(provider.id);
+          console.log(`[FeedPlaylistManager] Restored polling for ${provider.name}`);
+        } catch (err) {
+          console.error(`[FeedPlaylistManager] Failed to restore polling for ${provider.name}:`, err.message);
+        }
+      }
     }
   }
 
