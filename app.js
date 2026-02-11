@@ -27308,8 +27308,8 @@ useEffect(() => {
             )
           ),
 
-          // FRIENDS section (only show if there are pinned friends OR dragging a friend over)
-          (pinnedFriendIds.length > 0 || friendDragOverSidebar) && React.createElement('div', {
+          // FRIENDS section (always visible so new users can discover and add friends)
+          React.createElement('div', {
             className: 'rounded-lg transition-colors',
             style: friendDragOverSidebar ? {
               backgroundColor: 'rgba(124, 58, 237, 0.05)',
