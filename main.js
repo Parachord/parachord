@@ -1848,8 +1848,7 @@ function getSpotifyCredentials() {
   };
 }
 
-// Helper to get SoundCloud credentials with priority: user-stored > env
-// Note: No fallback credentials for SoundCloud as API access is deprecated
+// Helper to get SoundCloud credentials with priority: user-stored > env > fallback
 function getSoundCloudCredentials() {
   // First check user-configured credentials (stored via UI)
   const userClientId = store.get('soundcloud_client_id');
