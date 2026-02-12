@@ -42000,32 +42000,6 @@ useEffect(() => {
         );
       })(),
 
-      // Listening history toggle (if scrobbler connected)
-      hasScrobblerConnected() && React.createElement('div', {
-        className: 'mt-3 flex items-center justify-between'
-      },
-        React.createElement('label', {
-          htmlFor: 'ai-include-history',
-          style: { fontSize: '12px', color: '#9ca3af', cursor: 'pointer', userSelect: 'none' }
-        }, 'Use my listening history'),
-        React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
-          React.createElement('input', {
-            type: 'checkbox',
-            id: 'ai-include-history',
-            checked: aiIncludeHistory,
-            onChange: (e) => setAiIncludeHistory(e.target.checked),
-            className: 'sr-only peer'
-          }),
-          React.createElement('div', {
-            className: 'w-full h-full rounded-full peer-checked:bg-violet-600 transition-colors',
-            style: { backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)' }
-          }),
-          React.createElement('div', {
-            className: 'absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5'
-          })
-        )
-      ),
-
       // Surprise Me button (own row, only when listening history is enabled) - Muted gradient
       hasScrobblerConnected() && aiIncludeHistory && React.createElement('div', {
         className: 'mt-3'
@@ -42167,7 +42141,54 @@ useEffect(() => {
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
+            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } },
+                // Listening history toggle (left side)
+                hasScrobblerConnected()
+                  ? React.createElement('label', {
+                      style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' },
+                      title: aiIncludeHistory ? 'Sharing listening data with AI' : 'Not sharing listening data with AI'
+                    },
+                      React.createElement('input', {
+                        type: 'checkbox',
+                        checked: aiIncludeHistory,
+                        onChange: (e) => setAiIncludeHistory(e.target.checked),
+                        className: 'sr-only peer',
+                        style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
+                      }),
+                      // Toggle track
+                      React.createElement('div', {
+                        style: {
+                          position: 'relative',
+                          width: '28px',
+                          height: '16px',
+                          borderRadius: '8px',
+                          backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)',
+                          transition: 'background-color 0.2s',
+                          flexShrink: 0
+                        }
+                      },
+                        // Toggle knob
+                        React.createElement('div', {
+                          style: {
+                            position: 'absolute',
+                            top: '2px',
+                            left: aiIncludeHistory ? '14px' : '2px',
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            backgroundColor: '#ffffff',
+                            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+                            transition: 'left 0.2s'
+                          }
+                        })
+                      ),
+                      React.createElement('span', {
+                        style: { fontSize: '11px', color: aiIncludeHistory ? '#c4b5fd' : '#6b7280', whiteSpace: 'nowrap' }
+                      }, 'My data')
+                    )
+                  : React.createElement('div'),
+                // Provider selector (right side)
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                 // "powered by:" label
                 React.createElement('span', { style: { fontSize: '12px', color: '#6b7280' } }, 'powered by:'),
                 // Custom dropdown button
@@ -42294,6 +42315,7 @@ useEffect(() => {
                     )
                   );
                 })()
+                )
               )
             : (resultsSidebar.subtitle && React.createElement('p', {
                 style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
