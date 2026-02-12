@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-02-08
+> Last updated: 2026-02-12
 
 ---
 
@@ -191,12 +191,56 @@
 - Icon generation scripts for all platforms
 - DMG installer with Applications folder icon
 
-### Auth & API Management (v0.6.x)
+### Smart Links (v0.7.x)
+- Publish Smart Links from context menu — shareable web pages for any track
+- Cloudflare Workers backend with KV storage at go.parachord.com
+- Embedded player with WebSocket connection to Parachord desktop app ("Play in Parachord")
+- Apple Music support in smart links
+- Official service logos (Spotify, YouTube, SoundCloud, Apple Music, Bandcamp)
+- Copy Embed Code for embedding smart link players in websites
+- Auto-copy link URL to clipboard on publish
+
+### MCP Server (v0.7.x)
+- MCP server for Claude Desktop integration (playback control, search, queue management)
+- stdio bridge for Claude Desktop compatibility
+- One-click Claude Desktop setup in General settings
+
+### AI DJ Improvements (v0.7.x)
+- "Share my data" toggle gates ALL personal data (now playing, queue, collection, history, playlists, friends) — off by default
+- AI prompts user to enable data sharing when needed (e.g. "what's playing?", "add similar songs")
+- Toggle visible to all users (not just scrobbler users)
+- Fixed first song playing twice when AI queues multiple tracks (dedup in queue_add + system prompt fix)
+- "Surprise Me" button gated on data sharing toggle
+
+### Auth & API Management (v0.6.x–v0.7.x)
 - Spotify OAuth migrated to PKCE flow (no client secret needed)
 - Spotify BYOK mandatory — each user registers their own Spotify Developer app (bypasses 5-user dev mode limit)
 - Rate limit detection (HTTP 429) with debounced BYOK toast for Last.fm and SoundCloud
 - MusicKit private key moved from repo to CI secrets (injected at build time)
 - SoundCloud fallback API credentials for out-of-box OAuth
+- SoundCloud advanced config restored for optional BYOK API credentials
+- API credential fields masked with password input type
+- Spotify library sync migrated to unified /me/library endpoints (Feb 2026 API)
+
+### Stability & Performance (v0.7.x)
+- Parallelized app startup for faster launch
+- Fixed track resolver constantly re-resolving cached tracks
+- Validate auth tokens when restoring saved resolver settings
+- Handle denied MusicKit auth gracefully; removed Spotify from default resolver order
+- Prevent resolvers from vanishing when in resolverOrder but not yet loaded
+- Activate Swift helper to foreground before requesting Apple Music auth
+- Increased Apple Music authorization timeout
+- Fixed Apple Music pause not working after source switching
+- Fixed friend unpinning bug (stale closures in polling)
+- Pinned userData path before setting app.name to prevent data loss
+- Fixed MusicKit auth dialog showing "appName" instead of "Parachord"
+- Fixed update error toast showing "undefined"
+- Fixed app menu name from "parachord-desktop" to "Parachord"
+- Auto-updater now finds pre-release builds
+- SoundCloud credential error toast only shows when fallback also fails
+
+### Social (v0.7.x)
+- Friends section always visible in sidebar for discoverability
 
 ### Security (v0.6.x)
 - Comprehensive security and code review
@@ -210,6 +254,7 @@
 - MusicKit key injected from `MUSICKIT_PRIVATE_KEY` GitHub secret during CI builds
 - Jest tests for charts utilities and comprehensive AI/chat test suite (130 tests)
 - Auto-updates enabled (publish releases as non-draft)
+- Reverse sync workflow from dedicated plugin/extension repos to monorepo
 
 ---
 

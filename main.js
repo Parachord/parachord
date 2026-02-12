@@ -57,6 +57,7 @@ let extensionSocket = null; // Current connected extension
 let embedSockets = new Set(); // Connected embed players
 let pendingEmbedRequests = new Map(); // requestId -> { ws, resolve }
 let localFilesService = null;
+let userInitiatedUpdateCheck = false;
 let localFilesServiceReady = null; // Promise that resolves when service is ready
 
 // Spotify Playback Polling Service
@@ -1506,6 +1507,7 @@ app.whenReady().then(() => {
 
     autoUpdater.on('update-available', (info) => {
       console.log('✅ Update available:', info.version);
+      userInitiatedUpdateCheck = false;
       mainWindow?.webContents.send('updater-status', {
         status: 'available',
         version: info.version,
@@ -1515,6 +1517,7 @@ app.whenReady().then(() => {
 
     autoUpdater.on('update-not-available', () => {
       console.log('✅ App is up to date');
+      userInitiatedUpdateCheck = false;
       mainWindow?.webContents.send('updater-status', { status: 'up-to-date' });
     });
 
@@ -1536,10 +1539,14 @@ app.whenReady().then(() => {
 
     autoUpdater.on('error', (err) => {
       console.error('❌ Auto-updater error:', err.message);
-      mainWindow?.webContents.send('updater-status', {
-        status: 'error',
-        error: err.message
-      });
+      // Only forward to renderer if the user initiated the check
+      if (userInitiatedUpdateCheck) {
+        userInitiatedUpdateCheck = false;
+        mainWindow?.webContents.send('updater-status', {
+          status: 'error',
+          error: 'Could not check for updates. Please try again later.'
+        });
+      }
     });
 
     // Check for updates after a short delay (don't block startup)
@@ -1908,9 +1915,11 @@ ipcMain.handle('updater-check', async () => {
     return { success: false, error: 'Auto-updater not available' };
   }
   try {
+    userInitiatedUpdateCheck = true;
     const result = await autoUpdater.checkForUpdates();
     return { success: true, updateInfo: result?.updateInfo };
   } catch (error) {
+    userInitiatedUpdateCheck = false;
     return { success: false, error: error.message };
   }
 });
