@@ -4155,6 +4155,9 @@ class AIChatService {
 
     // Add listening history for personalization
     const history = context.listeningHistory;
+    if (!history && context.dataSharingEnabled === false) {
+      lines.push('\nLISTENING DATA: The user has not shared their listening history. When giving recommendations for the first time, briefly mention: "If you share your listening data below, I can further tailor your recommendations." Only say this ONCE, early in the conversation - do not repeat it.');
+    }
     if (history) {
       lines.push(`\nLISTENING HISTORY (from ${history.source || 'scrobbling'}):`);
 
@@ -4493,6 +4496,7 @@ const Parachord = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
+  const aiIncludeHistoryRef = useRef(false); // Ref for toggle to avoid stale closures in cached getContext
   const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
   const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
@@ -10719,6 +10723,7 @@ const Parachord = () => {
 
   // Persist AI include history preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
+    aiIncludeHistoryRef.current = aiIncludeHistory;
     if (cacheLoaded && window.electron?.store) {
       window.electron.store.set('ai_include_history', aiIncludeHistory);
     }
@@ -14219,12 +14224,15 @@ const Parachord = () => {
       const isPlaying = isPlayingRef.current;
       const shuffle = shuffleModeRef.current;
 
-      // Fetch listening history for personalization
+      // Fetch listening history for personalization (only if user opted in)
       let listeningHistory = null;
-      try {
-        listeningHistory = await fetchListeningContext();
-      } catch (e) {
-        console.log('Could not fetch listening history:', e.message);
+      const sharingData = aiIncludeHistoryRef.current;
+      if (sharingData) {
+        try {
+          listeningHistory = await fetchListeningContext();
+        } catch (e) {
+          console.log('Could not fetch listening history:', e.message);
+        }
       }
 
       // Get collection (user's favorites)
@@ -14303,6 +14311,7 @@ const Parachord = () => {
         queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
         shuffle: shuffle,
         listeningHistory: listeningHistory,
+        dataSharingEnabled: sharingData,
         collection: collection,
         blocklist: blocklist,
         // New context fields
