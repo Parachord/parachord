@@ -42141,54 +42141,7 @@ useEffect(() => {
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } },
-                // Listening history toggle (left side)
-                hasScrobblerConnected()
-                  ? React.createElement('label', {
-                      style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' },
-                      title: aiIncludeHistory ? 'Sharing listening data with AI' : 'Not sharing listening data with AI'
-                    },
-                      React.createElement('input', {
-                        type: 'checkbox',
-                        checked: aiIncludeHistory,
-                        onChange: (e) => setAiIncludeHistory(e.target.checked),
-                        className: 'sr-only peer',
-                        style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
-                      }),
-                      // Toggle track
-                      React.createElement('div', {
-                        style: {
-                          position: 'relative',
-                          width: '28px',
-                          height: '16px',
-                          borderRadius: '8px',
-                          backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)',
-                          transition: 'background-color 0.2s',
-                          flexShrink: 0
-                        }
-                      },
-                        // Toggle knob
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            top: '2px',
-                            left: aiIncludeHistory ? '14px' : '2px',
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            backgroundColor: '#ffffff',
-                            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
-                            transition: 'left 0.2s'
-                          }
-                        })
-                      ),
-                      React.createElement('span', {
-                        style: { fontSize: '11px', color: aiIncludeHistory ? '#c4b5fd' : '#6b7280', whiteSpace: 'nowrap' }
-                      }, 'My data')
-                    )
-                  : React.createElement('div'),
-                // Provider selector (right side)
-                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
                 React.createElement('span', { style: { fontSize: '12px', color: '#6b7280' } }, 'powered by:'),
                 // Custom dropdown button
@@ -42315,7 +42268,6 @@ useEffect(() => {
                     )
                   );
                 })()
-                )
               )
             : (resultsSidebar.subtitle && React.createElement('p', {
                 style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
@@ -42481,21 +42433,69 @@ useEffect(() => {
                         )
                   )
                 ),
-                // Clear chat button
-                resultsSidebar.messages && resultsSidebar.messages.length > 0 && React.createElement('button', {
-                  onClick: clearAiChatHistory,
-                  style: {
-                    marginTop: '8px',
-                    fontSize: '12px',
-                    color: '#6b7280',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px 8px'
+                // Bottom row: Clear chat + Share my data toggle
+                React.createElement('div', {
+                  style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }
+                },
+                  // Clear chat button (left)
+                  resultsSidebar.messages && resultsSidebar.messages.length > 0
+                    ? React.createElement('button', {
+                        onClick: clearAiChatHistory,
+                        style: {
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px 8px'
+                        },
+                        onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
+                        onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+                      }, 'Clear conversation')
+                    : React.createElement('div'),
+                  // Share my data toggle (right)
+                  hasScrobblerConnected() && React.createElement('label', {
+                    style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 8px' },
+                    title: aiIncludeHistory ? 'Sharing listening data with AI' : 'Not sharing listening data with AI'
                   },
-                  onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
-                  onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
-                }, 'Clear conversation')
+                    React.createElement('span', {
+                      style: { fontSize: '12px', color: aiIncludeHistory ? '#c4b5fd' : '#6b7280', whiteSpace: 'nowrap' }
+                    }, 'Share my data'),
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: aiIncludeHistory,
+                      onChange: (e) => setAiIncludeHistory(e.target.checked),
+                      style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
+                    }),
+                    // Toggle track
+                    React.createElement('div', {
+                      style: {
+                        position: 'relative',
+                        width: '28px',
+                        height: '16px',
+                        borderRadius: '8px',
+                        backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)',
+                        transition: 'background-color 0.2s',
+                        flexShrink: 0
+                      }
+                    },
+                      // Toggle knob
+                      React.createElement('div', {
+                        style: {
+                          position: 'absolute',
+                          top: '2px',
+                          left: aiIncludeHistory ? '14px' : '2px',
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          backgroundColor: '#ffffff',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+                          transition: 'left 0.2s'
+                        }
+                      })
+                    )
+                  )
+                )
               )
             )
 
