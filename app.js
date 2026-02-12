@@ -3904,9 +3904,9 @@ AVAILABLE ACTIONS (use these tools):
 - block_recommendation: Block an artist/album/track from future recommendations
 
 "PLAY" vs "ADD TO QUEUE":
-- "Play X" / "Put on X" → play tool (clears queue, starts immediately)
+- "Play X" / "Put on X" (SINGLE track) → play tool (clears queue, starts immediately)
 - "Add X to queue" / "Queue X" → queue_add tool (adds to end, does NOT interrupt current playback)
-- Multiple tracks or albums: play first track, queue_add the rest
+- Multiple tracks/songs: use ONE queue_add call with ALL tracks — it will auto-play the first track if nothing is currently playing. Do NOT call play + queue_add separately, that causes the first song to play twice.
 - Always confirm what you did AFTER the tool executes
 
 CONTENT TYPE - MATCH EXACTLY WHAT USER ASKS FOR:
