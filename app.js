@@ -43488,7 +43488,7 @@ useEffect(() => {
                   style: { fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px' }
                 }, 'Client ID'),
                 React.createElement('input', {
-                  type: 'text',
+                  type: 'password',
                   value: spotifyClientIdInput,
                   onChange: (e) => setSpotifyClientIdInput(e.target.value),
                   placeholder: 'Paste your Spotify Client ID here',
@@ -43608,7 +43608,7 @@ useEffect(() => {
                   style: { fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px' }
                 }, 'Client ID'),
                 React.createElement('input', {
-                  type: 'text',
+                  type: 'password',
                   value: spotifyClientIdInput,
                   onChange: (e) => setSpotifyClientIdInput(e.target.value),
                   placeholder: 'Your Spotify Client ID',
@@ -43931,7 +43931,7 @@ useEffect(() => {
                       }
                     }, 'Client ID'),
                     React.createElement('input', {
-                      type: 'text',
+                      type: 'password',
                       value: soundcloudClientIdInput,
                       onChange: (e) => setSoundcloudClientIdInput(e.target.value),
                       placeholder: 'Your SoundCloud Client ID',
@@ -44402,7 +44402,7 @@ useEffect(() => {
                           }
                         }, 'API Key'),
                         React.createElement('input', {
-                          type: 'text',
+                          type: 'password',
                           value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '',
                           onChange: (e) => setLastfmApiKeyInput(e.target.value),
                           placeholder: 'Your Last.fm API key',
@@ -44632,7 +44632,7 @@ useEffect(() => {
                           }
                         }, 'API Key'),
                         React.createElement('input', {
-                          type: 'text',
+                          type: 'password',
                           value: lastfmApiKeyInput,
                           onChange: (e) => setLastfmApiKeyInput(e.target.value),
                           placeholder: 'Your Last.fm API key',
