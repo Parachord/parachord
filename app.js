@@ -4107,6 +4107,29 @@ class AIChatService {
 
   buildSystemPrompt(context) {
     const lines = [];
+
+    // When user has not opted in to data sharing, send minimal context
+    if (context.dataSharingEnabled === false) {
+      lines.push('DATA SHARING: The user has NOT enabled "Share my data". You have no access to their now playing, queue, collection, listening history, playlists, or session data.');
+      lines.push('');
+      lines.push('IMPORTANT BEHAVIOR:');
+      lines.push('- You can still search for and play music when the user gives you explicit requests (e.g. "play Radiohead")');
+      lines.push('- If the user asks you to do something that requires their data (e.g. "what\'s playing?", "add similar songs to my queue", "recommend based on my taste", "skip this"), respond with: "I\'d need access to your listening data for that — you can enable **Share my data** below the chat input."');
+      lines.push('- When giving recommendations for the first time, briefly mention: "If you share your listening data below, I can further tailor your recommendations to your taste."');
+      lines.push('- Only mention data sharing ONCE early in the conversation — do not repeat it on every message.');
+
+      const now = new Date();
+      const currentDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      const currentYear = now.getFullYear();
+      return AI_CHAT_SYSTEM_PROMPT
+        .replace('{{currentDate}}', currentDate)
+        .replace(/\{\{currentYear\}\}/g, currentYear)
+        .replace(/\{\{twoYearsAgo\}\}/g, currentYear - 2)
+        .replace(/\{\{fiveYearsAgo\}\}/g, currentYear - 5)
+        .replace('{{currentState}}', lines.join('\n'));
+    }
+
+    // Full context when data sharing is enabled
     if (context.nowPlaying) {
       lines.push(`Now Playing: "${context.nowPlaying.title}" by ${context.nowPlaying.artist}`);
       lines.push(`  State: ${context.playbackState || 'unknown'}`);
@@ -4493,6 +4516,7 @@ const Parachord = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiIncludeHistory, setAiIncludeHistory] = useState(false);
+  const aiIncludeHistoryRef = useRef(false); // Ref for toggle to avoid stale closures in cached getContext
   const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
   const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
@@ -10719,6 +10743,7 @@ const Parachord = () => {
 
   // Persist AI include history preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
+    aiIncludeHistoryRef.current = aiIncludeHistory;
     if (cacheLoaded && window.electron?.store) {
       window.electron.store.set('ai_include_history', aiIncludeHistory);
     }
@@ -14214,12 +14239,19 @@ const Parachord = () => {
 
     // Create context getter for system prompt
     const getContext = async () => {
+      const sharingData = aiIncludeHistoryRef.current;
+
+      // If user hasn't opted in, only return the toggle status — no personal data
+      if (!sharingData) {
+        return { dataSharingEnabled: false };
+      }
+
       const nowPlaying = currentTrackRef.current;
       const queue = currentQueueRef.current || [];
       const isPlaying = isPlayingRef.current;
       const shuffle = shuffleModeRef.current;
 
-      // Fetch listening history for personalization
+      // Fetch listening history from scrobblers
       let listeningHistory = null;
       try {
         listeningHistory = await fetchListeningContext();
@@ -14303,9 +14335,9 @@ const Parachord = () => {
         queue: queue.slice(0, 20).map(t => ({ title: t.title, artist: t.artist, album: t.album })),
         shuffle: shuffle,
         listeningHistory: listeningHistory,
+        dataSharingEnabled: true,
         collection: collection,
         blocklist: blocklist,
-        // New context fields
         playlists: userPlaylists,
         timeContext: timeContext,
         sessionHistory: sessionHistory,
@@ -42000,8 +42032,8 @@ useEffect(() => {
         );
       })(),
 
-      // Surprise Me button (own row, only when listening history is enabled) - Muted gradient
-      hasScrobblerConnected() && aiIncludeHistory && React.createElement('div', {
+      // Surprise Me button (own row, only when data sharing is enabled) - Muted gradient
+      aiIncludeHistory && React.createElement('div', {
         className: 'mt-3'
       },
         React.createElement('button', {
@@ -42141,54 +42173,7 @@ useEffect(() => {
           ),
           // Provider selector for chat mode, subtitle for other modes
           resultsSidebar.mode === 'chat'
-            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' } },
-                // Listening history toggle (left side)
-                hasScrobblerConnected()
-                  ? React.createElement('label', {
-                      style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' },
-                      title: aiIncludeHistory ? 'Sharing listening data with AI' : 'Not sharing listening data with AI'
-                    },
-                      React.createElement('input', {
-                        type: 'checkbox',
-                        checked: aiIncludeHistory,
-                        onChange: (e) => setAiIncludeHistory(e.target.checked),
-                        className: 'sr-only peer',
-                        style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
-                      }),
-                      // Toggle track
-                      React.createElement('div', {
-                        style: {
-                          position: 'relative',
-                          width: '28px',
-                          height: '16px',
-                          borderRadius: '8px',
-                          backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)',
-                          transition: 'background-color 0.2s',
-                          flexShrink: 0
-                        }
-                      },
-                        // Toggle knob
-                        React.createElement('div', {
-                          style: {
-                            position: 'absolute',
-                            top: '2px',
-                            left: aiIncludeHistory ? '14px' : '2px',
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            backgroundColor: '#ffffff',
-                            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
-                            transition: 'left 0.2s'
-                          }
-                        })
-                      ),
-                      React.createElement('span', {
-                        style: { fontSize: '11px', color: aiIncludeHistory ? '#c4b5fd' : '#6b7280', whiteSpace: 'nowrap' }
-                      }, 'My data')
-                    )
-                  : React.createElement('div'),
-                // Provider selector (right side)
-                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+            ? React.createElement('div', { 'data-provider-dropdown': true, style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' } },
                 // "powered by:" label
                 React.createElement('span', { style: { fontSize: '12px', color: '#6b7280' } }, 'powered by:'),
                 // Custom dropdown button
@@ -42315,7 +42300,6 @@ useEffect(() => {
                     )
                   );
                 })()
-                )
               )
             : (resultsSidebar.subtitle && React.createElement('p', {
                 style: { fontSize: '13px', color: '#9ca3af', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
@@ -42481,21 +42465,69 @@ useEffect(() => {
                         )
                   )
                 ),
-                // Clear chat button
-                resultsSidebar.messages && resultsSidebar.messages.length > 0 && React.createElement('button', {
-                  onClick: clearAiChatHistory,
-                  style: {
-                    marginTop: '8px',
-                    fontSize: '12px',
-                    color: '#6b7280',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px 8px'
+                // Bottom row: Clear chat + Share my data toggle
+                React.createElement('div', {
+                  style: { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }
+                },
+                  // Clear chat button (left)
+                  resultsSidebar.messages && resultsSidebar.messages.length > 0
+                    ? React.createElement('button', {
+                        onClick: clearAiChatHistory,
+                        style: {
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px 8px'
+                        },
+                        onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
+                        onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
+                      }, 'Clear conversation')
+                    : React.createElement('div'),
+                  // Share my data toggle (right)
+                  React.createElement('label', {
+                    style: { display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 8px' },
+                    title: aiIncludeHistory ? 'Sharing your data with AI' : 'Not sharing your data with AI'
                   },
-                  onMouseEnter: (e) => e.currentTarget.style.color = '#9ca3af',
-                  onMouseLeave: (e) => e.currentTarget.style.color = '#6b7280'
-                }, 'Clear conversation')
+                    React.createElement('span', {
+                      style: { fontSize: '12px', color: aiIncludeHistory ? '#c4b5fd' : '#6b7280', whiteSpace: 'nowrap' }
+                    }, 'Share my data'),
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: aiIncludeHistory,
+                      onChange: (e) => setAiIncludeHistory(e.target.checked),
+                      style: { position: 'absolute', opacity: 0, width: 0, height: 0 }
+                    }),
+                    // Toggle track
+                    React.createElement('div', {
+                      style: {
+                        position: 'relative',
+                        width: '28px',
+                        height: '16px',
+                        borderRadius: '8px',
+                        backgroundColor: aiIncludeHistory ? '#7c3aed' : 'rgba(255, 255, 255, 0.15)',
+                        transition: 'background-color 0.2s',
+                        flexShrink: 0
+                      }
+                    },
+                      // Toggle knob
+                      React.createElement('div', {
+                        style: {
+                          position: 'absolute',
+                          top: '2px',
+                          left: aiIncludeHistory ? '14px' : '2px',
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          backgroundColor: '#ffffff',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+                          transition: 'left 0.2s'
+                        }
+                      })
+                    )
+                  )
+                )
               )
             )
 
