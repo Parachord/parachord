@@ -43877,8 +43877,8 @@ useEffect(() => {
                 'Note: Streaming availability depends on individual track permissions set by uploaders.'
               ),
 
-              // API Credentials section - Advanced accordion with optional BYOK (like Last.fm)
-              !soundcloudConnected && React.createElement('div', {
+              // API Credentials section - Advanced accordion with optional BYOK
+              React.createElement('div', {
                 style: { marginTop: '16px' }
               },
                 React.createElement('button', {
@@ -44352,14 +44352,150 @@ useEffect(() => {
                     React.createElement('span', null, '✓'),
                     React.createElement('span', null, 'Connected to Last.fm')
                   ),
-                  // Show API key status if configured
-                  metaServiceConfigs.lastfm.apiKey && React.createElement('p', {
-                    style: {
-                      marginTop: '8px',
-                      fontSize: '11px',
-                      color: '#6b7280'
-                    }
-                  }, '🔑 Using custom API key'),
+                  // Advanced accordion for API credentials (also shown when connected)
+                  React.createElement('div', { style: { marginTop: '16px' } },
+                    React.createElement('button', {
+                      onClick: () => setLastfmAdvancedOpen(!lastfmAdvancedOpen),
+                      className: 'flex items-center gap-1',
+                      style: {
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0'
+                      }
+                    },
+                      React.createElement('span', {
+                        className: `transform transition-transform ${lastfmAdvancedOpen ? 'rotate-90' : ''}`
+                      }, '▶'),
+                      'Advanced'
+                    ),
+                    lastfmAdvancedOpen && React.createElement('div', {
+                      style: {
+                        marginTop: '12px',
+                        padding: '12px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                        borderRadius: '8px'
+                      }
+                    },
+                      React.createElement('p', {
+                        style: {
+                          fontSize: '11px',
+                          color: metaServiceConfigs.lastfm.apiKey ? '#22c55e' : '#6b7280',
+                          marginBottom: '12px',
+                          lineHeight: '1.5'
+                        }
+                      },
+                        metaServiceConfigs.lastfm.apiKey
+                          ? '✓ Using your custom Last.fm API credentials.'
+                          : 'Optional: Use your own Last.fm API credentials to avoid rate limiting.'
+                      ),
+                      React.createElement('div', { style: { marginBottom: '10px' } },
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: '#374151',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Key'),
+                        React.createElement('input', {
+                          type: 'text',
+                          value: lastfmApiKeyInput || metaServiceConfigs.lastfm.apiKey || '',
+                          onChange: (e) => setLastfmApiKeyInput(e.target.value),
+                          placeholder: 'Your Last.fm API key',
+                          style: {
+                            width: '100%',
+                            padding: '8px 10px',
+                            fontSize: '12px',
+                            color: '#1f2937',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            borderRadius: '6px',
+                            outline: 'none'
+                          }
+                        })
+                      ),
+                      React.createElement('div', { style: { marginBottom: '12px' } },
+                        React.createElement('label', {
+                          style: {
+                            display: 'block',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            color: '#374151',
+                            marginBottom: '4px'
+                          }
+                        }, 'API Secret'),
+                        React.createElement('input', {
+                          type: 'password',
+                          value: lastfmApiSecretInput || metaServiceConfigs.lastfm.apiSecret || '',
+                          onChange: (e) => setLastfmApiSecretInput(e.target.value),
+                          placeholder: 'Your Last.fm API secret',
+                          style: {
+                            width: '100%',
+                            padding: '8px 10px',
+                            fontSize: '12px',
+                            color: '#1f2937',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            borderRadius: '6px',
+                            outline: 'none'
+                          }
+                        })
+                      ),
+                      React.createElement('div', { className: 'flex gap-2' },
+                        React.createElement('button', {
+                          onClick: async () => {
+                            const apiKey = lastfmApiKeyInput?.trim() || null;
+                            const apiSecret = lastfmApiSecretInput?.trim() || null;
+                            await saveMetaServiceConfig('lastfm', {
+                              ...metaServiceConfigs.lastfm,
+                              apiKey,
+                              apiSecret
+                            });
+                            if (apiKey && apiSecret && window.lastfmScrobbler) {
+                              window.lastfmScrobbler.setApiCredentials(apiKey, apiSecret);
+                            }
+                            showToast(apiKey ? 'API credentials saved' : 'API credentials cleared', 'success');
+                          },
+                          style: {
+                            padding: '8px 14px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            color: '#ffffff',
+                            backgroundColor: '#dc2626',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                          }
+                        }, 'Save'),
+                        metaServiceConfigs.lastfm.apiKey && React.createElement('button', {
+                          onClick: async () => {
+                            setLastfmApiKeyInput('');
+                            setLastfmApiSecretInput('');
+                            await saveMetaServiceConfig('lastfm', {
+                              ...metaServiceConfigs.lastfm,
+                              apiKey: null,
+                              apiSecret: null
+                            });
+                            showToast('Custom credentials cleared. Using default credentials.', 'info');
+                          },
+                          style: {
+                            padding: '8px 14px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            color: '#6b7280',
+                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                          }
+                        }, 'Clear')
+                      )
+                    )
+                  ),
 
                   // Scrobbling section for Last.fm
                   React.createElement('div', {
