@@ -3714,13 +3714,24 @@ const executeDjTool = async (name, args, context) => {
         };
       }
       case 'queue_add': {
-        const nothingPlaying = !context.getCurrentTrack();
+        const currentTrack = context.getCurrentTrack();
+        const nothingPlaying = !currentTrack;
         let startedPlaying = false;
         let tracksToQueue = args.tracks;
 
+        // Deduplicate: if the first track in the list matches what's currently playing,
+        // skip it to avoid double-play (models often call play + queue_add with overlapping tracks)
+        if (currentTrack && tracksToQueue.length > 0) {
+          const first = tracksToQueue[0];
+          if (first.artist?.toLowerCase() === currentTrack.artist?.toLowerCase() &&
+              first.title?.toLowerCase() === currentTrack.title?.toLowerCase()) {
+            tracksToQueue = tracksToQueue.slice(1);
+          }
+        }
+
         // If nothing is playing, resolve and play the first track immediately
-        if (nothingPlaying && args.tracks.length > 0) {
-          const firstTrack = args.tracks[0];
+        if (nothingPlaying && tracksToQueue.length > 0) {
+          const firstTrack = tracksToQueue[0];
           const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
             earlyReturn: true,
             targetArtist: firstTrack.artist,
@@ -3735,7 +3746,7 @@ const executeDjTool = async (name, args, context) => {
             startedPlaying = true;
           }
           // Remaining tracks go to queue
-          tracksToQueue = args.tracks.slice(1);
+          tracksToQueue = tracksToQueue.slice(1);
         }
 
         // Add remaining tracks to queue as unresolved metadata
@@ -3865,9 +3876,10 @@ KEY DEFINITIONS:
 
 PLAYING ALBUMS vs TRACKS:
 - To play a SINGLE TRACK: use the "play" tool with artist and title - starts immediately
-- To play an ENTIRE ALBUM: use "play" for the FIRST track, then "queue_add" for the remaining tracks
-  Example: To play "Punisher" album, play "DVD Menu" first, then queue_add the other 10 tracks
-- If user says "add album to queue": use queue_add with ALL tracks - does NOT interrupt current playback
+- To play an ENTIRE ALBUM: use ONE queue_add call with ALL tracks in album order. It will auto-play the first track if nothing is playing.
+  Example: To play "Punisher" album, queue_add all 11 tracks in order.
+- If user says "add album to queue": use queue_add with ALL tracks and position "last" - does NOT interrupt current playback
+- NEVER use play + queue_add together for multi-track requests — that causes the first song to play twice
 - NEVER say "the album will continue playing" - you must explicitly queue each track
 
 PERSONALIZATION - CRITICAL:
@@ -3904,9 +3916,10 @@ AVAILABLE ACTIONS (use these tools):
 - block_recommendation: Block an artist/album/track from future recommendations
 
 "PLAY" vs "ADD TO QUEUE":
-- "Play X" / "Put on X" → play tool (clears queue, starts immediately)
+- "Play X" / "Put on X" (SINGLE track) → play tool (clears queue, starts immediately)
 - "Add X to queue" / "Queue X" → queue_add tool (adds to end, does NOT interrupt current playback)
-- Multiple tracks or albums: play first track, queue_add the rest
+- "Play me 15 songs" / "Play some jazz" / any multi-track request → use ONE queue_add call with ALL tracks and position "next". This clears the old queue context and starts the new set. queue_add auto-plays the first track if nothing is playing.
+  CRITICAL: Do NOT also call the play tool — that causes the first song to play twice.
 - Always confirm what you did AFTER the tool executes
 
 CONTENT TYPE - MATCH EXACTLY WHAT USER ASKS FOR:
