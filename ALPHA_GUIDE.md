@@ -106,9 +106,9 @@ See what others are listening to in real-time:
 ### 5. Install the Browser Extension
 
 Send songs to Parachord directly from your browser:
-1. Download from [Chrome Web Store](#) or [Firefox Add-ons](#) *(not yet available, so do 2 below))*
-2. Or load unpacked from `parachord-extension/` in the repo
-3. Right-click any song link to send it to Parachord (read more: https://github.com/Parachord/parachord-browser-extension/blob/main/README.md)
+1. Download from the [Parachord Browser Extension repo](https://github.com/Parachord/parachord-browser-extension/releases)
+2. See in details in the Browser Extension plug-in in Settings
+3. Pin the extension in your browser, and click it on supported pages - you will see a green badge - then send tracks, playlists and albums from the web directl into your Parachord queue (read more: https://github.com/Parachord/parachord-browser-extension/blob/main/README.md)
 
 
 ## What to Test
@@ -171,11 +171,11 @@ Please include:
 https://github.com/Parachord/parachord/discussions
 
 ## Known Limitations (Alpha)
-- **Windows** and **Linux**: I don't know if these work at all tbh, but there are builds for them
+- **Windows** and **Linux**: There will be bugs here because I don't have easy access to either platform to test
 - **Apple Music**: Volume only controllable via system volume on Mac
 - **Spotify**: Requires Spotify to be open on desktop (can be in background)
 - **YouTube**: Pops open browser window in front of app, quality varies - add the browser extension to improve the experience
-- **MCP Server**: Not yet included in v0.7.0 - but the in app AI chat functions work
+
 
 ## Keyboard Shortcuts
 
