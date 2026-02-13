@@ -12,16 +12,6 @@ let isConnected = false;
 
 // Page support indicator state
 let currentPageSupported = false;
-let pulseInterval = null;
-let pulseFrame = 0;
-
-// Pulse animation colors (breathing cycle: bright → dim → bright)
-const PULSE_COLORS = [
-  '#4ade80', // light green (peak)
-  '#22c55e', // medium green
-  '#15803d', // dark green (trough)
-  '#22c55e', // medium green
-];
 
 // Queue for messages that arrive before WebSocket is connected
 let pendingMessages = [];
@@ -393,36 +383,13 @@ function isSupportedPage(url) {
 // Unified badge update - handles connection status + page support indicator
 function updateBadge() {
   if (!isConnected) {
-    stopPulse();
     chrome.action.setBadgeText({ text: '!' });
     chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
   } else if (currentPageSupported) {
-    startPulse();
+    chrome.action.setBadgeText({ text: ' ' });
+    chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
   } else {
-    stopPulse();
     chrome.action.setBadgeText({ text: '' });
-  }
-}
-
-// Start pulsing green badge animation
-function startPulse() {
-  // Set badge immediately
-  chrome.action.setBadgeText({ text: ' ' });
-  chrome.action.setBadgeBackgroundColor({ color: PULSE_COLORS[0] });
-
-  if (pulseInterval) return; // Already animating
-  pulseFrame = 0;
-  pulseInterval = setInterval(() => {
-    pulseFrame = (pulseFrame + 1) % PULSE_COLORS.length;
-    chrome.action.setBadgeBackgroundColor({ color: PULSE_COLORS[pulseFrame] });
-  }, 400);
-}
-
-// Stop pulsing animation
-function stopPulse() {
-  if (pulseInterval) {
-    clearInterval(pulseInterval);
-    pulseInterval = null;
   }
 }
 
