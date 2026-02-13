@@ -9050,8 +9050,8 @@ const Parachord = () => {
     const loadLocalFilesLibrary = async () => {
       setLibraryLoading(true);
       try {
-        if (window.electron?.localFiles?.search) {
-          const localTracks = await window.electron.localFiles.search('');
+        if (window.electron?.localFiles?.getAllTracks) {
+          const localTracks = await window.electron.localFiles.getAllTracks();
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
             setLibrary(localTracks);

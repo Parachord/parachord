@@ -290,6 +290,7 @@ contextBridge.exposeInMainWorld('electron', {
     getWatchFolders: () => ipcRenderer.invoke('localFiles:getWatchFolders'),
     rescanAll: () => ipcRenderer.invoke('localFiles:rescanAll'),
     rescanFolder: (path) => ipcRenderer.invoke('localFiles:rescanFolder', path),
+    getAllTracks: () => ipcRenderer.invoke('localFiles:getAllTracks'),
     search: (query) => ipcRenderer.invoke('localFiles:search', query),
     resolve: (params) => ipcRenderer.invoke('localFiles:resolve', params),
     getStats: () => ipcRenderer.invoke('localFiles:getStats'),

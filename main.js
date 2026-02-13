@@ -4070,6 +4070,11 @@ ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
   }
 });
 
+ipcMain.handle('localFiles:getAllTracks', async () => {
+  const service = await waitForLocalFilesService();
+  return service.getAllTracks();
+});
+
 ipcMain.handle('localFiles:search', async (event, query) => {
   const service = await waitForLocalFilesService();
   return service.search(query);
