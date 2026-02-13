@@ -12570,7 +12570,6 @@ const Parachord = () => {
       await window.electron.playbackWindow.close();
     }
 
-    // Open in external browser FIRST
     try {
       // Mark that we're waiting for browser to connect - prevents premature handleNext() calls
       waitingForBrowserPlaybackRef.current = true;
@@ -12585,9 +12584,17 @@ const Parachord = () => {
         }
       }, 10000);
 
-      const config = await getResolverConfig(resolverId);
-      await resolver.play(track, config);
-      console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
+      // Use the embedded playback window for Bandcamp tracks (loads the page and auto-plays)
+      const bandcampUrl = track.bandcampUrl || track.sources?.bandcamp?.bandcampUrl;
+      if (resolverId === 'bandcamp' && bandcampUrl && window.electron?.playbackWindow?.open) {
+        await window.electron.playbackWindow.open(bandcampUrl);
+        console.log(`🎸 Opened ${track.title} in playback window via Bandcamp`);
+      } else {
+        // Fall back to resolver's play() for other external resolvers (YouTube, etc.)
+        const config = await getResolverConfig(resolverId);
+        await resolver.play(track, config);
+        console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
+      }
 
       // NOTE: Do NOT clear safety timeout here - it should only expire if the
       // playback window never fires a 'playing' event. The 'playing' event
