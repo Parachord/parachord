@@ -8845,9 +8845,20 @@ const Parachord = () => {
           const title = (data.track.title || '').toLowerCase().trim();
           if (!artist || !title) return;
 
-          // Check if already blocklisted
+          // Extract the specific source ID to blocklist the result, not the whole resolver
+          const trackSourceKey = Object.keys(trackSources).find(key => {
+            const src = trackSources[key];
+            return src && src[data.resolverId];
+          });
+          const source = trackSourceKey ? trackSources[trackSourceKey][data.resolverId] : null;
+          const sourceId = source
+            ? (source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null)
+            : null;
+
+          // Check if this exact source is already blocklisted
           const existing = resolverBlocklistRef.current.find(entry =>
-            entry.artist === artist && entry.title === title && entry.resolverId === data.resolverId
+            entry.artist === artist && entry.title === title &&
+            entry.resolverId === data.resolverId && entry.sourceId === sourceId
           );
           if (existing) {
             showToast(`Already reported: ${data.track.artist} - ${data.track.title} on ${data.resolverId}`, 'info');
@@ -8858,17 +8869,12 @@ const Parachord = () => {
             artist,
             title,
             resolverId: data.resolverId,
+            sourceId,
             blockedAt: Date.now()
           };
           setResolverBlocklist(prev => [...prev, newEntry]);
 
           // Remove the blocklisted source from trackSources so UI updates immediately
-          const trackSourceKey = Object.keys(trackSources).find(key => {
-            const src = trackSources[key];
-            return src && src[data.resolverId];
-          });
-
-          // Also remove from current track sources and cache
           setTrackSources(prev => {
             const updated = { ...prev };
             for (const key of Object.keys(updated)) {
@@ -8880,11 +8886,15 @@ const Parachord = () => {
             return updated;
           });
 
-          // Clear from in-memory cache so re-resolution won't reuse it
+          // Clear from in-memory cache so re-resolution will find an alternative
           const cacheKey = `${artist}|${title}|${currentTrack?.position || 0}`;
           if (trackSourcesCache.current[cacheKey]?.sources?.[data.resolverId]) {
             const { [data.resolverId]: removed, ...rest } = trackSourcesCache.current[cacheKey].sources;
             trackSourcesCache.current[cacheKey].sources = rest;
+          }
+          // Also invalidate the resolver hash so the cache entry is re-resolved
+          if (trackSourcesCache.current[cacheKey]) {
+            trackSourcesCache.current[cacheKey].resolverHash = null;
           }
 
           const resolverName = allResolvers.find(r => r.id === data.resolverId)?.name || data.resolverId;
@@ -11314,11 +11324,16 @@ const Parachord = () => {
         confidence: trackOrSource.sources[resId].confidence || 0
       }))
       .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
-      .filter(s => !currentBlocklist.some(entry =>  // Filter blocklisted matches
-        entry.resolverId === s.resolverId &&
-        entry.artist === trackArtistNorm &&
-        entry.title === trackTitleNorm
-      ))
+      .filter(s => {  // Filter blocklisted specific source results
+        const src = s.source;
+        const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+        return !currentBlocklist.some(entry =>
+          entry.resolverId === s.resolverId &&
+          entry.artist === trackArtistNorm &&
+          entry.title === trackTitleNorm &&
+          entry.sourceId === srcId
+        );
+      })
       .sort((a, b) => {
         // If a preferred resolver is specified, prioritize it
         if (preferredResolver) {
@@ -18332,6 +18347,23 @@ const Parachord = () => {
     console.log(`  📋 Resolver order: ${currentResolverOrder.join(', ')}`);
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
+    // Helper to extract a stable source identifier for blocklist matching
+    const getSourceId = (source) => {
+      if (!source) return null;
+      return source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null;
+    };
+
+    // Get blocklisted source IDs for this track
+    const currentBlocklist = resolverBlocklistRef.current;
+    const normalizedArtist = artistName.toLowerCase().trim();
+    const normalizedTitle = track.title.toLowerCase().trim();
+    const getBlockedSourceIds = (resolverId) => {
+      return currentBlocklist
+        .filter(entry => entry.resolverId === resolverId && entry.artist === normalizedArtist && entry.title === normalizedTitle)
+        .map(entry => entry.sourceId)
+        .filter(Boolean);
+    };
+
     const resolverPromises = enabledResolvers.map(async (resolver) => {
       // Check abort before each resolver
       if (signal?.aborted) return;
@@ -18373,6 +18405,31 @@ const Parachord = () => {
         // Check abort before processing result
         if (signal?.aborted) return;
 
+        // Check if this specific result is blocklisted
+        const blockedIds = getBlockedSourceIds(resolver.id);
+        if (result && blockedIds.length > 0 && blockedIds.includes(getSourceId(result))) {
+          console.log(`  🚫 ${resolver.name}: Result blocklisted, searching for alternative...`);
+          result = null;
+
+          // Fall back to search() to find a non-blocklisted alternative
+          if (resolver.search) {
+            try {
+              const searchResults = await resolver.search(`${artistName} ${track.title}`, config);
+              if (signal?.aborted) return;
+              if (Array.isArray(searchResults)) {
+                result = searchResults.find(r => !blockedIds.includes(getSourceId(r))) || null;
+                if (result) {
+                  console.log(`  🔄 ${resolver.name}: Found alternative via search`);
+                }
+              }
+            } catch (searchError) {
+              if (searchError.name !== 'AbortError') {
+                console.error(`  ⚠️ ${resolver.name} search fallback error:`, searchError);
+              }
+            }
+          }
+        }
+
         if (result) {
           sources[resolver.id] = {
             ...result,
@@ -18396,24 +18453,6 @@ const Parachord = () => {
     if (signal?.aborted) {
       console.log(`⏹️ Resolution aborted for "${track.title}" before state update`);
       return;
-    }
-
-    // Filter out blocklisted resolver matches
-    const currentBlocklist = resolverBlocklistRef.current;
-    if (currentBlocklist.length > 0) {
-      const normalizedArtist = artistName.toLowerCase().trim();
-      const normalizedTitle = track.title.toLowerCase().trim();
-      for (const resId of Object.keys(sources)) {
-        const isBlocked = currentBlocklist.some(entry =>
-          entry.resolverId === resId &&
-          entry.artist === normalizedArtist &&
-          entry.title === normalizedTitle
-        );
-        if (isBlocked) {
-          console.log(`  🚫 Filtered blocklisted match: ${resId} for "${track.title}"`);
-          delete sources[resId];
-        }
-      }
     }
 
     // Update state with found sources
@@ -41436,14 +41475,17 @@ useEffect(() => {
                 const playbarTrackArtistNorm = (currentTrack.artist || '').toLowerCase().trim();
                 const playbarTrackTitleNorm = (currentTrack.title || '').toLowerCase().trim();
                 const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
-                  ? Object.keys(currentTrack.sources).filter(resId =>
-                      activeResolvers.includes(resId) &&
-                      !resolverBlocklist.some(entry =>
+                  ? Object.keys(currentTrack.sources).filter(resId => {
+                      if (!activeResolvers.includes(resId)) return false;
+                      const src = currentTrack.sources[resId];
+                      const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+                      return !resolverBlocklist.some(entry =>
                         entry.resolverId === resId &&
                         entry.artist === playbarTrackArtistNorm &&
-                        entry.title === playbarTrackTitleNorm
-                      )
-                    )
+                        entry.title === playbarTrackTitleNorm &&
+                        entry.sourceId === srcId
+                      );
+                    })
                   : [];
 
                 const meta = resolverColors[currentResolverId] || { color: 'text-purple-400', bg: 'bg-purple-400' };
