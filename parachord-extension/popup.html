@@ -81,6 +81,55 @@
       color: #22c55e;
     }
 
+    .page-indicator {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+
+    .page-indicator.visible {
+      display: flex;
+    }
+
+    .page-indicator.unsupported {
+      background: #fefce8;
+      border-color: #fde68a;
+    }
+
+    .page-indicator-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex-shrink: 0;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .page-indicator.unsupported .page-indicator-dot {
+      background: #f59e0b;
+      animation: none;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+      50% { opacity: 0.5; box-shadow: 0 0 2px rgba(34, 197, 94, 0.2); }
+    }
+
+    .page-indicator-text {
+      font-size: 12px;
+      color: #15803d;
+      font-weight: 500;
+    }
+
+    .page-indicator.unsupported .page-indicator-text {
+      color: #92400e;
+    }
+
     .actions {
       display: flex;
       flex-direction: column;
@@ -273,6 +322,11 @@
   <div class="status">
     <div class="status-dot" id="status-dot"></div>
     <span class="status-text" id="status-text">Connecting...</span>
+  </div>
+
+  <div class="page-indicator" id="page-indicator">
+    <div class="page-indicator-dot"></div>
+    <span class="page-indicator-text" id="page-indicator-text"></span>
   </div>
 
   <div class="actions">
