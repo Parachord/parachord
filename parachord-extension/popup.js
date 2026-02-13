@@ -343,14 +343,54 @@ document.addEventListener('DOMContentLoaded', async () => {
                            (pageInfo.service === 'soundcloud' && ['track', 'playlist', 'artist', 'likes'].includes(pageInfo.type));
 
       if (shouldScrape) {
-        console.log(`[Popup] ${pageInfo.service} playlist detected, scraping tracks...`);
+        console.log(`[Popup] ${pageInfo.service} ${pageInfo.type} detected, scraping tracks...`);
         sendUrlBtnText.textContent = 'Scraping...';
 
-        try {
-          // Request scrape from content script
-          const scrapeResult = await chrome.tabs.sendMessage(tab.id, { type: 'scrapePlaylist' });
+        // Services where URL fallback cannot resolve playlists (requires scraping)
+        const scrapeRequired = (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
+                               (pageInfo.service === 'spotify' && pageInfo.type === 'playlist');
 
-          if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
+        // Attempt scrape with retry (SPA pages may need time to render track list)
+        let scrapeResult = null;
+        const MAX_ATTEMPTS = scrapeRequired ? 3 : 1;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          try {
+            if (attempt > 1) {
+              console.log(`[Popup] Retry scrape attempt ${attempt}/${MAX_ATTEMPTS}...`);
+              sendUrlBtnText.textContent = `Scraping (retry ${attempt})...`;
+              await new Promise(r => setTimeout(r, 1500));
+            }
+            scrapeResult = await chrome.tabs.sendMessage(tab.id, { type: 'scrapePlaylist' });
+            if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
+              break; // Got tracks, stop retrying
+            }
+          } catch (scrapeError) {
+            console.log(`[Popup] Scrape attempt ${attempt} failed:`, scrapeError.message);
+            scrapeResult = null;
+            // Content script may not be loaded (e.g., tab was open before extension reload)
+            // Try injecting it on-demand and retrying
+            if (attempt === 1) {
+              try {
+                console.log('[Popup] Injecting content script on-demand...');
+                sendUrlBtnText.textContent = 'Loading scraper...';
+                const scriptFile = pageInfo.service === 'apple' ? 'content-applemusic.js' :
+                                   pageInfo.service === 'spotify' ? 'content-spotify.js' :
+                                   pageInfo.service === 'soundcloud' ? 'content-soundcloud.js' :
+                                   pageInfo.service === 'pitchfork' ? 'content-pitchfork.js' :
+                                   'content.js';
+                await chrome.scripting.executeScript({
+                  target: { tabId: tab.id },
+                  files: [scriptFile]
+                });
+                await new Promise(r => setTimeout(r, 500)); // Give script time to initialize
+              } catch (injectError) {
+                console.log('[Popup] Content script injection failed:', injectError.message);
+              }
+            }
+          }
+        }
+
+        if (scrapeResult && scrapeResult.tracks && scrapeResult.tracks.length > 0) {
             console.log('[Popup] Scraped', scrapeResult.tracks.length, 'tracks');
 
             // Check if this is an album that needs lookup (e.g., Pitchfork album review without tracklist)
@@ -400,12 +440,19 @@ document.addEventListener('DOMContentLoaded', async () => {
               sendUrlBtn.style.background = '#f59e0b';
             }
             return;
-          } else {
-            console.log('[Popup] Scrape returned no tracks, falling back to URL');
-          }
-        } catch (scrapeError) {
-          // Content script may not be loaded - fall back to URL approach
-          console.log('[Popup] Scrape failed (content script may not be loaded), falling back to URL:', scrapeError.message);
+        } else if (scrapeRequired) {
+          // Scraping failed for a service where URL fallback won't work
+          console.error(`[Popup] Scrape failed for ${pageInfo.service} ${pageInfo.type} - no URL fallback available`);
+          sendUrlBtnText.textContent = 'Scrape failed - no tracks found';
+          sendUrlBtn.style.background = '#ef4444';
+          setTimeout(() => {
+            sendUrlBtnText.textContent = originalText;
+            sendUrlBtn.style.background = '';
+            sendUrlBtn.disabled = false;
+          }, 3000);
+          return;
+        } else {
+          console.log('[Popup] Scrape returned no tracks, falling back to URL');
         }
       }
 

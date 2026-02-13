@@ -361,19 +361,40 @@
       trackRows = document.querySelectorAll('[role="row"], [role="listitem"]');
     }
 
+    // Last resort: use song-name-wrappers as row proxies (contains title + artist)
+    let usingWrapperAsRow = false;
+    if (trackRows.length === 0) {
+      trackRows = document.querySelectorAll('[data-testid="song-name-wrapper"]');
+      if (trackRows.length > 0) {
+        usingWrapperAsRow = true;
+        console.log(`[Parachord] Using song-name-wrapper as row proxy (${trackRows.length} found)`);
+      }
+    }
+
+    console.log(`[Parachord] Found ${trackRows.length} track rows (wrapperAsRow: ${usingWrapperAsRow})`);
+
+    // Log first row's structure for debugging
+    if (trackRows.length > 0) {
+      console.log('[Parachord] First row HTML (truncated):', trackRows[0].innerHTML.substring(0, 300));
+    }
+
     trackRows.forEach((row, index) => {
       try {
+        // If using wrapper as row, try to walk up to the actual row for duration/album
+        const fullRow = usingWrapperAsRow ? (row.closest('[class*="songs-list-row"]:not([class*="__"])') || row.parentElement || row) : row;
+
         // Track name - various selectors for different page layouts
-        const trackNameEl = row.querySelector('.songs-list-row__song-name') ||
-                           row.querySelector('[data-testid="track-title"]') ||
+        const trackNameEl = row.querySelector('[data-testid="track-title"]') ||
+                           row.querySelector('.songs-list-row__song-name') ||
                            row.querySelector('.song-name') ||
-                           row.querySelector('[class*="song-name"]') ||
+                           row.querySelector('[class*="song-name"]:not([class*="wrapper"])') ||
                            row.querySelector('[class*="track-name"]') ||
                            row.querySelector('a[href*="/song/"]') ||
-                           row.querySelector('[class*="title"]:not([class*="subtitle"])');
+                           row.querySelector('[class*="title"]:not([class*="subtitle"]):not([class*="by-line"])');
 
         // Artist name(s)
-        const artistEl = row.querySelector('.songs-list-row__by-line') ||
+        const artistEl = row.querySelector('[data-testid="track-title-by-line"]') ||
+                        row.querySelector('.songs-list-row__by-line') ||
                         row.querySelector('[data-testid="track-artist"]') ||
                         row.querySelector('.song-artist') ||
                         row.querySelector('[class*="artist-name"]') ||
@@ -382,16 +403,17 @@
                         row.querySelector('a[href*="/artist/"]');
 
         // Album name (if available - usually only on playlist pages)
-        const albumEl = row.querySelector('.songs-list-row__album-name') ||
-                       row.querySelector('[data-testid="track-album"]') ||
-                       row.querySelector('a[href*="/album/"]');
+        // Search in the full row context for album/duration which may be outside the wrapper
+        const albumEl = fullRow.querySelector('.songs-list-row__album-name') ||
+                       fullRow.querySelector('[data-testid="track-album"]') ||
+                       fullRow.querySelector('a[href*="/album/"]');
 
         // Duration
-        const durationEl = row.querySelector('.songs-list-row__length') ||
-                          row.querySelector('[data-testid="track-duration"]') ||
-                          row.querySelector('.song-duration') ||
-                          row.querySelector('[class*="duration"]') ||
-                          row.querySelector('time');
+        const durationEl = fullRow.querySelector('.songs-list-row__length') ||
+                          fullRow.querySelector('[data-testid="track-duration"]') ||
+                          fullRow.querySelector('.song-duration') ||
+                          fullRow.querySelector('[class*="duration"]') ||
+                          fullRow.querySelector('time');
 
         if (trackNameEl) {
           const trackName = trackNameEl.textContent.trim();
@@ -408,7 +430,13 @@
             }
           }
 
-          if (trackName && artist) {
+          // Log first few tracks for debugging
+          if (index < 3) {
+            console.log(`[Parachord] Track ${index + 1}: "${trackName}" by "${artist}" (has title el: ${!!trackNameEl}, has artist el: ${!!artistEl})`);
+          }
+
+          // Accept tracks even without artist (some playlist views don't show artist inline)
+          if (trackName) {
             tracks.push({
               title: trackName,
               artist: artist,
@@ -417,6 +445,9 @@
               position: index + 1
             });
           }
+        } else if (index < 3) {
+          // Log why first few rows failed to extract
+          console.log(`[Parachord] Track ${index + 1}: no title element found. Row text: "${row.textContent.trim().substring(0, 100)}"`);
         }
       } catch (e) {
         console.error('[Parachord] Error scraping track row:', e);
