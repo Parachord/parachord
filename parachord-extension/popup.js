@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sendUrlBtnIcon = document.getElementById('send-url-icon');
   const pageIndicator = document.getElementById('page-indicator');
   const pageIndicatorText = document.getElementById('page-indicator-text');
+  const pageIndicatorName = document.getElementById('page-indicator-name');
   const spotifyInterceptToggle = document.getElementById('spotify-intercept');
   const appleMusicInterceptToggle = document.getElementById('applemusic-intercept');
 
@@ -162,22 +163,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     likes: 'likes'
   };
 
+  // Extract the content name from the browser tab title by stripping service branding
+  function extractContentName(tabTitle, pageInfo) {
+    if (!tabTitle || !pageInfo.service) return null;
+
+    let name = tabTitle;
+
+    switch (pageInfo.service) {
+      case 'spotify':
+        // "Song Name - song by Artist | Spotify" → "Song Name - song by Artist"
+        name = name.replace(/\s*[|·]\s*Spotify\s*$/i, '');
+        break;
+      case 'apple':
+        // "Album by Artist - Apple Music" → "Album by Artist"
+        name = name.replace(/\s*[-–]\s*Apple\s*Music\s*$/i, '');
+        break;
+      case 'youtube':
+        // "Video Title - YouTube" → "Video Title"
+        name = name.replace(/\s*[-–]\s*YouTube\s*$/i, '');
+        break;
+      case 'bandcamp':
+        // "Track Name | Artist Name" → "Track Name | Artist Name" (keep artist, it's useful)
+        break;
+      case 'soundcloud':
+        // "Stream Artist - Track by Artist | Listen online for free on SoundCloud"
+        name = name.replace(/\s*[|·]\s*(Listen online.*|SoundCloud)\s*$/i, '');
+        name = name.replace(/^Stream\s+/i, '');
+        break;
+      case 'pitchfork':
+        // "Artist: Album Album Review | Pitchfork" → "Artist: Album"
+        name = name.replace(/\s*[|·]\s*Pitchfork\s*$/i, '');
+        name = name.replace(/\s+(Album|Track)\s+Review\s*$/i, '');
+        break;
+      case 'lastfm':
+        // "username's Music Profile – Users at Last.fm" → "username"
+        name = name.replace(/['']s\s+Music\s+Profile\s*[-–].*$/i, '');
+        break;
+      case 'listenbrainz':
+        // "username - ListenBrainz" → "username"
+        name = name.replace(/\s*[-–]\s*ListenBrainz\s*$/i, '');
+        break;
+    }
+
+    name = name.trim();
+    return name || null;
+  }
+
   // Update page support indicator
-  function updatePageIndicator(pageInfo) {
+  function updatePageIndicator(pageInfo, tabTitle) {
     const { service, type } = pageInfo;
 
     if (service && type && type !== 'unknown') {
       const serviceName = SERVICE_NAMES[service] || service;
       const typeName = TYPE_NAMES[type] || type;
-      pageIndicatorText.textContent = `${serviceName} ${typeName} detected`;
+      pageIndicatorText.textContent = `${serviceName} ${typeName}`;
       pageIndicator.classList.add('visible');
       pageIndicator.classList.remove('unsupported');
+
+      // Show extracted content name
+      const contentName = extractContentName(tabTitle, pageInfo);
+      if (contentName) {
+        pageIndicatorName.textContent = contentName;
+        pageIndicatorName.title = contentName;
+        pageIndicatorName.classList.add('visible');
+      } else {
+        pageIndicatorName.classList.remove('visible');
+      }
     } else if (service && type === 'unknown') {
       const serviceName = SERVICE_NAMES[service] || service;
       pageIndicatorText.textContent = `${serviceName} page (unsupported type)`;
       pageIndicator.classList.add('visible', 'unsupported');
+      pageIndicatorName.classList.remove('visible');
     } else {
       pageIndicator.classList.remove('visible');
+      pageIndicatorName.classList.remove('visible');
     }
   }
 
@@ -190,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const pageInfo = detectPageType(tab.url);
       const buttonConfig = getButtonConfig(pageInfo);
 
-      updatePageIndicator(pageInfo);
+      updatePageIndicator(pageInfo, tab.title);
       sendUrlBtnText.textContent = buttonConfig.text;
 
       // Update icon
