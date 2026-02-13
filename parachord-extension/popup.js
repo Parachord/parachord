@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sendUrlBtn = document.getElementById('send-url');
   const sendUrlBtnText = document.getElementById('send-url-text');
   const sendUrlBtnIcon = document.getElementById('send-url-icon');
+  const pageIndicator = document.getElementById('page-indicator');
+  const pageIndicatorText = document.getElementById('page-indicator-text');
   const spotifyInterceptToggle = document.getElementById('spotify-intercept');
   const appleMusicInterceptToggle = document.getElementById('applemusic-intercept');
 
@@ -137,6 +139,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     return { text: 'Play Next', icon: 'playNext' };
   }
 
+  // Service name labels
+  const SERVICE_NAMES = {
+    spotify: 'Spotify',
+    apple: 'Apple Music',
+    youtube: 'YouTube',
+    bandcamp: 'Bandcamp',
+    lastfm: 'Last.fm',
+    listenbrainz: 'ListenBrainz',
+    pitchfork: 'Pitchfork',
+    soundcloud: 'SoundCloud'
+  };
+
+  // Type labels
+  const TYPE_NAMES = {
+    track: 'track',
+    album: 'album',
+    playlist: 'playlist',
+    video: 'video',
+    artist: 'artist',
+    user: 'user profile',
+    likes: 'likes'
+  };
+
+  // Update page support indicator
+  function updatePageIndicator(pageInfo) {
+    const { service, type } = pageInfo;
+
+    if (service && type && type !== 'unknown') {
+      const serviceName = SERVICE_NAMES[service] || service;
+      const typeName = TYPE_NAMES[type] || type;
+      pageIndicatorText.textContent = `${serviceName} ${typeName} detected`;
+      pageIndicator.classList.add('visible');
+      pageIndicator.classList.remove('unsupported');
+    } else if (service && type === 'unknown') {
+      const serviceName = SERVICE_NAMES[service] || service;
+      pageIndicatorText.textContent = `${serviceName} page (unsupported type)`;
+      pageIndicator.classList.add('visible', 'unsupported');
+    } else {
+      pageIndicator.classList.remove('visible');
+    }
+  }
+
   // Update button based on current tab
   async function updateButtonForCurrentTab() {
     try {
@@ -146,6 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const pageInfo = detectPageType(tab.url);
       const buttonConfig = getButtonConfig(pageInfo);
 
+      updatePageIndicator(pageInfo);
       sendUrlBtnText.textContent = buttonConfig.text;
 
       // Update icon

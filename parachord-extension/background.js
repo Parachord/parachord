@@ -10,6 +10,19 @@ let activeTabId = null;
 // Connection state
 let isConnected = false;
 
+// Page support indicator state
+let currentPageSupported = false;
+let pulseInterval = null;
+let pulseFrame = 0;
+
+// Pulse animation colors (breathing cycle: bright → dim → bright)
+const PULSE_COLORS = [
+  '#4ade80', // light green (peak)
+  '#22c55e', // medium green
+  '#15803d', // dark green (trough)
+  '#22c55e', // medium green
+];
+
 // Queue for messages that arrive before WebSocket is connected
 let pendingMessages = [];
 
@@ -30,9 +43,8 @@ function connect() {
       isConnected = true;
       clearReconnectTimer();
 
-      // Update badge to show connected status
-      chrome.action.setBadgeText({ text: '' });
-      chrome.action.setBadgeBackgroundColor({ color: '#22c55e' });
+      // Update badge (shows page support indicator if on a supported page)
+      checkCurrentTab();
 
       // Send any queued messages
       if (pendingMessages.length > 0) {
@@ -57,9 +69,8 @@ function connect() {
       isConnected = false;
       socket = null;
 
-      // Update badge to show disconnected
-      chrome.action.setBadgeText({ text: '!' });
-      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+      // Update badge to show disconnected status
+      updateBadge();
 
       // Schedule reconnection
       scheduleReconnect();
@@ -316,6 +327,120 @@ function isAppleMusicContentUrl(url) {
   return patterns.some(pattern => pattern.test(url));
 }
 
+// Check if URL is a page the extension supports (scraping, playback, or actions)
+function isSupportedPage(url) {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    const pathname = urlObj.pathname;
+
+    // Spotify
+    if (hostname === 'open.spotify.com') {
+      return /\/(track|album|playlist|artist)\//.test(pathname) ||
+             /\/intl-[^/]+\/(track|album|playlist|artist)\//.test(pathname);
+    }
+
+    // Apple Music
+    if (hostname === 'music.apple.com') {
+      return /\/(album|playlist|song|artist)\//.test(pathname);
+    }
+
+    // YouTube
+    if (hostname === 'www.youtube.com' || hostname === 'youtube.com') {
+      return pathname === '/watch' || pathname.startsWith('/playlist');
+    }
+
+    // Bandcamp
+    if (hostname.endsWith('.bandcamp.com')) {
+      return /^\/(track|album)\//.test(pathname);
+    }
+    if (hostname === 'bandcamp.com') {
+      return pathname.includes('/playlist/');
+    }
+
+    // Last.fm
+    if (hostname === 'www.last.fm' || hostname === 'last.fm') {
+      return pathname.startsWith('/user/') && pathname.split('/').filter(Boolean).length >= 2;
+    }
+
+    // ListenBrainz
+    if (hostname === 'listenbrainz.org') {
+      return pathname.startsWith('/user/') && pathname.split('/').filter(Boolean).length >= 2;
+    }
+
+    // Pitchfork
+    if (hostname === 'pitchfork.com') {
+      return pathname.startsWith('/reviews/albums/') || pathname.startsWith('/reviews/tracks/');
+    }
+
+    // SoundCloud
+    if (hostname === 'soundcloud.com') {
+      const segments = pathname.split('/').filter(Boolean);
+      if (pathname.includes('/sets/')) return true;
+      if (pathname.endsWith('/likes')) return true;
+      if (segments.length >= 2 && !['tracks', 'albums', 'sets', 'reposts', 'likes', 'followers', 'following'].includes(segments[1])) return true;
+      if (segments.length === 1 || (segments.length >= 2 && segments[1] === 'tracks')) return true;
+      return false;
+    }
+
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Unified badge update - handles connection status + page support indicator
+function updateBadge() {
+  if (!isConnected) {
+    stopPulse();
+    chrome.action.setBadgeText({ text: '!' });
+    chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+  } else if (currentPageSupported) {
+    startPulse();
+  } else {
+    stopPulse();
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+// Start pulsing green badge animation
+function startPulse() {
+  // Set badge immediately
+  chrome.action.setBadgeText({ text: ' ' });
+  chrome.action.setBadgeBackgroundColor({ color: PULSE_COLORS[0] });
+
+  if (pulseInterval) return; // Already animating
+  pulseFrame = 0;
+  pulseInterval = setInterval(() => {
+    pulseFrame = (pulseFrame + 1) % PULSE_COLORS.length;
+    chrome.action.setBadgeBackgroundColor({ color: PULSE_COLORS[pulseFrame] });
+  }, 400);
+}
+
+// Stop pulsing animation
+function stopPulse() {
+  if (pulseInterval) {
+    clearInterval(pulseInterval);
+    pulseInterval = null;
+  }
+}
+
+// Check the currently active tab and update badge accordingly
+async function checkCurrentTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab && tab.url) {
+      currentPageSupported = isSupportedPage(tab.url);
+    } else {
+      currentPageSupported = false;
+    }
+    updateBadge();
+  } catch (e) {
+    // Ignore errors (e.g., no focused window)
+  }
+}
+
 // Intercept navigation to Spotify/Apple Music URLs
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   // Only intercept main frame navigations (not iframes)
@@ -502,3 +627,29 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
   }
 });
+
+// --- Page support indicator: tab listeners ---
+
+// Update indicator when user switches tabs
+chrome.tabs.onActivated.addListener(() => {
+  checkCurrentTab();
+});
+
+// Update indicator when a tab navigates to a new URL
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Only react to URL changes on the active tab
+  if (changeInfo.url && tab.active) {
+    currentPageSupported = isSupportedPage(changeInfo.url);
+    updateBadge();
+  }
+});
+
+// Update indicator when switching browser windows
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+    checkCurrentTab();
+  }
+});
+
+// Check current tab on service worker startup
+checkCurrentTab();
