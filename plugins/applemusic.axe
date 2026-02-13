@@ -18,9 +18,9 @@
     "urlLookup": true
   },
   "urlPatterns": [
-    "music.apple.com/*/album/*",
-    "music.apple.com/*/song/*",
-    "music.apple.com/*/playlist/*",
+    "music.apple.com/*/album/*/*",
+    "music.apple.com/*/song/*/*",
+    "music.apple.com/*/playlist/*/*",
     "itunes.apple.com/*"
   ],
   "settings": {

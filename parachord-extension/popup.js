@@ -367,6 +367,26 @@ document.addEventListener('DOMContentLoaded', async () => {
           } catch (scrapeError) {
             console.log(`[Popup] Scrape attempt ${attempt} failed:`, scrapeError.message);
             scrapeResult = null;
+            // Content script may not be loaded (e.g., tab was open before extension reload)
+            // Try injecting it on-demand and retrying
+            if (attempt === 1) {
+              try {
+                console.log('[Popup] Injecting content script on-demand...');
+                sendUrlBtnText.textContent = 'Loading scraper...';
+                const scriptFile = pageInfo.service === 'apple' ? 'content-applemusic.js' :
+                                   pageInfo.service === 'spotify' ? 'content-spotify.js' :
+                                   pageInfo.service === 'soundcloud' ? 'content-soundcloud.js' :
+                                   pageInfo.service === 'pitchfork' ? 'content-pitchfork.js' :
+                                   'content.js';
+                await chrome.scripting.executeScript({
+                  target: { tabId: tab.id },
+                  files: [scriptFile]
+                });
+                await new Promise(r => setTimeout(r, 500)); // Give script time to initialize
+              } catch (injectError) {
+                console.log('[Popup] Content script injection failed:', injectError.message);
+              }
+            }
           }
         }
 

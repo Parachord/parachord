@@ -371,7 +371,12 @@
       }
     }
 
-    console.log(`[Parachord] Found ${trackRows.length} track rows`);
+    console.log(`[Parachord] Found ${trackRows.length} track rows (wrapperAsRow: ${usingWrapperAsRow})`);
+
+    // Log first row's structure for debugging
+    if (trackRows.length > 0) {
+      console.log('[Parachord] First row HTML (truncated):', trackRows[0].innerHTML.substring(0, 300));
+    }
 
     trackRows.forEach((row, index) => {
       try {
@@ -425,7 +430,13 @@
             }
           }
 
-          if (trackName && artist) {
+          // Log first few tracks for debugging
+          if (index < 3) {
+            console.log(`[Parachord] Track ${index + 1}: "${trackName}" by "${artist}" (has title el: ${!!trackNameEl}, has artist el: ${!!artistEl})`);
+          }
+
+          // Accept tracks even without artist (some playlist views don't show artist inline)
+          if (trackName) {
             tracks.push({
               title: trackName,
               artist: artist,
@@ -434,6 +445,9 @@
               position: index + 1
             });
           }
+        } else if (index < 3) {
+          // Log why first few rows failed to extract
+          console.log(`[Parachord] Track ${index + 1}: no title element found. Row text: "${row.textContent.trim().substring(0, 100)}"`);
         }
       } catch (e) {
         console.error('[Parachord] Error scraping track row:', e);
