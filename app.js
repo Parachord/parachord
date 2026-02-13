@@ -6202,13 +6202,11 @@ const Parachord = () => {
           triggerQueueAnimation();
         }
       } else {
-        // Default behavior: insert tracks at position 1 (play next)
+        // Default behavior: insert tracks at beginning of queue (play next)
         showToast(`Playing "${collection.name}" next (${tracks.length} tracks)`);
 
         setCurrentQueue(prev => {
-          // Insert at position 1 if queue has items, otherwise at position 0
-          const insertPosition = prev.length > 0 ? 1 : 0;
-          return [...prev.slice(0, insertPosition), ...resolvedTracks, ...prev.slice(insertPosition)];
+          return [...resolvedTracks, ...prev];
         });
         triggerQueueAnimation();
 
@@ -7397,6 +7395,7 @@ const Parachord = () => {
     showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"...`, 'info');
 
     // Convert scraped tracks to our track format
+    const context = { type: 'playlist', name: playlistName, url: playlistUrl };
     const tracks = playlist.tracks.map((track, index) => ({
       id: `scraped-${Date.now()}-${index}`,
       title: track.title,
@@ -7409,22 +7408,18 @@ const Parachord = () => {
       albumArt: null,
       // If track has a URL (e.g., Bandcamp track URL), use it as a hint for resolution
       sourceUrl: track.url || null,
-      context: {
-        type: 'playlist',
-        name: playlistName,
-        url: playlistUrl
-      }
+      _playbackContext: context
     }));
 
-    // Insert tracks at position 1 (play next) - same as URL drops
+    // Insert tracks at beginning of queue (play next)
     setCurrentQueue(prev => {
-      const insertPosition = prev.length > 0 ? 1 : 0;
-      return [...prev.slice(0, insertPosition), ...tracks, ...prev.slice(insertPosition)];
+      return [...tracks, ...prev];
     });
 
     // If nothing is currently loaded, load the first track
     if (!currentTrackRef.current && tracks.length > 0) {
       const firstTrack = tracks[0];
+      setPlaybackContext(context);
       setCurrentTrack(firstTrack);
       setPlaybackSource(null);
     }
@@ -7531,6 +7526,7 @@ const Parachord = () => {
       const detailsData = await detailsResponse.json();
 
       // Extract tracks
+      const albumContext = { type: 'album', name: albumTitle, artist: artistName, url: url };
       const tracks = [];
       if (detailsData.media && detailsData.media.length > 0) {
         detailsData.media.forEach((medium) => {
@@ -7548,12 +7544,7 @@ const Parachord = () => {
                 source: null,
                 resolvedBy: null,
                 albumArt: null,
-                context: {
-                  type: 'album',
-                  name: `${artistName} - ${albumTitle}`,
-                  url: url,
-                  score: score
-                }
+                _playbackContext: albumContext
               });
             });
           }
@@ -7567,15 +7558,15 @@ const Parachord = () => {
 
       console.log(`📋 Found ${tracks.length} tracks for "${albumTitle}"`);
 
-      // Insert tracks at position 1 (play next)
+      // Insert tracks at beginning of queue (play next)
       setCurrentQueue(prev => {
-        const insertPosition = prev.length > 0 ? 1 : 0;
-        return [...prev.slice(0, insertPosition), ...tracks, ...prev.slice(insertPosition)];
+        return [...tracks, ...prev];
       });
 
       // If nothing is currently loaded, load the first track
       if (!currentTrackRef.current && tracks.length > 0) {
         const firstTrack = tracks[0];
+        setPlaybackContext(albumContext);
         setCurrentTrack(firstTrack);
         setPlaybackSource(null);
       }
