@@ -1,69 +1,54 @@
-# Parachord v0.7.0-alpha.2
+# Parachord v0.7.0-alpha.3
 
-**Release date:** 2026-02-12
-
----
-
-## Smart Links
-
-Share any track as a beautiful, embeddable web page.
-
-- **Publish Smart Link** from the right-click context menu on any track
-- Hosted at **go.parachord.com** via Cloudflare Workers + KV
-- Embedded player with links to Spotify, YouTube, Apple Music, SoundCloud, and Bandcamp
-- **Play in Parachord** button — connects to the desktop app over WebSocket
-- **Copy Embed Code** for embedding the player on external sites
-- Official service logos matching the desktop app
-
-## MCP Server (Claude Desktop Integration)
-
-Control Parachord from Claude Desktop using natural language.
-
-- MCP server with tools for playback control, search, and queue management
-- stdio bridge for Claude Desktop compatibility
-- One-click setup in **Settings > General**
-
-## AI DJ Privacy Controls
-
-All personal data is now gated behind an explicit opt-in toggle.
-
-- **"Share my data" toggle** (off by default) controls whether the AI receives now playing, queue, collection, listening history, playlists, session data, recent searches, and friend stats
-- When off, the AI can still search and play music from explicit requests ("play Radiohead")
-- When data is needed (e.g. "what's playing?", "recommend something based on my taste"), the AI prompts the user to enable the toggle
-- Toggle is now visible to **all users**, not just those with a scrobbler connected
-
-## AI DJ Bug Fixes
-
-- Fixed first song playing twice when the AI queues multiple tracks — `queue_add` now deduplicates against the currently playing track
-- Updated system prompt: multi-track requests use a single `queue_add` call instead of `play` + `queue_add`
-
-## Stability & Performance
-
-- **Faster startup** — app initialization parallelized
-- **Resolver caching fix** — tracks no longer constantly re-resolve when already cached
-- **Auth token validation** — saved resolver settings are validated on restore; invalid tokens prompt re-auth
-- **Apple Music auth** — Swift helper activates to foreground; increased authorization timeout; handles denied auth gracefully
-- **Apple Music pause** — fixed pause not working after switching sources
-- **Friend unpinning** — fixed stale closures in polling causing unpin to fail
-- **userData path** — pinned before `app.name` is set to prevent data loss on upgrade
-- **App identity** — menu bar shows "Parachord" instead of "parachord-desktop"; MusicKit auth dialog shows correct app name
-- **Auto-updater** — now finds pre-release builds; error toast no longer shows "undefined"
-- **SoundCloud errors** — credential error toast only fires when fallback credentials also fail
-
-## Auth & API
-
-- **SoundCloud BYOK** — advanced API credentials config restored for users who want to use their own keys
-- **Credential masking** — Client ID and API Key fields use password input type
-- **Spotify API migration** — library sync updated to unified `/me/library` endpoints (Feb 2026 API changes)
-
-## Social
-
-- Friends section always visible in sidebar for discoverability (no longer hidden when empty)
-
-## Development
-
-- Reverse sync workflow from dedicated plugin and browser extension repos back to the monorepo
+**Release date:** 2026-02-13
 
 ---
 
-**Full changelog:** See `TODO.md` or `git log v0.6.0-alpha.2..v0.7.0-alpha.2`
+## Page Support Indicator (Browser Extension)
+
+Know at a glance when Parachord can scrape the page you're viewing.
+
+- **Green dot indicator** in the extension popup when the current page is a supported playlist or album
+- Shows the content name (e.g. "Discover Weekly" or "OK Computer") when detected
+- Supported on Spotify, Apple Music, SoundCloud, Bandcamp, YouTube, and more
+
+## Apple Music Scraping Improvements
+
+Major reliability improvements for importing Apple Music playlists and albums.
+
+- Fixed missing artist names — now extracts artists from JSON-LD metadata and supplements with DOM fallback
+- Fixed URL pattern matching — trailing wildcards now correctly match multiple path segments
+- Added automatic scrape retry logic for more reliable imports
+- Restored Bandcamp playback to use the embedded player window
+
+## Windows & Linux Support
+
+- **Windows context menus fixed** — right-click menus now work correctly with `titleBarOverlay` instead of `-webkit-app-region: drag` on the title bar
+- **Drag-to-playlist on Windows** — "New Playlist" drop target works on all platforms
+- Linux continues to work with the standard drag region (Electron 34+ fix)
+
+## Playlist Management
+
+- **Create New Playlist button** added to the playlists page for quick playlist creation
+
+## Queue & Playback Fixes
+
+- **Play Next** now inserts at the correct position in the queue
+- **Context banner** updates properly when the queue changes
+- **Local library** now shows all tracks instead of being capped at 50
+
+## Resolver Blocklist
+
+Report and block bad source matches without disabling an entire resolver.
+
+- **Blocklist specific results** — flag individual bad matches from the context menu
+- Blocklisted results are skipped during future resolution without affecting other tracks from the same resolver
+
+## Build & Update
+
+- Auto-updater manifest files now included in build artifacts and releases
+- Suppressed spurious auto-updater error toast on startup
+
+---
+
+**Full changelog:** `git log v0.7.0-alpha.2..v0.7.0-alpha.3`
