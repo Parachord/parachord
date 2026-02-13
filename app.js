@@ -33143,6 +33143,40 @@ useEffect(() => {
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })
             ),
             'Import'
+          ),
+          // Create New Playlist button
+          React.createElement('button', {
+            onClick: () => {
+              // Generate a unique name (increment if "New Playlist" already exists)
+              let baseName = 'New Playlist';
+              let name = baseName;
+              let counter = 2;
+              const existingNames = new Set(playlists.map(p => p.title));
+              while (existingNames.has(name)) {
+                name = `${baseName} ${counter}`;
+                counter++;
+              }
+              const playlistId = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now();
+              const newPlaylist = {
+                id: playlistId,
+                filename: `${playlistId}.xspf`,
+                title: name,
+                creator: 'Me',
+                tracks: [],
+                createdAt: Date.now(),
+                addedAt: Date.now(),
+                lastModified: Date.now()
+              };
+              setPlaylists(prev => [newPlaylist, ...prev]);
+              savePlaylistToStore(newPlaylist);
+              setSelectedPlaylist(newPlaylist);
+            },
+            className: 'ml-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+            ),
+            'Create'
           )
         ),
         // Content area (scrollable)
