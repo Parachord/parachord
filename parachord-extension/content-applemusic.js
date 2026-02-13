@@ -373,15 +373,34 @@
 
     console.log(`[Parachord] Found ${trackRows.length} track rows (wrapperAsRow: ${usingWrapperAsRow})`);
 
-    // Log first row's structure for debugging
-    if (trackRows.length > 0) {
-      console.log('[Parachord] First row HTML (truncated):', trackRows[0].innerHTML.substring(0, 300));
+    // Log first row's ancestor chain for debugging
+    if (trackRows.length > 0 && usingWrapperAsRow) {
+      let el = trackRows[0];
+      const chain = [];
+      for (let i = 0; i < 6 && el; i++) {
+        const tag = el.tagName?.toLowerCase() || '?';
+        const cls = el.className ? `.${String(el.className).split(' ').slice(0, 2).join('.')}` : '';
+        const role = el.getAttribute?.('role') ? `[role=${el.getAttribute('role')}]` : '';
+        const testId = el.getAttribute?.('data-testid') ? `[data-testid=${el.getAttribute('data-testid')}]` : '';
+        chain.push(`${tag}${cls}${role}${testId}`);
+        el = el.parentElement;
+      }
+      console.log('[Parachord] First row ancestor chain:', chain.join(' > '));
+      console.log('[Parachord] First row outerHTML (truncated):', trackRows[0].outerHTML.substring(0, 500));
     }
 
     trackRows.forEach((row, index) => {
       try {
-        // If using wrapper as row, try to walk up to the actual row for duration/album
-        const fullRow = usingWrapperAsRow ? (row.closest('[class*="songs-list-row"]:not([class*="__"])') || row.parentElement || row) : row;
+        // If using wrapper as row, walk up to the actual full row element
+        // Try multiple strategies: role="row", songs-list-row class, or walk up several levels
+        const fullRow = usingWrapperAsRow ? (
+          row.closest('[role="row"]') ||
+          row.closest('[class*="songs-list-row"]:not([class*="__"])') ||
+          row.parentElement?.parentElement?.parentElement ||
+          row.parentElement?.parentElement ||
+          row.parentElement ||
+          row
+        ) : row;
 
         // Track name - various selectors for different page layouts
         const trackNameEl = row.querySelector('[data-testid="track-title"]') ||
