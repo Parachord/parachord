@@ -253,6 +253,19 @@
     return hours * 3600 + minutes * 60 + seconds;
   }
 
+  // Extract artist name from various JSON-LD formats
+  function extractArtistFromJsonLd(obj) {
+    if (!obj) return '';
+    // byArtist can be: { name: "..." }, "Artist Name", [{ name: "..." }, ...], { "@type": "MusicGroup", "name": "..." }
+    const artistProp = obj.byArtist || obj.creator || obj.author;
+    if (!artistProp) return '';
+    if (typeof artistProp === 'string') return artistProp;
+    if (Array.isArray(artistProp)) {
+      return artistProp.map(a => (typeof a === 'string' ? a : a.name || '')).filter(Boolean).join(', ');
+    }
+    return artistProp.name || '';
+  }
+
   // Try to extract tracks from JSON-LD schema (most reliable method)
   function extractFromJsonLd() {
     const tracks = [];
@@ -265,17 +278,29 @@
         try {
           const data = JSON.parse(script.textContent);
 
+          // Log first JSON-LD schema type for debugging
+          if (tracks.length === 0) {
+            console.log('[Parachord] JSON-LD schema type:', data['@type'] || (Array.isArray(data) ? 'Array' : typeof data));
+          }
+
           // Handle MusicPlaylist schema
           if (data['@type'] === 'MusicPlaylist' || data['@type'] === 'MusicAlbum') {
             collectionName = data.name || '';
 
             if (data.track && Array.isArray(data.track)) {
+              // Log first track structure for debugging
+              if (data.track.length > 0) {
+                const firstItem = data.track[0].item || data.track[0];
+                console.log('[Parachord] JSON-LD first track keys:', Object.keys(firstItem).join(', '));
+                console.log('[Parachord] JSON-LD first track sample:', JSON.stringify(firstItem).substring(0, 300));
+              }
+
               for (const item of data.track) {
                 const track = item.item || item;
                 if (track.name) {
                   tracks.push({
                     title: track.name,
-                    artist: track.byArtist?.name || '',
+                    artist: extractArtistFromJsonLd(track),
                     album: track.inAlbum?.name || collectionName,
                     duration: parseIsoDuration(track.duration),
                     position: tracks.length + 1
@@ -291,7 +316,7 @@
               if (item['@type'] === 'MusicRecording' && item.name) {
                 tracks.push({
                   title: item.name,
-                  artist: item.byArtist?.name || '',
+                  artist: extractArtistFromJsonLd(item),
                   album: item.inAlbum?.name || '',
                   duration: parseIsoDuration(item.duration),
                   position: tracks.length + 1
