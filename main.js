@@ -633,6 +633,16 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 600,
     titleBarStyle: 'hidden',
+    // On Windows, titleBarOverlay provides native window controls and a draggable
+    // title bar area without needing -webkit-app-region: drag (which blocks all
+    // mouse events including right-click context menus on Windows).
+    ...(process.platform === 'win32' ? {
+      titleBarOverlay: {
+        color: '#f9fafb',
+        symbolColor: '#374151',
+        height: 32
+      }
+    } : {}),
     frame: true,
     backgroundColor: '#0f172a',
     icon: path.join(__dirname, 'assets/icons/icon512.png'),

@@ -5,6 +5,9 @@ console.log('Preload script loaded');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
+  // Platform identifier (darwin, win32, linux)
+  platform: process.platform,
+
   // Storage operations
   store: {
     get: (key) => ipcRenderer.invoke('store-get', key),

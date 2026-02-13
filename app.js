@@ -1,6 +1,13 @@
 // Parachord Desktop App - Electron Version
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+// Platform detection: on macOS/Linux we use -webkit-app-region: drag for the title bar.
+// On Windows, titleBarOverlay handles dragging natively, so we skip the drag class
+// (which would block all mouse events including right-click context menus on Windows).
+// Linux has had the drag-region context menu fix since Electron 34+ (PR #45813).
+const isWindows = window.electron?.platform === 'win32';
+const useDragClass = !isWindows;
+
 // Global rate limiter for iTunes API to prevent 403/429 errors
 // iTunes API has strict rate limits (~20 req/min)
 window.iTunesRateLimiter = (() => {
@@ -1368,12 +1375,7 @@ const VirtualizedQueueList = React.memo(({
       onDragEnd: () => {
         setDraggedQueueTrack(null);
         setQueueDropTarget(null);
-        setDraggingTrackForPlaylist(null);
-        setDropTargetPlaylistId(null);
-        setDropTargetNewPlaylist(false);
-        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-        }
+        handlePlaylistDragEnd();
       },
       onDragOver: (e) => {
         e.preventDefault();
@@ -6096,6 +6098,28 @@ const Parachord = () => {
     }
 
     return track;
+  };
+
+  // Handle drag end for playlist panel — onDrop doesn't fire in Electron for
+  // dynamically-shown elements, so we check drop targets in onDragEnd as a fallback.
+  const handlePlaylistDragEnd = () => {
+    const wasOverNewPlaylist = dropTargetNewPlaylist;
+
+    // If drag ended while hovering over "New Playlist" row, treat it as a drop
+    if (wasOverNewPlaylist && draggingTrackForPlaylist) {
+      setDroppedTrackForNewPlaylist(draggingTrackForPlaylist);
+      setNewPlaylistFormOpen(true);
+      setNewPlaylistName('');
+    }
+
+    setDraggingTrackForPlaylist(null);
+    setDropTargetPlaylistId(null);
+    setDropTargetNewPlaylist(false);
+
+    // Only auto-close the panel if no drop was handled
+    if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0 && !wasOverNewPlaylist) {
+      setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
+    }
   };
 
   // Handle URL drop - main entry point
@@ -27250,9 +27274,9 @@ useEffect(() => {
           }
         }
       },
-        // Draggable title bar area (space for macOS traffic lights)
+        // Title bar spacer (draggable on macOS for traffic lights; on Windows, titleBarOverlay handles dragging)
         React.createElement('div', {
-          className: 'h-8 drag flex-shrink-0'
+          className: `h-8 flex-shrink-0${useDragClass ? ' drag' : ''}`
         }),
         // Navigation arrows
         React.createElement('div', {
@@ -27830,10 +27854,10 @@ useEffect(() => {
         ref: mainContentRef,
         className: 'flex-1 flex flex-col overflow-hidden bg-white relative'
       },
-        // Draggable title bar area (space for macOS traffic lights) - mirrors sidebar drag area
+        // Title bar spacer (draggable on macOS; on Windows, titleBarOverlay handles dragging)
         React.createElement('div', {
-          className: 'h-8 drag flex-shrink-0 absolute top-0 left-0 right-0 z-10',
-          style: { pointerEvents: 'auto' }
+          className: `h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10${useDragClass ? ' drag' : ''}`,
+          style: useDragClass ? { pointerEvents: 'auto' } : { pointerEvents: 'none' }
         }),
 
     // External Track Prompt Modal - refined styling
@@ -29001,12 +29025,7 @@ useEffect(() => {
                       }));
                     },
                     onDragEnd: () => {
-                      setDraggingTrackForPlaylist(null);
-                      setDropTargetPlaylistId(null);
-                      setDropTargetNewPlaylist(false);
-                      if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                        setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                      }
+                      handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
                       isResolving ? 'opacity-60' : ''
@@ -30647,13 +30666,7 @@ useEffect(() => {
               setDraggingTrackForPlaylist(track);
             },
             onDragEnd: () => {
-              setDraggingTrackForPlaylist(null);
-              setDropTargetPlaylistId(null);
-              setDropTargetNewPlaylist(false);
-              // Close panel if it was opened by drag and nothing was dropped
-              if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-              }
+              handlePlaylistDragEnd();
             },
             // Visibility tracking for resolution scheduler
             releaseTrackRowRefs: releaseTrackRowRefs,
@@ -32696,17 +32709,11 @@ useEffect(() => {
                         }
                       },
                       onDragEnd: () => {
-                        setDraggingTrackForPlaylist(null);
-                        setDropTargetPlaylistId(null);
-                        setDropTargetNewPlaylist(false);
                         if (playlistEditMode) {
                           setDraggedPlaylistTrack(null);
                           setPlaylistDropTarget(null);
                         }
-                        // Close panel if it was opened by drag and nothing was dropped
-                        if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                          setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                        }
+                        handlePlaylistDragEnd();
                       },
                       onDragOver: playlistEditMode ? (e) => {
                         e.preventDefault();
@@ -35441,12 +35448,7 @@ useEffect(() => {
                       }));
                     },
                     onDragEnd: () => {
-                      setDraggingTrackForPlaylist(null);
-                      setDropTargetPlaylistId(null);
-                      setDropTargetNewPlaylist(false);
-                      if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                        setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                      }
+                      handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
                       isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
@@ -37695,13 +37697,7 @@ useEffect(() => {
                           }));
                         },
                         onDragEnd: () => {
-                          setDraggingTrackForPlaylist(null);
-                          setDropTargetPlaylistId(null);
-                          setDropTargetNewPlaylist(false);
-                          // Close panel if it was opened by drag and nothing was dropped
-                          if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                            setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                          }
+                          handlePlaylistDragEnd();
                         },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
                           isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
@@ -38192,12 +38188,7 @@ useEffect(() => {
                           }));
                         },
                         onDragEnd: () => {
-                          setDraggingTrackForPlaylist(null);
-                          setDropTargetPlaylistId(null);
-                          setDropTargetNewPlaylist(false);
-                          if (addToPlaylistPanel.open && selectedPlaylistsForAdd.length === 0) {
-                            setAddToPlaylistPanel(prev => ({ ...prev, open: false }));
-                          }
+                          handlePlaylistDragEnd();
                         },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: {
@@ -38332,7 +38323,7 @@ useEffect(() => {
                           e.dataTransfer.effectAllowed = 'copy';
                           e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                         },
-                        onDragEnd: () => { setDraggingTrackForPlaylist(null); setDropTargetPlaylistId(null); setDropTargetNewPlaylist(false); },
+                        onDragEnd: () => { handlePlaylistDragEnd(); },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
@@ -39157,9 +39148,7 @@ useEffect(() => {
                           e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                         },
                         onDragEnd: () => {
-                          setDraggingTrackForPlaylist(null);
-                          setDropTargetPlaylistId(null);
-                          setDropTargetNewPlaylist(false);
+                          handlePlaylistDragEnd();
                         },
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
@@ -39260,9 +39249,7 @@ useEffect(() => {
                             e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'track', track }));
                           },
                           onDragEnd: () => {
-                            setDraggingTrackForPlaylist(null);
-                            setDropTargetPlaylistId(null);
-                            setDropTargetNewPlaylist(false);
+                            handlePlaylistDragEnd();
                           },
                           className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                           style: { borderRadius: '8px', marginBottom: '2px' },
@@ -41335,9 +41322,7 @@ useEffect(() => {
                   setDraggingTrackForPlaylist(trackData.track);
                 },
                 onDragEnd: () => {
-                  setDraggingTrackForPlaylist(null);
-                  setDropTargetPlaylistId(null);
-                  setDropTargetNewPlaylist(false);
+                  handlePlaylistDragEnd();
                 },
                 onContextMenu: (e) => {
                   e.preventDefault();
@@ -46969,10 +46954,9 @@ useEffect(() => {
           className: 'flex-1 overflow-y-auto min-h-0'
         },
           // New Playlist row (always shown at top)
-          // TODO: Fix drag-and-drop to create new playlist - onDrop events not firing in Electron
-          // The visual highlight works (onDragEnter/onDragLeave) but onDrop never fires.
-          // Attempted: dataTransfer fallback, mouseUp fallback, pointerEvents:none on children.
-          // For now, users must click "New Playlist" row to open form, then drag to existing playlists works.
+          // Note: onDrop doesn't fire in Electron for dynamically-shown elements.
+          // The drop is handled via handlePlaylistDragEnd() in each track's onDragEnd handler,
+          // which checks dropTargetNewPlaylist state and opens the form with the dragged track.
           React.createElement('div', {
             key: 'new-playlist-row',
             onClick: () => {
