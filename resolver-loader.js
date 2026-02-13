@@ -226,6 +226,7 @@ class ResolverLoader {
   /**
    * Match a URL against a glob-like pattern
    * Supports: * (any chars except /), *.domain.com (subdomain wildcard)
+   * A trailing * matches one or more path segments (greedy)
    */
   matchUrlPattern(url, pattern) {
     try {
@@ -239,15 +240,27 @@ class ResolverLoader {
         normalizedPattern = pattern;
       }
 
+      // Check if pattern ends with a wildcard (trailing * should match rest of path)
+      const endsWithWildcard = normalizedPattern.endsWith('*') && !normalizedPattern.endsWith('\\*');
+
       // Convert glob pattern to regex
       // *.domain.com -> [^/]+\.domain\.com
-      // path/* -> path/[^/]+
-      // path/*/more -> path/[^/]+/more
-      const regexPattern = normalizedPattern
+      // path/*/more -> path/[^/]+/more (middle * = single segment)
+      // path/* -> path/.+ (trailing * = rest of path, greedy)
+      let regexPattern = normalizedPattern
         .replace(/^\*\./g, '__SUBDOMAIN_WILDCARD__') // Temporarily replace *. at start
         .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars (except *)
-        .replace(/__SUBDOMAIN_WILDCARD__/g, '[^/]+\\.') // Restore subdomain wildcard
-        .replace(/\*/g, '[^/]+'); // * = any segment
+        .replace(/__SUBDOMAIN_WILDCARD__/g, '[^/]+\\.'); // Restore subdomain wildcard
+
+      if (endsWithWildcard) {
+        // Replace all * except the last one with single-segment match
+        // Then replace the last * with greedy match (any chars including /)
+        const lastStarIdx = regexPattern.lastIndexOf('*');
+        const before = regexPattern.substring(0, lastStarIdx).replace(/\*/g, '[^/]+');
+        regexPattern = before + '.+';
+      } else {
+        regexPattern = regexPattern.replace(/\*/g, '[^/]+'); // * = any single segment
+      }
 
       const regex = new RegExp(`^${regexPattern}$`, 'i');
       return regex.test(normalizedUrl);
