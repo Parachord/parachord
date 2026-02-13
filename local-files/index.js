@@ -125,6 +125,12 @@ class LocalFilesService {
     return results;
   }
 
+  // Return all indexed tracks (used to populate the Library view)
+  getAllTracks() {
+    const dbResults = this.db.getAllTracks();
+    return dbResults.map(track => this.formatTrackForRenderer(track));
+  }
+
   // Querying (used by resolver via IPC)
   search(query) {
     const dbResults = this.db.search(query);
