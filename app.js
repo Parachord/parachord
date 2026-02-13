@@ -4532,6 +4532,8 @@ const Parachord = () => {
   const aiIncludeHistoryRef = useRef(false); // Ref for toggle to avoid stale closures in cached getContext
   const [recommendationBlocklist, setRecommendationBlocklist] = useState({ artists: [], albums: [], tracks: [] });
   const recommendationBlocklistRef = useRef({ artists: [], albums: [], tracks: [] }); // Ref for blocklist to avoid stale closures
+  const [resolverBlocklist, setResolverBlocklist] = useState([]); // Array of { artist, title, resolverId, blockedAt }
+  const resolverBlocklistRef = useRef([]); // Ref for blocklist to avoid stale closures
   const [aiError, setAiError] = useState(null);
   const [selectedAiResolver, setSelectedAiResolver] = useState(null);
   const [aiSaveDialogOpen, setAiSaveDialogOpen] = useState(false);
@@ -5831,6 +5833,7 @@ const Parachord = () => {
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
+  useEffect(() => { resolverBlocklistRef.current = resolverBlocklist; }, [resolverBlocklist]);
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -8832,6 +8835,77 @@ const Parachord = () => {
     }
   }, []);
 
+  // Listen for playbar source context menu actions (report bad match)
+  useEffect(() => {
+    if (window.electron?.playbarSourceMenu?.onAction) {
+      const cleanup = window.electron.playbarSourceMenu.onAction((data) => {
+        console.log('Playbar source context menu action received:', data);
+        if (data.action === 'report-bad-match' && data.resolverId && data.track) {
+          const artist = (data.track.artist || '').toLowerCase().trim();
+          const title = (data.track.title || '').toLowerCase().trim();
+          if (!artist || !title) return;
+
+          // Extract the specific source ID to blocklist the result, not the whole resolver
+          const trackSourceKey = Object.keys(trackSources).find(key => {
+            const src = trackSources[key];
+            return src && src[data.resolverId];
+          });
+          const source = trackSourceKey ? trackSources[trackSourceKey][data.resolverId] : null;
+          const sourceId = source
+            ? (source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null)
+            : null;
+
+          // Check if this exact source is already blocklisted
+          const existing = resolverBlocklistRef.current.find(entry =>
+            entry.artist === artist && entry.title === title &&
+            entry.resolverId === data.resolverId && entry.sourceId === sourceId
+          );
+          if (existing) {
+            showToast(`Already reported: ${data.track.artist} - ${data.track.title} on ${data.resolverId}`, 'info');
+            return;
+          }
+
+          const newEntry = {
+            artist,
+            title,
+            resolverId: data.resolverId,
+            sourceId,
+            blockedAt: Date.now()
+          };
+          setResolverBlocklist(prev => [...prev, newEntry]);
+
+          // Remove the blocklisted source from trackSources so UI updates immediately
+          setTrackSources(prev => {
+            const updated = { ...prev };
+            for (const key of Object.keys(updated)) {
+              if (updated[key] && updated[key][data.resolverId]) {
+                const { [data.resolverId]: removed, ...rest } = updated[key];
+                updated[key] = rest;
+              }
+            }
+            return updated;
+          });
+
+          // Clear from in-memory cache so re-resolution will find an alternative
+          const cacheKey = `${artist}|${title}|${currentTrack?.position || 0}`;
+          if (trackSourcesCache.current[cacheKey]?.sources?.[data.resolverId]) {
+            const { [data.resolverId]: removed, ...rest } = trackSourcesCache.current[cacheKey].sources;
+            trackSourcesCache.current[cacheKey].sources = rest;
+          }
+          // Also invalidate the resolver hash so the cache entry is re-resolved
+          if (trackSourcesCache.current[cacheKey]) {
+            trackSourcesCache.current[cacheKey].resolverHash = null;
+          }
+
+          const resolverName = allResolvers.find(r => r.id === data.resolverId)?.name || data.resolverId;
+          showToast(`Reported bad match from ${resolverName}`, 'success');
+          setPlaybarSourceDropdownOpen(false);
+        }
+      });
+      return cleanup;
+    }
+  }, []);
+
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
@@ -10769,6 +10843,13 @@ const Parachord = () => {
     }
   }, [recommendationBlocklist, cacheLoaded]);
 
+  // Persist resolver blocklist (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('resolver_blocklist', resolverBlocklist);
+    }
+  }, [resolverBlocklist, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -11232,7 +11313,10 @@ const Parachord = () => {
       // Use refs to avoid stale closure issues when called from callbacks
       const currentActiveResolvers = activeResolversRef.current;
       const currentResolverOrder = resolverOrderRef.current;
+      const currentBlocklist = resolverBlocklistRef.current;
       const preferredResolver = trackOrSource.preferredResolver;
+      const trackArtistNorm = (trackOrSource.artist || '').toLowerCase().trim();
+      const trackTitleNorm = (trackOrSource.title || '').toLowerCase().trim();
       const sortedSources = availableResolvers.map(resId => ({
         resolverId: resId,
         source: trackOrSource.sources[resId],
@@ -11240,6 +11324,16 @@ const Parachord = () => {
         confidence: trackOrSource.sources[resId].confidence || 0
       }))
       .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
+      .filter(s => {  // Filter blocklisted specific source results
+        const src = s.source;
+        const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+        return !currentBlocklist.some(entry =>
+          entry.resolverId === s.resolverId &&
+          entry.artist === trackArtistNorm &&
+          entry.title === trackTitleNorm &&
+          entry.sourceId === srcId
+        );
+      })
       .sort((a, b) => {
         // If a preferred resolver is specified, prioritize it
         if (preferredResolver) {
@@ -16406,6 +16500,13 @@ const Parachord = () => {
         console.log('📦 Loaded recommendation blocklist:', totalBlocked, 'items');
       }
 
+      // Load resolver blocklist
+      const savedResolverBlocklist = await window.electron.store.get('resolver_blocklist');
+      if (Array.isArray(savedResolverBlocklist)) {
+        setResolverBlocklist(savedResolverBlocklist);
+        console.log('📦 Loaded resolver blocklist:', savedResolverBlocklist.length, 'entries');
+      }
+
       // Load AI chat histories (per-provider)
       const savedAiChatHistories = await window.electron.store.get('ai_chat_histories');
       if (savedAiChatHistories && typeof savedAiChatHistories === 'object') {
@@ -18246,6 +18347,23 @@ const Parachord = () => {
     console.log(`  📋 Resolver order: ${currentResolverOrder.join(', ')}`);
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
+    // Helper to extract a stable source identifier for blocklist matching
+    const getSourceId = (source) => {
+      if (!source) return null;
+      return source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null;
+    };
+
+    // Get blocklisted source IDs for this track
+    const currentBlocklist = resolverBlocklistRef.current;
+    const normalizedArtist = artistName.toLowerCase().trim();
+    const normalizedTitle = track.title.toLowerCase().trim();
+    const getBlockedSourceIds = (resolverId) => {
+      return currentBlocklist
+        .filter(entry => entry.resolverId === resolverId && entry.artist === normalizedArtist && entry.title === normalizedTitle)
+        .map(entry => entry.sourceId)
+        .filter(Boolean);
+    };
+
     const resolverPromises = enabledResolvers.map(async (resolver) => {
       // Check abort before each resolver
       if (signal?.aborted) return;
@@ -18286,6 +18404,31 @@ const Parachord = () => {
 
         // Check abort before processing result
         if (signal?.aborted) return;
+
+        // Check if this specific result is blocklisted
+        const blockedIds = getBlockedSourceIds(resolver.id);
+        if (result && blockedIds.length > 0 && blockedIds.includes(getSourceId(result))) {
+          console.log(`  🚫 ${resolver.name}: Result blocklisted, searching for alternative...`);
+          result = null;
+
+          // Fall back to search() to find a non-blocklisted alternative
+          if (resolver.search) {
+            try {
+              const searchResults = await resolver.search(`${artistName} ${track.title}`, config);
+              if (signal?.aborted) return;
+              if (Array.isArray(searchResults)) {
+                result = searchResults.find(r => !blockedIds.includes(getSourceId(r))) || null;
+                if (result) {
+                  console.log(`  🔄 ${resolver.name}: Found alternative via search`);
+                }
+              }
+            } catch (searchError) {
+              if (searchError.name !== 'AbortError') {
+                console.error(`  ⚠️ ${resolver.name} search fallback error:`, searchError);
+              }
+            }
+          }
+        }
 
         if (result) {
           sources[resolver.id] = {
@@ -41329,8 +41472,20 @@ useEffect(() => {
                 };
 
                 // Get available sources for this track
+                const playbarTrackArtistNorm = (currentTrack.artist || '').toLowerCase().trim();
+                const playbarTrackTitleNorm = (currentTrack.title || '').toLowerCase().trim();
                 const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
-                  ? Object.keys(currentTrack.sources).filter(resId => activeResolvers.includes(resId))
+                  ? Object.keys(currentTrack.sources).filter(resId => {
+                      if (!activeResolvers.includes(resId)) return false;
+                      const src = currentTrack.sources[resId];
+                      const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+                      return !resolverBlocklist.some(entry =>
+                        entry.resolverId === resId &&
+                        entry.artist === playbarTrackArtistNorm &&
+                        entry.title === playbarTrackTitleNorm &&
+                        entry.sourceId === srcId
+                      );
+                    })
                   : [];
 
                 const meta = resolverColors[currentResolverId] || { color: 'text-purple-400', bg: 'bg-purple-400' };
@@ -41358,6 +41513,16 @@ useEffect(() => {
                           e.stopPropagation();
                           if (hasMultipleSources) {
                             setPlaybarSourceDropdownOpen(!playbarSourceDropdownOpen);
+                          }
+                        },
+                        onContextMenu: (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (window.electron?.playbarSourceMenu?.show) {
+                            window.electron.playbarSourceMenu.show({
+                              resolverId: currentResolverId,
+                              track: { artist: currentTrack.artist, title: currentTrack.title }
+                            });
                           }
                         },
                         className: `flex items-center gap-1.5 pl-0 pr-2 py-0.5 rounded transition-all ${
@@ -41429,6 +41594,16 @@ useEffect(() => {
                                 handlePlay({ ...currentTrack, preferredResolver: resId });
                               }
                               setPlaybarSourceDropdownOpen(false);
+                            },
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (window.electron?.playbarSourceMenu?.show) {
+                                window.electron.playbarSourceMenu.show({
+                                  resolverId: resId,
+                                  track: { artist: currentTrack.artist, title: currentTrack.title }
+                                });
+                              }
                             },
                             className: 'w-full flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-white/5',
                             style: {

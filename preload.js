@@ -270,6 +270,16 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Playbar source context menu operations
+  playbarSourceMenu: {
+    show: (data) => ipcRenderer.invoke('show-playbar-source-context-menu', data),
+    onAction: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('playbar-source-context-menu-action', handler);
+      return () => ipcRenderer.removeListener('playbar-source-context-menu-action', handler);
+    }
+  },
+
   // Local Files operations
   localFiles: {
     addWatchFolder: () => ipcRenderer.invoke('localFiles:addWatchFolder'),

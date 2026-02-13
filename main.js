@@ -1957,7 +1957,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'discovery_seen_charts', 'discovery_seen_criticsPicks', 'discovery_seen_recommendations',
   'friends', 'last_active_view', 'local_playlists', 'media-key-handling',
   'meta_service_configs', 'pinnedFriendIds', 'playlists_view_mode',
-  'recommendation_blocklist', 'remember_queue',
+  'recommendation_blocklist', 'remember_queue', 'resolver_blocklist',
   'resolver_order', 'resolver_sync_settings', 'resolver_volume_offsets',
   'saved_playback_context', 'saved_queue', 'saved_shuffle_state',
   'scrobble-failed-queue', 'scrobbler-config-lastfm', 'scrobbler-config-librefm',
@@ -3170,6 +3170,33 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
     }
   ]);
 
+  menu.popup({ window: mainWindow });
+
+  return { shown: true };
+});
+
+// Show context menu for playbar source (right-click on resolver name in playbar dropdown)
+ipcMain.handle('show-playbar-source-context-menu', async (event, data) => {
+  console.log('=== Show Playbar Source Context Menu ===');
+  console.log('  Resolver ID:', data.resolverId);
+  console.log('  Track:', data.track?.artist, '-', data.track?.title);
+
+  const { Menu } = require('electron');
+
+  const menuItems = [
+    {
+      label: 'Report Bad Match',
+      click: () => {
+        mainWindow.webContents.send('playbar-source-context-menu-action', {
+          action: 'report-bad-match',
+          resolverId: data.resolverId,
+          track: data.track
+        });
+      }
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(menuItems);
   menu.popup({ window: mainWindow });
 
   return { shown: true };
