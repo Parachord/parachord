@@ -83,7 +83,7 @@
 
     .page-indicator {
       display: none;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       padding: 10px 14px;
       background: #f0fdf4;
@@ -107,6 +107,7 @@
       border-radius: 50%;
       background: #22c55e;
       flex-shrink: 0;
+      margin-top: 3px;
       animation: pulse-dot 2s ease-in-out infinite;
     }
 
@@ -120,14 +121,37 @@
       50% { opacity: 0.5; box-shadow: 0 0 2px rgba(34, 197, 94, 0.2); }
     }
 
+    .page-indicator-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
     .page-indicator-text {
-      font-size: 12px;
+      font-size: 11px;
       color: #15803d;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
     .page-indicator.unsupported .page-indicator-text {
       color: #92400e;
+    }
+
+    .page-indicator-name {
+      display: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .page-indicator-name.visible {
+      display: block;
     }
 
     .actions {
@@ -326,7 +350,10 @@
 
   <div class="page-indicator" id="page-indicator">
     <div class="page-indicator-dot"></div>
-    <span class="page-indicator-text" id="page-indicator-text"></span>
+    <div class="page-indicator-info">
+      <span class="page-indicator-text" id="page-indicator-text"></span>
+      <span class="page-indicator-name" id="page-indicator-name"></span>
+    </div>
   </div>
 
   <div class="actions">
