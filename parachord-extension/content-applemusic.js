@@ -335,12 +335,125 @@
     return { tracks, collectionName };
   }
 
+  // Try to extract artist info from DOM elements and merge with JSON-LD tracks
+  function supplementArtistsFromDom(jsonLdTracks) {
+    // Collect artist info from visible DOM elements
+    // Apple Music renders song-name-wrapper with by-line (artist) for each visible track
+    const artistSelectors = [
+      '[data-testid="song-name-wrapper"]',
+      '.songs-list-row',
+      '[data-testid="track-list-item"]',
+      '[role="row"]'
+    ];
+
+    let rows = [];
+    for (const sel of artistSelectors) {
+      rows = document.querySelectorAll(sel);
+      if (rows.length > 0) {
+        console.log(`[Parachord] DOM artist supplement: found ${rows.length} elements via "${sel}"`);
+        break;
+      }
+    }
+
+    if (rows.length === 0) {
+      // Try broader approach: find all by-line/artist elements on the page
+      const allByLines = document.querySelectorAll(
+        '[data-testid="track-title-by-line"], [class*="by-line"], [class*="songs-list-row__by-line"]'
+      );
+      const allTitles = document.querySelectorAll(
+        '[data-testid="track-title"], [class*="song-name"]:not([class*="wrapper"]), a[href*="/song/"]'
+      );
+      console.log(`[Parachord] DOM artist supplement: found ${allByLines.length} by-lines, ${allTitles.length} titles directly`);
+
+      if (allTitles.length > 0 && allByLines.length > 0) {
+        // Build a map of title → artist from paired DOM elements
+        const minLen = Math.min(allTitles.length, allByLines.length);
+        let matched = 0;
+        for (let i = 0; i < minLen && i < jsonLdTracks.length; i++) {
+          const domTitle = allTitles[i]?.textContent?.trim();
+          const domArtist = allByLines[i]?.textContent?.trim();
+          if (domArtist && jsonLdTracks[i] && !jsonLdTracks[i].artist) {
+            jsonLdTracks[i].artist = domArtist;
+            matched++;
+          }
+        }
+        console.log(`[Parachord] DOM artist supplement: matched ${matched} artists via direct pairing`);
+        return;
+      }
+
+      console.log('[Parachord] DOM artist supplement: no DOM elements found');
+      return;
+    }
+
+    // For each row element, try to extract title and artist
+    const domTrackInfo = [];
+    rows.forEach(row => {
+      const titleEl = row.querySelector('[data-testid="track-title"]') ||
+                     row.querySelector('[class*="song-name"]:not([class*="wrapper"])') ||
+                     row.querySelector('a[href*="/song/"]') ||
+                     row.querySelector('[class*="track-name"]');
+      const artistEl = row.querySelector('[data-testid="track-title-by-line"]') ||
+                      row.querySelector('[class*="by-line"]') ||
+                      row.querySelector('[class*="songs-list-row__by-line"]') ||
+                      row.querySelector('a[href*="/artist/"]') ||
+                      row.querySelector('[data-testid="track-artist"]');
+      if (titleEl) {
+        domTrackInfo.push({
+          title: titleEl.textContent.trim(),
+          artist: artistEl ? artistEl.textContent.trim() : ''
+        });
+      }
+    });
+
+    console.log(`[Parachord] DOM artist supplement: extracted ${domTrackInfo.length} DOM entries`);
+
+    // Match DOM artists to JSON-LD tracks by title
+    let matched = 0;
+    for (const jsonTrack of jsonLdTracks) {
+      if (jsonTrack.artist) continue; // already has artist
+      const domMatch = domTrackInfo.find(d =>
+        d.artist && d.title && (
+          d.title === jsonTrack.title ||
+          d.title.toLowerCase() === jsonTrack.title.toLowerCase()
+        )
+      );
+      if (domMatch) {
+        jsonTrack.artist = domMatch.artist;
+        matched++;
+      }
+    }
+    console.log(`[Parachord] DOM artist supplement: matched ${matched} artists by title`);
+
+    // If title matching didn't work well, try positional matching for unmatched tracks
+    if (matched < jsonLdTracks.length / 2 && domTrackInfo.length > 0) {
+      let positionalMatched = 0;
+      for (let i = 0; i < Math.min(jsonLdTracks.length, domTrackInfo.length); i++) {
+        if (!jsonLdTracks[i].artist && domTrackInfo[i].artist) {
+          jsonLdTracks[i].artist = domTrackInfo[i].artist;
+          positionalMatched++;
+        }
+      }
+      console.log(`[Parachord] DOM artist supplement: matched ${positionalMatched} additional artists by position`);
+    }
+  }
+
   // Scrape playlist/album tracks from the page DOM
   function scrapePlaylistTracks() {
-    // First try JSON-LD extraction (most reliable)
+    // First try JSON-LD extraction (most reliable for track list)
     const jsonLdResult = extractFromJsonLd();
     if (jsonLdResult.tracks.length > 0) {
-      console.log(`[Parachord] Extracted ${jsonLdResult.tracks.length} tracks from JSON-LD`);
+      // Check if JSON-LD tracks are missing artist info
+      const tracksWithArtist = jsonLdResult.tracks.filter(t => t.artist).length;
+      console.log(`[Parachord] Extracted ${jsonLdResult.tracks.length} tracks from JSON-LD (${tracksWithArtist} have artist info)`);
+
+      if (tracksWithArtist < jsonLdResult.tracks.length / 2) {
+        // Most tracks lack artists - try to supplement from DOM
+        console.log('[Parachord] JSON-LD tracks missing artists, supplementing from DOM...');
+        supplementArtistsFromDom(jsonLdResult.tracks);
+        const afterSupplement = jsonLdResult.tracks.filter(t => t.artist).length;
+        console.log(`[Parachord] After DOM supplement: ${afterSupplement}/${jsonLdResult.tracks.length} tracks have artists`);
+      }
+
       return {
         name: jsonLdResult.collectionName,
         tracks: jsonLdResult.tracks,
