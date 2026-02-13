@@ -392,15 +392,21 @@
                            row.querySelector('a[href*="/song/"]') ||
                            row.querySelector('[class*="title"]:not([class*="subtitle"]):not([class*="by-line"])');
 
-        // Artist name(s)
+        // Artist name(s) - search within wrapper first, then full row (playlist pages
+        // show artist in a separate column outside the song-name-wrapper)
         const artistEl = row.querySelector('[data-testid="track-title-by-line"]') ||
                         row.querySelector('.songs-list-row__by-line') ||
                         row.querySelector('[data-testid="track-artist"]') ||
-                        row.querySelector('.song-artist') ||
-                        row.querySelector('[class*="artist-name"]') ||
                         row.querySelector('[class*="by-line"]') ||
-                        row.querySelector('[class*="subtitle"]') ||
-                        row.querySelector('a[href*="/artist/"]');
+                        row.querySelector('a[href*="/artist/"]') ||
+                        (fullRow !== row && (
+                          fullRow.querySelector('[data-testid="track-title-by-line"]') ||
+                          fullRow.querySelector('.songs-list-row__by-line') ||
+                          fullRow.querySelector('[data-testid="track-artist"]') ||
+                          fullRow.querySelector('[class*="artist-name"]') ||
+                          fullRow.querySelector('[class*="by-line"]') ||
+                          fullRow.querySelector('a[href*="/artist/"]')
+                        )) || null;
 
         // Album name (if available - usually only on playlist pages)
         // Search in the full row context for album/duration which may be outside the wrapper
