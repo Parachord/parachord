@@ -10876,34 +10876,28 @@ const Parachord = () => {
     if (selectedPlaylist && playlistTracks.length > 0) {
       console.log('🔄 Resolver settings changed, re-resolving playlist tracks...');
 
-      // Re-resolve each playlist track with new resolver settings
+      // Re-resolve playlist tracks in parallel with incremental UI updates
       const reResolvePlaylistTracks = async () => {
-        const updatedTracks = [];
+        const tracksCopy = playlistTracks.map(t => ({ ...t, sources: {} }));
 
-        for (const track of playlistTracks) {
-          const trackWithSources = { ...track, sources: {} };
-
-          // Query enabled resolvers in priority order
-          for (const resolverId of activeResolvers) {
+        // Resolve all tracks in parallel across all resolvers
+        await Promise.all(tracksCopy.map(async (track) => {
+          await Promise.all(activeResolvers.map(async (resolverId) => {
             const resolver = allResolvers.find(r => r.id === resolverId);
-            if (!resolver || !resolver.capabilities.resolve) continue;
-
+            if (!resolver || !resolver.capabilities.resolve) return;
             try {
               const config = await getResolverConfig(resolverId);
               const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-
               if (resolved) {
-                trackWithSources.sources[resolverId] = resolved;
+                track.sources[resolverId] = resolved;
               }
             } catch (error) {
-              console.error(`Error resolving with ${resolver.name}:`, error);
+              // Silently fail - best-effort
             }
-          }
+          }));
+        }));
 
-          updatedTracks.push(trackWithSources);
-        }
-
-        setPlaylistTracks(updatedTracks);
+        setPlaylistTracks(tracksCopy);
         console.log('✅ Playlist tracks re-resolved');
       };
 
