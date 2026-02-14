@@ -631,6 +631,9 @@ class ResolutionScheduler {
     this.isProcessing = false;
     this.resolveCallback = null;
 
+    // Concurrency: resolve up to N tracks simultaneously
+    this.maxConcurrency = 4;
+
     // Callback for when queue becomes idle (for background pre-resolution)
     this.onIdleCallback = null;
   }
@@ -947,46 +950,59 @@ class ResolutionScheduler {
   }
 
   /**
-   * Start processing if not already
+   * Start processing if not already running at full concurrency
    * @private
    */
   _maybeProcess() {
-    if (this.isProcessing || !this.resolveCallback) return;
-    this._processNext();
+    if (!this.resolveCallback) return;
+    // Launch workers up to maxConcurrency
+    while (this.inProgress.size < this.maxConcurrency && this.pending.size > this.inProgress.size) {
+      const next = this._peekNextUnstarted();
+      if (!next) break;
+      this._processOne(next);
+    }
   }
 
   /**
-   * Process the next track in the queue
+   * Peek at next pending track that is NOT already in-progress
    * @private
    */
-  async _processNext() {
-    const next = this.peekNext();
-    if (!next) {
-      this.isProcessing = false;
-      // Notify that we're idle - allows background pre-resolution to queue more tracks
-      if (this.onIdleCallback) {
-        // Use setTimeout to allow the callback to enqueue tracks without blocking
-        setTimeout(() => {
-          // Only call if still idle (no new high-priority tracks added)
-          if (!this.isProcessing && this.pending.size === 0 && this.onIdleCallback) {
-            this.onIdleCallback();
-          }
-        }, 500); // Small delay before starting background work
+  _peekNextUnstarted() {
+    let best = null;
+    let bestPriority = Infinity;
+
+    for (const [trackKey, entry] of this.pending) {
+      if (this.inProgress.has(trackKey)) continue; // Skip already in-progress
+      let priority = entry.priority;
+
+      if (this.hoverTrack?.trackKey === trackKey) {
+        priority = CONTEXT_PRIORITY.hover;
       }
-      return;
+
+      if (priority < bestPriority) {
+        bestPriority = priority;
+        best = { trackKey, ...entry };
+      }
     }
 
-    this.isProcessing = true;
-    const { trackKey, data, abortController } = next;
+    return best;
+  }
+
+  /**
+   * Process a single track concurrently
+   * @private
+   */
+  async _processOne(entry) {
+    const { trackKey, data, abortController } = entry;
 
     // Mark this track as in-progress before resolving
     this.markInProgress(trackKey);
 
     try {
-      // Check if still visible before resolving
+      // Check if still pending before resolving
       if (!this.pending.has(trackKey)) {
-        // Already aborted, move on
-        this._processNext();
+        this.inProgress.delete(trackKey);
+        this._fillSlots();
         return;
       }
 
@@ -1005,10 +1021,33 @@ class ResolutionScheduler {
       this.dequeue(trackKey);
     }
 
-    // Rate limit: 150ms between resolutions
-    await new Promise(resolve => setTimeout(resolve, 150));
+    // Fill the now-free slot with the next pending track
+    this._fillSlots();
+  }
 
-    this._processNext();
+  /**
+   * Fill available concurrency slots or go idle
+   * @private
+   */
+  _fillSlots() {
+    // Try to launch more workers
+    while (this.inProgress.size < this.maxConcurrency) {
+      const next = this._peekNextUnstarted();
+      if (!next) break;
+      this._processOne(next);
+    }
+
+    // If nothing is in progress and nothing pending, we're idle
+    if (this.inProgress.size === 0 && this.pending.size === 0) {
+      this.isProcessing = false;
+      if (this.onIdleCallback) {
+        setTimeout(() => {
+          if (!this.isProcessing && this.pending.size === 0 && this.onIdleCallback) {
+            this.onIdleCallback();
+          }
+        }, 500);
+      }
+    }
   }
 
   /**
@@ -9166,7 +9205,25 @@ const Parachord = () => {
     .filter(Boolean);
 
   // Helper function to get resolver config (async for Spotify to ensure fresh token)
+  // Cache for getResolverConfig to coalesce concurrent IPC calls
+  // Each entry: { promise, timestamp }
+  const resolverConfigCache = useRef({});
+  const RESOLVER_CONFIG_CACHE_TTL = 10000; // 10s — tokens don't change that fast
+
   const getResolverConfig = async (resolverId) => {
+    // Check if we have a recent cached result or in-flight promise
+    const cached = resolverConfigCache.current[resolverId];
+    if (cached && (Date.now() - cached.timestamp) < RESOLVER_CONFIG_CACHE_TTL) {
+      return cached.promise;
+    }
+
+    // Create the config fetch promise (shared across concurrent callers)
+    const configPromise = _fetchResolverConfig(resolverId);
+    resolverConfigCache.current[resolverId] = { promise: configPromise, timestamp: Date.now() };
+    return configPromise;
+  };
+
+  const _fetchResolverConfig = async (resolverId) => {
     // For Spotify, always get a fresh token from the IPC handler
     // This ensures we use a valid token even if the React state is stale
     if (resolverId === 'spotify') {
@@ -9187,12 +9244,6 @@ const Parachord = () => {
         // Don't discard a working token just because refresh failed
       }
 
-      console.log('🔑 Spotify token status:', {
-        hasToken: !!token,
-        tokenLength: token?.length,
-        tokenPreview: token ? token.substring(0, 20) + '...' : 'null'
-      });
-
       return { token };
     }
 
@@ -9212,12 +9263,6 @@ const Parachord = () => {
           }
         }
       }
-
-      console.log('🔑 SoundCloud token status:', {
-        hasToken: !!token,
-        tokenLength: token?.length,
-        tokenPreview: token ? token.substring(0, 20) + '...' : 'null'
-      });
 
       return { token };
     }
