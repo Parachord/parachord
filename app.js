@@ -9162,6 +9162,24 @@ const Parachord = () => {
             trackSourcesCache.current[cacheKey].resolverHash = null;
           }
 
+          // Clear wrong album art if the reported resolver was the active playback source
+          const track = currentTrackRef.current;
+          if (track && track._activeResolver === data.resolverId) {
+            // Try to get correct album art from MusicBrainz cache
+            const correctArt = getCachedAlbumArt(track.artist, track.album);
+            if (correctArt) {
+              // Swap to correct art immediately (crossfade handles transition)
+              setCurrentTrack(prev => prev ? { ...prev, albumArt: correctArt } : prev);
+            } else {
+              // No cached art — clear and let the fetch effect retrieve correct art
+              setCurrentTrack(prev => prev ? { ...prev, albumArt: null } : prev);
+              // Force-clear playbar art display (bypasses the crossfade guard that
+              // normally keeps previous art visible during track transitions)
+              playbarAlbumArtRef.current = null;
+              setPlaybarAlbumArt({ current: null, previous: null, isLoaded: true });
+            }
+          }
+
           const resolverName = allResolvers.find(r => r.id === data.resolverId)?.name || data.resolverId;
           showToast(`Reported bad match from ${resolverName}`, 'success');
           setPlaybarSourceDropdownOpen(false);
