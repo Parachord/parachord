@@ -2533,6 +2533,61 @@ ipcMain.handle('applemusic-polling-status', async () => {
 // Playback window for external content (Bandcamp, etc.) with autoplay enabled
 let playbackWindow = null;
 
+// Convert a Bandcamp track/album page URL to an EmbeddedPlayer URL
+async function bandcampToEmbedUrl(pageUrl) {
+  try {
+    console.log('[Bandcamp] Fetching page to extract embed IDs:', pageUrl);
+    const { net } = require('electron');
+    const response = await net.fetch(pageUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+    });
+    if (!response.ok) {
+      console.log('[Bandcamp] Page fetch failed:', response.status);
+      return null;
+    }
+    const html = await response.text();
+
+    // Extract data-tralbum JSON which contains track_id and album_id
+    const tralbumMatch = html.match(/data-tralbum="([^"]*)"/);
+    if (!tralbumMatch) {
+      console.log('[Bandcamp] No data-tralbum attribute found');
+      return null;
+    }
+
+    // The attribute value is HTML-entity-encoded JSON
+    const decoded = tralbumMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    const tralbum = JSON.parse(decoded);
+
+    const itemType = tralbum.current?.type; // "track" or "album"
+    const itemId = tralbum.current?.id;
+    const albumId = tralbum.current?.album_id;
+
+    if (!itemId) {
+      console.log('[Bandcamp] No item ID found in tralbum data');
+      return null;
+    }
+
+    // Build the EmbeddedPlayer URL
+    let embedUrl;
+    if (itemType === 'album') {
+      // Album page: embed the whole album
+      embedUrl = `https://bandcamp.com/EmbeddedPlayer/album=${itemId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
+    } else if (albumId) {
+      // Track that belongs to an album
+      embedUrl = `https://bandcamp.com/EmbeddedPlayer/album=${albumId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/track=${itemId}/transparent=true/`;
+    } else {
+      // Standalone single track
+      embedUrl = `https://bandcamp.com/EmbeddedPlayer/track=${itemId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
+    }
+
+    console.log('[Bandcamp] Converted to embed URL:', embedUrl);
+    return embedUrl;
+  } catch (err) {
+    console.log('[Bandcamp] Failed to convert URL:', err.message);
+    return null;
+  }
+}
+
 ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   console.log('=== Open Playback Window ===');
   console.log('URL:', url);
@@ -2542,12 +2597,23 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     playbackWindow.close();
   }
 
+  // Convert Bandcamp page URLs to EmbeddedPlayer URLs
+  let loadUrl = url;
+  const isBandcamp = url.includes('bandcamp.com/track/') || url.includes('bandcamp.com/album/');
+  if (isBandcamp) {
+    const embedUrl = await bandcampToEmbedUrl(url);
+    if (embedUrl) {
+      loadUrl = embedUrl;
+    }
+  }
+
   // Calculate position for upper-right corner of screen
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth } = primaryDisplay.workAreaSize;
   const windowWidth = options.width || 400;
-  const windowHeight = options.height || 200;
+  // Use 120px height for Bandcamp embedded player, 200px default for others
+  const windowHeight = options.height || (isBandcamp ? 120 : 200);
   const padding = 20; // Padding from screen edges
 
   playbackWindow = new BrowserWindow({
@@ -2559,7 +2625,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     minHeight: 100,
     frame: false,
     transparent: false,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#333333',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -2584,7 +2650,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     }
   });
 
-  playbackWindow.loadURL(url);
+  playbackWindow.loadURL(loadUrl);
 
   // When page finishes loading, inject script to auto-click play button and set up event listeners
   playbackWindow.webContents.on('did-finish-load', () => {
