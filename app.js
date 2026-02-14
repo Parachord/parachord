@@ -4926,6 +4926,7 @@ const Parachord = () => {
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
+  const [localLibraryVersion, setLocalLibraryVersion] = useState(0); // Incremented when local files library changes (triggers album re-resolution)
   const [audioContext, setAudioContext] = useState(null);
   const [currentSource, setCurrentSource] = useState(null);
   const [startTime, setStartTime] = useState(0);
@@ -9365,6 +9366,7 @@ const Parachord = () => {
       libraryChangeCleanup = window.electron.localFiles.onLibraryChanged((changes) => {
         console.log('📚 Library changed, reloading...', changes);
         loadLocalFilesLibrary();
+        setLocalLibraryVersion(v => v + 1);
       });
     }
 
@@ -10997,6 +10999,33 @@ const Parachord = () => {
       reResolvePlaylistTracks();
     }
   }, [activeResolvers, resolverOrder]);
+
+  // Re-resolve album/playlist tracks when local files library changes
+  // (e.g., user adds watch folder with files matching the currently viewed album)
+  useEffect(() => {
+    // Skip initial render (version 0)
+    if (localLibraryVersion === 0) return;
+
+    // Only re-resolve if localfiles is an active resolver
+    if (!activeResolvers.includes('localfiles')) return;
+
+    // Re-resolve release tracks if viewing an artist release
+    if (currentRelease && currentRelease.tracks) {
+      console.log('🔄 Local library changed, re-resolving release tracks...');
+      const artistName = currentArtist?.name || 'Unknown Artist';
+      currentRelease.tracks.forEach(track => {
+        resolveTrack(track, artistName, { forceRefresh: true });
+      });
+    }
+
+    // Re-resolve playlist tracks if viewing a playlist
+    if (selectedPlaylist && playlistTracks.length > 0) {
+      console.log('🔄 Local library changed, re-resolving playlist tracks...');
+      playlistTracks.forEach(track => {
+        resolveTrack(track, track.artist || 'Unknown Artist', { forceRefresh: true });
+      });
+    }
+  }, [localLibraryVersion]);
 
   // Save resolver settings when they change
   useEffect(() => {
