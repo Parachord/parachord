@@ -2533,57 +2533,87 @@ ipcMain.handle('applemusic-polling-status', async () => {
 // Playback window for external content (Bandcamp, etc.) with autoplay enabled
 let playbackWindow = null;
 
-// Convert a Bandcamp track/album page URL to an EmbeddedPlayer URL
+// Build a Bandcamp EmbeddedPlayer URL from track/album IDs
+function buildBandcampEmbedUrl(trackId, albumId) {
+  if (albumId && trackId) {
+    return `https://bandcamp.com/EmbeddedPlayer/album=${albumId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/track=${trackId}/transparent=true/`;
+  } else if (albumId) {
+    return `https://bandcamp.com/EmbeddedPlayer/album=${albumId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
+  } else if (trackId) {
+    return `https://bandcamp.com/EmbeddedPlayer/track=${trackId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
+  }
+  return null;
+}
+
+// Resolve a Bandcamp page URL to an EmbeddedPlayer URL.
+// Uses the lightweight autocomplete API first, falls back to full page fetch.
 async function bandcampToEmbedUrl(pageUrl) {
+  const { net } = require('electron');
+
+  // Try the fast autocomplete API first — extract search terms from the URL slug
   try {
-    console.log('[Bandcamp] Fetching page to extract embed IDs:', pageUrl);
-    const { net } = require('electron');
+    const urlObj = new URL(pageUrl);
+    const subdomain = urlObj.hostname.replace('.bandcamp.com', '');
+    const pathParts = urlObj.pathname.split('/');
+    const slug = pathParts[pathParts.length - 1] || '';
+    // Convert slug to search query: "toxic-positivity-2" → "toxic positivity"
+    const trackQuery = slug.replace(/-\d+$/, '').replace(/-/g, ' ');
+    const query = `${subdomain.replace(/-/g, ' ')} ${trackQuery}`;
+
+    console.log('[Bandcamp] Trying autocomplete API with query:', query);
+    const apiResponse = await net.fetch(
+      `https://bandcamp.com/api/fuzzysearch/1/app_autocomplete?q=${encodeURIComponent(query)}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }
+    );
+
+    if (apiResponse.ok) {
+      const data = await apiResponse.json();
+      // Match by URL to ensure we get the right track
+      const match = data.results?.find(r =>
+        r.url && pageUrl.includes(slug) && r.url.includes(slug)
+      );
+      if (match) {
+        const embedUrl = buildBandcampEmbedUrl(match.id, match.album_id);
+        if (embedUrl) {
+          console.log('[Bandcamp] Resolved via autocomplete API:', embedUrl);
+          return embedUrl;
+        }
+      }
+    }
+  } catch (err) {
+    console.log('[Bandcamp] Autocomplete API failed, trying page fetch:', err.message);
+  }
+
+  // Fallback: fetch the full page and extract IDs from data-tralbum
+  try {
+    console.log('[Bandcamp] Falling back to page fetch:', pageUrl);
     const response = await net.fetch(pageUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
     });
-    if (!response.ok) {
-      console.log('[Bandcamp] Page fetch failed:', response.status);
-      return null;
-    }
+    if (!response.ok) return null;
     const html = await response.text();
 
-    // Extract data-tralbum JSON which contains track_id and album_id
     const tralbumMatch = html.match(/data-tralbum="([^"]*)"/);
-    if (!tralbumMatch) {
-      console.log('[Bandcamp] No data-tralbum attribute found');
-      return null;
-    }
+    if (!tralbumMatch) return null;
 
-    // The attribute value is HTML-entity-encoded JSON
     const decoded = tralbumMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     const tralbum = JSON.parse(decoded);
 
-    const itemType = tralbum.current?.type; // "track" or "album"
+    const itemType = tralbum.current?.type;
     const itemId = tralbum.current?.id;
     const albumId = tralbum.current?.album_id;
+    if (!itemId) return null;
 
-    if (!itemId) {
-      console.log('[Bandcamp] No item ID found in tralbum data');
-      return null;
+    const embedUrl = buildBandcampEmbedUrl(
+      itemType === 'album' ? null : itemId,
+      itemType === 'album' ? itemId : albumId
+    );
+    if (embedUrl) {
+      console.log('[Bandcamp] Resolved via page fetch:', embedUrl);
     }
-
-    // Build the EmbeddedPlayer URL
-    let embedUrl;
-    if (itemType === 'album') {
-      // Album page: embed the whole album
-      embedUrl = `https://bandcamp.com/EmbeddedPlayer/album=${itemId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
-    } else if (albumId) {
-      // Track that belongs to an album
-      embedUrl = `https://bandcamp.com/EmbeddedPlayer/album=${albumId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/track=${itemId}/transparent=true/`;
-    } else {
-      // Standalone single track
-      embedUrl = `https://bandcamp.com/EmbeddedPlayer/track=${itemId}/size=large/bgcol=333333/linkcol=ffffff/tracklist=false/artwork=small/transparent=true/`;
-    }
-
-    console.log('[Bandcamp] Converted to embed URL:', embedUrl);
     return embedUrl;
   } catch (err) {
-    console.log('[Bandcamp] Failed to convert URL:', err.message);
+    console.log('[Bandcamp] Page fetch failed:', err.message);
     return null;
   }
 }
@@ -2601,9 +2631,18 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   let loadUrl = url;
   const isBandcamp = url.includes('bandcamp.com/track/') || url.includes('bandcamp.com/album/');
   if (isBandcamp) {
-    const embedUrl = await bandcampToEmbedUrl(url);
-    if (embedUrl) {
-      loadUrl = embedUrl;
+    // Fast path: if track/album IDs were passed directly, build embed URL instantly
+    if (options.bandcampTrackId || options.bandcampAlbumId) {
+      const embedUrl = buildBandcampEmbedUrl(options.bandcampTrackId, options.bandcampAlbumId);
+      if (embedUrl) {
+        console.log('[Bandcamp] Using pre-resolved IDs for embed URL');
+        loadUrl = embedUrl;
+      }
+    } else {
+      const embedUrl = await bandcampToEmbedUrl(url);
+      if (embedUrl) {
+        loadUrl = embedUrl;
+      }
     }
   }
 
