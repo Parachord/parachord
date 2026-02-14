@@ -6507,6 +6507,7 @@ const Parachord = () => {
             if (!track.album && result.album) track.album = result.album;
             if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
             console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
+            flushToQueue();
           }
         } catch (error) {
           // Silently fail - background resolution is best-effort
@@ -6530,6 +6531,7 @@ const Parachord = () => {
               if (!track.album && result.album) track.album = result.album;
               if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
               console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
+              flushToQueue();
             }
           } catch (error) {
             // Silently fail
@@ -6538,12 +6540,6 @@ const Parachord = () => {
         }
       }
     })();
-
-    // Flush normal resolver results as soon as they're done (don't wait for rate-limited)
-    normalPromise.then(() => {
-      console.log(`✅ Non-rate-limited resolvers done, flushing to UI`);
-      flushToQueue();
-    });
 
     // Wait for everything to finish, then do a final flush
     await Promise.all([normalPromise, rateLimitedPromise]);
@@ -6627,6 +6623,13 @@ const Parachord = () => {
         .map(id => currentResolvers.find(r => r.id === id))
         .filter(r => r && r.capabilities.resolve);
 
+      // Update the placeholder with metadata immediately (before resolver resolution)
+      if (shouldPlayImmediately) {
+        setCurrentTrack(prev => prev?.id === placeholderId ? resolvedTrack : prev);
+      } else {
+        setCurrentQueue(prev => prev.map(t => t.id === placeholderId ? resolvedTrack : t));
+      }
+
       const resolvePromises = enabledResolvers.map(async (resolver) => {
         try {
           const config = await getResolverConfig(resolver.id);
@@ -6637,6 +6640,16 @@ const Parachord = () => {
               confidence: 0.9
             };
             console.log(`  ✅ ${resolver.name}: Found match`);
+            // Flush incrementally so each resolved source appears immediately
+            if (shouldPlayImmediately) {
+              setCurrentTrack(prev => prev?.id === resolvedTrack.id
+                ? { ...prev, sources: { ...prev.sources, ...resolvedTrack.sources } }
+                : prev);
+            } else {
+              setCurrentQueue(prev => prev.map(t => t.id === resolvedTrack.id
+                ? { ...t, sources: { ...t.sources, ...resolvedTrack.sources } }
+                : t));
+            }
           }
         } catch (error) {
           console.error(`  ❌ ${resolver.name} resolve error:`, error);
@@ -6645,20 +6658,14 @@ const Parachord = () => {
 
       await Promise.all(resolvePromises);
 
-      // Update the placeholder with resolved data
+      // Final update with all sources + trigger playback
       if (shouldPlayImmediately) {
-        setCurrentTrack(prev => {
-          if (prev?.id === placeholderId) {
-            return resolvedTrack;
-          }
-          return prev;
-        });
-        // Set playback context and actually play it
+        setCurrentTrack(prev => prev?.id === resolvedTrack.id ? resolvedTrack : prev);
         setPlaybackContext(context);
         handlePlay(resolvedTrack);
       } else {
         setCurrentQueue(prev => prev.map(t =>
-          t.id === placeholderId ? resolvedTrack : t
+          t.id === resolvedTrack.id ? resolvedTrack : t
         ));
       }
 
@@ -10908,6 +10915,17 @@ const Parachord = () => {
       // Re-resolve playlist tracks in parallel with incremental UI updates
       const reResolvePlaylistTracks = async () => {
         const tracksCopy = playlistTracks.map(t => ({ ...t, sources: {} }));
+        let flushScheduled = false;
+
+        const scheduleFlush = () => {
+          if (flushScheduled) return;
+          flushScheduled = true;
+          // Batch flush — coalesce rapid updates into one React render
+          requestAnimationFrame(() => {
+            flushScheduled = false;
+            setPlaylistTracks([...tracksCopy]);
+          });
+        };
 
         // Resolve all tracks in parallel across all resolvers
         await Promise.all(tracksCopy.map(async (track) => {
@@ -10919,6 +10937,7 @@ const Parachord = () => {
               const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
               if (resolved) {
                 track.sources[resolverId] = resolved;
+                scheduleFlush();
               }
             } catch (error) {
               // Silently fail - best-effort
