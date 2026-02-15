@@ -18439,10 +18439,12 @@ const Parachord = () => {
                       cachedData.resolverHash === currentResolverHash;
 
     // Check if there are active resolvers that weren't queried in the cached data or persisted sources
+    // Note: when cacheValid is true, the resolver hash matches, meaning ALL active resolvers
+    // were already queried when the cache was built. Resolvers absent from sources returned no match.
     const cachedResolverIds = cachedData ? Object.keys(cachedData.sources) : [];
     const persistedResolverIds = Object.keys(persistedSources);
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
-    const missingResolvers = currentActiveResolvers.filter(id =>
+    const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
       !availableResolverIds.includes(id) &&
       allResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
@@ -18451,14 +18453,20 @@ const Parachord = () => {
       console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
     }
 
-    if (cacheValid && missingResolvers.length === 0) {
+    // Helper to filter no-match sentinel entries before setting UI state
+    const filterNoMatch = (sources) => Object.fromEntries(
+      Object.entries(sources).filter(([, v]) => v && !v.noMatch)
+    );
+
+    if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
       console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
 
-      // Use cached sources immediately for fast UI
+      // Use cached sources immediately for fast UI (filter out noMatch sentinels)
+      const displaySources = filterNoMatch(cachedData.sources);
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: cachedData.sources
+        [trackKey]: displaySources
       }));
 
       // Background validation: if cache is > 24 hours old, validate in background
@@ -18467,20 +18475,23 @@ const Parachord = () => {
         setTimeout(() => validateCachedSources(track, artistName, cachedData.sources, cacheKey, trackKey), 1000);
       }
 
-      return cachedData.sources;
+      return displaySources;
     }
 
     // Check abort after cache check
     if (signal?.aborted) return;
 
     // If we have valid persisted sources (no in-memory cache), use them and resolve missing
-    if (!cacheValid && hasValidPersistedSources && missingResolvers.length === 0) {
+    // Note: hasValidPersistedSources counts noMatch sentinels; check for real sources
+    const realPersistedSources = filterNoMatch(persistedSources);
+    const hasRealPersistedSources = Object.keys(realPersistedSources).length > 0;
+    if (!cacheValid && hasRealPersistedSources && missingResolvers.length === 0) {
       console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
-      // Use persisted sources and cache them in memory
+      // Use persisted sources and cache them in memory (filter noMatch for UI)
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: persistedSources
+        [trackKey]: realPersistedSources
       }));
 
       trackSourcesCache.current[cacheKey] = {
@@ -18489,7 +18500,7 @@ const Parachord = () => {
         resolverHash: currentResolverHash
       };
 
-      return persistedSources;
+      return realPersistedSources;
     }
 
     // If we have valid persisted sources but missing resolvers, query only the missing ones
@@ -18524,6 +18535,8 @@ const Parachord = () => {
             };
             console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
           } else {
+            // Store no-match sentinel so this resolver isn't re-queried on next resolution
+            sources[resolver.id] = { noMatch: true, resolvedAt: now };
             console.log(`  ⚪ ${resolver.name}: No match found`);
           }
         } catch (error) {
@@ -18536,9 +18549,10 @@ const Parachord = () => {
 
       if (signal?.aborted) return;
 
+      // Filter noMatch sentinels for UI state, keep them in cache/persistence
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: sources
+        [trackKey]: filterNoMatch(sources)
       }));
 
       trackSourcesCache.current[cacheKey] = {
@@ -18547,7 +18561,7 @@ const Parachord = () => {
         resolverHash: currentResolverHash
       };
 
-      // Persist new sources back to collection/playlist
+      // Persist new sources (including noMatch sentinels) back to collection/playlist
       if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
         queueCollectionSourceUpdate(track.id, sources);
       }
@@ -18556,7 +18570,7 @@ const Parachord = () => {
         queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
       }
 
-      return sources;
+      return filterNoMatch(sources);
     }
 
     // If cache is valid but missing resolvers, query only the missing ones
@@ -18786,6 +18800,8 @@ const Parachord = () => {
             }
           }
         } else {
+          // Store no-match sentinel so this resolver isn't re-queried on next resolution
+          sources[resolver.id] = { noMatch: true, resolvedAt: Date.now() };
           console.log(`  ⚪ ${resolver.name}: No match found`);
         }
       } catch (error) {
@@ -18805,21 +18821,29 @@ const Parachord = () => {
     }
 
     // Final state update with all sources
-    if (Object.keys(sources).length > 0) {
+    const displaySources = filterNoMatch(sources);
+    const realSourceCount = Object.keys(displaySources).length;
+
+    // Always cache (including noMatch sentinels) so resolvers aren't re-queried
+    trackSourcesCache.current[cacheKey] = {
+      sources: sources,
+      timestamp: Date.now(),
+      resolverHash: getResolverSettingsHash()
+    };
+
+    if (realSourceCount > 0) {
+      // Update UI with real sources only (no noMatch sentinels)
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: sources
+        [trackKey]: displaySources
       }));
 
-      // Cache the resolved sources with resolver settings hash
-      trackSourcesCache.current[cacheKey] = {
-        sources: sources,
-        timestamp: Date.now(),
-        resolverHash: getResolverSettingsHash()
-      };
+      console.log(`✅ Found ${realSourceCount} source(s) for: ${track.title} (cached)`);
+    }
 
-      // Persist new sources back to collection if this track is in the collection
-      // This ensures Apple Music and other resolver results are cached for faster subsequent plays
+    // Persist sources (including noMatch sentinels) back to collection/playlist
+    // so resolvers that found nothing aren't re-queried after app restart
+    if (Object.keys(sources).length > 0) {
       if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
         queueCollectionSourceUpdate(track.id, sources);
       }
@@ -18834,11 +18858,9 @@ const Parachord = () => {
           queuePlaylistSourceUpdate(currentPlaylist.id, track.id, sources);
         }
       }
-
-      console.log(`✅ Found ${Object.keys(sources).length} source(s) for: ${track.title} (cached)`);
     }
 
-    return sources;
+    return displaySources;
   };
 
   // Keep resolveTrackRef in sync for ChatCard and other early-defined components
