@@ -112,7 +112,19 @@ class MusicKitBridge {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        let status = await MusicAuthorization.request()
+        // Give macOS time to process the activation policy change and bring
+        // the app to the foreground before requesting authorization.
+        // Without this delay, the system auth dialog may fail to appear.
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+
+        var status = await MusicAuthorization.request()
+
+        // If still notDetermined after first attempt, the dialog may not have
+        // appeared (e.g. Apple Music service wasn't ready). Retry once.
+        if status == .notDetermined {
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+            status = await MusicAuthorization.request()
+        }
 
         // Revert to background accessory (no dock icon)
         NSApp.setActivationPolicy(.accessory)

@@ -26723,8 +26723,17 @@ ${tracks}
     checkMusicKitAvailable();
   }, []);
 
+  const appleMusicConnectingRef = useRef(false);
   const connectAppleMusic = async () => {
+    // Guard against multiple simultaneous connection attempts
+    if (appleMusicConnectingRef.current) {
+      console.log('[AppleMusic] Connection already in progress, ignoring click');
+      return;
+    }
+    appleMusicConnectingRef.current = true;
     console.log('=== Connect Apple Music Clicked ===');
+
+    try {
 
     // Try MusicKit JS first (works cross-platform, requires developer token)
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -26847,6 +26856,10 @@ ${tracks}
         title: 'Authentication Failed',
         message: error.message || 'Apple Music authentication failed. Please try again.'
       });
+    }
+
+    } finally {
+      appleMusicConnectingRef.current = false;
     }
   };
 
