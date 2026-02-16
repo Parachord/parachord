@@ -156,6 +156,7 @@
 
       const newVisibleKeys = new Set(visibleTracks.map(t => t.key));
       const oldVisibleKeys = context.visibleTracks;
+      const newPriority = CONTEXT_PRIORITY[context.type];
 
       // Abort tracks that scrolled out of view
       for (const key of oldVisibleKeys) {
@@ -164,10 +165,20 @@
         }
       }
 
-      // Enqueue new visible tracks
-      for (const track of visibleTracks) {
-        if (!oldVisibleKeys.has(track.key) && !this.pending.has(track.key)) {
-          this.enqueue(track.key, contextId, track.data);
+      // Enqueue new visible tracks (or promote priority for already-pending ones)
+      for (let i = 0; i < visibleTracks.length; i++) {
+        const track = visibleTracks[i];
+        if (oldVisibleKeys.has(track.key)) continue; // Already visible in this context
+
+        const existing = this.pending.get(track.key);
+        if (existing) {
+          // Track already pending from another context — promote priority if higher
+          if (newPriority < existing.priority) {
+            existing.priority = newPriority;
+            existing.visibilityIndex = i;
+          }
+        } else {
+          this.enqueue(track.key, contextId, track.data, i);
         }
       }
 
@@ -179,8 +190,9 @@
      * @param {string} trackKey - Unique track key
      * @param {string} contextId - Context ID
      * @param {object} data - Track data
+     * @param {number} [visibilityIndex] - Position in the visible track list (for tiebreaking)
      */
-    enqueue(trackKey, contextId, data) {
+    enqueue(trackKey, contextId, data, visibilityIndex) {
       if (this.pending.has(trackKey)) {
         // console.log(`📋 Scheduler: enqueue skipped (already pending): ${trackKey}`);
         return;
@@ -203,6 +215,7 @@
         contextId,
         data,
         priority,
+        visibilityIndex: visibilityIndex ?? Infinity,
         abortController: new AbortController()
       });
 
@@ -227,12 +240,13 @@
     }
 
     /**
-     * Peek at the next track to resolve (highest priority)
+     * Peek at the next track to resolve (highest priority, then by visibility position)
      * @returns {object|null}
      */
     peekNext() {
       let best = null;
       let bestPriority = Infinity;
+      let bestVisibilityIndex = Infinity;
 
       for (const [trackKey, entry] of this.pending) {
         let priority = entry.priority;
@@ -244,8 +258,10 @@
           isHover = true;
         }
 
-        if (priority < bestPriority) {
+        // Pick by priority first, then by visibility index (top-of-list first)
+        if (priority < bestPriority || (priority === bestPriority && (entry.visibilityIndex ?? Infinity) < bestVisibilityIndex)) {
           bestPriority = priority;
+          bestVisibilityIndex = entry.visibilityIndex ?? Infinity;
           best = { trackKey, ...entry, isHover };
         }
       }

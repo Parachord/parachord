@@ -710,6 +710,7 @@ class ResolutionScheduler {
 
     const newVisibleKeys = new Set(visibleTracks.map(t => t.key));
     const oldVisibleKeys = context.visibleTracks;
+    const newPriority = CONTEXT_PRIORITY[context.type];
 
     // Abort tracks that scrolled out of view
     for (const key of oldVisibleKeys) {
@@ -718,10 +719,20 @@ class ResolutionScheduler {
       }
     }
 
-    // Enqueue new visible tracks
-    for (const track of visibleTracks) {
-      if (!oldVisibleKeys.has(track.key) && !this.pending.has(track.key)) {
-        this.enqueue(track.key, contextId, track.data);
+    // Enqueue new visible tracks (or promote priority for already-pending ones)
+    for (let i = 0; i < visibleTracks.length; i++) {
+      const track = visibleTracks[i];
+      if (oldVisibleKeys.has(track.key)) continue; // Already visible in this context
+
+      const existing = this.pending.get(track.key);
+      if (existing) {
+        // Track already pending from another context — promote priority if higher
+        if (newPriority < existing.priority) {
+          existing.priority = newPriority;
+          existing.visibilityIndex = i;
+        }
+      } else {
+        this.enqueue(track.key, contextId, track.data, i);
       }
     }
 
@@ -733,8 +744,9 @@ class ResolutionScheduler {
    * @param {string} trackKey - Unique track key
    * @param {string} contextId - Context ID
    * @param {object} data - Track data
+   * @param {number} [visibilityIndex] - Position in the visible track list (for tiebreaking)
    */
-  enqueue(trackKey, contextId, data) {
+  enqueue(trackKey, contextId, data, visibilityIndex) {
     if (this.pending.has(trackKey)) return; // Already pending
     if (this.resolved.has(trackKey)) return; // Already resolved
 
@@ -747,6 +759,7 @@ class ResolutionScheduler {
       contextId,
       data,
       priority,
+      visibilityIndex: visibilityIndex ?? Infinity,
       abortController: new AbortController()
     });
 
@@ -965,11 +978,13 @@ class ResolutionScheduler {
 
   /**
    * Peek at next pending track that is NOT already in-progress
+   * Selects by priority first, then by visibility index (top-of-list first)
    * @private
    */
   _peekNextUnstarted() {
     let best = null;
     let bestPriority = Infinity;
+    let bestVisibilityIndex = Infinity;
 
     for (const [trackKey, entry] of this.pending) {
       if (this.inProgress.has(trackKey)) continue; // Skip already in-progress
@@ -979,8 +994,10 @@ class ResolutionScheduler {
         priority = CONTEXT_PRIORITY.hover;
       }
 
-      if (priority < bestPriority) {
+      // Pick by priority first, then by visibility index (top-of-list first)
+      if (priority < bestPriority || (priority === bestPriority && (entry.visibilityIndex ?? Infinity) < bestVisibilityIndex)) {
         bestPriority = priority;
+        bestVisibilityIndex = entry.visibilityIndex ?? Infinity;
         best = { trackKey, ...entry };
       }
     }
