@@ -240,6 +240,114 @@ test('Playback lookahead tracks are always considered visible', () => {
   assertEqual(scheduler.isInPlaybackLookahead('queue-1', 9), false, 'before current');
 });
 
+// Test: Priority promotion for already-pending tracks from lower-priority context
+test('updateVisibility promotes priority for tracks already pending from background', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('background', 'background');
+  scheduler.registerContext('page-1', 'page');
+
+  // Background pre-resolution enqueues tracks at background priority (6)
+  scheduler.enqueue('track-a', 'background', { title: 'Track A' });
+  scheduler.enqueue('track-b', 'background', { title: 'Track B' });
+
+  // Verify they have background priority
+  let next = scheduler.peekNext();
+  assertEqual(next.priority, CONTEXT_PRIORITY.background, 'initially background priority');
+
+  // User navigates to playlist — page visibility update sees the same tracks
+  scheduler.updateVisibility('page-1', [
+    { key: 'track-a', data: { title: 'Track A' } },
+    { key: 'track-b', data: { title: 'Track B' } }
+  ]);
+
+  // Tracks should now have page priority (4), not background (6)
+  next = scheduler.peekNext();
+  assertEqual(next.priority, CONTEXT_PRIORITY.page, 'promoted to page priority');
+});
+
+// Test: Same-priority tracks are ordered by visibility index (top-to-bottom)
+test('Same-priority tracks resolve in visibility order (top first)', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('page-1', 'page');
+
+  // Enqueue tracks with explicit visibility indices (simulating bottom-first insertion)
+  scheduler.enqueue('track-bottom', 'page-1', { title: 'Bottom Track' }, 2);
+  scheduler.enqueue('track-middle', 'page-1', { title: 'Middle Track' }, 1);
+  scheduler.enqueue('track-top', 'page-1', { title: 'Top Track' }, 0);
+
+  // Despite bottom being inserted first, top should be picked first
+  const next = scheduler.peekNext();
+  assertEqual(next.trackKey, 'track-top', 'top track (visibilityIndex 0) should be first');
+
+  scheduler.dequeue('track-top');
+  const second = scheduler.peekNext();
+  assertEqual(second.trackKey, 'track-middle', 'middle track (visibilityIndex 1) should be second');
+
+  scheduler.dequeue('track-middle');
+  const third = scheduler.peekNext();
+  assertEqual(third.trackKey, 'track-bottom', 'bottom track (visibilityIndex 2) should be third');
+});
+
+// Test: updateVisibility enqueues tracks with correct visibility indices
+test('updateVisibility assigns visibility indices in list order', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('page-1', 'page');
+
+  scheduler.updateVisibility('page-1', [
+    { key: 'track-1', data: { title: 'First' } },
+    { key: 'track-2', data: { title: 'Second' } },
+    { key: 'track-3', data: { title: 'Third' } }
+  ]);
+
+  // First track in the visibility list should be picked first
+  const next = scheduler.peekNext();
+  assertEqual(next.trackKey, 'track-1', 'first visible track should be picked first');
+});
+
+// Test: Background tracks at bottom don't resolve before promoted top tracks
+test('Promoted top tracks resolve before unpromoted bottom background tracks', () => {
+  const scheduler = new ResolutionScheduler();
+
+  scheduler.registerContext('background', 'background');
+  scheduler.registerContext('page-1', 'page');
+
+  // Background enqueues tracks 1-5 (simulating pre-resolution)
+  scheduler.enqueue('track-1', 'background', { title: 'Track 1' });
+  scheduler.enqueue('track-2', 'background', { title: 'Track 2' });
+  scheduler.enqueue('track-3', 'background', { title: 'Track 3' });
+  scheduler.enqueue('track-4', 'background', { title: 'Track 4' });
+  scheduler.enqueue('track-5', 'background', { title: 'Track 5' });
+
+  // User opens playlist, viewport shows tracks 1-3
+  scheduler.updateVisibility('page-1', [
+    { key: 'track-1', data: { title: 'Track 1' } },
+    { key: 'track-2', data: { title: 'Track 2' } },
+    { key: 'track-3', data: { title: 'Track 3' } }
+  ]);
+
+  // Tracks 1-3 should be promoted to page priority and resolve before 4-5
+  const first = scheduler.peekNext();
+  assertEqual(first.trackKey, 'track-1', 'promoted track-1 should be first');
+  assertEqual(first.priority, CONTEXT_PRIORITY.page, 'should have page priority');
+
+  scheduler.dequeue('track-1');
+  const second = scheduler.peekNext();
+  assertEqual(second.trackKey, 'track-2', 'promoted track-2 should be second');
+
+  scheduler.dequeue('track-2');
+  const third = scheduler.peekNext();
+  assertEqual(third.trackKey, 'track-3', 'promoted track-3 should be third');
+
+  scheduler.dequeue('track-3');
+  const fourth = scheduler.peekNext();
+  // Tracks 4-5 still at background priority, but should still resolve
+  assertEqual(fourth.trackKey, 'track-4', 'background track-4 should be fourth');
+  assertEqual(fourth.priority, CONTEXT_PRIORITY.background, 'should still have background priority');
+});
+
 // Summary
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
