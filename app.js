@@ -18664,10 +18664,10 @@ const Parachord = () => {
         return;
       }
 
-      // Update state with combined sources
+      // Update state with combined sources (filter noMatch sentinels for UI)
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: sources
+        [trackKey]: filterNoMatch(sources)
       }));
 
       // Update cache with new sources
@@ -18805,14 +18805,16 @@ const Parachord = () => {
           console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
 
           // Flush to UI immediately so results appear as each resolver completes
+          // Filter noMatch sentinels so icons don't flash for resolvers with no match
           if (!signal?.aborted) {
+            const flushed = filterNoMatch(sources);
             setTrackSources(prev => ({
               ...prev,
-              [trackKey]: { ...prev[trackKey], ...sources }
+              [trackKey]: { ...prev[trackKey], ...flushed }
             }));
             if (isQueueResolution && track.id) {
               setCurrentQueue(prev => prev.map(t =>
-                t.id === track.id ? { ...t, sources: { ...t.sources, ...sources } } : t
+                t.id === track.id ? { ...t, sources: { ...t.sources, ...flushed } } : t
               ));
             }
           }
