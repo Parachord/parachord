@@ -170,6 +170,29 @@ const syncDataType = async (provider, token, dataType, localData, onProgress) =>
   // Calculate diff
   const diff = calculateDiff(remoteData, localData, provider.id);
 
+  // Safety check: if we'd remove a large fraction of the synced items,
+  // the remote provider likely returned incomplete results (API pagination
+  // failure, rate limit, network issue). Skip removals to prevent data loss.
+  const syncedLocalCount = localData.filter(item => item.syncSources?.[provider.id]).length;
+  if (diff.toRemove.length > 0 && syncedLocalCount > 0) {
+    const removalRatio = diff.toRemove.length / syncedLocalCount;
+    if (removalRatio > 0.25 && diff.toRemove.length > 50) {
+      console.warn(`[SyncEngine] ⚠️ Mass removal safeguard triggered for ${dataType}: would remove ${diff.toRemove.length}/${syncedLocalCount} synced items (${Math.round(removalRatio * 100)}%). Skipping removals — remote may have returned incomplete results.`);
+      // Convert removals to unchanged — keep the tracks but don't delete them
+      diff.unchanged.push(...diff.toRemove.map(item => ({
+        ...item,
+        syncSources: {
+          ...item.syncSources,
+          [provider.id]: {
+            ...item.syncSources?.[provider.id],
+            syncedAt: Date.now()
+          }
+        }
+      })));
+      diff.toRemove = [];
+    }
+  }
+
   // Apply diff
   const newData = applyDiff(localData, diff);
 
