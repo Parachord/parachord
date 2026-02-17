@@ -379,11 +379,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridge: MusicKitBridge?
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var requestContinuation: AsyncStream<String>.Continuation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Initialize bridge on main actor
         Task { @MainActor in
             self.bridge = MusicKitBridge()
+
+            // Warm up MusicKit before accepting requests — establishes the
+            // XPC connection to AMSd so the first real request doesn't race
+            // against framework initialisation.
+            _ = await self.bridge!.checkAuthStatus()
+
+            // Serial request channel: requests are processed one at a time
+            // to prevent concurrent MusicKit API calls from overwhelming
+            // the XPC connection (which causes SIGABRT).
+            let (stream, continuation) = AsyncStream<String>.makeStream()
+            self.requestContinuation = continuation
+
+            Task { @MainActor in
+                for await line in stream {
+                    await self.processLine(line)
+                }
+            }
 
             // Send ready signal
             let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.0.0", "platform": "macOS 14+", "appBundle": true]), error: nil)
@@ -395,7 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Cleanup
+        requestContinuation?.finish()
     }
 
     private func sendResponse(_ response: Response) {
@@ -406,34 +423,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startInputLoop() {
-        // Read stdin in a background thread
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             while let line = readLine() {
                 guard !line.isEmpty else { continue }
-
-                // Process on main thread
-                DispatchQueue.main.async {
-                    self?.processLine(line)
-                }
+                self?.requestContinuation?.yield(line)
             }
 
             // stdin closed, exit app
+            self?.requestContinuation?.finish()
             DispatchQueue.main.async {
                 NSApp.terminate(nil)
             }
         }
     }
 
-    private func processLine(_ line: String) {
+    @MainActor
+    private func processLine(_ line: String) async {
         guard let bridge = self.bridge else { return }
 
         do {
             let request = try decoder.decode(Request.self, from: Data(line.utf8))
-
-            Task { @MainActor in
-                let response = await self.handleRequest(request, bridge: bridge)
-                self.sendResponse(response)
-            }
+            let response = await self.handleRequest(request, bridge: bridge)
+            self.sendResponse(response)
         } catch {
             let errorResponse = Response(id: "error", success: false, data: nil, error: "Parse error: \(error.localizedDescription)")
             sendResponse(errorResponse)
