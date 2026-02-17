@@ -1,4 +1,4 @@
-# Parachord v0.7.0-alpha.4
+# Parachord v0.7.0-alpha.5
 
 **Release date:** 2026-02-17
 
@@ -39,7 +39,7 @@ Track resolution is significantly faster and more responsive.
 
 ---
 
-## v0.7.0-alpha.3
+## v0.7.0-alpha.3 & v0.7.0-alpha.4
 
 <details>
 <summary>Earlier changes (2026-02-13)</summary>
@@ -93,4 +93,4 @@ Report and block bad source matches without disabling an entire resolver.
 
 ---
 
-**Full changelog:** `git log v0.7.0-alpha.2..v0.7.0-alpha.4`
+**Full changelog:** `git log v0.7.0-alpha.2..v0.7.0-alpha.5`
