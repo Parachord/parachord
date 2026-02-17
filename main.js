@@ -1338,9 +1338,11 @@ app.whenReady().then(() => {
     }
   });
 
-  // Generate MusicKit developer token from .p8 key (non-blocking)
-  generateMusicKitDeveloperToken().catch(err => {
+  // Generate MusicKit developer token from .p8 key.
+  // Store the promise so config-get can await it (avoids race with renderer).
+  musicKitTokenReady = generateMusicKitDeveloperToken().catch(err => {
     console.error('🍎 MusicKit: Token generation error:', err.message);
+    return null;
   });
 
   createWindow();
@@ -1768,6 +1770,7 @@ function generateCodeChallenge(verifier) {
 const MUSICKIT_TEAM_ID = 'YR3XETE537';
 const MUSICKIT_KEY_ID = '437JVHZMMK';
 let generatedMusicKitToken = null;
+let musicKitTokenReady = Promise.resolve(null); // resolved by generateMusicKitDeveloperToken()
 
 /**
  * Generate a MusicKit developer token from the bundled .p8 private key.
@@ -2066,11 +2069,15 @@ const CONFIG_FALLBACKS = {
   'LASTFM_API_KEY': FALLBACK_LASTFM_API_KEY,
   'LASTFM_API_SECRET': FALLBACK_LASTFM_API_SECRET
 };
-ipcMain.handle('config-get', (event, key) => {
+ipcMain.handle('config-get', async (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
-    // MusicKit token may be generated at startup from .p8 key
+    // MusicKit token: env var > auto-generated from .p8 > user-configured in Settings
+    // Await token generation so the renderer doesn't race ahead and get null.
     if (key === 'MUSICKIT_DEVELOPER_TOKEN') {
-      return process.env[key] || generatedMusicKitToken || null;
+      if (!generatedMusicKitToken) {
+        await musicKitTokenReady;
+      }
+      return process.env[key] || generatedMusicKitToken || store.get('applemusic_developer_token') || null;
     }
     return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }

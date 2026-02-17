@@ -26742,7 +26742,10 @@ ${tracks}
 
     // Try MusicKit JS first (works cross-platform, requires developer token)
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-    const developerToken = localStorage.getItem('musickit_developer_token') || '';
+    let developerToken = localStorage.getItem('musickit_developer_token') || '';
+    if (!developerToken && window.electron?.config?.get) {
+      try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
+    }
 
     if (musicKitWeb && developerToken) {
       try {
