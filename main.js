@@ -2068,9 +2068,9 @@ const CONFIG_FALLBACKS = {
 };
 ipcMain.handle('config-get', (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
-    // MusicKit token may be generated at startup from .p8 key
+    // MusicKit token: env var > auto-generated from .p8 > user-configured in Settings
     if (key === 'MUSICKIT_DEVELOPER_TOKEN') {
-      return process.env[key] || generatedMusicKitToken || null;
+      return process.env[key] || generatedMusicKitToken || store.get('applemusic_developer_token') || null;
     }
     return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }
