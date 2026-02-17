@@ -1,6 +1,6 @@
 {
   "name": "parachord-desktop",
-  "version": "0.7.0-alpha.4",
+  "version": "0.7.0-alpha.5",
   "description": "Parachord Desktop - Multi-source music player with cross-platform resolver support",
   "main": "main.js",
   "scripts": {
@@ -81,7 +81,9 @@
       {
         "from": "resources/keys/",
         "to": "keys/",
-        "filter": ["*.p8"]
+        "filter": [
+          "*.p8"
+        ]
       }
     ],
     "afterSign": "scripts/notarize.js",
@@ -99,7 +101,9 @@
         {
           "from": "resources/bin/darwin/",
           "to": "bin/darwin/",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ],
       "entitlements": "build/entitlements.mac.plist",
