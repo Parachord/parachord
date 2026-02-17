@@ -61,6 +61,18 @@ class MusicKitBridge extends EventEmitter {
   }
 
   /**
+   * Reject all pending requests (e.g. when the helper crashes or is stopped)
+   */
+  rejectAllPending(reason) {
+    if (this.pendingRequests.size === 0) return;
+    console.log(`[MusicKit] Rejecting ${this.pendingRequests.size} pending request(s): ${reason}`);
+    for (const [id, pending] of this.pendingRequests) {
+      pending.reject(new Error(reason));
+    }
+    this.pendingRequests.clear();
+  }
+
+  /**
    * Get the path to the MusicKit helper executable (inside .app bundle)
    */
   getHelperPath() {
@@ -168,6 +180,7 @@ class MusicKitBridge extends EventEmitter {
         console.log('[MusicKit] Process closed with code:', code, 'signal:', signal);
         this.process = null;
         this.isReady = false;
+        this.rejectAllPending(`MusicKit helper exited (code: ${code}, signal: ${signal})`);
         this.emit('close', code);
       });
 
@@ -239,9 +252,21 @@ class MusicKitBridge extends EventEmitter {
   }
 
   /**
-   * Send a command to the helper
+   * Send a command to the helper.
+   * If the helper crashes mid-request, retries once after restarting.
    */
   async send(action, params = {}, timeoutMs = 30000) {
+    return this._sendOnce(action, params, timeoutMs).catch(async (error) => {
+      // Retry once if the helper died mid-request (not for timeouts or app errors)
+      if (error.message && error.message.startsWith('MusicKit helper exited')) {
+        console.log(`[MusicKit] Retrying ${action} after helper crash`);
+        return this._sendOnce(action, params, timeoutMs);
+      }
+      throw error;
+    });
+  }
+
+  async _sendOnce(action, params = {}, timeoutMs = 30000) {
     if (!this.process || !this.isReady) {
       // Try to start if not running
       const started = await this.start();
@@ -300,7 +325,7 @@ class MusicKitBridge extends EventEmitter {
       }, 500);
     }
     this.isReady = false;
-    this.pendingRequests.clear();
+    this.rejectAllPending('MusicKit helper stopped');
   }
 
   // High-level API methods
