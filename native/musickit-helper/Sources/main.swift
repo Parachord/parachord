@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import MusicKit
+import Darwin
 
 // MARK: - JSON Message Types
 
@@ -109,13 +110,24 @@ class MusicKitBridge {
         // Status is .notDetermined — we can request and macOS will show the dialog.
         // Temporarily become a regular app so macOS presents the prompt.
         // (Background/accessory apps can't present system auth prompts.)
-        NSApp.setActivationPolicy(.regular)
+        guard NSApp.setActivationPolicy(.regular) else {
+            return [
+                "authorized": false,
+                "status": "notDetermined",
+                "error": "Failed to set activation policy for authorization dialog"
+            ]
+        }
         NSApp.activate(ignoringOtherApps: true)
 
-        // Give macOS time to process the activation policy change and bring
-        // the app to the foreground before requesting authorization.
-        // Without this delay, the system auth dialog may fail to appear.
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+        // Give macOS time to fully process the activation policy change.
+        // The app needs to appear in the dock and become frontmost before
+        // MusicAuthorization.request() can present its system dialog.
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+
+        // Re-activate to ensure we're frontmost (the 1s sleep yields the
+        // main actor, so another app may have taken focus).
+        NSApp.activate(ignoringOtherApps: true)
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
 
         var status = await MusicAuthorization.request()
 
@@ -577,6 +589,23 @@ struct MusicKitHelperApp {
                 fflush(stdout)
             }
             return
+        }
+
+        // Catch uncaught ObjC exceptions (e.g. from MusicKit/AppKit internals)
+        // and write an error to stdout so the bridge gets a response instead of
+        // a silent SIGABRT death.
+        NSSetUncaughtExceptionHandler { exception in
+            let msg = "{\"id\":\"error\",\"success\":false,\"data\":null,\"error\":\"MusicKit internal error: \(exception.name.rawValue) — \(exception.reason ?? "unknown")\"}\n"
+            msg.withCString { ptr in
+                write(STDOUT_FILENO, ptr, strlen(ptr))
+            }
+        }
+
+        // If an ObjC exception still leads to abort(), catch the SIGABRT and
+        // exit cleanly so the bridge detects the process death immediately
+        // instead of waiting for a timeout.
+        signal(SIGABRT) { _ in
+            _exit(1)
         }
 
         // Create and run the app
