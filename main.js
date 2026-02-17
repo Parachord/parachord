@@ -309,7 +309,7 @@ const spotifyPoller = {
   },
 
   sendToRenderer(channel, data = {}) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(channel, data);
     }
   }
@@ -535,7 +535,7 @@ const appleMusicPoller = {
   },
 
   sendToRenderer(channel, data = {}) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(channel, data);
     }
   }
@@ -578,9 +578,7 @@ const systemVolumeMonitor = {
           if (wasNull) return;
 
           console.log(`[SystemVolume] Changed: volume=${volume}, muted=${muted}`);
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('system-volume-changed', { volume, muted });
-          }
+          safeSendToRenderer('system-volume-changed', { volume, muted });
         }
       });
     }, this.POLL_INTERVAL);
@@ -644,7 +642,7 @@ function createWindow() {
       }
     } : {}),
     frame: true,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#f3f4f6',
     icon: path.join(__dirname, 'assets/icons/icon512.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -664,7 +662,7 @@ function createWindow() {
     // Send any pending protocol URL that was received before window was ready
     if (global.pendingProtocolUrl) {
       console.log('[Protocol] Sending pending URL:', global.pendingProtocolUrl);
-      mainWindow.webContents.send('protocol-url', global.pendingProtocolUrl);
+      safeSendToRenderer('protocol-url', global.pendingProtocolUrl);
       global.pendingProtocolUrl = null;
     }
   });
@@ -704,12 +702,12 @@ function createWindow() {
 
   mainWindow.on('focus', () => {
     localFilesService?.onAppForeground();
-    mainWindow?.webContents.send('app-foreground');
+    safeSendToRenderer('app-foreground');
   });
 
   mainWindow.on('blur', () => {
     localFilesService?.onAppBackground();
-    mainWindow?.webContents.send('app-background');
+    safeSendToRenderer('app-background');
   });
 }
 
@@ -747,7 +745,7 @@ function startAuthServer() {
           </body>
         </html>
       `);
-      mainWindow?.webContents.send('spotify-auth-error', error);
+      safeSendToRenderer('spotify-auth-error', error);
       return;
     }
 
@@ -784,7 +782,7 @@ function startAuthServer() {
           </body>
         </html>
       `);
-      mainWindow?.webContents.send('soundcloud-auth-error', error);
+      safeSendToRenderer('soundcloud-auth-error', error);
       return;
     }
 
@@ -817,7 +815,7 @@ function startAuthServer() {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      mainWindow.webContents.send('protocol-url', url);
+      safeSendToRenderer('protocol-url', url);
       res.json({ success: true, url });
     } else {
       res.status(503).json({ error: 'Parachord not ready' });
@@ -827,6 +825,17 @@ function startAuthServer() {
   authServer = expressApp.listen(8888, '127.0.0.1', () => {
     console.log('Auth server running on http://127.0.0.1:8888');
   });
+}
+
+// Safely send IPC message to the renderer — no-ops if the frame is disposed or window is gone
+function safeSendToRenderer(channel, ...args) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send(channel, ...args);
+    }
+  } catch (e) {
+    // Renderer frame disposed between check and send — ignore
+  }
 }
 
 // WebSocket server for browser extension communication
@@ -856,7 +865,7 @@ function startExtensionServer() {
             connectionType = 'extension';
             extensionSocket = ws;
             console.log('Browser extension connected');
-            mainWindow?.webContents.send('extension-connected');
+            safeSendToRenderer('extension-connected');
           }
         }
 
@@ -868,7 +877,7 @@ function startExtensionServer() {
 
         // Handle extension messages (existing behavior)
         console.log('Extension message:', message.type, message.event || message.action || message.url || '');
-        mainWindow?.webContents.send('extension-message', message);
+        safeSendToRenderer('extension-message', message);
         console.log('Forwarded to renderer');
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
@@ -882,7 +891,7 @@ function startExtensionServer() {
       } else if (connectionType === 'extension') {
         console.log('Browser extension disconnected');
         extensionSocket = null;
-        mainWindow?.webContents.send('extension-disconnected');
+        safeSendToRenderer('extension-disconnected');
       }
     });
 
@@ -927,7 +936,7 @@ async function handleEmbedMessage(ws, message) {
             }
           }, 5000);
         });
-        mainWindow.webContents.send('embed-get-state', { requestId });
+        safeSendToRenderer('embed-get-state', { requestId });
         const result = await requestPromise;
         sendResponse(result);
       } else {
@@ -947,7 +956,7 @@ async function handleEmbedMessage(ws, message) {
             }
           }, 30000); // Longer timeout for search
         });
-        mainWindow.webContents.send('embed-search', { requestId, query: payload?.query });
+        safeSendToRenderer('embed-search', { requestId, query: payload?.query });
         const result = await requestPromise;
         sendResponse(result);
       } else {
@@ -957,7 +966,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'play':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-play', { track: payload?.track });
+        safeSendToRenderer('embed-play', { track: payload?.track });
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -966,7 +975,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'pause':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-pause');
+        safeSendToRenderer('embed-pause');
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -975,7 +984,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'resume':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-resume');
+        safeSendToRenderer('embed-resume');
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -984,7 +993,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'next':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-next');
+        safeSendToRenderer('embed-next');
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -993,7 +1002,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'previous':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-previous');
+        safeSendToRenderer('embed-previous');
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -1002,7 +1011,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'setVolume':
       if (mainWindow) {
-        mainWindow.webContents.send('embed-set-volume', { volume: payload?.volume });
+        safeSendToRenderer('embed-set-volume', { volume: payload?.volume });
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -1038,7 +1047,7 @@ async function exchangeCodeForToken(code) {
 
   if (!spotifyCodeVerifier) {
     console.error('No PKCE code verifier found — did the auth flow start correctly?');
-    mainWindow?.webContents.send('spotify-auth-error', 'PKCE code verifier missing. Please try connecting again.');
+    safeSendToRenderer('spotify-auth-error', 'PKCE code verifier missing. Please try connecting again.');
     return;
   }
 
@@ -1076,7 +1085,7 @@ async function exchangeCodeForToken(code) {
       const savedToken = store.get('spotify_token');
       console.log('Verification - token saved:', !!savedToken);
 
-      mainWindow?.webContents.send('spotify-auth-success', {
+      safeSendToRenderer('spotify-auth-success', {
         token: data.access_token,
         expiresIn: data.expires_in
       });
@@ -1086,7 +1095,7 @@ async function exchangeCodeForToken(code) {
     }
   } catch (error) {
     console.error('Token exchange error:', error);
-    mainWindow?.webContents.send('spotify-auth-error', error.message);
+    safeSendToRenderer('spotify-auth-error', error.message);
   }
 }
 
@@ -1103,7 +1112,7 @@ async function exchangeSoundCloudCodeForToken(code) {
   // Validate credentials exist
   if (!clientId || !clientSecret) {
     console.error('❌ No SoundCloud credentials configured!');
-    mainWindow?.webContents.send('soundcloud-auth-error', 'SoundCloud requires API credentials. Configure them in Settings.');
+    safeSendToRenderer('soundcloud-auth-error', 'SoundCloud requires API credentials. Configure them in Settings.');
     return;
   }
 
@@ -1139,18 +1148,18 @@ async function exchangeSoundCloudCodeForToken(code) {
       const savedToken = store.get('soundcloud_token');
       console.log('Verification - SoundCloud token saved:', !!savedToken);
 
-      mainWindow?.webContents.send('soundcloud-auth-success', {
+      safeSendToRenderer('soundcloud-auth-success', {
         token: data.access_token,
         expiresIn: data.expires_in
       });
       console.log('SoundCloud auth success event sent to renderer');
     } else {
       console.error('No access token in SoundCloud response:', data);
-      mainWindow?.webContents.send('soundcloud-auth-error', data.error_description || 'Failed to get access token');
+      safeSendToRenderer('soundcloud-auth-error', data.error_description || 'Failed to get access token');
     }
   } catch (error) {
     console.error('SoundCloud token exchange error:', error);
-    mainWindow?.webContents.send('soundcloud-auth-error', error.message);
+    safeSendToRenderer('soundcloud-auth-error', error.message);
   }
 }
 
@@ -1184,7 +1193,7 @@ function handleProtocolUrl(url) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
     // Send to renderer
-    mainWindow.webContents.send('protocol-url', url);
+    safeSendToRenderer('protocol-url', url);
   } else {
     // Store for when window is ready
     global.pendingProtocolUrl = url;
@@ -1353,7 +1362,7 @@ app.whenReady().then(() => {
         {
           label: 'Settings...',
           accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('menu-action', 'open-settings')
+          click: () => safeSendToRenderer('menu-action', 'open-settings')
         },
         { type: 'separator' },
         { role: 'services' },
@@ -1373,20 +1382,20 @@ app.whenReady().then(() => {
         {
           label: 'New Playlist',
           accelerator: 'CmdOrCtrl+N',
-          click: () => mainWindow?.webContents.send('menu-action', 'new-playlist')
+          click: () => safeSendToRenderer('menu-action', 'new-playlist')
         },
         {
           label: 'Add Friend...',
-          click: () => mainWindow?.webContents.send('menu-action', 'add-friend')
+          click: () => safeSendToRenderer('menu-action', 'add-friend')
         },
         { type: 'separator' },
         {
           label: 'Import Playlist...',
-          click: () => mainWindow?.webContents.send('menu-action', 'import-playlist')
+          click: () => safeSendToRenderer('menu-action', 'import-playlist')
         },
         {
           label: 'Export Queue as Playlist...',
-          click: () => mainWindow?.webContents.send('menu-action', 'export-playlist')
+          click: () => safeSendToRenderer('menu-action', 'export-playlist')
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
@@ -1416,7 +1425,7 @@ app.whenReady().then(() => {
         {
           label: 'Find...',
           accelerator: 'CmdOrCtrl+F',
-          click: () => mainWindow?.webContents.send('menu-action', 'focus-search')
+          click: () => safeSendToRenderer('menu-action', 'focus-search')
         }
       ]
     },
@@ -1429,23 +1438,23 @@ app.whenReady().then(() => {
           label: 'Play/Pause',
           // Note: Space accelerator removed - conflicts with text input in chat
           // Use media keys or click the playbar button instead
-          click: () => mainWindow?.webContents.send('menu-action', 'play-pause')
+          click: () => safeSendToRenderer('menu-action', 'play-pause')
         },
         {
           label: 'Previous Track',
           accelerator: 'CmdOrCtrl+Left',
-          click: () => mainWindow?.webContents.send('menu-action', 'previous-track')
+          click: () => safeSendToRenderer('menu-action', 'previous-track')
         },
         {
           label: 'Next Track',
           accelerator: 'CmdOrCtrl+Right',
-          click: () => mainWindow?.webContents.send('menu-action', 'next-track')
+          click: () => safeSendToRenderer('menu-action', 'next-track')
         },
         { type: 'separator' },
         {
           label: 'Shuffle',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('menu-action', 'toggle-shuffle')
+          click: () => safeSendToRenderer('menu-action', 'toggle-shuffle')
         }
       ]
     },
@@ -1482,7 +1491,7 @@ app.whenReady().then(() => {
         {
           label: 'Check for Updates...',
           click: () => {
-            mainWindow?.webContents.send('menu-action', 'check-for-updates');
+            safeSendToRenderer('menu-action', 'check-for-updates');
           }
         },
         { type: 'separator' },
@@ -1512,13 +1521,13 @@ app.whenReady().then(() => {
   if (autoUpdater) {
     autoUpdater.on('checking-for-update', () => {
       console.log('🔄 Checking for updates...');
-      mainWindow?.webContents.send('updater-status', { status: 'checking' });
+      safeSendToRenderer('updater-status', { status: 'checking' });
     });
 
     autoUpdater.on('update-available', (info) => {
       console.log('✅ Update available:', info.version);
       userInitiatedUpdateCheck = false;
-      mainWindow?.webContents.send('updater-status', {
+      safeSendToRenderer('updater-status', {
         status: 'available',
         version: info.version,
         releaseNotes: info.releaseNotes
@@ -1528,12 +1537,12 @@ app.whenReady().then(() => {
     autoUpdater.on('update-not-available', () => {
       console.log('✅ App is up to date');
       userInitiatedUpdateCheck = false;
-      mainWindow?.webContents.send('updater-status', { status: 'up-to-date' });
+      safeSendToRenderer('updater-status', { status: 'up-to-date' });
     });
 
     autoUpdater.on('download-progress', (progress) => {
       console.log(`📥 Download progress: ${Math.round(progress.percent)}%`);
-      mainWindow?.webContents.send('updater-status', {
+      safeSendToRenderer('updater-status', {
         status: 'downloading',
         percent: progress.percent
       });
@@ -1541,7 +1550,7 @@ app.whenReady().then(() => {
 
     autoUpdater.on('update-downloaded', (info) => {
       console.log('✅ Update downloaded:', info.version);
-      mainWindow?.webContents.send('updater-status', {
+      safeSendToRenderer('updater-status', {
         status: 'downloaded',
         version: info.version
       });
@@ -1552,7 +1561,7 @@ app.whenReady().then(() => {
       // Only forward to renderer if the user initiated the check
       if (userInitiatedUpdateCheck) {
         userInitiatedUpdateCheck = false;
-        mainWindow?.webContents.send('updater-status', {
+        safeSendToRenderer('updater-status', {
           status: 'error',
           error: 'Could not check for updates. Please try again later.'
         });
@@ -1574,7 +1583,7 @@ app.whenReady().then(() => {
 
     // Set up library change notifications
     localFilesService.setLibraryChangedCallback((changes) => {
-      mainWindow?.webContents.send('localFiles:libraryChanged', changes);
+      safeSendToRenderer('localFiles:libraryChanged', changes);
     });
 
     return localFilesService;
@@ -1585,15 +1594,15 @@ app.whenReady().then(() => {
 
   // Register media key shortcuts
   globalShortcut.register('MediaPlayPause', () => {
-    mainWindow?.webContents.send('media-key', 'playpause');
+    safeSendToRenderer('media-key', 'playpause');
   });
 
   globalShortcut.register('MediaNextTrack', () => {
-    mainWindow?.webContents.send('media-key', 'next');
+    safeSendToRenderer('media-key', 'next');
   });
 
   globalShortcut.register('MediaPreviousTrack', () => {
-    mainWindow?.webContents.send('media-key', 'previous');
+    safeSendToRenderer('media-key', 'previous');
   });
 
   // Apply saved media key setting on startup
@@ -1678,13 +1687,13 @@ let mediaKeysRegistered = true; // Track current state
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
   globalShortcut.register('MediaPlayPause', () => {
-    mainWindow?.webContents.send('media-key', 'playpause');
+    safeSendToRenderer('media-key', 'playpause');
   });
   globalShortcut.register('MediaNextTrack', () => {
-    mainWindow?.webContents.send('media-key', 'next');
+    safeSendToRenderer('media-key', 'next');
   });
   globalShortcut.register('MediaPreviousTrack', () => {
-    mainWindow?.webContents.send('media-key', 'previous');
+    safeSendToRenderer('media-key', 'previous');
   });
   mediaKeysRegistered = true;
 };
@@ -2683,9 +2692,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
       const eventType = message.replace('__PLAYBACK_EVENT__:', '');
       console.log('Playback window event:', eventType);
       // Forward to main renderer
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('playback-window-event', eventType);
-      }
+      safeSendToRenderer('playback-window-event', eventType);
     }
   });
 
@@ -2801,9 +2808,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   playbackWindow.on('closed', () => {
     playbackWindow = null;
     // Notify renderer that playback window was closed
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('playback-window-closed');
-    }
+    safeSendToRenderer('playback-window-closed');
   });
 
   return { success: true };
@@ -2859,10 +2864,8 @@ ipcMain.handle('playback-window-toggle', async () => {
       console.log('Playback window toggle result:', result);
 
       // Also send the event directly to ensure sync
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-        if (result === 'playing' || result === 'paused') {
-          mainWindow.webContents.send('playback-window-event', result);
-        }
+      if (result === 'playing' || result === 'paused') {
+        safeSendToRenderer('playback-window-event', result);
       }
 
       return { success: true, state: result };
@@ -3277,7 +3280,7 @@ ipcMain.handle('resolvers-show-context-menu', async (event, resolverId) => {
       label: 'Uninstall Resolver',
       click: () => {
         // Send back to renderer
-        mainWindow.webContents.send('resolver-context-menu-action', {
+        safeSendToRenderer('resolver-context-menu-action', {
           action: 'uninstall',
           resolverId: resolverId
         });
@@ -3302,7 +3305,7 @@ ipcMain.handle('show-playbar-source-context-menu', async (event, data) => {
     {
       label: 'Report Bad Match',
       click: () => {
-        mainWindow.webContents.send('playbar-source-context-menu-action', {
+        safeSendToRenderer('playbar-source-context-menu-action', {
           action: 'report-bad-match',
           resolverId: data.resolverId,
           track: data.track
@@ -3383,7 +3386,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       click: () => {
         // Send tracks back to renderer
         const tracks = data.type === 'track' ? [data.track] : data.tracks;
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'add-to-queue',
           tracks: tracks
         });
@@ -3396,7 +3399,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         // Send tracks back to renderer to open Add to Playlist panel
         const tracks = data.type === 'track' ? [data.track] : data.tracks;
         console.log(`  📋 Add to Playlist clicked: type=${data.type}, tracks=${tracks?.length || 0}`);
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'add-to-playlist',
           tracks: tracks,
           sourceName: data.type === 'track' ? data.track?.title : data.name,
@@ -3412,7 +3415,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Remove from Playlist',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'remove-from-playlist',
           playlistId: data.playlistId,
           trackIndex: data.trackIndex,
@@ -3428,7 +3431,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Delete Playlist',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'delete-playlist',
           playlistId: data.playlistId,
           name: data.name
@@ -3443,7 +3446,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Edit ID3 Tags',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'edit-id3-tags',
           track: data.track
         });
@@ -3456,7 +3459,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Remove from Collection',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'remove-from-collection',
           type: 'album',
           album: data.album
@@ -3477,7 +3480,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         menuItems.push({
           label: 'Remove from Collection',
           click: () => {
-            mainWindow.webContents.send('track-context-menu-action', {
+            safeSendToRenderer('track-context-menu-action', {
               action: 'remove-from-collection',
               type: 'track',
               track: data.track
@@ -3488,7 +3491,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         menuItems.push({
           label: 'Add to Collection',
           click: () => {
-            mainWindow.webContents.send('track-context-menu-action', {
+            safeSendToRenderer('track-context-menu-action', {
               action: 'add-to-collection',
               type: 'track',
               track: data.track
@@ -3500,7 +3503,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Add Album to Collection',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'add-to-collection',
             type: 'album',
             album: data.album || {
@@ -3516,7 +3519,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Add Artist to Collection',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'add-to-collection',
             type: 'artist',
             artist: data.artist
@@ -3541,7 +3544,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Publish Smart Link',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'publish-smart-link',
           track: smartLinkTrack
         });
@@ -3551,7 +3554,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Copy Embed Code',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'copy-embed-code',
           track: smartLinkTrack
         });
@@ -3564,7 +3567,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'View History',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'view-friend-history',
           friend: data.friend
         });
@@ -3576,7 +3579,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: data.isListeningAlong ? 'Stop Listening Along' : 'Listen Along',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: data.isListeningAlong ? 'stop-listen-along' : 'start-listen-along',
             friend: data.friend
           });
@@ -3588,7 +3591,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Unpin from Sidebar',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'unpin-friend',
             friendId: data.friend.id
           });
@@ -3598,7 +3601,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Pin to Sidebar',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'pin-friend',
             friendId: data.friend.id
           });
@@ -3613,7 +3616,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Add to Collection',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'save-friend-to-collection',
             friendId: data.friend.id
           });
@@ -3623,7 +3626,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Remove from Collection',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'remove-friend-from-collection',
             friendId: data.friend.id
           });
@@ -3637,7 +3640,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       menuItems.push({
         label: 'Remove Friend',
         click: () => {
-          mainWindow.webContents.send('track-context-menu-action', {
+          safeSendToRenderer('track-context-menu-action', {
             action: 'remove-friend',
             friendId: data.friend.id
           });
@@ -3651,7 +3654,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Add to Queue',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'add-to-queue',
           track: data.track
         });
@@ -3660,7 +3663,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Add to Playlist',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'add-to-playlist',
           track: data.track
         });
@@ -3669,7 +3672,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Add to Collection',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'add-track-to-collection',
           track: data.track
         });
@@ -3679,7 +3682,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     menuItems.push({
       label: 'Go to Artist',
       click: () => {
-        mainWindow.webContents.send('track-context-menu-action', {
+        safeSendToRenderer('track-context-menu-action', {
           action: 'go-to-artist',
           artistName: data.track.artist
         });
@@ -4150,7 +4153,7 @@ ipcMain.handle('localFiles:rescanAll', async () => {
   try {
     const service = await waitForLocalFilesService();
     const results = await service.rescanAll((current, total, file) => {
-      mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
+      safeSendToRenderer('localFiles:scanProgress', { current, total, file });
     });
     return { success: true, results };
   } catch (error) {
@@ -4166,7 +4169,7 @@ ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
   try {
     const service = await waitForLocalFilesService();
     const result = await service.scanFolder(folderPath, (current, total, file) => {
-      mainWindow?.webContents.send('localFiles:scanProgress', { current, total, file });
+      safeSendToRenderer('localFiles:scanProgress', { current, total, file });
     });
     return { success: true, result };
   } catch (error) {

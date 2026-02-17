@@ -16587,7 +16587,12 @@ const Parachord = () => {
 
   // Cache utility functions
   const loadCacheFromStore = async () => {
-    if (!window.electron?.store) return;
+    if (!window.electron?.store) {
+      console.warn('📦 electron.store not available, skipping cache load');
+      resolverSettingsLoaded.current = true;
+      setCacheLoaded(true);
+      return;
+    }
 
     try {
       // Load album art cache (keep full { url, timestamp } structure)
