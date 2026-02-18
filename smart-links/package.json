@@ -4,8 +4,8 @@
   "private": true,
   "description": "Shareable smart links for Parachord - like feature.fm/linkfire",
   "scripts": {
-    "dev": "wrangler pages dev . --kv=LINKS",
-    "deploy": "wrangler pages deploy .",
+    "dev": "wrangler pages dev --kv=LINKS",
+    "deploy": "wrangler pages deploy",
     "kv:create": "wrangler kv:namespace create LINKS",
     "kv:create:preview": "wrangler kv:namespace create LINKS --preview"
   },
