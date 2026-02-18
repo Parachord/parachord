@@ -1,0 +1,32 @@
+name: Deploy Smart Links
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'smart-links/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: smart-links
+        run: npm ci
+
+      - name: Deploy to Cloudflare Pages
+        working-directory: smart-links
+        run: npx wrangler pages deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
