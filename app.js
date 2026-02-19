@@ -8832,9 +8832,9 @@ const Parachord = () => {
                 'top-artists': 'topArtists',
                 'recent': 'recent'
               };
-              setHistoryTab(tabMap[tab] || tab);
+              if (tabMap[tab]) setHistoryTab(tabMap[tab]);
             }
-            if (params.period) {
+            if (params.period && ['7day', '1month', '3month', '6month', '12month', 'overall'].includes(params.period)) {
               setHistoryPeriod(params.period);
             }
             break;
@@ -8858,7 +8858,7 @@ const Parachord = () => {
                     'top-artists': 'topArtists',
                     'recent': 'recent'
                   };
-                  setFriendHistoryTab(tabMap[tab] || tab);
+                  if (tabMap[tab]) setFriendHistoryTab(tabMap[tab]);
                 }
               } else {
                 showToast(`Friend not found: ${friendId}`);
@@ -8915,7 +8915,7 @@ const Parachord = () => {
           case 'settings': {
             const [tab] = segments;
             setActiveView('settings');
-            if (tab) {
+            if (tab && ['general', 'plugins', 'about'].includes(tab)) {
               setSettingsTab(tab);
             }
             break;
@@ -8930,10 +8930,15 @@ const Parachord = () => {
               openAiChatRef.current();
             }
             if (params.prompt && handleAiChatSendRef.current) {
-              // Trigger chat with prompt
-              setTimeout(() => {
-                handleAiChatSendRef.current(params.prompt);
-              }, 100);
+              const prompt = params.prompt.slice(0, 500);
+              showConfirmDialog({
+                type: 'info',
+                title: 'Send to Chat',
+                message: `An external link wants to send this message to chat:\n\n"${prompt}"`,
+                onConfirm: () => {
+                  handleAiChatSendRef.current(prompt);
+                }
+              });
             }
             break;
           }
@@ -8950,39 +8955,70 @@ const Parachord = () => {
             // parachord://import?url={xspf_url}
             // parachord://import?title={title}&creator={creator}&tracks={base64_json}
             if (params.url) {
-              // Import from hosted XSPF URL
+              let importUrl;
               try {
-                const result = await handleImportPlaylistFromUrl(params.url);
-                if (result?.updated) {
-                  showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
-                } else if (result?.playlist) {
-                  showToast(`Imported playlist: ${result.playlist?.title || 'Untitled'}`);
-                  setActiveView('playlists');
-                }
-              } catch (err) {
-                showToast(`Import failed: ${err.message}`);
+                importUrl = new URL(params.url);
+              } catch {
+                showToast('Import failed: invalid URL');
+                break;
               }
+              if (!['http:', 'https:'].includes(importUrl.protocol)) {
+                showToast('Import failed: only HTTP/HTTPS URLs are allowed');
+                break;
+              }
+              showConfirmDialog({
+                type: 'info',
+                title: 'Import Playlist',
+                message: `An external link wants to import a playlist from:\n\n${importUrl.hostname}${importUrl.pathname}`,
+                onConfirm: async () => {
+                  try {
+                    const result = await handleImportPlaylistFromUrl(params.url);
+                    if (result?.updated) {
+                      showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
+                    } else if (result?.playlist) {
+                      showToast(`Imported playlist: ${result.playlist?.title || 'Untitled'}`);
+                      setActiveView('playlists');
+                    }
+                  } catch (err) {
+                    showToast(`Import failed: ${err.message}`);
+                  }
+                }
+              });
             } else if (params.tracks) {
               // Import from inline base64-encoded JSON tracks
               try {
+                if (params.tracks.length > 100000) {
+                  showToast('Import failed: payload too large');
+                  break;
+                }
                 const decoded = JSON.parse(atob(params.tracks));
                 const tracks = Array.isArray(decoded) ? decoded : (decoded.tracks || []);
+                if (tracks.length > 500) {
+                  showToast('Import failed: too many tracks (max 500)');
+                  break;
+                }
                 const title = params.title || decoded.title || 'Imported Playlist';
                 const creator = params.creator || decoded.creator || 'Unknown';
 
-                // Build an XSPF string from the track data
-                const escapeXml = (str) => {
-                  if (!str) return '';
-                  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-                };
-                const trackListXml = tracks.map(t => `    <track>
+                showConfirmDialog({
+                  type: 'info',
+                  title: 'Import Playlist',
+                  message: `An external link wants to import "${title}" (${tracks.length} track${tracks.length !== 1 ? 's' : ''}) by ${creator}.`,
+                  onConfirm: async () => {
+                    try {
+                      // Build an XSPF string from the track data
+                      const escapeXml = (str) => {
+                        if (!str) return '';
+                        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+                      };
+                      const trackListXml = tracks.map(t => `    <track>
       <title>${escapeXml(t.title || 'Unknown Track')}</title>
       <creator>${escapeXml(t.artist || 'Unknown Artist')}</creator>
       <album>${escapeXml(t.album || '')}</album>
       <duration>${Math.round((t.duration || 0) * 1000)}</duration>
     </track>`).join('\n');
 
-                const xspf = `<?xml version="1.0" encoding="UTF-8"?>
+                      const xspf = `<?xml version="1.0" encoding="UTF-8"?>
 <playlist version="1" xmlns="http://xspf.org/ns/0/">
   <title>${escapeXml(title)}</title>
   <creator>${escapeXml(creator)}</creator>
@@ -8992,33 +9028,38 @@ ${trackListXml}
   </trackList>
 </playlist>`;
 
-                const id = `imported-${Date.now()}`;
-                const newPlaylist = {
-                  id,
-                  title,
-                  creator,
-                  tracks: tracks.map(t => ({
-                    title: t.title || 'Unknown Track',
-                    artist: t.artist || 'Unknown Artist',
-                    album: t.album || '',
-                    duration: t.duration || 0
-                  })),
-                  xspf,
-                  source: 'imported-xspf',
-                  createdAt: Date.now(),
-                  addedAt: Date.now(),
-                  lastModified: Date.now()
-                };
+                      const id = `imported-${Date.now()}`;
+                      const newPlaylist = {
+                        id,
+                        title,
+                        creator,
+                        tracks: tracks.map(t => ({
+                          title: t.title || 'Unknown Track',
+                          artist: t.artist || 'Unknown Artist',
+                          album: t.album || '',
+                          duration: t.duration || 0
+                        })),
+                        xspf,
+                        source: 'imported-xspf',
+                        createdAt: Date.now(),
+                        addedAt: Date.now(),
+                        lastModified: Date.now()
+                      };
 
-                const saveResult = await window.electron.playlists.save(newPlaylist);
-                if (saveResult?.success) {
-                  setPlaylists(prev => [newPlaylist, ...prev]);
-                  fetchPlaylistCovers(id, newPlaylist.tracks);
-                  showToast(`Imported playlist: ${title}`);
-                  setActiveView('playlists');
-                } else {
-                  showToast('Failed to save imported playlist');
-                }
+                      const saveResult = await window.electron.playlists.save(newPlaylist);
+                      if (saveResult?.success) {
+                        setPlaylists(prev => [newPlaylist, ...prev]);
+                        fetchPlaylistCovers(id, newPlaylist.tracks);
+                        showToast(`Imported playlist: ${title}`);
+                        setActiveView('playlists');
+                      } else {
+                        showToast('Failed to save imported playlist');
+                      }
+                    } catch (err) {
+                      showToast(`Import failed: ${err.message}`);
+                    }
+                  }
+                });
               } catch (err) {
                 showToast(`Import failed: ${err.message}`);
               }
