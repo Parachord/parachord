@@ -1,0 +1,41 @@
+{
+  "manifest": {
+    "id": "vibeset",
+    "name": "Vibeset",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "AI-powered DJ setlist generation by Vibeset. Create curated sets with BPM, key, energy, and mood intelligence.",
+    "icon": "\uD83C\uDFDB",
+    "color": "#6C5CE7",
+    "homepage": "https://www.vibeset.ai"
+  },
+  "capabilities": {
+    "generate": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key / Token",
+        "description": "Your Vibeset API key or access token. Visit vibeset.ai for access.",
+        "placeholder": "vs-..."
+      },
+      "model": {
+        "type": "select",
+        "label": "Generation Mode",
+        "default": "generate-it",
+        "options": [
+          { "value": "generate-it", "label": "Generate (Full, Recommended)" },
+          { "value": "snap-it", "label": "Snap (Quick)" },
+          { "value": "discover-it", "label": "Discover (Exploration)" }
+        ]
+      }
+    }
+  },
+  "implementation": {
+    "generate": "async function(prompt, config, listeningContext) {\n  var apiKey = config.apiKey;\n  if (!apiKey) throw new Error('Vibeset API key not configured');\n\n  var mode = config.model || 'generate-it';\n  var baseUrl = 'https://www.vibeset.ai/api/setlist';\n  var endpoint = baseUrl + '/' + mode;\n\n  var title = prompt.substring(0, 80);\n  var body;\n\n  if (mode === 'generate-it') {\n    body = { prompt: prompt, title: title, structuredData: null, useStringEndpoint: true };\n  } else if (mode === 'snap-it') {\n    body = { prompt: prompt, title: title, duration: 60 };\n  } else if (mode === 'discover-it') {\n    var style = '';\n    if (listeningContext) {\n      var artists = listeningContext.topArtists || listeningContext.recentArtists || [];\n      if (artists.length > 0) {\n        style = artists.slice(0, 5).join(', ');\n      }\n    }\n    body = { prompt: prompt, title: title, duration: 60, style: style };\n  } else {\n    throw new Error('Unknown Vibeset mode: ' + mode);\n  }\n\n  var headers = { 'Content-Type': 'application/json' };\n  headers['Authorization'] = 'Bearer ' + apiKey;\n\n  var controller = new AbortController();\n  var timeout = setTimeout(function() { controller.abort(); }, 60000);\n\n  var response;\n  try {\n    response = await fetch(endpoint, {\n      method: 'POST',\n      headers: headers,\n      body: JSON.stringify(body),\n      signal: controller.signal\n    });\n  } catch (e) {\n    clearTimeout(timeout);\n    if (e.name === 'AbortError') throw new Error('Vibeset request timed out. Try again.');\n    throw e;\n  }\n\n  if (!response.ok) {\n    clearTimeout(timeout);\n    var text = await response.text().catch(function() { return ''; });\n    if (response.status === 401 || response.status === 403) {\n      throw new Error('Vibeset authentication failed. Check your API key.');\n    }\n    if (response.status === 429) {\n      throw new Error('Vibeset rate limit reached. Please wait and try again.');\n    }\n    throw new Error('Vibeset API error (' + response.status + '): ' + text.substring(0, 200));\n  }\n\n  var reader = response.body.getReader();\n  var decoder = new TextDecoder();\n  var buffer = '';\n  var setlist = null;\n  var lastError = null;\n\n  try {\n    while (true) {\n      var chunk = await reader.read();\n      if (chunk.done) break;\n\n      buffer += decoder.decode(chunk.value, { stream: true });\n\n      var events = buffer.split('\\n\\n');\n      buffer = events.pop() || '';\n\n      for (var i = 0; i < events.length; i++) {\n        var eventBlock = events[i];\n        if (!eventBlock.trim()) continue;\n\n        var eventData = '';\n        var lines = eventBlock.split('\\n');\n        for (var j = 0; j < lines.length; j++) {\n          if (lines[j].indexOf('data:') === 0) {\n            eventData = lines[j].substring(5).trim();\n          }\n        }\n\n        if (!eventData) {\n          try {\n            var raw = JSON.parse(eventBlock.trim());\n            if (raw.type === 'completed' && raw.setlist) setlist = raw.setlist;\n            if (raw.type === 'error') lastError = raw.message || raw.error || 'Unknown error';\n          } catch (e) {}\n          continue;\n        }\n\n        try {\n          var parsed = JSON.parse(eventData);\n          if (parsed.type === 'completed') {\n            setlist = parsed.setlist || parsed;\n          } else if (parsed.type === 'error') {\n            lastError = parsed.message || parsed.error || 'Unknown error';\n          }\n        } catch (e) {}\n      }\n    }\n  } finally {\n    clearTimeout(timeout);\n  }\n\n  if (buffer.trim()) {\n    try {\n      var clean = buffer.trim();\n      if (clean.indexOf('data:') === 0) clean = clean.substring(5).trim();\n      var remaining = JSON.parse(clean);\n      if (remaining.type === 'completed' && remaining.setlist) setlist = remaining.setlist;\n      if (remaining.type === 'error') lastError = remaining.message || remaining.error;\n    } catch (e) {}\n  }\n\n  if (lastError) throw new Error('Vibeset: ' + lastError);\n  if (!setlist) throw new Error('No setlist received from Vibeset. Try a different prompt.');\n\n  var tracks;\n  if (typeof setlist === 'string') {\n    try { tracks = JSON.parse(setlist); } catch (e) { tracks = []; }\n  } else {\n    tracks = Array.isArray(setlist) ? setlist : (setlist.tracks || setlist.items || setlist.songs || []);\n  }\n\n  if (tracks.length === 0) throw new Error('Vibeset returned an empty setlist. Try a different prompt.');\n\n  return tracks.map(function(t) {\n    return {\n      title: t.track || t.title || t.name || 'Unknown',\n      artist: t.artist_0 || t.artist || (t.artists && t.artists[0]) || 'Unknown'\n    };\n  });\n}"
+  }
+}

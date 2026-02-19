@@ -537,3 +537,299 @@ describe('ChatGPT generate', () => {
     expect(body.messages[0].content).toContain('Radiohead');
   });
 });
+
+// Helper to create a ReadableStream from SSE text
+function createSSEStream(sseText) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(sseText));
+      controller.close();
+    }
+  });
+}
+
+describe('Vibeset generate', () => {
+  let generate;
+
+  beforeEach(() => {
+    generate = loadGenerateFn('vibeset.axe');
+  });
+
+  test('vibeset.axe loads as valid plugin', () => {
+    const axe = loadAxe('vibeset.axe');
+    expect(axe.manifest.id).toBe('vibeset');
+    expect(axe.manifest.type).toBe('meta-service');
+    expect(axe.capabilities.generate).toBe(true);
+    expect(axe.settings.requiresAuth).toBe(true);
+    expect(axe.settings.configurable.apiKey).toBeDefined();
+    expect(axe.settings.configurable.model).toBeDefined();
+    expect(typeof generate).toBe('function');
+  });
+
+  test('throws on missing API key', async () => {
+    await expect(generate('chill vibes', {}))
+      .rejects.toThrow('API key not configured');
+  });
+
+  test('calls generate-it endpoint by default', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: {
+        tracks: [
+          { track: 'Creep', artist_0: 'Radiohead', duration_ms: 234000 },
+          { track: 'Karma Police', artist_0: 'Radiohead', duration_ms: 264000 }
+        ]
+      }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const result = await generate('radiohead vibes', { apiKey: 'vs-test' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://www.vibeset.ai/api/setlist/generate-it',
+      expect.objectContaining({ method: 'POST' })
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.prompt).toBe('radiohead vibes');
+    expect(body.title).toBe('radiohead vibes');
+    expect(body.useStringEndpoint).toBe(true);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ title: 'Creep', artist: 'Radiohead' });
+    expect(result[1]).toEqual({ title: 'Karma Police', artist: 'Radiohead' });
+  });
+
+  test('calls snap-it endpoint when mode is snap-it', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: { tracks: [{ track: 'Song', artist_0: 'Artist' }] }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    await generate('quick mix', { apiKey: 'vs-test', model: 'snap-it' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://www.vibeset.ai/api/setlist/snap-it',
+      expect.anything()
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.duration).toBe(60);
+  });
+
+  test('calls discover-it endpoint with style from listening context', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: { tracks: [{ track: 'New Song', artist_0: 'New Artist' }] }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const listeningContext = { topArtists: ['Radiohead', 'Bjork', 'Aphex Twin'] };
+    await generate('explore', { apiKey: 'vs-test', model: 'discover-it' }, listeningContext);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://www.vibeset.ai/api/setlist/discover-it',
+      expect.anything()
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.style).toBe('Radiohead, Bjork, Aphex Twin');
+    expect(body.duration).toBe(60);
+  });
+
+  test('maps Vibeset track format to Parachord format', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: {
+        tracks: [{
+          track: 'Bohemian Rhapsody',
+          artist_0: 'Queen',
+          duration_ms: 354000,
+          genre_0: 'rock',
+          mood_0: 'epic',
+          energy: 0.8,
+          key: 'Bb',
+          tempo: 72,
+          dj_insight: 'Classic opener',
+          release_year: 1975
+        }]
+      }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const result = await generate('epic rock', { apiKey: 'vs-test' });
+
+    expect(result[0].title).toBe('Bohemian Rhapsody');
+    expect(result[0].artist).toBe('Queen');
+    // Should NOT include extra Vibeset-specific fields
+    expect(result[0].duration_ms).toBeUndefined();
+    expect(result[0].energy).toBeUndefined();
+    expect(result[0].tempo).toBeUndefined();
+  });
+
+  test('handles setlist as direct array', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: [
+        { track: 'Song A', artist_0: 'Artist A' },
+        { track: 'Song B', artist_0: 'Artist B' }
+      ]
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const result = await generate('test', { apiKey: 'vs-test' });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].title).toBe('Song A');
+    expect(result[1].artist).toBe('Artist B');
+  });
+
+  test('handles setlist as JSON string', async () => {
+    const tracks = [{ track: 'Song', artist_0: 'Artist' }];
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: JSON.stringify(tracks)
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const result = await generate('test', { apiKey: 'vs-test' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ title: 'Song', artist: 'Artist' });
+  });
+
+  test('handles SSE error event', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'error',
+      message: 'Prompt too vague'
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    await expect(generate('...', { apiKey: 'vs-test' }))
+      .rejects.toThrow('Vibeset: Prompt too vague');
+  });
+
+  test('handles HTTP 401 error', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve('Unauthorized')
+    });
+
+    await expect(generate('test', { apiKey: 'bad-key' }))
+      .rejects.toThrow('authentication failed');
+  });
+
+  test('handles HTTP 429 rate limit', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: () => Promise.resolve('Too many requests')
+    });
+
+    await expect(generate('test', { apiKey: 'vs-test' }))
+      .rejects.toThrow('rate limit');
+  });
+
+  test('handles empty setlist', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: { tracks: [] }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    await expect(generate('test', { apiKey: 'vs-test' }))
+      .rejects.toThrow('empty setlist');
+  });
+
+  test('handles no setlist in stream', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'status',
+      progress: 50
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    await expect(generate('test', { apiKey: 'vs-test' }))
+      .rejects.toThrow('No setlist received');
+  });
+
+  test('sends Authorization Bearer header', async () => {
+    const ssePayload = 'data: ' + JSON.stringify({
+      type: 'completed',
+      setlist: { tracks: [{ track: 'X', artist_0: 'Y' }] }
+    }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    await generate('test', { apiKey: 'vs-secret-123' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Authorization': 'Bearer vs-secret-123'
+        })
+      })
+    );
+  });
+
+  test('handles multiple SSE events with progress then completion', async () => {
+    const ssePayload =
+      'data: ' + JSON.stringify({ type: 'status', progress: 25 }) + '\n\n' +
+      'data: ' + JSON.stringify({ type: 'status', progress: 50 }) + '\n\n' +
+      'data: ' + JSON.stringify({ type: 'status', progress: 75 }) + '\n\n' +
+      'data: ' + JSON.stringify({
+        type: 'completed',
+        setlist: { tracks: [{ track: 'Final', artist_0: 'Result' }] }
+      }) + '\n\n';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      body: createSSEStream(ssePayload)
+    });
+
+    const result = await generate('multi-step', { apiKey: 'vs-test' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ title: 'Final', artist: 'Result' });
+  });
+});
