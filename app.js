@@ -26899,6 +26899,20 @@ ${tracks}
           if (status.authorized) {
             console.log('🍎 MusicKit JS already authorized');
             setAppleMusicConnected(true);
+            // Ensure resolver is enabled (may be missing from saved state for
+            // users who connected before the auto-enable fix)
+            setActiveResolvers(prev => {
+              if (!prev.includes('applemusic')) {
+                return [...prev, 'applemusic'];
+              }
+              return prev;
+            });
+            setResolverOrder(prev => {
+              if (!prev.includes('applemusic')) {
+                return insertInCanonicalOrder(prev, 'applemusic');
+              }
+              return prev;
+            });
           } else if (userToken) {
             // We have a stored user token but MusicKit JS isn't authorized
             // The user token will be used automatically by MusicKit JS for API calls
@@ -26928,6 +26942,20 @@ ${tracks}
             if (authStatus.success && authStatus.authorized) {
               console.log('🍎 Native MusicKit already authorized - auto-reconnecting');
               setAppleMusicConnected(true);
+              // Ensure resolver is enabled (may be missing from saved state for
+              // users who connected before the auto-enable fix)
+              setActiveResolvers(prev => {
+                if (!prev.includes('applemusic')) {
+                  return [...prev, 'applemusic'];
+                }
+                return prev;
+              });
+              setResolverOrder(prev => {
+                if (!prev.includes('applemusic')) {
+                  return insertInCanonicalOrder(prev, 'applemusic');
+                }
+                return prev;
+              });
             }
           } else {
             console.log('🍎 Native MusicKit available but no prior connection - skipping auto-reconnect');
@@ -26989,6 +27017,20 @@ ${tracks}
             await window.electron.store.set('applemusic_authorized', true);
           }
 
+          // Automatically enable Apple Music resolver after successful auth
+          setActiveResolvers(prev => {
+            if (!prev.includes('applemusic')) {
+              return [...prev, 'applemusic'];
+            }
+            return prev;
+          });
+          setResolverOrder(prev => {
+            if (!prev.includes('applemusic')) {
+              return insertInCanonicalOrder(prev, 'applemusic');
+            }
+            return prev;
+          });
+
           showToast('Apple Music connected successfully', 'success');
           return;
         }
@@ -27044,6 +27086,20 @@ ${tracks}
         if (window.electron?.store) {
           await window.electron.store.set('applemusic_authorized', true);
         }
+
+        // Automatically enable Apple Music resolver after successful auth
+        setActiveResolvers(prev => {
+          if (!prev.includes('applemusic')) {
+            return [...prev, 'applemusic'];
+          }
+          return prev;
+        });
+        setResolverOrder(prev => {
+          if (!prev.includes('applemusic')) {
+            return insertInCanonicalOrder(prev, 'applemusic');
+          }
+          return prev;
+        });
 
         showToast('Apple Music connected successfully', 'success');
       } else if (authResult.needsSystemSettings) {
