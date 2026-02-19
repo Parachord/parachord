@@ -442,9 +442,9 @@ class MusicKitBridge extends EventEmitter {
           const detail = secondError.message || 'unknown error';
           throw new Error(
             `Apple Music authorization failed after multiple attempts. ` +
-            `This usually means the Music app is not signed in or Apple Music ` +
-            `access was blocked in System Settings > Privacy & Security. ` +
-            `(${detail})`
+            `You can enable access manually: open System Settings \u2192 ` +
+            `Privacy & Security \u2192 Media & Apple Music, toggle Parachord on, ` +
+            `then click Connect again. (${detail})`
           );
         }
       }
