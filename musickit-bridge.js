@@ -22,6 +22,9 @@ class MusicKitBridge extends EventEmitter {
     this._authStatus = null;      // { authorized: boolean, status: string }
     this._authCheckedAt = 0;      // Timestamp of last check
     this._authCacheTTL = 60000;   // Cache valid for 60 seconds
+
+    // Last error from helper (captured from id:"error" responses before crash)
+    this._lastHelperError = null;
   }
 
   /**
@@ -180,7 +183,15 @@ class MusicKitBridge extends EventEmitter {
         console.log('[MusicKit] Process closed with code:', code, 'signal:', signal);
         this.process = null;
         this.isReady = false;
-        this.rejectAllPending(`MusicKit helper exited (code: ${code}, signal: ${signal})`);
+        // If the helper's uncaught exception handler already sent an error
+        // (id:"error" response handled in handleData), pending requests are
+        // already rejected with the real error.  Only reject stragglers here.
+        if (this.pendingRequests.size > 0) {
+          const reason = this._lastHelperError
+            || `MusicKit helper exited (code: ${code}, signal: ${signal})`;
+          this.rejectAllPending(reason);
+        }
+        this._lastHelperError = null;
         this.emit('close', code);
       });
 
@@ -188,21 +199,37 @@ class MusicKitBridge extends EventEmitter {
         console.log('[MusicKit] Process exit with code:', code, 'signal:', signal);
       });
 
-      // Wait for ready signal
+      // Wait for ready signal, or resolve early if the process dies
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(readyTimeout);
+        resolve(value);
+      };
+
       const readyTimeout = setTimeout(() => {
         if (!this.isReady) {
           console.log('[MusicKit] Timeout waiting for ready signal');
           console.log('[MusicKit] Buffer contents:', this.buffer);
           console.log('[MusicKit] Process still alive:', this.process && !this.process.killed);
           this.stop();
-          resolve(false);
+          settle(false);
         }
       }, 10000);
 
       this.once('ready', () => {
-        clearTimeout(readyTimeout);
         console.log('[MusicKit] Helper ready');
-        resolve(true);
+        settle(true);
+      });
+
+      // If the process crashes during startup (before "ready"), resolve
+      // immediately instead of waiting for the 10-second timeout.
+      this.once('close', () => {
+        if (!this.isReady) {
+          console.log('[MusicKit] Helper died during startup');
+          settle(false);
+        }
       });
     });
   }
@@ -235,6 +262,19 @@ class MusicKitBridge extends EventEmitter {
           continue;
         }
 
+        // Handle error responses from the helper's uncaught exception handler.
+        // These have id "error" and don't match any pending request, but they
+        // contain the real error message (e.g. MusicKit SIGABRT reason).
+        // The helper is about to crash, so reject all pending requests with the
+        // actual error instead of the generic "MusicKit helper exited" message.
+        if (response.id === 'error' && !response.success) {
+          const errorMsg = response.error || 'MusicKit internal error';
+          console.error('[MusicKit] Helper reported fatal error:', errorMsg);
+          this._lastHelperError = errorMsg;
+          this.rejectAllPending(errorMsg);
+          continue;
+        }
+
         // Resolve pending request
         const pending = this.pendingRequests.get(response.id);
         if (pending) {
@@ -253,13 +293,18 @@ class MusicKitBridge extends EventEmitter {
 
   /**
    * Send a command to the helper.
-   * If the helper crashes mid-request, retries once after restarting.
+   * If the helper crashes mid-request, waits briefly then retries once.
    */
   async send(action, params = {}, timeoutMs = 30000) {
     return this._sendOnce(action, params, timeoutMs).catch(async (error) => {
       // Retry once if the helper died mid-request (not for timeouts or app errors)
-      if (error.message && error.message.startsWith('MusicKit helper exited')) {
+      if (error.message && (
+        error.message.includes('MusicKit helper exited') ||
+        error.message.includes('MusicKit internal error')
+      )) {
         console.log(`[MusicKit] Retrying ${action} after helper crash`);
+        // Small delay before retry — gives macOS subsystems (TCC, XPC) time to settle
+        await new Promise(r => setTimeout(r, 1500));
         return this._sendOnce(action, params, timeoutMs);
       }
       throw error;
@@ -360,17 +405,51 @@ class MusicKitBridge extends EventEmitter {
   }
 
   /**
-   * Request authorization (updates cache)
+   * Request authorization (updates cache).
+   * Authorization is the most crash-prone MusicKit operation (the system
+   * dialog can trigger AppKit/XPC assertions in the headless helper), so
+   * we add an extra retry on top of send()'s built-in single retry.
    */
   async authorize() {
     // Use a longer timeout for authorize since it requires user interaction
     // (Apple ID sign-in dialog with potential 2FA)
-    const result = await this.send('authorize', {}, 300000);
-    // Update cache
-    this._authStatus = result;
-    this._authCheckedAt = Date.now();
-    this.emit('authStatusChanged', result);
-    return result;
+    const attempt = async () => {
+      const result = await this.send('authorize', {}, 300000);
+      this._authStatus = result;
+      this._authCheckedAt = Date.now();
+      this.emit('authStatusChanged', result);
+      return result;
+    };
+
+    try {
+      return await attempt();
+    } catch (firstError) {
+      // send() already retried once.  For authorize specifically, try one
+      // more time with a longer settle delay — the activation-policy change
+      // that triggers the crash is transient and often works on a second
+      // cold start of the helper.
+      if (firstError.message && (
+        firstError.message.includes('MusicKit helper exited') ||
+        firstError.message.includes('MusicKit internal error') ||
+        firstError.message.includes('MusicKit helper not available')
+      )) {
+        console.log('[MusicKit] Authorization crashed twice, final retry after longer delay');
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          return await attempt();
+        } catch (secondError) {
+          // Wrap with a user-friendly message while preserving the original
+          const detail = secondError.message || 'unknown error';
+          throw new Error(
+            `Apple Music authorization failed after multiple attempts. ` +
+            `This usually means the Music app is not signed in or Apple Music ` +
+            `access was blocked in System Settings > Privacy & Security. ` +
+            `(${detail})`
+          );
+        }
+      }
+      throw firstError;
+    }
   }
 
   async fetchUserToken(developerToken) {

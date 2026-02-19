@@ -110,6 +110,13 @@ class MusicKitBridge {
         // Status is .notDetermined — we can request and macOS will show the dialog.
         // Temporarily become a regular app so macOS presents the prompt.
         // (Background/accessory apps can't present system auth prompts.)
+
+        // Pre-flight: verify the MusicKit XPC connection is alive.  If this
+        // simple read crashes, the retry in the bridge will restart us.
+        // Better to crash here (before the activation-policy dance) than in
+        // the middle of MusicAuthorization.request().
+        _ = MusicAuthorization.currentStatus
+
         guard NSApp.setActivationPolicy(.regular) else {
             return [
                 "authorized": false,
@@ -117,11 +124,11 @@ class MusicKitBridge {
                 "error": "Failed to set activation policy for authorization dialog"
             ]
         }
-        NSApp.activate(ignoringOtherApps: true)
 
         // Give macOS time to fully process the activation policy change.
         // The app needs to appear in the dock and become frontmost before
         // MusicAuthorization.request() can present its system dialog.
+        NSApp.activate(ignoringOtherApps: true)
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
 
         // Re-activate to ensure we're frontmost (the 1s sleep yields the
@@ -134,7 +141,20 @@ class MusicKitBridge {
         // If still notDetermined after first attempt, the dialog may not have
         // appeared (e.g. Apple Music service wasn't ready). Retry once.
         if status == .notDetermined {
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+            // Revert policy before retry so we can re-do the activation dance
+            NSApp.setActivationPolicy(.accessory)
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+
+            guard NSApp.setActivationPolicy(.regular) else {
+                return [
+                    "authorized": false,
+                    "status": "notDetermined",
+                    "error": "Failed to set activation policy on retry"
+                ]
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+
             status = await MusicAuthorization.request()
         }
 
@@ -386,6 +406,12 @@ class MusicKitBridge {
 
 // MARK: - App Delegate
 
+// The ID of the request currently being processed.  Accessed by the
+// uncaught-exception and SIGABRT handlers so they can attribute the crash
+// to the right request instead of using a generic "error" id.
+// Only safe because requests are processed serially on the main actor.
+nonisolated(unsafe) var activeRequestId: String = "error"
+
 @available(macOS 14.0, *)
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridge: MusicKitBridge?
@@ -455,9 +481,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let request = try decoder.decode(Request.self, from: Data(line.utf8))
+            // Track the active request so crash handlers can attribute errors
+            activeRequestId = request.id
             let response = await self.handleRequest(request, bridge: bridge)
+            activeRequestId = "error"
             self.sendResponse(response)
         } catch {
+            activeRequestId = "error"
             let errorResponse = Response(id: "error", success: false, data: nil, error: "Parse error: \(error.localizedDescription)")
             sendResponse(errorResponse)
         }
@@ -593,9 +623,15 @@ struct MusicKitHelperApp {
 
         // Catch uncaught ObjC exceptions (e.g. from MusicKit/AppKit internals)
         // and write an error to stdout so the bridge gets a response instead of
-        // a silent SIGABRT death.
+        // a silent SIGABRT death.  Uses activeRequestId so the bridge can
+        // attribute the crash to the pending request.
         NSSetUncaughtExceptionHandler { exception in
-            let msg = "{\"id\":\"error\",\"success\":false,\"data\":null,\"error\":\"MusicKit internal error: \(exception.name.rawValue) — \(exception.reason ?? "unknown")\"}\n"
+            let reqId = activeRequestId
+            let reason = (exception.reason ?? "unknown")
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: " ")
+            let msg = "{\"id\":\"\(reqId)\",\"success\":false,\"data\":null,\"error\":\"MusicKit internal error: \(exception.name.rawValue) — \(reason)\"}\n"
             msg.withCString { ptr in
                 write(STDOUT_FILENO, ptr, strlen(ptr))
             }
