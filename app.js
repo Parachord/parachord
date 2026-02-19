@@ -15485,62 +15485,14 @@ ${trackListXml}
                     switch (command) {
                       case 'artist':
                         if (segments[0]) {
-                          if (segments[1] && ['music', 'biography', 'related'].includes(segments[1])) {
-                            pendingProtocolTabRef.current = segments[1];
-                          }
                           setActiveView('artist');
                           fetchArtistData(segments[0]);
                         }
                         break;
                       case 'album':
                         if (segments[0] && segments[1]) {
-                          try {
-                            const albumArtistName = segments[0];
-                            const albumTitle = segments[1];
-                            const artist = { name: albumArtistName, id: null };
-                            openingReleaseRef.current = true;
-                            setCurrentArtist(artist);
-                            setArtistHistory([]);
-                            setArtistReleases([]);
-                            setLoadingRelease(true);
-                            navigateTo('artist');
-                            getArtistImage(albumArtistName).then(result => {
-                              if (result) {
-                                setArtistImage(result.url);
-                                setArtistImagePosition(result.facePosition || 'center 25%');
-                              }
-                            });
-                            const searchQuery = encodeURIComponent(`${albumArtistName} ${albumTitle}`);
-                            const response = await fetch(
-                              `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&limit=5&fmt=json`,
-                              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-                            );
-                            if (response.ok) {
-                              const data = await response.json();
-                              const results = data['release-groups'] || [];
-                              if (results.length > 0) {
-                                const artistMatches = results.filter(r =>
-                                  r['artist-credit']?.[0]?.name?.toLowerCase() === albumArtistName.toLowerCase()
-                                );
-                                const match = artistMatches[0] || results[0];
-                                fetchReleaseData({
-                                  id: match.id,
-                                  title: match.title,
-                                  releaseType: match['primary-type']?.toLowerCase() || 'album'
-                                }, artist);
-                              } else {
-                                showToast(`Album not found: ${albumTitle}`);
-                                setLoadingRelease(false);
-                              }
-                            } else {
-                              showToast(`Failed to load album: ${albumTitle}`);
-                              setLoadingRelease(false);
-                            }
-                          } catch (error) {
-                            console.error('Error loading album from chat link:', error);
-                            showToast(`Failed to load album: ${segments[1]}`);
-                            setLoadingRelease(false);
-                          }
+                          // Could trigger album view loading
+                          showToast(`Opening album: ${segments[1]} by ${segments[0]}`);
                         }
                         break;
                       case 'play':
@@ -15578,7 +15530,6 @@ ${trackListXml}
                       case 'search':
                         if (params.q) {
                           setSearchQuery(params.q);
-                          searchQueryRef.current = params.q;
                           setActiveView('search');
                           performSearch(params.q);
                         }
