@@ -26950,10 +26950,28 @@ ${tracks}
       }
     } catch (error) {
       console.error('Apple Music auth error:', error);
+      let message = error.message || 'Apple Music authentication failed. Please try again.';
+
+      // The crash is typically a transient AppKit assertion during the
+      // activation-policy switch.  The retries in the bridge handle most
+      // cases, but if they all failed the user can bypass the system dialog
+      // entirely by toggling the permission on manually in Settings.
+      if (message.includes('MusicKit helper exited') || message.includes('authorization failed after multiple')) {
+        message = 'Apple Music authorization could not complete automatically. ' +
+          'You can enable it manually: open System Settings \u2192 Privacy & Security \u2192 ' +
+          'Media & Apple Music, toggle Parachord on, then click Connect again.';
+      }
+
       showConfirmDialog({
         type: 'error',
         title: 'Authentication Failed',
-        message: error.message || 'Apple Music authentication failed. Please try again.'
+        message,
+        confirmLabel: 'Open System Settings',
+        onConfirm: () => {
+          if (window.electron?.shell?.openExternal) {
+            window.electron.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_MediaAppleMusic');
+          }
+        }
       });
     }
 
