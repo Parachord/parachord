@@ -26870,6 +26870,20 @@ ${tracks}
             await window.electron.store.set('applemusic_authorized', true);
           }
 
+          // Automatically enable Apple Music resolver after successful auth
+          setActiveResolvers(prev => {
+            if (!prev.includes('applemusic')) {
+              return [...prev, 'applemusic'];
+            }
+            return prev;
+          });
+          setResolverOrder(prev => {
+            if (!prev.includes('applemusic')) {
+              return insertInCanonicalOrder(prev, 'applemusic');
+            }
+            return prev;
+          });
+
           showToast('Apple Music connected successfully', 'success');
           return;
         }
@@ -26925,6 +26939,20 @@ ${tracks}
         if (window.electron?.store) {
           await window.electron.store.set('applemusic_authorized', true);
         }
+
+        // Automatically enable Apple Music resolver after successful auth
+        setActiveResolvers(prev => {
+          if (!prev.includes('applemusic')) {
+            return [...prev, 'applemusic'];
+          }
+          return prev;
+        });
+        setResolverOrder(prev => {
+          if (!prev.includes('applemusic')) {
+            return insertInCanonicalOrder(prev, 'applemusic');
+          }
+          return prev;
+        });
 
         showToast('Apple Music connected successfully', 'success');
       } else if (authResult.needsSystemSettings) {
