@@ -101,6 +101,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { service: 'soundcloud', type: 'unknown' };
       }
 
+      // Vibeset
+      if (hostname === 'www.vibeset.ai') {
+        if (pathname.startsWith('/setlist/view-it/')) return { service: 'vibeset', type: 'playlist' };
+        return { service: 'vibeset', type: 'unknown' };
+      }
+
       return { service: null, type: null };
     } catch (e) {
       return { service: null, type: null };
@@ -149,7 +155,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastfm: 'Last.fm',
     listenbrainz: 'ListenBrainz',
     pitchfork: 'Pitchfork',
-    soundcloud: 'SoundCloud'
+    soundcloud: 'SoundCloud',
+    vibeset: 'Vibeset'
   };
 
   // Type labels
@@ -202,6 +209,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       case 'listenbrainz':
         // "username - ListenBrainz" → "username"
         name = name.replace(/\s*[-–]\s*ListenBrainz\s*$/i, '');
+        break;
+      case 'vibeset':
+        // "Vibeset" or "Setlist Name | Vibeset" → "Setlist Name"
+        name = name.replace(/\s*[-–|]\s*Vibeset\s*$/i, '');
+        if (name.toLowerCase() === 'vibeset') name = '';
         break;
     }
 
@@ -340,7 +352,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                            (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
                            (pageInfo.service === 'bandcamp' && ['track', 'album', 'playlist'].includes(pageInfo.type)) ||
                            (pageInfo.service === 'pitchfork' && ['track', 'album'].includes(pageInfo.type)) ||
-                           (pageInfo.service === 'soundcloud' && ['track', 'playlist', 'artist', 'likes'].includes(pageInfo.type));
+                           (pageInfo.service === 'soundcloud' && ['track', 'playlist', 'artist', 'likes'].includes(pageInfo.type)) ||
+                           (pageInfo.service === 'vibeset' && pageInfo.type === 'playlist');
 
       if (shouldScrape) {
         console.log(`[Popup] ${pageInfo.service} ${pageInfo.type} detected, scraping tracks...`);
@@ -348,7 +361,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Services where URL fallback cannot resolve playlists (requires scraping)
         const scrapeRequired = (pageInfo.service === 'apple' && pageInfo.type === 'playlist') ||
-                               (pageInfo.service === 'spotify' && pageInfo.type === 'playlist');
+                               (pageInfo.service === 'spotify' && pageInfo.type === 'playlist') ||
+                               (pageInfo.service === 'vibeset' && pageInfo.type === 'playlist');
 
         // Attempt scrape with retry (SPA pages may need time to render track list)
         let scrapeResult = null;
@@ -377,6 +391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                    pageInfo.service === 'spotify' ? 'content-spotify.js' :
                                    pageInfo.service === 'soundcloud' ? 'content-soundcloud.js' :
                                    pageInfo.service === 'pitchfork' ? 'content-pitchfork.js' :
+                                   pageInfo.service === 'vibeset' ? 'content-vibeset.js' :
                                    'content.js';
                 await chrome.scripting.executeScript({
                   target: { tabId: tab.id },

@@ -374,6 +374,11 @@ function isSupportedPage(url) {
       return false;
     }
 
+    // Vibeset
+    if (hostname === 'www.vibeset.ai') {
+      return pathname.startsWith('/setlist/view-it/');
+    }
+
     return false;
   } catch (e) {
     return false;
@@ -488,7 +493,8 @@ function createContextMenus() {
         'https://www.youtube.com/playlist*',
         'https://youtube.com/playlist*',
         'https://*.bandcamp.com/track/*',
-        'https://*.bandcamp.com/album/*'
+        'https://*.bandcamp.com/album/*',
+        'https://www.vibeset.ai/setlist/view-it/*'
       ]
     }, () => {
       if (chrome.runtime.lastError) {
@@ -517,7 +523,8 @@ function createContextMenus() {
         'https://www.youtube.com/playlist*',
         'https://youtube.com/playlist*',
         'https://*.bandcamp.com/track/*',
-        'https://*.bandcamp.com/album/*'
+        'https://*.bandcamp.com/album/*',
+        'https://www.vibeset.ai/setlist/view-it/*'
       ]
     }, () => {
       if (chrome.runtime.lastError) {

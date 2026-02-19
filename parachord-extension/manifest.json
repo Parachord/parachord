@@ -23,7 +23,8 @@
     "https://last.fm/*",
     "https://listenbrainz.org/*",
     "https://pitchfork.com/*",
-    "https://soundcloud.com/*"
+    "https://soundcloud.com/*",
+    "https://www.vibeset.ai/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -77,6 +78,14 @@
         "https://soundcloud.com/*"
       ],
       "js": ["content-soundcloud.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.vibeset.ai/setlist/view-it/*",
+        "https://www.vibeset.ai/setlist/view-it/*/*"
+      ],
+      "js": ["content-vibeset.js"],
       "run_at": "document_idle"
     }
   ],
