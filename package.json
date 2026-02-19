@@ -93,6 +93,9 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "notarize": false,
+      "extendInfo": {
+        "NSAppleMusicUsageDescription": "Parachord needs access to Apple Music to play songs from your library and subscription."
+      },
       "target": [
         "dmg",
         "zip"
