@@ -36,6 +36,7 @@ The HTTP endpoint is recommended for:
 | Open artist | `parachord://artist/Radiohead` |
 | Search | `parachord://search?q=shoegaze` |
 | AI chat | `parachord://chat?prompt=play%20something%20chill` |
+| Import playlist | `parachord://import?url=https://example.com/playlist.xspf` |
 
 ---
 
@@ -318,6 +319,43 @@ parachord://playlist/summer-vibes
 parachord://playlist/abc123
 ```
 
+### Import Playlist
+
+Import a playlist into Parachord from an external source. Supports hosted XSPF URLs or inline track data. This is the primary mechanism used by the embeddable "Send to Parachord" button.
+
+**From hosted XSPF URL:**
+```
+parachord://import?url={xspf_url}
+```
+
+**From inline track data (base64-encoded JSON):**
+```
+parachord://import?title={title}&creator={creator}&tracks={base64_json}
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `url` | Yes* | URL to a hosted XSPF playlist file |
+| `title` | No | Playlist title (used with `tracks`) |
+| `creator` | No | Playlist creator/source name (used with `tracks`) |
+| `tracks` | Yes* | Base64-encoded JSON array of track objects (used without `url`) |
+
+\* Either `url` or `tracks` must be provided.
+
+**Track object format (within the JSON array):**
+```json
+{ "title": "Track Name", "artist": "Artist Name", "album": "Album Name", "duration": 180 }
+```
+- `title` and `artist` are required; `album` and `duration` (seconds) are optional.
+
+**Examples:**
+```
+parachord://import?url=https%3A%2F%2Fexample.com%2Fplaylist.xspf
+parachord://import?title=Road%20Trip&creator=MyApp&tracks=W3sidGl0bGUiOiJLYXJtYSBQb2xpY2UiLCJhcnRpc3QiOiJSYWRpb2hlYWQifV0%3D
+```
+
+---
+
 ### Settings
 
 Open the settings page.
@@ -493,6 +531,57 @@ function sendToParachord(command) {
   }
 }
 ```
+
+### Embeddable "Send to Parachord" Button
+
+For third-party websites that want to let users send playlists to Parachord. Include `parachord-button.js` and use either declarative HTML or the JavaScript API.
+
+**Declarative (data attributes):**
+```html
+<script src="https://parachord.com/button.js"></script>
+
+<!-- Inline tracks -->
+<div class="parachord-button"
+     data-title="Road Trip Mix"
+     data-creator="MyWebsite"
+     data-tracks='[{"title":"Karma Police","artist":"Radiohead"},{"title":"Hyperballad","artist":"Bjork"}]'>
+</div>
+
+<!-- Or from a hosted XSPF URL -->
+<div class="parachord-button"
+     data-xspf-url="https://example.com/playlist.xspf">
+</div>
+```
+
+**Programmatic (JavaScript API):**
+```javascript
+// Send a playlist directly
+Parachord.sendPlaylist({
+  title: "Road Trip Mix",
+  creator: "MyWebsite",
+  tracks: [
+    { title: "Karma Police", artist: "Radiohead", album: "OK Computer" },
+    { title: "Hyperballad", artist: "Bjork", album: "Post" }
+  ]
+});
+
+// Or send a hosted XSPF URL
+Parachord.sendXspfUrl("https://example.com/playlist.xspf");
+
+// Create a button element to insert anywhere
+const btn = Parachord.createButton({
+  title: "My Playlist",
+  tracks: [{ title: "Song", artist: "Artist" }]
+}, { label: "Open in Parachord" });
+document.getElementById('my-container').appendChild(btn);
+
+// Check if Parachord is running
+if (Parachord.isConnected) {
+  console.log("Parachord is running!");
+}
+```
+
+The button automatically detects whether Parachord is running locally via WebSocket. If connected, playlists are sent directly. If not, it falls back to opening a `parachord://import` protocol URL which will launch the app.
 
 ---
 

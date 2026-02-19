@@ -1018,6 +1018,19 @@ async function handleEmbedMessage(ws, message) {
       }
       break;
 
+    case 'importPlaylist':
+      // Import a playlist from embed/button data
+      if (mainWindow && payload) {
+        const tracksB64 = Buffer.from(JSON.stringify(payload.tracks || [])).toString('base64');
+        safeSendToRenderer('protocol-url',
+          `parachord://import?title=${encodeURIComponent(payload.title || 'Imported Playlist')}&creator=${encodeURIComponent(payload.creator || 'Unknown')}&tracks=${encodeURIComponent(tracksB64)}`
+        );
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready or missing payload' });
+      }
+      break;
+
     default:
       sendResponse({ success: false, error: `Unknown action: ${action}` });
   }

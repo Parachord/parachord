@@ -8867,6 +8867,89 @@ const Parachord = () => {
             break;
           }
 
+          case 'import': {
+            // Import a playlist from a URL or inline JSON data
+            // parachord://import?url={xspf_url}
+            // parachord://import?title={title}&creator={creator}&tracks={base64_json}
+            if (params.url) {
+              // Import from hosted XSPF URL
+              try {
+                const result = await handleImportPlaylistFromUrl(params.url);
+                if (result?.updated) {
+                  showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
+                } else if (result?.playlist) {
+                  showToast(`Imported playlist: ${result.playlist?.title || 'Untitled'}`);
+                  setActiveView('playlists');
+                }
+              } catch (err) {
+                showToast(`Import failed: ${err.message}`);
+              }
+            } else if (params.tracks) {
+              // Import from inline base64-encoded JSON tracks
+              try {
+                const decoded = JSON.parse(atob(params.tracks));
+                const tracks = Array.isArray(decoded) ? decoded : (decoded.tracks || []);
+                const title = params.title || decoded.title || 'Imported Playlist';
+                const creator = params.creator || decoded.creator || 'Unknown';
+
+                // Build an XSPF string from the track data
+                const escapeXml = (str) => {
+                  if (!str) return '';
+                  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+                };
+                const trackListXml = tracks.map(t => `    <track>
+      <title>${escapeXml(t.title || 'Unknown Track')}</title>
+      <creator>${escapeXml(t.artist || 'Unknown Artist')}</creator>
+      <album>${escapeXml(t.album || '')}</album>
+      <duration>${Math.round((t.duration || 0) * 1000)}</duration>
+    </track>`).join('\n');
+
+                const xspf = `<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>${escapeXml(title)}</title>
+  <creator>${escapeXml(creator)}</creator>
+  <date>${new Date().toISOString()}</date>
+  <trackList>
+${trackListXml}
+  </trackList>
+</playlist>`;
+
+                const id = `imported-${Date.now()}`;
+                const newPlaylist = {
+                  id,
+                  title,
+                  creator,
+                  tracks: tracks.map(t => ({
+                    title: t.title || 'Unknown Track',
+                    artist: t.artist || 'Unknown Artist',
+                    album: t.album || '',
+                    duration: t.duration || 0
+                  })),
+                  xspf,
+                  source: 'imported-xspf',
+                  createdAt: Date.now(),
+                  addedAt: Date.now(),
+                  lastModified: Date.now()
+                };
+
+                const saveResult = await window.electron.playlists.save(newPlaylist);
+                if (saveResult?.success) {
+                  setPlaylists(prev => [newPlaylist, ...prev]);
+                  fetchPlaylistCovers(id, newPlaylist.tracks);
+                  showToast(`Imported playlist: ${title}`);
+                  setActiveView('playlists');
+                } else {
+                  showToast('Failed to save imported playlist');
+                }
+              } catch (err) {
+                showToast(`Import failed: ${err.message}`);
+              }
+            } else {
+              showToast('Import requires a url or tracks parameter');
+            }
+            break;
+          }
+
           default:
             console.warn('🔗 Unknown protocol command:', command);
         }
