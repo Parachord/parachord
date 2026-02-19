@@ -35,7 +35,7 @@ The HTTP endpoint is recommended for:
 | Add to queue | `parachord://queue/add?artist=Radiohead&title=Paranoid%20Android` |
 | Open artist | `parachord://artist/Radiohead` |
 | Search | `parachord://search?q=shoegaze` |
-| AI chat | `parachord://chat?prompt=play%20something%20chill` |
+| AI chat | `parachord://chat` |
 | Import playlist | `parachord://import?url=https://example.com/playlist.xspf` |
 
 ---
@@ -228,14 +228,14 @@ parachord://history/{tab?}?period={range}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `tab` | No | Tab: `top-tracks`, `top-albums`, `top-artists`, `recent` |
-| `period` | No | Time range: `week`, `month`, `year`, `all` |
+| `period` | No | Time range: `7day`, `1month`, `3month`, `6month`, `12month`, `overall` |
 
 **Examples:**
 ```
 parachord://history
 parachord://history/top-tracks
-parachord://history/top-artists?period=month
-parachord://history/recent?period=week
+parachord://history/top-artists?period=1month
+parachord://history/recent?period=7day
 ```
 
 ### Friend History
@@ -250,13 +250,13 @@ parachord://friend/{id}/{tab?}?period={range}
 |-----------|----------|-------------|
 | `id` | Yes | Friend ID or username |
 | `tab` | No | Tab: `recent`, `top-tracks`, `top-artists` |
-| `period` | No | Time range: `week`, `month`, `year`, `all` |
+| `period` | No | Time range: `7day`, `1month`, `3month`, `6month`, `12month`, `overall` |
 
 **Examples:**
 ```
 parachord://friend/john_doe
 parachord://friend/john_doe/top-tracks
-parachord://friend/jane123/top-artists?period=month
+parachord://friend/jane123/top-artists?period=1month
 ```
 
 ### Recommendations
@@ -323,6 +323,8 @@ parachord://playlist/abc123
 
 Import a playlist into Parachord from an external source. Supports hosted XSPF URLs or inline track data. This is the primary mechanism used by the embeddable "Send to Parachord" button.
 
+> **User confirmation required.** Because this command can be triggered by external sources, Parachord shows a confirmation dialog before fetching a remote URL or saving imported tracks. See [Security Considerations](#security-considerations).
+
 **From hosted XSPF URL:**
 ```
 parachord://import?url={xspf_url}
@@ -335,10 +337,10 @@ parachord://import?title={title}&creator={creator}&tracks={base64_json}
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `url` | Yes* | URL to a hosted XSPF playlist file |
+| `url` | Yes* | URL to a hosted XSPF playlist file (HTTP/HTTPS only) |
 | `title` | No | Playlist title (used with `tracks`) |
 | `creator` | No | Playlist creator/source name (used with `tracks`) |
-| `tracks` | Yes* | Base64-encoded JSON array of track objects (used without `url`) |
+| `tracks` | Yes* | Base64-encoded JSON array of track objects (used without `url`). Max 100KB encoded, 500 tracks. |
 
 \* Either `url` or `tracks` must be provided.
 
@@ -411,13 +413,15 @@ parachord://search?q=shoegaze&source=spotify
 
 Open the AI DJ chat panel, optionally with a pre-filled prompt.
 
+> **User confirmation required.** When a `prompt` parameter is provided, Parachord shows a confirmation dialog displaying the message before sending it to the AI. This prevents external sources from silently injecting prompts. See [Security Considerations](#security-considerations).
+
 ```
 parachord://chat?prompt={text}
 ```
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `prompt` | No | Text to send to the AI DJ |
+| `prompt` | No | Text to send to the AI DJ (max 500 characters) |
 
 **Examples:**
 ```
@@ -656,6 +660,33 @@ curl "http://127.0.0.1:8888/protocol?url=$(python3 -c 'import urllib.parse; prin
 # Open AI chat with prompt
 curl "http://127.0.0.1:8888/protocol?url=parachord%3A%2F%2Fchat%3Fprompt%3Dplay%2520something%2520chill"
 ```
+
+---
+
+## Security Considerations
+
+Protocol URLs can be triggered by **any application on the system** — a webpage, an email client, another app, etc. There is no way to verify who sent a `parachord://` URL, so every command is treated as untrusted input.
+
+### Threat model
+
+- **Prompt injection via `chat`:** A malicious link could auto-send instructions to the AI DJ. Mitigated by requiring user confirmation before any prompt is sent, and capping prompt length at 500 characters.
+- **SSRF via `import`:** A crafted URL could make Parachord fetch an attacker-controlled or internal URL. Mitigated by validating the URL protocol (only HTTP/HTTPS allowed) and requiring user confirmation that shows the target hostname before fetching.
+- **Data stuffing via `import`:** An oversized base64 payload could consume memory or disk. Mitigated by capping the encoded payload at 100KB and limiting imports to 500 tracks.
+- **Silent side effects:** Commands like `play`, `queue/add`, `queue/clear`, `control/*`, `shuffle`, and `volume` execute without confirmation. These are considered low-risk since they only affect local playback state and are easily reversed.
+
+### Input validation
+
+All parameters extracted from protocol URLs are validated before use:
+
+- **Navigation tabs** (`history`, `friend`, `library`, `settings`, `recommendations`): Only values from a known allowlist are accepted. Unknown values are silently ignored.
+- **History periods**: Only accepted values are `7day`, `1month`, `3month`, `6month`, `12month`, `overall`.
+- **Settings tabs**: Only accepted values are `general`, `plugins`, `about`.
+- **Volume**: Must be an integer between 0 and 100.
+- **Unknown commands**: Silently ignored — only the documented command set is handled.
+
+### For integrators
+
+If you are building an integration that constructs `parachord://` URLs from user input (e.g. a search box), always URL-encode parameter values to prevent injection of additional parameters. Use `encodeURIComponent()` in JavaScript or equivalent in your language.
 
 ---
 
