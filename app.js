@@ -11503,7 +11503,9 @@ const Parachord = () => {
     if (trackOrSource.sources && typeof trackOrSource.sources === 'object' && !Array.isArray(trackOrSource.sources)) {
       // Merge in resolved sources from trackSources state if available
       // This ensures we have all available sources including those resolved in background
-      const resolvedSources = trackSources[trackOrSource.id] || {};
+      // Guard: only merge when track has a defined id, otherwise trackSources["undefined"]
+      // could contain stale sources from unrelated tracks (e.g. listen-along queue tracks)
+      const resolvedSources = trackOrSource.id ? (trackSources[trackOrSource.id] || {}) : {};
       if (Object.keys(resolvedSources).length > 0) {
         trackOrSource = { ...trackOrSource, sources: { ...trackOrSource.sources, ...resolvedSources } };
         sourceToPlay = trackOrSource;
@@ -18813,10 +18815,15 @@ const Parachord = () => {
           // Filter noMatch sentinels so icons don't flash for resolvers with no match
           if (!signal?.aborted) {
             const flushed = filterNoMatch(sources);
-            setTrackSources(prev => ({
-              ...prev,
-              [trackKey]: { ...prev[trackKey], ...flushed }
-            }));
+            // Only update trackSources state if trackKey is defined to avoid
+            // polluting trackSources["undefined"] which causes wrong sources
+            // to be merged into other id-less tracks (e.g. listen-along)
+            if (trackKey) {
+              setTrackSources(prev => ({
+                ...prev,
+                [trackKey]: { ...prev[trackKey], ...flushed }
+              }));
+            }
             if (isQueueResolution && track.id) {
               setCurrentQueue(prev => prev.map(t =>
                 t.id === track.id ? { ...t, sources: { ...t.sources, ...flushed } } : t
@@ -18855,8 +18862,9 @@ const Parachord = () => {
       resolverHash: getResolverSettingsHash()
     };
 
-    if (realSourceCount > 0) {
+    if (realSourceCount > 0 && trackKey) {
       // Update UI with real sources only (no noMatch sentinels)
+      // Only when trackKey is defined to avoid trackSources["undefined"] pollution
       setTrackSources(prev => ({
         ...prev,
         [trackKey]: displaySources
