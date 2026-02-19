@@ -26952,11 +26952,14 @@ ${tracks}
       console.error('Apple Music auth error:', error);
       let message = error.message || 'Apple Music authentication failed. Please try again.';
 
-      // If the error is the raw helper crash message, replace with guidance
+      // If the error is the raw helper crash message, replace with guidance.
+      // The crash is typically a transient AppKit assertion during the
+      // activation-policy switch — retrying usually works, but if all
+      // retries failed, ask the user to try again.
       if (message.includes('MusicKit helper exited')) {
         message = 'The MusicKit helper crashed during authorization. ' +
-          'Please make sure the Music app is open and signed in, then try again. ' +
-          'If the issue persists, check System Settings \u2192 Privacy & Security \u2192 Media & Apple Music.';
+          'This is usually a transient issue \u2014 please try connecting again. ' +
+          'If the problem persists, try restarting the app.';
       }
 
       showConfirmDialog({
