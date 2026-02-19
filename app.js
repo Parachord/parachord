@@ -5433,6 +5433,8 @@ const Parachord = () => {
   const openingReleaseRef = useRef(false);
   // Track if we're restoring saved state (to prevent tab reset during restore)
   const restoringStateRef = useRef(false);
+  // Track pending artist tab from protocol deep links (persists across currentArtist changes)
+  const pendingProtocolTabRef = useRef(null);
 
   // Playlists page scroll handler for header collapse
   const playlistsCollapseLockedRef = useRef(false);
@@ -6213,6 +6215,18 @@ const Parachord = () => {
     // Don't reset tab or clear data if we're restoring saved state
     if (restoringStateRef.current) {
       restoringStateRef.current = false;
+    } else if (pendingProtocolTabRef.current) {
+      // Deep link requested a specific tab - apply it instead of resetting to 'music'
+      const pendingTab = pendingProtocolTabRef.current;
+      // Only clear the ref once we have full artist data (with mbid) so the tab
+      // persists across both the initial and full artist data loads in the non-cached path
+      if (currentArtist?.mbid) {
+        pendingProtocolTabRef.current = null;
+      }
+      setArtistPageTab(pendingTab);
+      setArtistBio(null);
+      setArtistExtendedInfo(null);
+      setRelatedArtists([]);
     } else {
       setArtistPageTab('music');
       setArtistBio(null);
@@ -8711,9 +8725,11 @@ const Parachord = () => {
           case 'artist': {
             const [artistName, tab] = segments;
             if (artistName) {
+              if (tab && ['music', 'biography', 'related'].includes(tab)) {
+                pendingProtocolTabRef.current = tab;
+              }
               setActiveView('artist');
               fetchArtistData(artistName);
-              // Tab handling would require additional state management
             }
             break;
           }
@@ -8721,16 +8737,77 @@ const Parachord = () => {
           case 'album': {
             const [artistName, albumTitle] = segments;
             if (artistName && albumTitle) {
-              // Search for the album and load it
-              const query = `${artistName} ${albumTitle}`;
-              const results = await searchResolvers(query);
-              const albumTrack = results?.find(r =>
-                r.artist?.toLowerCase().includes(artistName.toLowerCase()) &&
-                r.album?.toLowerCase().includes(albumTitle.toLowerCase())
-              );
-              if (albumTrack?.album) {
-                // Would need to trigger album view loading
-                showToast(`Opening album: ${albumTitle}`);
+              try {
+                // Set up artist context and navigate immediately for fast feedback
+                const artist = { name: artistName, id: null };
+                openingReleaseRef.current = true;
+                setCurrentArtist(artist);
+                setArtistHistory([]);
+                setArtistReleases([]);
+                setLoadingRelease(true);
+                navigateTo('artist');
+
+                // Load artist image from cache if available
+                const normalizedName = artistName.trim().toLowerCase();
+                const cachedImage = artistImageCache.current[normalizedName];
+                const now = Date.now();
+                const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
+                if (imageCacheValid) {
+                  setArtistImage(cachedImage.url);
+                  setArtistImagePosition(cachedImage.facePosition || 'center 25%');
+                } else {
+                  getArtistImage(artistName).then(result => {
+                    if (result) {
+                      setArtistImage(result.url);
+                      setArtistImagePosition(result.facePosition || 'center 25%');
+                    }
+                  });
+                }
+
+                // Search MusicBrainz for the release-group
+                const searchQuery = encodeURIComponent(`${artistName} ${albumTitle}`);
+                const response = await fetch(
+                  `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&limit=5&fmt=json`,
+                  { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+                );
+
+                if (!response.ok) throw new Error('Album search failed');
+
+                const data = await response.json();
+                const results = data['release-groups'] || [];
+
+                if (results.length === 0) {
+                  showToast(`Album not found: ${albumTitle}`);
+                  setLoadingRelease(false);
+                  break;
+                }
+
+                // Find best match - prefer artist match and studio albums
+                const artistMatches = results.filter(r =>
+                  r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase()
+                );
+                const isStudioAlbum = (r) => {
+                  const primaryType = r['primary-type']?.toLowerCase();
+                  const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+                  if (primaryType !== 'album') return false;
+                  const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+                  return !secondaryTypes.some(t => nonStudioTypes.includes(t));
+                };
+
+                const match = artistMatches.find(isStudioAlbum)
+                  || artistMatches[0]
+                  || results.find(isStudioAlbum)
+                  || results[0];
+
+                fetchReleaseData({
+                  id: match.id,
+                  title: match.title,
+                  releaseType: match['primary-type']?.toLowerCase() || 'album'
+                }, artist);
+              } catch (error) {
+                console.error('Error loading album from protocol:', error);
+                showToast(`Failed to load album: ${albumTitle}`);
+                setLoadingRelease(false);
               }
             }
             break;
@@ -8810,6 +8887,7 @@ const Parachord = () => {
           case 'search': {
             if (params.q) {
               setSearchQuery(params.q);
+              searchQueryRef.current = params.q;
               setActiveView('search');
               performSearch(params.q);
             }
