@@ -769,6 +769,7 @@ function startAuthServer() {
   expressApp.get('/callback/soundcloud', (req, res) => {
     const code = req.query.code;
     const error = req.query.error;
+    const state = req.query.state;
 
     if (error) {
       // HTML-escape error to prevent XSS via crafted callback URLs
@@ -785,6 +786,24 @@ function startAuthServer() {
       safeSendToRenderer('soundcloud-auth-error', error);
       return;
     }
+
+    // Verify state parameter to prevent CSRF attacks
+    if (soundcloudOAuthState && state !== soundcloudOAuthState) {
+      console.error('❌ SoundCloud OAuth state mismatch — possible CSRF attack');
+      res.send(`
+        <html>
+          <body style="background: #1e1b4b; color: white; font-family: system-ui; text-align: center; padding: 50px;">
+            <h1>❌ Authentication Failed</h1>
+            <p>Security validation failed. Please try again.</p>
+            <p>You can close this window.</p>
+          </body>
+        </html>
+      `);
+      safeSendToRenderer('soundcloud-auth-error', 'OAuth state mismatch — please try connecting again.');
+      soundcloudOAuthState = null;
+      return;
+    }
+    soundcloudOAuthState = null;
 
     if (code) {
       res.send(`
@@ -1112,7 +1131,7 @@ async function exchangeCodeForToken(code) {
   }
 }
 
-// SoundCloud token exchange
+// SoundCloud token exchange (OAuth 2.1 with PKCE)
 async function exchangeSoundCloudCodeForToken(code) {
   console.log('=== SoundCloud Exchange Code for Token ===');
   console.log('Code received:', code ? 'Yes' : 'No');
@@ -1129,8 +1148,14 @@ async function exchangeSoundCloudCodeForToken(code) {
     return;
   }
 
+  if (!soundcloudCodeVerifier) {
+    console.error('No PKCE code verifier found — did the auth flow start correctly?');
+    safeSendToRenderer('soundcloud-auth-error', 'PKCE code verifier missing. Please try connecting again.');
+    return;
+  }
+
   try {
-    const response = await fetch('https://api.soundcloud.com/oauth2/token', {
+    const response = await fetch('https://secure.soundcloud.com/oauth/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -1141,8 +1166,12 @@ async function exchangeSoundCloudCodeForToken(code) {
         redirect_uri: redirectUri,
         client_id: clientId,
         client_secret: clientSecret,
+        code_verifier: soundcloudCodeVerifier,
       }),
     });
+
+    // Clear verifier after use (single-use)
+    soundcloudCodeVerifier = null;
 
     const data = await response.json();
     console.log('SoundCloud API response:', data.access_token ? 'Token received' : 'No token', data.error || '');
@@ -1767,9 +1796,11 @@ const FALLBACK_LASTFM_API_SECRET = '37d8a3d50b2aa55124df13256b7ec929';
 const FALLBACK_SOUNDCLOUD_CLIENT_ID = 'O2HcIaRQu87Kbf4CP34FpDi87nR2XTcr';
 const FALLBACK_SOUNDCLOUD_CLIENT_SECRET = 'ylYKJ1OW7YKqd3iSPreTc1wTeHcZRAMD';
 
-// PKCE (Proof Key for Code Exchange) helpers for Spotify OAuth
-// This avoids the need to ship or store a client_secret in a public app.
+// PKCE (Proof Key for Code Exchange) helpers for OAuth 2.1 flows
+// Used by Spotify and SoundCloud to securely exchange authorization codes.
 let spotifyCodeVerifier = null;
+let soundcloudCodeVerifier = null;
+let soundcloudOAuthState = null;
 
 function generateCodeVerifier() {
   return crypto.randomBytes(32).toString('base64url');
@@ -2267,7 +2298,7 @@ ipcMain.handle('soundcloud-set-credentials', (event, { clientId, clientSecret })
   }
 });
 
-// SoundCloud OAuth handler
+// SoundCloud OAuth handler (OAuth 2.1 with PKCE)
 ipcMain.handle('soundcloud-auth', async () => {
   // Get credentials with fallback chain: user-stored > env
   const { clientId, source } = getSoundCloudCredentials();
@@ -2280,8 +2311,15 @@ ipcMain.handle('soundcloud-auth', async () => {
     return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings → Installed → SoundCloud → Advanced.' };
   }
 
-  // SoundCloud OAuth - no scope needed (non-expiring tokens are no longer allowed)
-  const authUrl = `https://api.soundcloud.com/connect?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  // Generate PKCE code verifier and challenge (required by SoundCloud OAuth 2.1)
+  soundcloudCodeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(soundcloudCodeVerifier);
+
+  // Generate state parameter for CSRF protection
+  soundcloudOAuthState = crypto.randomBytes(16).toString('hex');
+
+  // SoundCloud OAuth 2.1 — PKCE required, new authorization endpoint
+  const authUrl = `https://secure.soundcloud.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&code_challenge=${codeChallenge}&code_challenge_method=S256&state=${soundcloudOAuthState}`;
 
   console.log('Opening SoundCloud auth URL:', authUrl);
 
@@ -2328,7 +2366,7 @@ ipcMain.handle('soundcloud-check-token', async () => {
     console.log(`🔄 SoundCloud ${reason}, attempting automatic refresh using`, source, 'credentials...');
 
     try {
-      const response = await fetch('https://api.soundcloud.com/oauth2/token', {
+      const response = await fetch('https://secure.soundcloud.com/oauth/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
