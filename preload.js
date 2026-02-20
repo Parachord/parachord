@@ -406,6 +406,8 @@ contextBridge.exposeInMainWorld('electron', {
     unauthorize: () => ipcRenderer.invoke('musickit:unauthorize'),
     // Fetch a Music User Token for REST API access (requires native MusicKit + dev token)
     fetchUserToken: () => ipcRenderer.invoke('musickit:fetch-user-token'),
+    // Diagnostic: get token generation status for debugging auth issues
+    tokenStatus: () => ipcRenderer.invoke('musickit:token-status'),
     // Search for songs
     search: (query, limit = 25) => ipcRenderer.invoke('musickit:search', query, limit),
     // Resolve a track by artist/title/album
