@@ -20811,6 +20811,17 @@ ${trackListXml}
         ? prev.filter(id => id !== resolverId)
         : [...prev, resolverId]
     );
+
+    // When enabling, ensure resolver is in resolverOrder so it gets a priority
+    // position and appears in resolver-filtered views (album page, etc.)
+    if (!isCurrentlyActive) {
+      setResolverOrder(prev => {
+        if (!prev.includes(resolverId)) {
+          return insertInCanonicalOrder(prev, resolverId);
+        }
+        return prev;
+      });
+    }
   };
 
   // Drag and drop handlers for resolver reordering
