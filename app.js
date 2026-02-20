@@ -7935,17 +7935,61 @@ const Parachord = () => {
     }
 
     // Check auth
-    const authStatus = await window.electron.sync.checkAuth(providerId);
+    let authStatus = await window.electron.sync.checkAuth(providerId);
     if (!authStatus.authenticated) {
       if (providerId === 'spotify') {
         await window.electron.spotify.authenticate();
         // Spotify opens external browser, user needs to re-trigger after auth
         return;
       }
-      // Apple Music auth was handled above, if we still fail show error
+      // Apple Music: stored token may have expired — try re-authorizing for a fresh one
       if (providerId === 'applemusic') {
-        showToast('Apple Music sync authentication failed. Please reconnect your Apple Music account.', 'error');
-        return;
+        console.log('[Sync] Apple Music auth check failed, attempting re-authorization for fresh token...');
+        const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+        let freshToken = null;
+
+        // Try MusicKit JS re-authorization
+        if (musicKitWeb) {
+          try {
+            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+            const status = musicKitWeb.getAuthStatus();
+            if (!status.configured && devToken) {
+              await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
+            }
+            const authResult = await musicKitWeb.authorize();
+            freshToken = authResult.userToken || musicKitWeb.getUserToken();
+          } catch (error) {
+            console.log('[Sync] MusicKit JS re-auth failed:', error.message);
+          }
+        }
+
+        // Fallback: try native MusicKit on macOS
+        if (!freshToken && window.electron?.musicKit) {
+          try {
+            const result = await window.electron.musicKit.fetchUserToken();
+            if (result.success && result.userToken) {
+              freshToken = result.userToken;
+            }
+          } catch (error) {
+            console.log('[Sync] Native MusicKit re-auth failed:', error.message);
+          }
+        }
+
+        if (freshToken) {
+          // Persist the fresh token and retry auth check
+          localStorage.setItem('musickit_user_token', freshToken);
+          if (window.electron?.store) {
+            await window.electron.store.set('applemusic_user_token', freshToken);
+          }
+          authStatus = await window.electron.sync.checkAuth(providerId);
+        }
+
+        if (!authStatus.authenticated) {
+          const reason = authStatus.error || 'Unknown error';
+          console.error('[Sync] Apple Music auth failed after re-auth attempt:', reason);
+          showToast(`Apple Music sync failed: ${reason}`, 'error');
+          return;
+        }
       }
     }
 
@@ -20921,25 +20965,17 @@ ${trackListXml}
       || metaServices.find(s => s.id === resolverId);
     const isMetaService = !loadedResolversRef.current.find(r => r.id === resolverId) && !!resolver;
 
-    if (!resolver) {
-      console.error('❌ Resolver not found:', resolverId);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Uninstall Failed',
-        message: 'Plugin not found'
-      });
-      return;
-    }
+    const resolverName = resolver?.name || resolverId;
 
-    console.log('  Found resolver:', resolver.name, isMetaService ? '(meta-service)' : '(content)');
+    console.log('  Found resolver:', resolverName, isMetaService ? '(meta-service)' : resolver ? '(content)' : '(not in state)');
 
     // Check if this plugin is available in the marketplace (can be reinstalled easily)
     const isInMarketplace = marketplaceManifest?.plugins?.some(r => r.id === resolverId);
 
     // Use simpler confirmation for marketplace plugins since they can be easily reinstalled
     const confirmMessage = isInMarketplace
-      ? `Remove "${resolver.name}"?`
-      : `Are you sure you want to uninstall "${resolver.name}"?\n\nThis will permanently remove the resolver from your system.`;
+      ? `Remove "${resolverName}"?`
+      : `Are you sure you want to uninstall "${resolverName}"?\n\nThis will permanently remove the resolver from your system.`;
 
     const shouldUninstall = confirm(confirmMessage);
 
@@ -20947,13 +20983,12 @@ ${trackListXml}
       return;
     }
 
-    console.log(`🗑️ Uninstalling resolver: ${resolver.name}`);
+    console.log(`🗑️ Uninstalling resolver: ${resolverName}`);
 
     try {
       // Try to delete the resolver file from disk
       const result = await window.electron.resolvers.uninstall(resolverId);
 
-      // Even if the file doesn't exist (built-in resolver), we still remove from state
       if (!result.success && result.error !== 'Plugin not found') {
         showConfirmDialog({
           type: 'error',
@@ -20963,7 +20998,9 @@ ${trackListXml}
         return;
       }
 
-      console.log(`✅ Uninstalled ${resolver.name}`);
+      // Use name from backend result if we didn't have it in state
+      const displayName = result.name || resolverName;
+      console.log(`✅ Uninstalled ${displayName}`);
 
       // Remove the resolver's sources from all displayed tracks
       removeResolverSources(resolverId);
@@ -20996,7 +21033,7 @@ ${trackListXml}
       showConfirmDialog({
         type: 'success',
         title: 'Removed',
-        message: resolver.name
+        message: displayName
       });
     } catch (error) {
       console.error('Error uninstalling resolver:', error);
@@ -27122,21 +27159,31 @@ ${tracks}
 
         // Fetch and store user token for sync (native MusicKit doesn't
         // return it from authorize(), so we need a separate fetch)
+        let nativeUserToken = null;
         if (window.electron.musicKit.fetchUserToken) {
           try {
             const tokenResult = await window.electron.musicKit.fetchUserToken();
             if (tokenResult.success && tokenResult.userToken) {
+              nativeUserToken = tokenResult.userToken;
               localStorage.setItem('musickit_user_token', tokenResult.userToken);
               if (window.electron?.store) {
                 await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
               }
               console.log('🍎 Native MusicKit user token stored');
             } else {
-              console.warn('🍎 Native MusicKit authorized but could not fetch user token');
+              console.warn('🍎 Native MusicKit authorized but could not fetch user token:', tokenResult.error);
             }
           } catch (e) {
             console.warn('🍎 Failed to fetch user token after native auth:', e.message);
           }
+        }
+
+        if (!nativeUserToken) {
+          showConfirmDialog({
+            type: 'error',
+            title: 'Apple Music',
+            message: 'Apple Music authorized but could not obtain a sync token. Library sync will not be available.\n\nThis usually means the MusicKit developer token is missing from this build.'
+          });
         }
 
         setAppleMusicConnected(true);

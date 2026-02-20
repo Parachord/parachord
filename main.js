@@ -1867,25 +1867,47 @@ async function generateMusicKitDeveloperToken() {
   }
 
   try {
-    const jose = await import('jose');
-    const privateKeyContent = fs.readFileSync(keyPath, 'utf8');
-    const privateKey = await jose.importPKCS8(privateKeyContent, 'ES256');
+    const crypto = require('crypto');
+    const privateKeyContent = fs.readFileSync(keyPath, 'utf8').trim();
+
+    // Validate PEM format
+    if (!privateKeyContent.startsWith('-----BEGIN PRIVATE KEY-----')) {
+      console.error('🍎 MusicKit: Key file does not contain a valid PKCS#8 PEM private key');
+      console.error('🍎 MusicKit: First 40 chars:', JSON.stringify(privateKeyContent.substring(0, 40)));
+      return null;
+    }
+
+    // Base64url encode helper
+    const base64url = (data) => {
+      const buf = typeof data === 'string' ? Buffer.from(data) : data;
+      return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    };
 
     const now = Math.floor(Date.now() / 1000);
     const expiryDays = 180;
 
-    const token = await new jose.SignJWT({})
-      .setProtectedHeader({ alg: 'ES256', kid: MUSICKIT_KEY_ID })
-      .setIssuer(MUSICKIT_TEAM_ID)
-      .setIssuedAt(now)
-      .setExpirationTime(now + (expiryDays * 24 * 60 * 60))
-      .sign(privateKey);
+    // Build JWT using Node.js built-in crypto (avoids fragile ESM import of jose)
+    const header = JSON.stringify({ alg: 'ES256', kid: MUSICKIT_KEY_ID });
+    const payload = JSON.stringify({
+      iss: MUSICKIT_TEAM_ID,
+      iat: now,
+      exp: now + (expiryDays * 24 * 60 * 60)
+    });
 
+    const signingInput = `${base64url(header)}.${base64url(payload)}`;
+    const privateKey = crypto.createPrivateKey(privateKeyContent);
+    const signature = crypto.sign('SHA256', Buffer.from(signingInput), {
+      key: privateKey,
+      dsaEncoding: 'ieee-p1363' // JWT requires raw R||S format, not DER
+    });
+
+    const token = `${signingInput}.${base64url(signature)}`;
     generatedMusicKitToken = token;
     console.log(`🍎 MusicKit: Developer token generated from ${path.basename(keyPath)} (expires in ${expiryDays} days)`);
     return token;
   } catch (error) {
     console.error('🍎 MusicKit: Failed to generate developer token:', error.message);
+    console.error('🍎 MusicKit: Stack:', error.stack);
     return null;
   }
 }
@@ -2127,6 +2149,49 @@ ipcMain.handle('config-get', async (event, key) => {
   }
   console.warn(`⚠️ Attempted to access non-whitelisted config key: ${key}`);
   return null;
+});
+
+// Diagnostic endpoint for Apple Music token status (helps debug auth issues)
+ipcMain.handle('musickit:token-status', async () => {
+  const keyFileName = `AuthKey_${MUSICKIT_KEY_ID}.p8`;
+  const searchPaths = [
+    path.join(__dirname, 'resources', 'keys', keyFileName),
+    path.join(__dirname, 'resources', 'keys'),
+    path.join(process.resourcesPath || __dirname, 'keys', keyFileName),
+    path.join(process.resourcesPath || __dirname, 'keys'),
+  ];
+
+  let keyFound = false;
+  let keyPath = null;
+  for (const sp of searchPaths) {
+    try {
+      const stat = fs.statSync(sp);
+      if (stat.isFile() && sp.endsWith('.p8')) {
+        keyFound = true;
+        keyPath = sp;
+        break;
+      }
+      if (stat.isDirectory()) {
+        const files = fs.readdirSync(sp);
+        const p8 = files.find(f => f.endsWith('.p8'));
+        if (p8) {
+          keyFound = true;
+          keyPath = path.join(sp, p8);
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  return {
+    hasGeneratedToken: !!generatedMusicKitToken,
+    hasEnvToken: !!process.env.MUSICKIT_DEVELOPER_TOKEN,
+    hasStoredToken: !!store.get('applemusic_developer_token'),
+    hasUserToken: !!store.get('applemusic_user_token'),
+    keyFileFound: keyFound,
+    keyFilePath: keyPath,
+    isAuthorized: !!store.get('applemusic_authorized'),
+  };
 });
 
 // Spotify OAuth handler
@@ -3973,9 +4038,14 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
     if (providerId === 'spotify') {
       token = store.get('spotify_access_token');
     } else if (providerId === 'applemusic') {
-      const developerToken = store.get('applemusic_developer_token');
+      if (!generatedMusicKitToken) {
+        await musicKitTokenReady;
+      }
+      const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
       const userToken = store.get('applemusic_user_token');
-      token = JSON.stringify({ developerToken, userToken });
+      if (developerToken && userToken) {
+        token = JSON.stringify({ developerToken, userToken });
+      }
     }
 
     if (!token) {
@@ -4380,10 +4450,27 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
-    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    // Ensure developer token generation has completed before checking
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
+    if (!developerToken) {
+      console.warn('[Sync] No Apple Music developer token available — .p8 key may be missing from build');
+    }
+    if (!userToken) {
+      console.warn('[Sync] No Apple Music user token stored');
+    }
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
+    } else {
+      const reason = !developerToken && !userToken
+        ? 'Missing both developer token and user token'
+        : !developerToken
+          ? 'Missing developer token (MusicKit key may not be bundled in this build)'
+          : 'Missing user token (please reconnect Apple Music)';
+      return { authenticated: false, error: reason };
     }
   }
 
@@ -4411,7 +4498,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
-    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
@@ -4667,7 +4757,7 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
-    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
@@ -4696,7 +4786,7 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
-    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
@@ -4966,7 +5056,7 @@ ipcMain.handle('musickit:unauthorize', async () => {
 ipcMain.handle('musickit:fetch-user-token', async () => {
   const bridge = getMusicKitBridge();
   try {
-    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN;
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     if (!developerToken) {
       return { success: false, error: 'No developer token available' };
     }
