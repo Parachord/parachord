@@ -20253,7 +20253,13 @@ ${trackListXml}
               const cacheKey = `${(track.artist || 'Unknown Artist').toLowerCase()}|${track.title.toLowerCase()}`;
               const cached = trackSourcesCache.current[cacheKey];
               if (cached?.sources && Object.keys(cached.sources).length > 0) {
-                sourcesToSync[trackId] = cached.sources;
+                // Filter out noMatch sentinels before syncing to UI state
+                const filtered = Object.fromEntries(
+                  Object.entries(cached.sources).filter(([, v]) => v && !v.noMatch)
+                );
+                if (Object.keys(filtered).length > 0) {
+                  sourcesToSync[trackId] = filtered;
+                }
               }
             }
           });
@@ -36263,7 +36269,9 @@ useEffect(() => {
               },
                 sorted.map((track, index) => {
                   // Merge track.sources (e.g., localfiles) with resolved sources from trackSources state
-                  const effectiveSources = { ...(track.sources || {}), ...(trackSources[track.id] || {}) };
+                  const effectiveSources = Object.fromEntries(
+                    Object.entries({ ...(track.sources || {}), ...(trackSources[track.id] || {}) }).filter(([, v]) => v && !v.noMatch)
+                  );
                   const hasResolved = Object.keys(effectiveSources).length > 0;
                   const isCurrentTrack = currentTrack?.id === track.id || (currentTrack?.filePath && track.filePath && currentTrack.filePath === track.filePath);
                   const isNowPlaying = isCurrentTrack && playbackContext?.type === 'library';
@@ -42514,11 +42522,9 @@ useEffect(() => {
                       const stateSources = trackSources[trackSourceKey];
                       const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
                       const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
-                      const effectiveSources = {
-                        ...(stateSources || {}),
-                        ...(cachedSources || {}),
-                        ...(currentTrack.sources || {})
-                      };
+                      const effectiveSources = Object.fromEntries(
+                        Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
+                      );
 
                       // Find purchasable sources - use resolver-specific URL fields
                       // Require minimum confidence (0.8) and artist name match to avoid wrong purchases
@@ -42694,11 +42700,9 @@ useEffect(() => {
                     const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
                     const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
                     // Merge sources: currentTrack.sources > cached > state
-                    const effectiveSources = {
-                      ...(stateSources || {}),
-                      ...(cachedSources || {}),
-                      ...(currentTrack.sources || {})
-                    };
+                    const effectiveSources = Object.fromEntries(
+                      Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
+                    );
                     addTrackToCollection({ ...currentTrack, sources: effectiveSources });
                   } else {
                     // Remove from collection (unheart)
