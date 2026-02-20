@@ -3231,6 +3231,7 @@ const ReleasePage = ({
   onTrackContextMenu,
   trackSources = {},
   resolvers = [],
+  activeResolvers = [],
   // Drag and drop props (for adding tracks to playlists)
   onDragStart,
   onDragEnd,
@@ -3543,7 +3544,7 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
             const sources = trackSources[trackId] || {};
-            const availableResolvers = Object.keys(sources);
+            const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id));
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -7931,7 +7932,23 @@ const Parachord = () => {
       localStorage.setItem('musickit_user_token', userToken);
       if (window.electron?.store) {
         await window.electron.store.set('applemusic_user_token', userToken);
+        await window.electron.store.set('applemusic_authorized', true);
       }
+
+      // Enable the Apple Music resolver so tracks can be resolved/played via Apple Music
+      setAppleMusicConnected(true);
+      setActiveResolvers(prev => {
+        if (!prev.includes('applemusic')) {
+          return [...prev, 'applemusic'];
+        }
+        return prev;
+      });
+      setResolverOrder(prev => {
+        if (!prev.includes('applemusic')) {
+          return insertInCanonicalOrder(prev, 'applemusic');
+        }
+        return prev;
+      });
     }
 
     // Check auth
@@ -7980,8 +7997,26 @@ const Parachord = () => {
           localStorage.setItem('musickit_user_token', freshToken);
           if (window.electron?.store) {
             await window.electron.store.set('applemusic_user_token', freshToken);
+            await window.electron.store.set('applemusic_authorized', true);
           }
           authStatus = await window.electron.sync.checkAuth(providerId);
+
+          // Enable the Apple Music resolver so tracks can be resolved/played
+          if (authStatus.authenticated) {
+            setAppleMusicConnected(true);
+            setActiveResolvers(prev => {
+              if (!prev.includes('applemusic')) {
+                return [...prev, 'applemusic'];
+              }
+              return prev;
+            });
+            setResolverOrder(prev => {
+              if (!prev.includes('applemusic')) {
+                return insertInCanonicalOrder(prev, 'applemusic');
+              }
+              return prev;
+            });
+          }
         }
 
         if (!authStatus.authenticated) {
@@ -20776,6 +20811,17 @@ ${trackListXml}
         ? prev.filter(id => id !== resolverId)
         : [...prev, resolverId]
     );
+
+    // When enabling, ensure resolver is in resolverOrder so it gets a priority
+    // position and appears in resolver-filtered views (album page, etc.)
+    if (!isCurrentlyActive) {
+      setResolverOrder(prev => {
+        if (!prev.includes(resolverId)) {
+          return insertInCanonicalOrder(prev, resolverId);
+        }
+        return prev;
+      });
+    }
   };
 
   // Drag and drop handlers for resolver reordering
@@ -31429,6 +31475,7 @@ useEffect(() => {
             },
             trackSources: trackSources,
             resolvers: resolvers,
+            activeResolvers: activeResolvers,
             // Now playing props
             currentTrack: currentTrack,
             playbackContext: playbackContext,
