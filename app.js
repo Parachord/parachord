@@ -1239,7 +1239,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
   // Get available sources (track.sources is an object with resolver IDs as keys)
   // Sort by priority order (left to right = highest to lowest priority)
   const availableSources = track.sources && typeof track.sources === 'object' && !Array.isArray(track.sources)
-    ? Object.keys(track.sources).sort((a, b) => {
+    ? Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).sort((a, b) => {
         const aIndex = resolverOrder?.indexOf(a) ?? 999;
         const bIndex = resolverOrder?.indexOf(b) ?? 999;
         return aIndex - bIndex;
@@ -3544,7 +3544,7 @@ const ReleasePage = ({
             // Build track ID first, then use it to look up resolved sources
             const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
             const sources = trackSources[trackId] || {};
-            const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id));
+            const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id) && !sources[id]?.noMatch);
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -7076,7 +7076,7 @@ const Parachord = () => {
 
     // Check sources object first (most reliable) - prefer active resolvers
     if (track.sources && typeof track.sources === 'object') {
-      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId));
+      const availableSources = Object.keys(track.sources).filter(resId => active.includes(resId) && !track.sources[resId]?.noMatch);
       if (availableSources.length > 0) {
         // Return the highest priority active resolver
         const resolverOrder = resolverOrderRef.current || [];
@@ -7098,7 +7098,7 @@ const Parachord = () => {
 
     // Last resort: return any resolver from sources (even if disabled) for display purposes
     if (track.sources && typeof track.sources === 'object') {
-      const allSources = Object.keys(track.sources);
+      const allSources = Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch);
       if (allSources.length > 0) return allSources[0];
     }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
@@ -11793,7 +11793,7 @@ ${trackListXml}
       }
 
       // We have a track with multiple sources - select the best one
-      let availableResolvers = Object.keys(trackOrSource.sources);
+      let availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
 
       if (availableResolvers.length === 0) {
         // No sources available - show track immediately, then resolve
@@ -11910,7 +11910,7 @@ ${trackListXml}
         }
 
         // Update availableResolvers after resolution
-        availableResolvers = Object.keys(trackOrSource.sources);
+        availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
@@ -12200,8 +12200,8 @@ ${trackListXml}
         console.error('❌ Local file playback failed:', error);
 
         // Try fallback to next available source if we have the original track with sources
-        if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
-          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles');
+        if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
+          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles' && !trackOrSource.sources[id]?.noMatch);
           if (otherSources.length > 0) {
             console.log('🔄 Falling back to next available source...');
             // Set flag to prevent error event listener from showing duplicate dialog
@@ -12799,11 +12799,11 @@ ${trackListXml}
           console.error('❌ Spotify retry also failed');
 
           // Spotify failed after retry - try to fall back to next best source
-          if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
             // Use refs for current resolver settings
             const fallbackActiveResolvers = activeResolversRef.current;
             const fallbackResolverOrder = resolverOrderRef.current;
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && fallbackActiveResolvers.includes(id));
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'spotify' && !trackOrSource.sources[id]?.noMatch && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority
@@ -12848,11 +12848,11 @@ ${trackListXml}
 
         // For Apple Music, fall back to next best source (track may not be available in region)
         if (resolverId === 'applemusic' && !trackOrSource._appleMusicFallback) {
-          if (trackOrSource.sources && Object.keys(trackOrSource.sources).length > 1) {
+          if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
             // Use refs for current resolver settings
             const fallbackActiveResolvers = activeResolversRef.current;
             const fallbackResolverOrder = resolverOrderRef.current;
-            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && fallbackActiveResolvers.includes(id));
+            const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'applemusic' && !trackOrSource.sources[id]?.noMatch && fallbackActiveResolvers.includes(id));
 
             if (otherSources.length > 0) {
               // Sort by resolver priority
@@ -30659,10 +30659,10 @@ useEffect(() => {
                       )
                     ),
                     // Resolver dots - bottom right corner (hidden on hover)
-                    track.sources && Object.keys(track.sources).length > 0 && React.createElement('div', {
+                    track.sources && Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).length > 0 && React.createElement('div', {
                       className: 'absolute bottom-1.5 right-1.5 flex gap-1 transition-opacity group-hover/art:opacity-0'
                     },
-                      ...Object.keys(track.sources).slice(0, 4).map(source => {
+                      ...Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch).slice(0, 4).map(source => {
                         const colors = {
                           spotify: '#1DB954',
                           youtube: '#FF0000',
@@ -36411,13 +36411,13 @@ useEffect(() => {
                     },
                       (() => {
                         const sources = effectiveSources;
-                        const sourceIds = Object.keys(sources);
+                        const sourceIds = Object.keys(sources).filter(id => !sources[id]?.noMatch);
                         const hasExternalSources = sourceIds.some(id => id !== 'localfiles');
 
                         if (hasExternalSources) {
                           // Show resolver icons only for enabled resolvers
                           return Object.entries(sources)
-                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                            .filter(([resolverId, v]) => activeResolvers.includes(resolverId) && !v?.noMatch)
                             .sort(([aId], [bId]) => {
                               const aIndex = resolverOrder.indexOf(aId);
                               const bIndex = resolverOrder.indexOf(bId);
@@ -42313,6 +42313,7 @@ useEffect(() => {
                 const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
                   ? Object.keys(currentTrack.sources).filter(resId => {
                       if (!activeResolvers.includes(resId)) return false;
+                      if (currentTrack.sources[resId]?.noMatch) return false;
                       const src = currentTrack.sources[resId];
                       const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
                       return !resolverBlocklist.some(entry =>
