@@ -69,6 +69,31 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Configurable Media Keys** - Control media key behavior when Spotify is running
 - **Dark Player Bar** - Modern UI with glassmorphism effects
 
+## System Requirements
+
+### macOS
+- **macOS 12 (Monterey)** or later
+- 64-bit Intel or Apple Silicon
+- Apple Music integration via the native MusicKit helper requires **macOS 14 (Sonoma)** and Xcode Command Line Tools; without it, Parachord falls back to web-based APIs
+
+### Windows
+- **Windows 10** or later
+- x64 or arm64
+
+### Linux
+- **Ubuntu 18.04+**, **Debian 10+**, **Fedora 32+**, or equivalent
+- x64
+- PulseAudio or PipeWire (for audio output)
+
+### Building from Source
+- **Node.js 20** (LTS)
+- A C/C++ toolchain for native addon compilation (`better-sqlite3`):
+  - macOS: Xcode Command Line Tools
+  - Windows: Visual Studio Build Tools with C++ workload
+  - Linux: `build-essential` and `python3`
+
+See [docs/setup/SYSTEM_REQUIREMENTS.md](docs/setup/SYSTEM_REQUIREMENTS.md) for full details including network requirements and Linux sandbox dependencies.
+
 ## Installation
 
 ### Download
