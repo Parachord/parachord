@@ -22782,7 +22782,7 @@ Provide exactly 5 albums and 5 artists. Each "reason" should be one short senten
         return noKeyNeeded ? config.enabled === true : !!config.apiKey;
       });
 
-      if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
+      if (!hasEnabledChat) return;
 
       // Mark as loading
       setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
