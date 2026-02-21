@@ -11399,9 +11399,10 @@ ${trackListXml}
     // Skip until resolvers are loaded and synced - this prevents saving before
     // new resolvers (like localfiles) are added to the settings
     if (loadedResolvers.length === 0) return;
-    const loadedIds = loadedResolvers.map(r => r.id);
-    const allResolversInOrder = loadedIds.every(id => resolverOrder.includes(id));
-    if (!allResolversInOrder) {
+    // Only wait for ACTIVE resolvers to be synced to the order — inactive
+    // resolvers don't need to be in resolverOrder and shouldn't block saving
+    const allActiveInOrder = activeResolvers.every(id => resolverOrder.includes(id));
+    if (!allActiveInOrder) {
       console.log('⏳ Waiting for resolver sync before saving...');
       return;
     }
@@ -17031,8 +17032,10 @@ ${trackListXml}
           },
           applemusic: async () => {
             const authorized = await window.electron?.store?.get('applemusic_authorized');
+            // Check for user token (MusicKit JS) or native auth (macOS)
             const userToken = await window.electron?.store?.get('applemusic_user_token');
-            return !!(authorized && userToken);
+            const hasNativeAuth = !!window.electron?.musicKit;
+            return !!(authorized && (userToken || hasNativeAuth));
           }
         };
 
