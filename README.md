@@ -10,64 +10,74 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Multi-Source Playback
 - **Unified Library** - Search and play from multiple services simultaneously
-- **Smart Resolution** - Automatically finds the best available source for each track
+- **Smart Resolution** - Automatically finds the best available source for each track, with incremental results as resolvers respond
 - **Source Priority** - Drag to reorder which services are preferred
 - **Volume Normalization** - Balance loudness between different sources
+- **Buy Links** - Bandcamp and Qobuz purchase buttons surfaced for any track, even when streaming from a different source
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
 - **YouTube** - Stream audio from YouTube videos
-- **Bandcamp** - Browse and play from independent artists
+- **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
-- **Qobuz** - High-quality audio streaming
+- **Qobuz** - High-quality audio streaming and purchasing
 - **Local Files** - Scan and play your local music library with metadata extraction
-- **Apple Music** - Preview support
+- **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on other platforms (subscription required)
+
+### AI Companion
+- **Shuffleupagus** - Built-in AI DJ that can recommend music, generate playlists, and control playback
+- **Multiple AI Backends** - Choose from ChatGPT, Claude, Google Gemini, or Ollama (local/offline)
+- **MCP Server** - Exposes playback and queue controls to external AI agents like Claude Desktop via the Model Context Protocol
 
 ### Library Sync
 - **Import from Streaming Services** - Sync your playlists and liked songs from Spotify, Apple Music, and more
 - **Collection Management** - Build a unified collection from multiple sources
 - **Favorites** - Star tracks to add them to your collection
+- **Sync Safety** - Mass-removal safeguard detects and blocks bulk deletions to prevent accidental data loss
 
 ### Artist Discovery
-- **Rich Artist Pages** - Browse full discographies powered by MusicBrainz
+- **Rich Artist Pages** - Browse full discographies powered by MusicBrainz, with biographies from Wikipedia and Discogs
 - **Related Artists** - Discover similar artists via Last.fm
 - **Album Art** - High-quality artwork from Cover Art Archive
 - **Release Filtering** - Filter by albums, EPs, singles, live releases, and compilations
+- **Charts** - Browse top albums and songs from iTunes and Last.fm, filterable by country
 
 ### Playlists & Queue
 - **URL Import** - Paste Spotify, Apple Music, or hosted .xspf playlist URLs
 - **File Import** - Load local .xspf playlist files
 - **Export** - Save your queue as an .xspf playlist
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
-- **Shuffle Mode** - Randomize your playback
+- **Shuffle & Spinoff** - Shuffle your queue, or "spinoff" from any track into a radio station of similar music
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
+- **Resolver Blocklist** - Report and block bad source matches without disabling an entire resolver
 
 ### Plug-in Architecture
 - **Sandboxed Execution** - Plug-ins run securely isolated from your system
 - **Marketplace** - Browse and install plug-ins from the built-in marketplace
-- **.axe Format** - Simple JSON-based plug-in format for content resolvers and meta services
+- **.axe Format** - Simple JSON-based plug-in format for content resolvers, meta services, and AI backends
 - **Hot Reload** - Develop and test plug-ins without restarting
 
 ### Browser Extension
 - **Send to Parachord** - Right-click any song link to send it to the desktop app
-- **Bandcamp Integration** - Play Bandcamp pages directly in Parachord
-- **YouTube Support** - Queue YouTube videos from your browser
+- **Page Detection** - Green badge indicator when the current page is a supported playlist or album
+- **Import Playlists & Albums** - Scrape Spotify, Apple Music, Bandcamp, SoundCloud, and YouTube pages directly into your queue
 - **WebSocket Communication** - Real-time connection between browser and desktop app
 
 ### Social Features
-- **Friend Activity** - See what your friends are listening to in real-time
-- **Add Friends** - Connect with other Parachord users
-- **Listening History** - Track your listening activity
+- **Friend Activity** - See what your friends are listening to in real-time via Last.fm and ListenBrainz
+- **Listen Along** - Join a friend's listening session in near-real-time
+- **Listening History** - Browse your play history and track your activity
 
 ### Additional Features
 - **Global Search** - Search across all sources with unified results
 - **Collection View** - Browse your aggregated music collection
-- **Recommendations** - Personalized suggestions via Last.fm
-- **Scrobbling** - Track your listening history with Last.fm
+- **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI
+- **Scrobbling** - Track your listening history with Last.fm, ListenBrainz, and Libre.fm
+- **Smart Links** - Generate shareable cross-service links for any track
+- **Deep Links** - `parachord://` protocol for opening artists, albums, playlists, and search from other apps
 - **Application Menu** - Full menu bar with keyboard shortcuts
 - **Auto-Updates** - Automatic update checking with GitHub Releases
 - **Configurable Media Keys** - Control media key behavior when Spotify is running
-- **Dark Player Bar** - Modern UI with glassmorphism effects
 
 ## System Requirements
 
