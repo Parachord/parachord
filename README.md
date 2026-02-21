@@ -17,12 +17,12 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
-- **Apple Music** - Full musickit support
+- **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on other platforms (subscription required)
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
 - **Local Files** - Scan and play your local music library with metadata extraction
-- **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on other platforms (subscription required)
+
 
 ### AI Companion
 - **Shuffleupagus** - Built-in AI DJ that can recommend music, generate playlists, and control playback
