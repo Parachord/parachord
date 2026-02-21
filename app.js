@@ -36289,7 +36289,7 @@ useEffect(() => {
               // SECTION: Collection Stats & Sync
               (() => {
                 const hasSyncEnabled = Object.values(resolverSyncSettings).some(s => s?.enabled);
-                const statsGrid = React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-5 gap-4' },
+                const statsGrid = React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-5 gap-4 mt-4' },
                   [
                     { label: 'Songs', value: library.length + collectionData.tracks.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z', color: '#3b82f6', onClick: () => { navigateTo('library'); setCollectionTab('tracks'); } },
                     { label: 'Albums', value: collectionData.albums.length, icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3', color: '#8b5cf6', onClick: () => { navigateTo('library'); setCollectionTab('albums'); } },
@@ -36323,12 +36323,14 @@ useEffect(() => {
                   )
                 );
 
+                const sectionHeader = React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Collection');
+
                 // When sync is already enabled, just show the stats grid
-                if (hasSyncEnabled) return statsGrid;
+                if (hasSyncEnabled) return React.createElement('div', null, sectionHeader, statsGrid);
 
                 // When sync is not enabled, wrap stats inside the sync container
-                return React.createElement('div', {
-                  className: 'rounded-xl overflow-hidden',
+                return React.createElement('div', null, sectionHeader, React.createElement('div', {
+                  className: 'rounded-xl overflow-hidden mt-4',
                   style: {
                     background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f0f9ff 100%)',
                     border: '1px solid rgba(0, 0, 0, 0.06)'
@@ -36368,7 +36370,7 @@ useEffect(() => {
                       )
                     )
                   )
-                );
+                ));
               })()
             )
           )
