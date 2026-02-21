@@ -16,12 +16,11 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
+- **Apple Music** - Full musickit support
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse and play from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
-- **Qobuz** - High-quality audio streaming
 - **Local Files** - Scan and play your local music library with metadata extraction
-- **Apple Music** - Preview support
 
 ### Library Sync
 - **Import from Streaming Services** - Sync your playlists and liked songs from Spotify, Apple Music, and more
