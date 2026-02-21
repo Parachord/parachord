@@ -22848,7 +22848,7 @@ Provide exactly 5 albums and 5 artists. Each "reason" should be one short senten
       }
     };
     fetchAiRecommendations();
-  }, [activeView, cacheLoaded]);
+  }, [activeView, cacheLoaded, metaServices]);
 
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
