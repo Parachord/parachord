@@ -35406,8 +35406,13 @@ useEffect(() => {
                             className: 'relative aspect-square group/mosaic'
                           },
                             React.createElement('div', {
-                              className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                              style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                              className: `w-full h-full grid grid-cols-2 grid-rows-2${!weeklyJamCovers[jam.id] ? ' animate-shimmer' : ''}`,
+                              style: {
+                                background: weeklyJamCovers[jam.id]
+                                  ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                                  : 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)',
+                                backgroundSize: !weeklyJamCovers[jam.id] ? '200% 100%' : undefined
+                              }
                             },
                               weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
                                 React.createElement('img', {
@@ -35419,23 +35424,9 @@ useEffect(() => {
                               ) || Array.from({ length: 4 }).map((_, i) =>
                                 React.createElement('div', {
                                   key: `placeholder-${i}`,
-                                  className: 'w-full h-full flex items-center justify-center',
-                                  style: { backgroundColor: i % 2 === 0 ? '#c7d2fe' : '#e0e7ff' }
-                                },
-                                  i === 0 && React.createElement('svg', {
-                                    className: 'w-12 h-12 text-indigo-300',
-                                    fill: 'none',
-                                    viewBox: '0 0 24 24',
-                                    stroke: 'currentColor'
-                                  },
-                                    React.createElement('path', {
-                                      strokeLinecap: 'round',
-                                      strokeLinejoin: 'round',
-                                      strokeWidth: 1.5,
-                                      d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-                                    })
-                                  )
-                                )
+                                  className: 'w-full h-full',
+                                  style: { backgroundColor: 'transparent' }
+                                })
                               )
                             ),
                             React.createElement('div', {
