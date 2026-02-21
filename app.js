@@ -35842,8 +35842,32 @@ useEffect(() => {
                         }, 'Shuffleupagus'),
                         React.createElement('button', {
                           className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
-                          onClick: () => {
-                            setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                          onClick: async () => {
+                            setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+                            const result = await loadAiRecommendations();
+                            if (result) {
+                              setHomeData(prev => ({ ...prev, aiRecommendations: { ...result, loading: false } }));
+                              for (const album of result.albums) {
+                                getAlbumArt(album.artist, album.title).then(artUrl => {
+                                  if (artUrl) {
+                                    setHomeData(prev => {
+                                      if (!prev.aiRecommendations) return prev;
+                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a) } };
+                                    });
+                                  }
+                                }).catch(() => {});
+                              }
+                              for (const artist of result.artists) {
+                                getArtistImage(artist.name).then(imgResult => {
+                                  setHomeData(prev => {
+                                    if (!prev.aiRecommendations) return prev;
+                                    return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
+                                  });
+                                }).catch(() => {});
+                              }
+                            } else {
+                              setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                            }
                           }
                         }, 'Refresh')
                       ),
@@ -35853,11 +35877,11 @@ useEffect(() => {
                         aiRecs.albums.map((album, index) =>
                           React.createElement('button', {
                             key: `ai-album-${album.artist}-${album.title}`,
-                            className: 'release-card card-fade-up text-left group/art',
+                            className: 'group text-left release-card card-fade-up',
                             style: {
-                              backgroundColor: '#ffffff',
-                              borderRadius: '10px',
                               padding: '10px',
+                              borderRadius: '10px',
+                              backgroundColor: '#ffffff',
                               border: 'none',
                               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                               animationDelay: `${index * 50}ms`
@@ -35866,29 +35890,144 @@ useEffect(() => {
                             onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist })
                           },
                             React.createElement('div', {
-                              className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
-                              style: { position: 'relative' }
+                              className: 'album-art-container group/art',
+                              style: {
+                                width: '100%',
+                                aspectRatio: '1',
+                                borderRadius: '6px',
+                                marginBottom: '10px',
+                                overflow: 'hidden',
+                                position: 'relative',
+                                background: album.art
+                                  ? '#f3f4f6'
+                                  : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                              }
                             },
-                              album.art ?
-                                React.createElement('img', {
-                                  src: album.art,
-                                  alt: album.title,
-                                  className: 'w-full h-full object-cover transition-transform duration-300 group-hover/art:scale-105'
-                                }) :
-                                React.createElement('div', {
-                                  className: 'w-full h-full flex items-center justify-center',
-                                  style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                              // Show image when art exists
+                              album.art && React.createElement('img', {
+                                src: album.art,
+                                alt: album.title,
+                                className: 'group-hover/art:scale-105',
+                                style: {
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  transition: 'opacity 0.35s ease-out, transform 0.3s ease'
+                                }
+                              }),
+                              // Placeholder icon when no art
+                              !album.art && React.createElement('div', {
+                                style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                              },
+                                React.createElement('svg', {
+                                  style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
+                                  fill: 'none',
+                                  viewBox: '0 0 24 24',
+                                  stroke: 'currentColor'
                                 },
-                                  React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                                )
+                              ),
+                              // Hover overlay with action buttons
+                              React.createElement('div', {
+                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                                style: { borderRadius: '6px', zIndex: 20 }
+                              },
+                                // Add to Playlist button
+                                React.createElement('button', {
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    // For AI suggestions, search for album tracks in collection or resolve
+                                    const albumTracks = (collectionData?.tracks || [])
+                                      .filter(t => t.artist === album.artist && t.album === album.title)
+                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length > 0) {
+                                      setAddToPlaylistPanel({
+                                        open: true,
+                                        tracks: albumTracks,
+                                        sourceName: `${album.title} by ${album.artist}`,
+                                        sourceType: 'album'
+                                      });
+                                    } else {
+                                      // Navigate to album to discover tracks first
+                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                    }
+                                  },
+                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                  title: 'Add to Playlist'
+                                },
+                                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                                  )
+                                ),
+                                // Play album button
+                                React.createElement('button', {
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    const albumTracks = (collectionData?.tracks || [])
+                                      .filter(t => t.artist === album.artist && t.album === album.title)
+                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length > 0) {
+                                      setTrackLoading(true);
+                                      const context = { type: 'album', name: album.title, artist: album.artist };
+                                      const [firstTrack, ...remainingTracks] = albumTracks;
+                                      setQueueWithContext(remainingTracks, context, true);
+                                      handlePlay(firstTrack);
+                                    } else {
+                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                    }
+                                  },
+                                  className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                  style: { border: 'none', cursor: 'pointer' },
+                                  title: 'Play album'
+                                },
+                                  React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                                ),
+                                // Add to queue button
+                                React.createElement('button', {
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    const albumTracks = (collectionData?.tracks || [])
+                                      .filter(t => t.artist === album.artist && t.album === album.title)
+                                      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length > 0) {
+                                      addToQueue(albumTracks, { type: 'album', name: album.title, artist: album.artist });
+                                      showToast(`Added ${albumTracks.length} tracks from ${album.title}`, 'success');
+                                    } else {
+                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                    }
+                                  },
+                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                  title: 'Add album to queue'
+                                },
+                                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                                   )
                                 )
+                              )
                             ),
-                            React.createElement('p', {
-                              className: 'text-gray-900 truncate',
-                              style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                            // Album title
+                            React.createElement('h3', {
+                              style: {
+                                fontWeight: '500',
+                                fontSize: '13px',
+                                color: '#1f2937',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                marginBottom: '2px'
+                              }
                             }, album.title),
-                            React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
+                            // Artist name
+                            React.createElement('p', {
+                              style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                            }, album.artist)
                           )
                         )
                       )
@@ -35906,15 +36045,10 @@ useEffect(() => {
                         className: 'grid grid-cols-5 gap-4'
                       },
                         aiRecs.artists.map((artist, index) =>
-                          React.createElement('button', {
+                          React.createElement('div', {
                             key: `ai-artist-${artist.name}`,
-                            className: 'release-card card-fade-up text-left group',
+                            className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
                             style: {
-                              backgroundColor: '#ffffff',
-                              borderRadius: '10px',
-                              padding: '10px',
-                              border: 'none',
-                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                               animationDelay: `${index * 50}ms`
                             },
                             title: artist.reason,
@@ -35927,7 +36061,7 @@ useEffect(() => {
                             }
                           },
                             React.createElement('div', {
-                              className: 'aspect-square rounded-lg overflow-hidden mb-2 relative',
+                              className: 'aspect-square relative group/art overflow-hidden',
                               style: { background: artist.image === null ? generateArtistPattern(artist.name).gradient : '#e5e7eb' }
                             },
                               // Loading shimmer
@@ -35939,10 +36073,11 @@ useEffect(() => {
                               typeof artist.image === 'string' && React.createElement('img', {
                                 src: artist.image,
                                 alt: artist.name,
-                                className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 transition-transform',
+                                className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                                 style: { opacity: 0 },
                                 ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                                onLoad: (e) => { e.target.style.opacity = '1'; }
+                                onLoad: (e) => { e.target.style.opacity = '1'; },
+                                onError: (e) => { e.target.style.display = 'none'; }
                               }),
                               // Initials fallback
                               artist.image === null && React.createElement('div', {
@@ -35951,14 +36086,69 @@ useEffect(() => {
                               },
                                 React.createElement('span', {
                                   className: 'font-bold tracking-wider',
-                                  style: { fontSize: '2rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                                  style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
                                 }, generateArtistPattern(artist.name).initials)
+                              ),
+                              // Hover overlay with action buttons (Play top 10, Queue top 10)
+                              React.createElement('div', {
+                                className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                                style: { pointerEvents: 'auto' }
+                              },
+                                // Play top 10 button (center, larger)
+                                React.createElement('button', {
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    (async () => {
+                                      setTrackLoading(true);
+                                      const tracks = await getArtistTopTracks(artist.name);
+                                      if (tracks.length > 0) {
+                                        const context = { type: 'artist', name: artist.name };
+                                        const [firstTrack, ...remainingTracks] = tracks;
+                                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                                        setQueueWithContext(remainingTracks, context, true);
+                                        handlePlay(taggedFirstTrack);
+                                      } else {
+                                        setTrackLoading(false);
+                                        showToast(`No top tracks found for ${artist.name}`, 'error');
+                                      }
+                                    })();
+                                  },
+                                  className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                                  style: { border: 'none', cursor: 'pointer' },
+                                  title: 'Play top 10 tracks'
+                                },
+                                  React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
+                                ),
+                                // Add top 10 to Queue button
+                                React.createElement('button', {
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    (async () => {
+                                      const tracks = await getArtistTopTracks(artist.name);
+                                      if (tracks.length > 0) {
+                                        addToQueue(tracks, { type: 'artist', name: artist.name });
+                                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                                      } else {
+                                        showToast(`No top tracks found for ${artist.name}`, 'error');
+                                      }
+                                    })();
+                                  },
+                                  className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                                  style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                                  title: 'Add top 10 to queue'
+                                },
+                                  React.createElement(QueueTop10Icon, { size: 20 })
+                                )
                               )
                             ),
-                            React.createElement('p', {
-                              className: 'text-gray-900 truncate',
-                              style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
-                            }, artist.name)
+                            // Artist name section
+                            React.createElement('div', { className: 'p-3' },
+                              React.createElement('p', {
+                                className: 'font-medium text-gray-900 truncate text-sm'
+                              }, artist.name)
+                            )
                           )
                         )
                       )
