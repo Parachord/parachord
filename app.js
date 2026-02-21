@@ -9498,17 +9498,18 @@ ${trackListXml}
     if (loadedResolvers.length === 0) return;
     if (!cacheLoaded) return; // Wait until storage settings are loaded
 
-    // Ensure all active resolvers appear in resolverOrder (sync consistency)
-    // Do NOT auto-enable loaded resolvers - only the defaults or user-selected ones should be active
-    const activeButMissing = activeResolvers.filter(id =>
-      loadedResolvers.some(r => r.id === id) && !resolverOrder.includes(id)
-    );
+    // Ensure ALL loaded content resolvers appear in resolverOrder so they get a
+    // priority position and badge in the UI. This doesn't auto-enable them —
+    // it just gives them a slot in the order for when the user does enable them.
+    const loadedButMissing = loadedResolvers
+      .filter(r => r.capabilities?.resolve && !resolverOrder.includes(r.id))
+      .map(r => r.id);
 
-    if (activeButMissing.length > 0) {
-      console.log('📦 Syncing resolver order with active resolvers:', activeButMissing);
+    if (loadedButMissing.length > 0) {
+      console.log('📦 Syncing resolver order with loaded resolvers:', loadedButMissing);
       setResolverOrder(prev => {
         let newOrder = [...prev];
-        for (const id of activeButMissing) {
+        for (const id of loadedButMissing) {
           if (!newOrder.includes(id)) {
             newOrder = insertInCanonicalOrder(newOrder, id);
           }
