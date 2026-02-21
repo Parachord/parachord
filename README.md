@@ -13,7 +13,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Smart Resolution** - Automatically finds the best available source for each track, with incremental results as resolvers respond
 - **Source Priority** - Drag to reorder which services are preferred
 - **Volume Normalization** - Balance loudness between different sources
-- **Buy Links** - Bandcamp and Qobuz purchase buttons surfaced for any track, even when streaming from a different source
+- **Buy Links** - Bandcamp purchase buttons surfaced for any track that can be found, even when streaming from a different source
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
@@ -23,6 +23,11 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **SoundCloud** - Stream from SoundCloud's catalog
 - **Local Files** - Scan and play your local music library with metadata extraction
 
+### Plug-in Architecture
+- **Sandboxed Execution** - Plug-ins run securely isolated from your system
+- **Marketplace** - Browse and install plug-ins from the built-in marketplace
+- **.axe Format** - Simple JSON-based plug-in format for content resolvers, meta services, and AI backends
+- **Hot Reload** - Develop and test plug-ins without restarting
 
 ### AI Companion
 - **Shuffleupagus** - Built-in AI DJ that can recommend music, generate playlists, and control playback
@@ -50,12 +55,6 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Shuffle & Spinoff** - Shuffle your queue, or "spinoff" from any track into a radio station of similar music
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
 - **Resolver Blocklist** - Report and block bad source matches without disabling an entire resolver
-
-### Plug-in Architecture
-- **Sandboxed Execution** - Plug-ins run securely isolated from your system
-- **Marketplace** - Browse and install plug-ins from the built-in marketplace
-- **.axe Format** - Simple JSON-based plug-in format for content resolvers, meta services, and AI backends
-- **Hot Reload** - Develop and test plug-ins without restarting
 
 ### Browser Extension
 - **Send to Parachord** - Right-click any song link to send it to the desktop app
@@ -125,24 +124,6 @@ npm install
 # Start the app
 npm start
 ```
-
-## Configuration
-
-### Spotify Setup
-1. Create a Spotify app at https://developer.spotify.com/dashboard
-2. Copy `.env.example` to `.env`
-3. Add your Spotify Client ID and Secret
-4. Add `http://localhost:8888/callback` to your Redirect URIs
-5. Restart the app and connect via Settings > Installed Plug-Ins > Spotify
-
-### Last.fm Setup
-1. Create an API account at https://www.last.fm/api/account/create
-2. Add your API key in Settings > Installed Plug-Ins > Last.fm
-
-### Local Files
-1. Go to Settings > Installed Plug-Ins > Local Files
-2. Add folders containing your music
-3. The app will scan and index your library automatically
 
 ## Architecture
 
