@@ -1234,6 +1234,55 @@ const Tooltip = ({ children, content, position = 'top', variant = 'light', class
   );
 };
 
+// FixedTooltip - uses position:fixed to escape overflow:hidden containers
+// Shows tooltip below the trigger element, left-aligned to avoid sidebar clipping
+const FixedTooltip = ({ children, content }) => {
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+
+  const show = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 6, left: rect.left });
+    }
+    setVisible(true);
+  };
+  const hide = () => setVisible(false);
+
+  return React.createElement('div', {
+    ref: triggerRef,
+    onMouseEnter: show,
+    onMouseLeave: hide,
+    style: { position: 'relative' }
+  },
+    children,
+    visible && content && ReactDOM.createPortal(
+      React.createElement('div', {
+        style: {
+          position: 'fixed',
+          top: coords.top,
+          left: coords.left,
+          zIndex: 99999,
+          maxWidth: 280,
+          minWidth: 180,
+          backgroundColor: '#1f2937',
+          color: '#ffffff',
+          borderRadius: 8,
+          padding: '10px 14px',
+          fontSize: 12,
+          lineHeight: 1.5,
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
+          pointerEvents: 'none',
+          opacity: visible ? 1 : 0,
+          transition: 'opacity 150ms ease'
+        }
+      }, content),
+      document.body
+    )
+  );
+};
+
 // TrackRow component - defined outside to prevent recreation on every render
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
   // Get available sources (track.sources is an object with resolver IDs as keys)
@@ -36012,45 +36061,24 @@ useEffect(() => {
                               )
                             ),
                             // Album title + artist with reason tooltip
-                            album.reason
-                              ? React.createElement(Tooltip, {
-                                  content: album.reason,
-                                  position: 'bottom',
-                                  className: 'tooltip-bio'
-                                },
-                                  React.createElement('div', null,
-                                    React.createElement('h3', {
-                                      style: {
-                                        fontWeight: '500',
-                                        fontSize: '13px',
-                                        color: '#1f2937',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        marginBottom: '2px'
-                                      }
-                                    }, album.title),
-                                    React.createElement('p', {
-                                      style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                                    }, album.artist)
-                                  )
-                                )
-                              : React.createElement('div', null,
-                                  React.createElement('h3', {
-                                    style: {
-                                      fontWeight: '500',
-                                      fontSize: '13px',
-                                      color: '#1f2937',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      marginBottom: '2px'
-                                    }
-                                  }, album.title),
-                                  React.createElement('p', {
-                                    style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                                  }, album.artist)
-                                )
+                            React.createElement(FixedTooltip, { content: album.reason },
+                              React.createElement('div', null,
+                                React.createElement('h3', {
+                                  style: {
+                                    fontWeight: '500',
+                                    fontSize: '13px',
+                                    color: '#1f2937',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    marginBottom: '2px'
+                                  }
+                                }, album.title),
+                                React.createElement('p', {
+                                  style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                                }, album.artist)
+                              )
+                            )
                           )
                         )
                       )
@@ -36070,7 +36098,7 @@ useEffect(() => {
                         aiRecs.artists.map((artist, index) =>
                           React.createElement('div', {
                             key: `ai-artist-${artist.name}`,
-                            className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
+                            className: 'bg-white rounded-lg hover:shadow-lg transition-shadow cursor-pointer group release-card card-fade-up',
                             style: {
                               animationDelay: `${index * 50}ms`
                             },
@@ -36166,23 +36194,13 @@ useEffect(() => {
                               )
                             ),
                             // Artist name section with reason tooltip
-                            artist.reason
-                              ? React.createElement(Tooltip, {
-                                  content: artist.reason,
-                                  position: 'bottom',
-                                  className: 'tooltip-bio'
-                                },
-                                  React.createElement('div', { className: 'p-3' },
-                                    React.createElement('p', {
-                                      className: 'font-medium text-gray-900 truncate text-sm'
-                                    }, artist.name)
-                                  )
-                                )
-                              : React.createElement('div', { className: 'p-3' },
-                                  React.createElement('p', {
-                                    className: 'font-medium text-gray-900 truncate text-sm'
-                                  }, artist.name)
-                                )
+                            React.createElement(FixedTooltip, { content: artist.reason },
+                              React.createElement('div', { className: 'p-3' },
+                                React.createElement('p', {
+                                  className: 'font-medium text-gray-900 truncate text-sm'
+                                }, artist.name)
+                              )
+                            )
                           )
                         )
                       )
