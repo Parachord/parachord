@@ -6532,8 +6532,9 @@ const Parachord = () => {
     const currentResolvers = loadedResolversRef.current;
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
-    const enabledResolvers = currentResolverOrder
-      .filter(id => currentActiveResolvers.includes(id))
+    const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+    const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+    const enabledResolvers = [...orderedIds, ...unorderedIds]
       .map(id => currentResolvers.find(r => r.id === id))
       .filter(r => r && r.capabilities.resolve);
 
@@ -6690,8 +6691,9 @@ const Parachord = () => {
       const currentResolvers = loadedResolversRef.current;
       const currentActiveResolvers = activeResolversRef.current;
       const currentResolverOrder = resolverOrderRef.current;
-      const enabledResolvers = currentResolverOrder
-        .filter(id => currentActiveResolvers.includes(id))
+      const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+      const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+      const enabledResolvers = [...orderedIds, ...unorderedIds]
         .map(id => currentResolvers.find(r => r.id === id))
         .filter(r => r && r.capabilities.resolve);
 
@@ -9514,7 +9516,7 @@ ${trackListXml}
         return newOrder;
       });
     }
-  }, [loadedResolvers, cacheLoaded]);
+  }, [loadedResolvers, cacheLoaded, activeResolvers]);
 
   // Get resolvers in priority order
   const resolvers = resolverOrder
@@ -11291,14 +11293,30 @@ ${trackListXml}
       }
     }
 
-    // Re-resolve release tracks if viewing an artist release
-    if (currentRelease && currentRelease.tracks) {
+    // Re-enqueue visible release tracks for resolution
+    if (currentRelease && currentRelease.tracks && visibleReleaseTrackIds.current.size > 0) {
       console.log('🔄 Resolver settings changed, re-resolving release tracks...');
       const artistName = currentArtist?.name || 'Unknown Artist';
-      currentRelease.tracks.forEach(track => {
-        // Force refresh to bypass cache
-        resolveTrack(track, artistName, { forceRefresh: true });
+      const visibleTracks = [];
+      visibleReleaseTrackIds.current.forEach(trackId => {
+        const track = currentRelease.tracks.find(t => {
+          const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${currentRelease.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          return computedId === trackId;
+        });
+        if (track) {
+          visibleTracks.push({
+            key: trackId,
+            data: {
+              track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
+              artistName
+            }
+          });
+        }
       });
+      if (visibleTracks.length > 0) {
+        console.log(`🔄 Re-enqueuing ${visibleTracks.length} visible release tracks for resolution`);
+        updateSchedulerVisibility('release-tracks', visibleTracks);
+      }
     }
 
     // Re-resolve playlist tracks if viewing a playlist
@@ -11840,8 +11858,9 @@ ${trackListXml}
         const currentResolvers = loadedResolversRef.current;
         const currentActiveResolvers = activeResolversRef.current;
         const currentResolverOrder = resolverOrderRef.current;
-        const enabledResolvers = currentResolverOrder
-          .filter(id => currentActiveResolvers.includes(id))
+        const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+        const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+        const enabledResolvers = [...orderedIds, ...unorderedIds]
           .map(id => currentResolvers.find(r => r.id === id))
           .filter(r => r && r.capabilities?.resolve);
 
@@ -16385,8 +16404,9 @@ ${trackListXml}
     // Query all enabled resolvers in priority order (using refs to avoid stale closure)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
-    const enabledResolvers = currentResolverOrder
-      .filter(id => currentActiveResolvers.includes(id))
+    const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+    const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+    const enabledResolvers = [...orderedIds, ...unorderedIds]
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -18649,8 +18669,9 @@ ${trackListXml}
     // Query enabled resolvers in priority order (using refs for current values)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
-    const enabledResolvers = currentResolverOrder
-      .filter(id => currentActiveResolvers.includes(id))
+    const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+    const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+    const enabledResolvers = [...orderedIds, ...unorderedIds]
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
@@ -19024,8 +19045,10 @@ ${trackListXml}
     const sources = {};
 
     // Query enabled resolvers in priority order (using refs for current values)
-    const enabledResolvers = currentResolverOrder
-      .filter(id => currentActiveResolvers.includes(id))
+    // Start with resolvers in priority order, then append any active resolvers not yet in the order
+    const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
+    const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
+    const enabledResolvers = [...orderedIds, ...unorderedIds]
       .map(id => allResolvers.find(r => r.id === id))
       .filter(Boolean);
 
