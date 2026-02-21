@@ -11261,6 +11261,36 @@ ${trackListXml}
     // Skip on initial mount (when both are empty)
     if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
 
+    // Clear scheduler's resolved set so tracks can be re-queued with new resolver config
+    resolutionSchedulerRef.current?.clearResolved();
+
+    // Invalidate in-memory cache — resolver hash has changed so entries are stale
+    if (trackSourcesCache.current) {
+      trackSourcesCache.current = {};
+    }
+
+    // Clear trackSources state so UI shows shimmer (resolving) until fresh results arrive
+    setTrackSources({});
+
+    // Re-enqueue currently visible collection tracks for resolution
+    if (visibleCollectionTrackIds.current.size > 0) {
+      const currentTracks = collectionTracksRef.current;
+      const visibleTracks = [];
+      visibleCollectionTrackIds.current.forEach(trackId => {
+        const track = currentTracks.find(t => t.id === trackId);
+        if (track) {
+          visibleTracks.push({
+            key: trackId,
+            data: { track, artistName: track.artist || 'Unknown Artist' }
+          });
+        }
+      });
+      if (visibleTracks.length > 0) {
+        console.log(`🔄 Re-enqueuing ${visibleTracks.length} visible collection tracks for resolution`);
+        updateSchedulerVisibility('collection-tracks', visibleTracks);
+      }
+    }
+
     // Re-resolve release tracks if viewing an artist release
     if (currentRelease && currentRelease.tracks) {
       console.log('🔄 Resolver settings changed, re-resolving release tracks...');
