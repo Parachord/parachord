@@ -35886,7 +35886,6 @@ useEffect(() => {
                               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                               animationDelay: `${index * 50}ms`
                             },
-                            title: album.reason,
                             onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist })
                           },
                             React.createElement('div', {
@@ -36012,22 +36011,46 @@ useEffect(() => {
                                 )
                               )
                             ),
-                            // Album title
-                            React.createElement('h3', {
-                              style: {
-                                fontWeight: '500',
-                                fontSize: '13px',
-                                color: '#1f2937',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                marginBottom: '2px'
-                              }
-                            }, album.title),
-                            // Artist name
-                            React.createElement('p', {
-                              style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                            }, album.artist)
+                            // Album title + artist with reason tooltip
+                            album.reason
+                              ? React.createElement(Tooltip, {
+                                  content: album.reason,
+                                  position: 'bottom',
+                                  className: 'tooltip-bio'
+                                },
+                                  React.createElement('div', null,
+                                    React.createElement('h3', {
+                                      style: {
+                                        fontWeight: '500',
+                                        fontSize: '13px',
+                                        color: '#1f2937',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        marginBottom: '2px'
+                                      }
+                                    }, album.title),
+                                    React.createElement('p', {
+                                      style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                                    }, album.artist)
+                                  )
+                                )
+                              : React.createElement('div', null,
+                                  React.createElement('h3', {
+                                    style: {
+                                      fontWeight: '500',
+                                      fontSize: '13px',
+                                      color: '#1f2937',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      marginBottom: '2px'
+                                    }
+                                  }, album.title),
+                                  React.createElement('p', {
+                                    style: { fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                                  }, album.artist)
+                                )
                           )
                         )
                       )
@@ -36051,7 +36074,6 @@ useEffect(() => {
                             style: {
                               animationDelay: `${index * 50}ms`
                             },
-                            title: artist.reason,
                             onClick: () => {
                               setCurrentArtist({ name: artist.name });
                               setArtistReleases([]);
@@ -36143,12 +36165,24 @@ useEffect(() => {
                                 )
                               )
                             ),
-                            // Artist name section
-                            React.createElement('div', { className: 'p-3' },
-                              React.createElement('p', {
-                                className: 'font-medium text-gray-900 truncate text-sm'
-                              }, artist.name)
-                            )
+                            // Artist name section with reason tooltip
+                            artist.reason
+                              ? React.createElement(Tooltip, {
+                                  content: artist.reason,
+                                  position: 'bottom',
+                                  className: 'tooltip-bio'
+                                },
+                                  React.createElement('div', { className: 'p-3' },
+                                    React.createElement('p', {
+                                      className: 'font-medium text-gray-900 truncate text-sm'
+                                    }, artist.name)
+                                  )
+                                )
+                              : React.createElement('div', { className: 'p-3' },
+                                  React.createElement('p', {
+                                    className: 'font-medium text-gray-900 truncate text-sm'
+                                  }, artist.name)
+                                )
                           )
                         )
                       )
