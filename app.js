@@ -4928,6 +4928,7 @@ const Parachord = () => {
     friendActivity: [],             // What friends are currently listening to
     criticsPickPreview: [],         // Preview of critical darlings
     weeklyJams: null,               // ListenBrainz weekly jams playlist
+    weeklyExploration: null,        // ListenBrainz weekly exploration playlist
     surpriseMeSeeds: []             // Seeds for AI playlist generation
   });
   const [homeLoading, setHomeLoading] = useState(true);
@@ -17572,9 +17573,10 @@ ${trackListXml}
   // Load pending playlist once playlists are loaded
   useEffect(() => {
     if (pendingPlaylistLoad) {
-      // For ephemeral ListenBrainz playlists (Weekly Jams), look in homeData.weeklyJams
+      // For ephemeral ListenBrainz playlists (Weekly Jams/Exploration), look in homeData
       if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz' && pendingPlaylistLoad.listenbrainzId) {
-        const jam = homeData.weeklyJams?.find(j => j.id === pendingPlaylistLoad.listenbrainzId);
+        const jam = homeData.weeklyJams?.find(j => j.id === pendingPlaylistLoad.listenbrainzId)
+          || homeData.weeklyExploration?.find(j => j.id === pendingPlaylistLoad.listenbrainzId);
         if (jam) {
           console.log(`📦 Reconstructing ephemeral playlist for restored view: ${jam.title}`);
           setPendingPlaylistLoad(null);
@@ -17595,7 +17597,7 @@ ${trackListXml}
           loadPlaylist(ephemeralPlaylist, { skipNavigation: true });
           return;
         }
-        // Weekly jams not loaded yet - wait for them
+        // Weekly playlists not loaded yet - wait for them
         return;
       }
 
@@ -17610,7 +17612,7 @@ ${trackListXml}
       }
       // Don't clear pending or fall back yet - hosted playlists may still be loading
     }
-  }, [playlists, pendingPlaylistLoad, homeData.weeklyJams]);
+  }, [playlists, pendingPlaylistLoad, homeData.weeklyJams, homeData.weeklyExploration]);
 
   // Give up on pending playlist load after timeout (hosted playlists should be loaded by then)
   useEffect(() => {
@@ -21125,7 +21127,7 @@ ${trackListXml}
           recommendationsCache.current = { tracks: null, timestamp: 0 };
         }
         if (resolverId === 'listenbrainz') {
-          setHomeData(prev => ({ ...prev, weeklyJams: null }));
+          setHomeData(prev => ({ ...prev, weeklyJams: null, weeklyExploration: null }));
         }
       } else {
         setLoadedResolvers(prev => prev.filter(r => r.id !== resolverId));
@@ -22506,10 +22508,10 @@ ${tracks}
     return [];
   };
 
-  // Load weekly jams playlist from ListenBrainz
-  const loadWeeklyJams = async () => {
+  // Load weekly jams and weekly exploration playlists from ListenBrainz
+  const loadWeeklyPlaylists = async () => {
     const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-    if (!listenbrainzConfig?.username) return null;
+    if (!listenbrainzConfig?.username) return { jams: null, exploration: null };
 
     try {
       // Fetch playlists created for the user (includes Weekly Jams, Weekly Exploration, etc.)
@@ -22517,48 +22519,51 @@ ${tracks}
         `https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/playlists/createdfor`
       );
 
-      if (!response.ok) return null;
+      if (!response.ok) return { jams: null, exploration: null };
 
       const data = await response.json();
-      const playlists = data.playlists || [];
+      const allPlaylists = data.playlists || [];
 
-      // Find all Weekly Jams/Exploration playlists, sorted by date (most recent first)
-      const weeklyPlaylists = playlists
-        .filter(p =>
-          p.playlist?.title?.toLowerCase().includes('weekly jams') ||
-          p.playlist?.title?.toLowerCase().includes('weekly exploration')
-        )
+      // Separate Weekly Jams from Weekly Exploration
+      const jamsPlaylists = allPlaylists
+        .filter(p => p.playlist?.title?.toLowerCase().includes('weekly jams'))
         .sort((a, b) => new Date(b.playlist?.date || 0) - new Date(a.playlist?.date || 0));
 
-      if (weeklyPlaylists.length === 0) return null;
+      const explorationPlaylists = allPlaylists
+        .filter(p => p.playlist?.title?.toLowerCase().includes('weekly exploration'))
+        .sort((a, b) => new Date(b.playlist?.date || 0) - new Date(a.playlist?.date || 0));
 
-      // Get the last 4 weeks of playlists (most recent first)
-      const results = [];
-      for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
-        const weeklyJam = weeklyPlaylists[i];
-        const playlistId = weeklyJam.playlist?.identifier?.split('/').pop();
-        if (!playlistId) continue;
+      const buildResults = (weeklyPlaylists, defaultTitle, defaultDescription) => {
+        if (weeklyPlaylists.length === 0) return null;
+        const results = [];
+        for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
+          const entry = weeklyPlaylists[i];
+          const playlistId = entry.playlist?.identifier?.split('/').pop();
+          if (!playlistId) continue;
 
-        // Parse the date from the title to create a friendly label
-        const title = weeklyJam.playlist?.title || 'Weekly Jam';
-        const dateMatch = title.match(/(\d{4}-\d{2}-\d{2})/);
-        let weekLabel = i === 0 ? 'This Week' : i === 1 ? 'Last Week' : i === 2 ? '2 Weeks Ago' : '3 Weeks Ago';
+          const title = entry.playlist?.title || defaultTitle;
+          let weekLabel = i === 0 ? 'This Week' : i === 1 ? 'Last Week' : i === 2 ? '2 Weeks Ago' : '3 Weeks Ago';
 
-        results.push({
-          id: playlistId,
-          title: title,
-          weekLabel: weekLabel,
-          description: weeklyJam.playlist?.annotation || 'Personalized weekly discoveries from ListenBrainz',
-          date: weeklyJam.playlist?.date,
-          tracks: [], // Tracks will be loaded when viewing the playlist
-          tracksLoaded: false
-        });
-      }
+          results.push({
+            id: playlistId,
+            title: title,
+            weekLabel: weekLabel,
+            description: entry.playlist?.annotation || defaultDescription,
+            date: entry.playlist?.date,
+            tracks: [],
+            tracksLoaded: false
+          });
+        }
+        return results.length > 0 ? results : null;
+      };
 
-      return results.length > 0 ? results : null;
+      return {
+        jams: buildResults(jamsPlaylists, 'Weekly Jams', 'Your favorite tracks from the past week, curated by ListenBrainz'),
+        exploration: buildResults(explorationPlaylists, 'Weekly Exploration', 'New discoveries based on your listening habits, curated by ListenBrainz')
+      };
     } catch (error) {
-      console.error('Failed to load weekly jams:', error);
-      return null;
+      console.error('Failed to load weekly playlists:', error);
+      return { jams: null, exploration: null };
     }
   };
 
@@ -22595,53 +22600,60 @@ ${tracks}
     }
   };
 
-  // Load weekly jams when HOME is active and ListenBrainz is connected
+  // Load weekly playlists when HOME is active and ListenBrainz is connected
   useEffect(() => {
-    const fetchWeeklyJams = async () => {
-      if (activeView === 'home' && cacheLoaded && metaServiceConfigs.listenbrainz?.username && !homeData.weeklyJams) {
-        const jams = await loadWeeklyJams();
-        if (jams && jams.length > 0) {
-          // Store as array of weekly jam playlists
-          setHomeData(prev => ({ ...prev, weeklyJams: jams }));
-        }
+    const fetchWeeklyPlaylists = async () => {
+      if (activeView === 'home' && cacheLoaded && metaServiceConfigs.listenbrainz?.username && !homeData.weeklyJams && !homeData.weeklyExploration) {
+        const { jams, exploration } = await loadWeeklyPlaylists();
+        setHomeData(prev => ({
+          ...prev,
+          ...(jams && jams.length > 0 ? { weeklyJams: jams } : {}),
+          ...(exploration && exploration.length > 0 ? { weeklyExploration: exploration } : {})
+        }));
       }
     };
-    fetchWeeklyJams();
+    fetchWeeklyPlaylists();
   }, [activeView, cacheLoaded, metaServiceConfigs.listenbrainz?.username]);
 
-  // Load covers for weekly jams when they're available
+  // Load covers for weekly jams and weekly exploration when they're available
   useEffect(() => {
-    const loadWeeklyJamCoversAsync = async () => {
-      if (!homeData.weeklyJams || homeData.weeklyJams.length === 0) return;
+    const loadWeeklyPlaylistCoversAsync = async () => {
+      const allWeekly = [
+        ...(homeData.weeklyJams || []),
+        ...(homeData.weeklyExploration || [])
+      ];
+      if (allWeekly.length === 0) return;
 
-      for (const jam of homeData.weeklyJams) {
+      for (const entry of allWeekly) {
         // Skip if we already have covers for this playlist
-        if (weeklyJamCovers[jam.id]) continue;
+        if (weeklyJamCovers[entry.id]) continue;
 
         // Load tracks first if needed
-        let tracks = jam.tracks;
-        if (!jam.tracksLoaded || tracks.length === 0) {
-          tracks = await loadWeeklyJamTracks(jam.id);
-          // Update the jam with loaded tracks
+        let tracks = entry.tracks;
+        if (!entry.tracksLoaded || tracks.length === 0) {
+          tracks = await loadWeeklyJamTracks(entry.id);
+          // Determine which array this entry belongs to and update it
+          const isJam = homeData.weeklyJams?.some(j => j.id === entry.id);
+          const field = isJam ? 'weeklyJams' : 'weeklyExploration';
           setHomeData(prev => ({
             ...prev,
-            weeklyJams: prev.weeklyJams.map(j =>
-              j.id === jam.id ? { ...j, tracks, tracksLoaded: true } : j
+            [field]: prev[field]?.map(j =>
+              j.id === entry.id ? { ...j, tracks, tracksLoaded: true } : j
             )
           }));
         }
 
         // Get covers using the same function as regular playlists
         if (tracks.length > 0) {
-          const covers = await getPlaylistCovers(jam.id, tracks);
+          const covers = await getPlaylistCovers(entry.id, tracks);
           if (covers && covers.length > 0) {
-            setWeeklyJamCovers(prev => ({ ...prev, [jam.id]: covers }));
+            setWeeklyJamCovers(prev => ({ ...prev, [entry.id]: covers }));
           }
         }
       }
     };
-    loadWeeklyJamCoversAsync();
-  }, [homeData.weeklyJams]);
+    loadWeeklyPlaylistCoversAsync();
+  }, [homeData.weeklyJams, homeData.weeklyExploration]);
 
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
@@ -35100,129 +35112,138 @@ useEffect(() => {
                 )
               ),
 
-              // SECTION: Weekly Jam (ListenBrainz)
-              homeData.weeklyJams && homeData.weeklyJams.length > 0 && React.createElement('div', null,
-                React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                  React.createElement('div', { className: 'flex items-center gap-2' },
-                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Weekly Jam'),
-                    React.createElement('span', {
-                      className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                      style: { backgroundColor: '#FFF3E0', color: '#E65100' }
-                    }, 'ListenBrainz')
-                  )
-                ),
-                // 4-column grid of Weekly Jams (past 4 weeks)
-                React.createElement('div', { className: 'grid grid-cols-4 gap-4' },
-                  homeData.weeklyJams.map((jam, index) =>
-                    React.createElement('button', {
-                      key: jam.id,
-                      className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg',
-                      style: {
-                        backgroundColor: '#ffffff',
-                        border: 'none',
-                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
-                        animationDelay: `${index * 50}ms`
-                      },
-                      onClick: () => {
-                        // Open ephemeral playlist view
-                        const playlist = {
-                          id: `listenbrainz-${jam.id}`,
-                          listenbrainzId: jam.id,
-                          title: jam.title,
-                          weekLabel: jam.weekLabel,
-                          description: jam.description,
-                          tracks: jam.tracks || [],
-                          tracksLoaded: jam.tracksLoaded,
-                          isExternal: true,
-                          isEphemeral: true,
-                          source: 'listenbrainz',
-                          creator: 'ListenBrainz'
-                        };
-                        loadPlaylist(playlist);
-                      }
+              // SECTION: Weekly Jams & Weekly Exploration (ListenBrainz, side by side)
+              (homeData.weeklyJams?.length > 0 || homeData.weeklyExploration?.length > 0) && (() => {
+                const hasJams = homeData.weeklyJams?.length > 0;
+                const hasExploration = homeData.weeklyExploration?.length > 0;
+                const hasBoth = hasJams && hasExploration;
+
+                // Render a column of playlist cards for a given list
+                const renderWeeklyColumn = (items, label, contextType, stateField) =>
+                  React.createElement('div', { className: 'flex flex-col' },
+                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, label),
+                      React.createElement('span', {
+                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                        style: { backgroundColor: '#FFF3E0', color: '#E65100' }
+                      }, 'ListenBrainz')
+                    ),
+                    React.createElement('div', {
+                      className: hasBoth ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-4 gap-4'
                     },
-                      // 2x2 mosaic album art with hover play button
-                      React.createElement('div', {
-                        className: 'relative aspect-square group/mosaic'
-                      },
-                        React.createElement('div', {
-                          className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                          style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
-                        },
-                          weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
-                            React.createElement('img', {
-                              key: i,
-                              src: url,
-                              alt: '',
-                              className: 'w-full h-full object-cover'
-                            })
-                          ) || Array.from({ length: 4 }).map((_, i) =>
-                            React.createElement('div', {
-                              key: `placeholder-${i}`,
-                              className: 'w-full h-full flex items-center justify-center',
-                              style: { backgroundColor: i % 2 === 0 ? '#c7d2fe' : '#e0e7ff' }
-                            },
-                              i === 0 && React.createElement('svg', {
-                                className: 'w-12 h-12 text-indigo-300',
-                                fill: 'none',
-                                viewBox: '0 0 24 24',
-                                stroke: 'currentColor'
-                              },
-                                React.createElement('path', {
-                                  strokeLinecap: 'round',
-                                  strokeLinejoin: 'round',
-                                  strokeWidth: 1.5,
-                                  d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
-                                })
-                              )
-                            )
-                          )
-                        ),
-                        // Hover play button overlay
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
+                      items.map((jam, index) =>
+                        React.createElement('button', {
+                          key: jam.id,
+                          className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg',
+                          style: {
+                            backgroundColor: '#ffffff',
+                            border: 'none',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                            animationDelay: `${index * 50}ms`
+                          },
+                          onClick: () => {
+                            const playlist = {
+                              id: `listenbrainz-${jam.id}`,
+                              listenbrainzId: jam.id,
+                              title: jam.title,
+                              weekLabel: jam.weekLabel,
+                              description: jam.description,
+                              tracks: jam.tracks || [],
+                              tracksLoaded: jam.tracksLoaded,
+                              isExternal: true,
+                              isEphemeral: true,
+                              source: 'listenbrainz',
+                              creator: 'ListenBrainz'
+                            };
+                            loadPlaylist(playlist);
+                          }
                         },
                           React.createElement('div', {
-                            className: 'w-14 h-14 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg cursor-pointer',
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              // Load tracks if needed and play all
-                              let tracks = jam.tracks;
-                              if (!jam.tracksLoaded || tracks.length === 0) {
-                                tracks = await loadWeeklyJamTracks(jam.id);
-                                setHomeData(prev => ({
-                                  ...prev,
-                                  weeklyJams: prev.weeklyJams.map(j =>
-                                    j.id === jam.id ? { ...j, tracks, tracksLoaded: true } : j
-                                  )
-                                }));
-                              }
-                              if (tracks.length > 0) {
-                                playTrackCollection(tracks, { type: 'weekly-jam', name: `${jam.weekLabel}'s Weekly Jam` });
-                                showToast(`Playing ${jam.weekLabel}'s Weekly Jam`, 'success');
-                              }
-                            }
+                            className: 'relative aspect-square group/mosaic'
                           },
-                            React.createElement('svg', { className: 'w-6 h-6 text-gray-900 ml-1', fill: 'currentColor', viewBox: '0 0 24 24' },
-                              React.createElement('path', { d: 'M8 5v14l11-7z' })
+                            React.createElement('div', {
+                              className: 'w-full h-full grid grid-cols-2 grid-rows-2',
+                              style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                            },
+                              weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
+                                React.createElement('img', {
+                                  key: i,
+                                  src: url,
+                                  alt: '',
+                                  className: 'w-full h-full object-cover'
+                                })
+                              ) || Array.from({ length: 4 }).map((_, i) =>
+                                React.createElement('div', {
+                                  key: `placeholder-${i}`,
+                                  className: 'w-full h-full flex items-center justify-center',
+                                  style: { backgroundColor: i % 2 === 0 ? '#c7d2fe' : '#e0e7ff' }
+                                },
+                                  i === 0 && React.createElement('svg', {
+                                    className: 'w-12 h-12 text-indigo-300',
+                                    fill: 'none',
+                                    viewBox: '0 0 24 24',
+                                    stroke: 'currentColor'
+                                  },
+                                    React.createElement('path', {
+                                      strokeLinecap: 'round',
+                                      strokeLinejoin: 'round',
+                                      strokeWidth: 1.5,
+                                      d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+                                    })
+                                  )
+                                )
+                              )
+                            ),
+                            React.createElement('div', {
+                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
+                            },
+                              React.createElement('div', {
+                                className: 'w-14 h-14 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg cursor-pointer',
+                                onClick: async (e) => {
+                                  e.stopPropagation();
+                                  let tracks = jam.tracks;
+                                  if (!jam.tracksLoaded || tracks.length === 0) {
+                                    tracks = await loadWeeklyJamTracks(jam.id);
+                                    setHomeData(prev => ({
+                                      ...prev,
+                                      [stateField]: prev[stateField].map(j =>
+                                        j.id === jam.id ? { ...j, tracks, tracksLoaded: true } : j
+                                      )
+                                    }));
+                                  }
+                                  if (tracks.length > 0) {
+                                    playTrackCollection(tracks, { type: contextType, name: `${jam.weekLabel}'s ${label}` });
+                                    showToast(`Playing ${jam.weekLabel}'s ${label}`, 'success');
+                                  }
+                                }
+                              },
+                                React.createElement('svg', { className: 'w-6 h-6 text-gray-900 ml-1', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                  React.createElement('path', { d: 'M8 5v14l11-7z' })
+                                )
+                              )
                             )
+                          ),
+                          React.createElement('div', { className: 'p-3' },
+                            React.createElement('p', {
+                              className: 'text-gray-900 font-medium truncate',
+                              style: { fontSize: '14px' }
+                            }, jam.weekLabel),
+                            React.createElement('p', {
+                              className: 'text-xs text-gray-500 truncate mt-0.5'
+                            }, jam.tracksLoaded ? `${jam.tracks.length} tracks` : label)
                           )
                         )
-                      ),
-                      // Playlist info below mosaic
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('p', {
-                          className: 'text-gray-900 font-medium truncate',
-                          style: { fontSize: '14px' }
-                        }, jam.weekLabel),
-                        React.createElement('p', {
-                          className: 'text-xs text-gray-500 truncate mt-0.5'
-                        }, jam.tracksLoaded ? `${jam.tracks.length} tracks` : 'Weekly Jam')
                       )
                     )
-                  )
-                )
-              ),
+                  );
+
+                return React.createElement('div', {
+                  className: hasBoth ? 'grid grid-cols-2 gap-6' : null
+                },
+                  hasJams && renderWeeklyColumn(homeData.weeklyJams, 'Weekly Jams', 'weekly-jam', 'weeklyJams'),
+                  hasExploration && renderWeeklyColumn(homeData.weeklyExploration, 'Weekly Exploration', 'weekly-exploration', 'weeklyExploration')
+                );
+              })(),
 
               // SECTION: Your Playlists & Friends Listening Now (side by side)
               (() => {
@@ -50319,9 +50340,8 @@ useEffect(() => {
           } else if (playbackContext.type === 'url' && playbackContext.url) {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
-          } else if (playbackContext.type === 'weekly-jam') {
-            // Navigate to home view where Weekly Jams are displayed
-            // If we have the jam ID, we could potentially scroll to or highlight that jam
+          } else if (playbackContext.type === 'weekly-jam' || playbackContext.type === 'weekly-exploration') {
+            // Navigate to home view where Weekly Jams/Exploration are displayed
             navigateTo('home');
           }
           setQueueDrawerOpen(false);
@@ -50346,7 +50366,8 @@ useEffect(() => {
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
             playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
-            playbackContext.type === 'weekly-jam' ? `${playbackContext.name || 'Weekly Jam'}` :
+            playbackContext.type === 'weekly-jam' ? `${playbackContext.name || 'Weekly Jams'}` :
+            playbackContext.type === 'weekly-exploration' ? `${playbackContext.name || 'Weekly Exploration'}` :
             playbackContext.name || 'Unknown'
           )
         ),
