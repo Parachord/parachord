@@ -21569,9 +21569,15 @@ ${tracks}
         const spotifyMatch = descriptionRaw.match(/href="(https:\/\/open\.spotify\.com\/album\/[^"]+)"/);
         const spotifyUrl = spotifyMatch ? spotifyMatch[1] : null;
 
-        // Strip HTML tags, decode HTML entities, and remove any remaining Spotify URLs from the synopsis
-        const descDoc = new DOMParser().parseFromString(descriptionRaw, 'text/html');
-        let description = (descDoc.body.textContent || '').trim();
+        // Strip HTML tags and fully decode HTML entities (the RSS CDATA content may
+        // contain double-encoded entities like &amp;amp; so we decode in a loop until stable)
+        let description = descriptionRaw;
+        let prev;
+        do {
+          prev = description;
+          const descDoc = new DOMParser().parseFromString(description, 'text/html');
+          description = (descDoc.body.textContent || '').trim();
+        } while (description !== prev);
         // Remove plain text Spotify URLs that might remain after HTML stripping
         description = description.replace(/https:\/\/open\.spotify\.com\/album\/\S+/g, '').trim();
 
