@@ -4929,7 +4929,8 @@ const Parachord = () => {
     criticsPickPreview: [],         // Preview of critical darlings
     weeklyJams: null,               // ListenBrainz weekly jams playlist
     weeklyExploration: null,        // ListenBrainz weekly exploration playlist
-    surpriseMeSeeds: []             // Seeds for AI playlist generation
+    surpriseMeSeeds: [],            // Seeds for AI playlist generation
+    aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
@@ -22655,6 +22656,200 @@ ${tracks}
     loadWeeklyPlaylistCoversAsync();
   }, [homeData.weeklyJams, homeData.weeklyExploration]);
 
+  // Load AI-generated recommendations for the home page
+  const loadAiRecommendations = async () => {
+    const chatServices = getChatServices();
+    const enabledServices = chatServices.filter(s => {
+      const config = metaServiceConfigs[s.id] || {};
+      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
+    });
+
+    if (enabledServices.length === 0) return null;
+
+    const provider = selectedChatProvider
+      ? enabledServices.find(s => s.id === selectedChatProvider) || enabledServices[0]
+      : enabledServices[0];
+
+    if (!provider?.chat) return null;
+
+    // Build listening context for the prompt
+    let contextInfo = '';
+    if (aiIncludeHistoryRef.current) {
+      try {
+        const listeningHistory = await fetchListeningContext();
+        if (listeningHistory) {
+          const parts = [];
+          // Recent listens
+          if (listeningHistory.recently_played?.length > 0) {
+            parts.push('Recently played: ' + listeningHistory.recently_played.slice(0, 15).map(t => `${t.artist} - ${t.title}`).join(', '));
+          }
+          // Top artists this week
+          const weekData = Array.isArray(listeningHistory) ? listeningHistory.find(p => p.period === 'last_7_days') : listeningHistory.periods?.find(p => p.period === 'last_7_days');
+          if (weekData?.top_artists?.length > 0) {
+            parts.push('Top artists this week: ' + weekData.top_artists.slice(0, 10).join(', '));
+          }
+          if (weekData?.top_albums?.length > 0) {
+            parts.push('Top albums this week: ' + weekData.top_albums.slice(0, 10).map(a => `${a.artist} - ${a.title}`).join(', '));
+          }
+          // Collection favorites
+          const favArtists = (collectionData?.artists || []).slice(0, 15).map(a => a.name || a.artist);
+          if (favArtists.length > 0) {
+            parts.push('Favorite artists in collection: ' + favArtists.join(', '));
+          }
+          const favAlbums = (collectionData?.albums || []).slice(0, 10).map(a => `${a.artist} - ${a.title || a.album}`);
+          if (favAlbums.length > 0) {
+            parts.push('Favorite albums in collection: ' + favAlbums.join(', '));
+          }
+          contextInfo = parts.join('\n');
+        }
+      } catch (e) {
+        console.log('Could not fetch listening context for AI recommendations:', e.message);
+      }
+    }
+
+    // Fallback: use collection data if no listening history
+    if (!contextInfo) {
+      const parts = [];
+      const favArtists = (collectionData?.artists || []).slice(0, 15).map(a => a.name || a.artist);
+      if (favArtists.length > 0) parts.push('Favorite artists: ' + favArtists.join(', '));
+      const favAlbums = (collectionData?.albums || []).slice(0, 10).map(a => `${a.artist} - ${a.title || a.album}`);
+      if (favAlbums.length > 0) parts.push('Favorite albums: ' + favAlbums.join(', '));
+      contextInfo = parts.join('\n') || 'No listening history available. Recommend diverse, acclaimed music.';
+    }
+
+    const config = metaServiceConfigs[provider.id] || {};
+    const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
+{"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
+Provide exactly 5 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history.`;
+
+    const userPrompt = `Based on this listening profile, recommend 5 albums and 5 artists I should check out:\n\n${contextInfo}`;
+
+    try {
+      const response = await provider.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        [], // No tools needed
+        config
+      );
+
+      const content = response.content?.trim();
+      if (!content) return null;
+
+      // Extract JSON from response (handle markdown code blocks)
+      let jsonStr = content;
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1].trim();
+      } else {
+        // Try to find JSON object directly
+        const braceMatch = content.match(/\{[\s\S]*\}/);
+        if (braceMatch) jsonStr = braceMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonStr);
+      const albums = (parsed.albums || []).slice(0, 5).map(a => ({
+        title: a.title || a.album || 'Unknown Album',
+        artist: a.artist || 'Unknown Artist',
+        reason: a.reason || '',
+        art: null // Will be loaded asynchronously
+      }));
+      const artists = (parsed.artists || []).slice(0, 5).map(a => ({
+        name: a.name || a.artist || 'Unknown Artist',
+        reason: a.reason || '',
+        image: undefined // Will be loaded asynchronously
+      }));
+
+      return { albums, artists };
+    } catch (error) {
+      console.error('Failed to load AI recommendations:', error);
+      return null;
+    }
+  };
+
+  // Load AI recommendations when HOME is active and an AI plugin is enabled
+  useEffect(() => {
+    const fetchAiRecommendations = async () => {
+      // Only fetch if we're on home, data sharing is on, and we haven't already fetched
+      if (activeView !== 'home' || !cacheLoaded || homeData.aiRecommendations) return;
+
+      const chatServices = getChatServices();
+      const hasEnabledChat = chatServices.some(s => {
+        const config = metaServiceConfigs[s.id] || {};
+        const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
+        return noKeyNeeded ? config.enabled === true : !!config.apiKey;
+      });
+
+      if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
+
+      // Mark as loading
+      setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+
+      const result = await loadAiRecommendations();
+      if (result) {
+        setHomeData(prev => ({ ...prev, aiRecommendations: { ...result, loading: false } }));
+
+        // Asynchronously load album art and artist images
+        for (const album of result.albums) {
+          getAlbumArt(album.artist, album.title).then(artUrl => {
+            if (artUrl) {
+              setHomeData(prev => {
+                if (!prev.aiRecommendations) return prev;
+                return {
+                  ...prev,
+                  aiRecommendations: {
+                    ...prev.aiRecommendations,
+                    albums: prev.aiRecommendations.albums.map(a =>
+                      a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a
+                    )
+                  }
+                };
+              });
+            }
+          }).catch(() => {});
+        }
+        for (const artist of result.artists) {
+          getArtistImage(artist.name).then(result => {
+            if (result?.url) {
+              setHomeData(prev => {
+                if (!prev.aiRecommendations) return prev;
+                return {
+                  ...prev,
+                  aiRecommendations: {
+                    ...prev.aiRecommendations,
+                    artists: prev.aiRecommendations.artists.map(a =>
+                      a.name === artist.name ? { ...a, image: result.url } : a
+                    )
+                  }
+                };
+              });
+            } else {
+              // Mark as null (no image found) instead of undefined (still loading)
+              setHomeData(prev => {
+                if (!prev.aiRecommendations) return prev;
+                return {
+                  ...prev,
+                  aiRecommendations: {
+                    ...prev.aiRecommendations,
+                    artists: prev.aiRecommendations.artists.map(a =>
+                      a.name === artist.name ? { ...a, image: null } : a
+                    )
+                  }
+                };
+              });
+            }
+          }).catch(() => {});
+        }
+      } else {
+        // Failed to load - clear loading state so we don't show loading forever
+        setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+      }
+    };
+    fetchAiRecommendations();
+  }, [activeView, cacheLoaded]);
+
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
     // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
@@ -35622,7 +35817,7 @@ useEffect(() => {
                 )
               ),
 
-              // SECTION: Surprise Me (Shuffleupagus AI DJ)
+              // SECTION: AI Recommendations or Surprise Me fallback
               (() => {
                 const chatServices = getChatServices();
                 const hasEnabledChat = chatServices.some(s => {
@@ -35631,6 +35826,208 @@ useEffect(() => {
                   return noKeyNeeded ? config.enabled === true : !!config.apiKey;
                 });
 
+                const aiRecs = homeData.aiRecommendations;
+                const hasAiRecs = aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
+
+                // Show AI recommendations if loaded
+                if (hasAiRecs) {
+                  return React.createElement('div', null,
+                    // Row 1: Recommended Albums
+                    aiRecs.albums?.length > 0 && React.createElement('div', { className: 'mb-6' },
+                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Albums'),
+                        React.createElement('span', {
+                          className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                          style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
+                        }, 'Shuffleupagus'),
+                        React.createElement('button', {
+                          className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
+                          onClick: () => {
+                            setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                          }
+                        }, 'Refresh')
+                      ),
+                      React.createElement('div', {
+                        className: 'grid grid-cols-5 gap-4'
+                      },
+                        aiRecs.albums.map((album, index) =>
+                          React.createElement('button', {
+                            key: `ai-album-${album.artist}-${album.title}`,
+                            className: 'release-card card-fade-up text-left group/art',
+                            style: {
+                              backgroundColor: '#ffffff',
+                              borderRadius: '10px',
+                              padding: '10px',
+                              border: 'none',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                              animationDelay: `${index * 50}ms`
+                            },
+                            title: album.reason,
+                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist })
+                          },
+                            React.createElement('div', {
+                              className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
+                              style: { position: 'relative' }
+                            },
+                              album.art ?
+                                React.createElement('img', {
+                                  src: album.art,
+                                  alt: album.title,
+                                  className: 'w-full h-full object-cover transition-transform duration-300 group-hover/art:scale-105'
+                                }) :
+                                React.createElement('div', {
+                                  className: 'w-full h-full flex items-center justify-center',
+                                  style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                                },
+                                  React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                                  )
+                                )
+                            ),
+                            React.createElement('p', {
+                              className: 'text-gray-900 truncate',
+                              style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                            }, album.title),
+                            React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, album.artist)
+                          )
+                        )
+                      )
+                    ),
+                    // Row 2: Recommended Artists
+                    aiRecs.artists?.length > 0 && React.createElement('div', null,
+                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Artists'),
+                        React.createElement('span', {
+                          className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                          style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
+                        }, 'Shuffleupagus')
+                      ),
+                      React.createElement('div', {
+                        className: 'grid grid-cols-5 gap-4'
+                      },
+                        aiRecs.artists.map((artist, index) =>
+                          React.createElement('button', {
+                            key: `ai-artist-${artist.name}`,
+                            className: 'release-card card-fade-up text-left group',
+                            style: {
+                              backgroundColor: '#ffffff',
+                              borderRadius: '10px',
+                              padding: '10px',
+                              border: 'none',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                              animationDelay: `${index * 50}ms`
+                            },
+                            title: artist.reason,
+                            onClick: () => {
+                              setCurrentArtist({ name: artist.name });
+                              setArtistReleases([]);
+                              setLoadingArtist(true);
+                              setArtistImage(null);
+                              navigateTo('artist');
+                            }
+                          },
+                            React.createElement('div', {
+                              className: 'aspect-square rounded-lg overflow-hidden mb-2 relative',
+                              style: { background: artist.image === null ? generateArtistPattern(artist.name).gradient : '#e5e7eb' }
+                            },
+                              // Loading shimmer
+                              artist.image === undefined && React.createElement('div', {
+                                className: 'absolute inset-0 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-300 animate-shimmer',
+                                style: { backgroundSize: '200% 100%' }
+                              }),
+                              // Artist image
+                              typeof artist.image === 'string' && React.createElement('img', {
+                                src: artist.image,
+                                alt: artist.name,
+                                className: 'absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 transition-transform',
+                                style: { opacity: 0 },
+                                ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                                onLoad: (e) => { e.target.style.opacity = '1'; }
+                              }),
+                              // Initials fallback
+                              artist.image === null && React.createElement('div', {
+                                className: 'absolute inset-0 flex items-center justify-center',
+                                style: { color: generateArtistPattern(artist.name).textColor, opacity: 0.4 }
+                              },
+                                React.createElement('span', {
+                                  className: 'font-bold tracking-wider',
+                                  style: { fontSize: '2rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
+                                }, generateArtistPattern(artist.name).initials)
+                              )
+                            ),
+                            React.createElement('p', {
+                              className: 'text-gray-900 truncate',
+                              style: { fontSize: '13px', fontWeight: 500, letterSpacing: '0.005em' }
+                            }, artist.name)
+                          )
+                        )
+                      )
+                    )
+                  );
+                }
+
+                // Loading state - show skeleton
+                if (aiRecs?.loading) {
+                  return React.createElement('div', null,
+                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Albums'),
+                      React.createElement('span', {
+                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                        style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
+                      }, 'Shuffleupagus')
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-5 gap-4 mb-6' },
+                      Array.from({ length: 5 }).map((_, i) =>
+                        React.createElement('div', {
+                          key: `ai-album-skeleton-${i}`,
+                          className: 'animate-pulse',
+                          style: {
+                            backgroundColor: '#ffffff',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                          }
+                        },
+                          React.createElement('div', {
+                            className: 'aspect-square rounded-md mb-2',
+                            style: { backgroundColor: '#e5e7eb' }
+                          }),
+                          React.createElement('div', { className: 'h-4 rounded mb-2', style: { backgroundColor: '#e5e7eb', width: '80%' } }),
+                          React.createElement('div', { className: 'h-3 rounded', style: { backgroundColor: '#e5e7eb', width: '60%' } })
+                        )
+                      )
+                    ),
+                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Artists'),
+                      React.createElement('span', {
+                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
+                        style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
+                      }, 'Shuffleupagus')
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-5 gap-4' },
+                      Array.from({ length: 5 }).map((_, i) =>
+                        React.createElement('div', {
+                          key: `ai-artist-skeleton-${i}`,
+                          className: 'animate-pulse',
+                          style: {
+                            backgroundColor: '#ffffff',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                          }
+                        },
+                          React.createElement('div', {
+                            className: 'aspect-square rounded-lg mb-2',
+                            style: { backgroundColor: '#e5e7eb' }
+                          }),
+                          React.createElement('div', { className: 'h-4 rounded', style: { backgroundColor: '#e5e7eb', width: '70%' } })
+                        )
+                      )
+                    )
+                  );
+                }
+
+                // Fallback: original Surprise Me card
                 return React.createElement('div', {
                   className: 'p-6 rounded-xl text-center',
                   style: {
