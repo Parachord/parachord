@@ -35835,7 +35835,7 @@ useEffect(() => {
                     // Row 1: Recommended Albums
                     aiRecs.albums?.length > 0 && React.createElement('div', { className: 'mb-6' },
                       React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Albums'),
+                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Album Suggestions'),
                         React.createElement('span', {
                           className: 'px-2 py-0.5 rounded-full text-xs font-medium',
                           style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
@@ -35896,7 +35896,7 @@ useEffect(() => {
                     // Row 2: Recommended Artists
                     aiRecs.artists?.length > 0 && React.createElement('div', null,
                       React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Artists'),
+                        React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Artist Suggestions'),
                         React.createElement('span', {
                           className: 'px-2 py-0.5 rounded-full text-xs font-medium',
                           style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
@@ -35970,7 +35970,7 @@ useEffect(() => {
                 if (aiRecs?.loading) {
                   return React.createElement('div', null,
                     React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Albums'),
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Album Suggestions'),
                       React.createElement('span', {
                         className: 'px-2 py-0.5 rounded-full text-xs font-medium',
                         style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
@@ -35998,7 +35998,7 @@ useEffect(() => {
                       )
                     ),
                     React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Recommended Artists'),
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Artist Suggestions'),
                       React.createElement('span', {
                         className: 'px-2 py-0.5 rounded-full text-xs font-medium',
                         style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
