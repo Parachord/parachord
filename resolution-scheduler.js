@@ -365,6 +365,21 @@
     }
 
     /**
+     * Clear the resolved set and reset context visibility so all tracks
+     * can be re-queued on the next updateVisibility call.
+     * Call this when resolver settings change (enabled/disabled/reordered).
+     */
+    clearResolved() {
+      const count = this.resolved.size;
+      this.resolved.clear();
+      // Clear visible track sets so updateVisibility treats them as new
+      for (const [, context] of this.contexts) {
+        context.visibleTracks.clear();
+      }
+      console.log(`📋 Scheduler: cleared ${count} resolved entries and reset visibility`);
+    }
+
+    /**
      * Get count of pending tracks
      * @returns {number}
      */
