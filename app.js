@@ -22770,7 +22770,7 @@ ${tracks}
     const config = metaServiceConfigs[provider.id] || {};
     const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
 {"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
-Provide exactly 8 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.`;
+Provide exactly 10 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.`;
 
     const userPrompt = `Based on this listening profile, recommend 5 albums and 5 artists I should check out:\n\n${contextInfo}`;
 
@@ -22799,68 +22799,60 @@ Provide exactly 8 albums and 5 artists. Each "reason" should be one short senten
       }
 
       const parsed = JSON.parse(jsonStr);
-      const candidateAlbums = (parsed.albums || []).slice(0, 8).map(a => ({
+      const candidateAlbums = (parsed.albums || []).slice(0, 10).map(a => ({
         title: a.title || a.album || 'Unknown Album',
         artist: a.artist || 'Unknown Artist',
         reason: a.reason || '',
         art: null // Will be loaded asynchronously
       }));
 
-      // Validate albums against MusicBrainz: must be a studio album with a fetchable tracklist
+      // Validate albums against MusicBrainz: must be a studio album (single API call per album)
       const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
+      const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
       const validateAlbum = async (album) => {
         try {
-          const query = encodeURIComponent(`${album.artist} ${album.title}`);
+          const query = encodeURIComponent(`release-group:"${album.title}" AND artist:"${album.artist}" AND primarytype:album`);
           const searchResp = await fetch(
             `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
             { headers: mbHeaders }
           );
-          if (!searchResp.ok) return false;
+          if (!searchResp.ok) return null;
           const searchData = await searchResp.json();
           const results = searchData['release-groups'] || [];
-          if (results.length === 0) return false;
+          if (results.length === 0) return null;
 
           // Find a studio album match (primary-type=Album, no live/compilation/etc secondary types)
-          const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
           const match = results.find(r => {
             const primaryType = r['primary-type']?.toLowerCase();
             const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
             const artistMatch = r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist.toLowerCase();
             return primaryType === 'album' && artistMatch && !secondaryTypes.some(t => nonStudioTypes.includes(t));
           });
-          if (!match) return false;
+          if (!match) return null;
 
-          // Check that we can get at least one official release with recordings
-          const relResp = await fetch(
-            `https://musicbrainz.org/ws/2/release?release-group=${match.id}&status=official&fmt=json&limit=1`,
-            { headers: mbHeaders }
-          );
-          if (!relResp.ok) return false;
-          const relData = await relResp.json();
-          const release = relData.releases?.[0];
-          if (!release) return false;
-
-          const detailResp = await fetch(
-            `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
-            { headers: mbHeaders }
-          );
-          if (!detailResp.ok) return false;
-          const detailData = await detailResp.json();
-          const trackCount = (detailData.media || []).reduce((sum, m) => sum + (m['track-count'] || 0), 0);
-          return trackCount >= 4; // A real studio album should have at least 4 tracks
+          // Return the release-group ID so we can pre-seed the art cache
+          return { releaseGroupId: match.id };
         } catch {
-          return false;
+          return null;
         }
       };
 
       // Validate with staggered starts to respect MusicBrainz rate limits, then take first 5 that pass
       const validationResults = await Promise.all(
         candidateAlbums.map(async (album, i) => {
-          await new Promise(resolve => setTimeout(resolve, i * 350));
-          return { album, valid: await validateAlbum(album) };
+          await new Promise(resolve => setTimeout(resolve, i * 250));
+          return { album, result: await validateAlbum(album) };
         })
       );
-      const albums = validationResults.filter(r => r.valid).map(r => r.album).slice(0, 5);
+      const validAlbums = validationResults.filter(r => r.result).slice(0, 5);
+
+      // Pre-seed the album-to-release-id cache so getAlbumArt skips the MB search
+      for (const { album, result } of validAlbums) {
+        const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+        albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
+      }
+
+      const albums = validAlbums.map(r => r.album);
 
       const artists = (parsed.artists || []).slice(0, 5).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
@@ -36349,7 +36341,6 @@ useEffect(() => {
                       Array.from({ length: 5 }).map((_, i) =>
                         React.createElement('div', {
                           key: `ai-album-skeleton-${i}`,
-                          className: 'animate-pulse',
                           style: {
                             backgroundColor: '#ffffff',
                             borderRadius: '10px',
@@ -36358,11 +36349,11 @@ useEffect(() => {
                           }
                         },
                           React.createElement('div', {
-                            className: 'aspect-square rounded-md mb-2',
-                            style: { backgroundColor: '#e5e7eb' }
+                            className: 'aspect-square rounded-md mb-2 animate-shimmer',
+                            style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)' }
                           }),
-                          React.createElement('div', { className: 'h-4 rounded mb-2', style: { backgroundColor: '#e5e7eb', width: '80%' } }),
-                          React.createElement('div', { className: 'h-3 rounded', style: { backgroundColor: '#e5e7eb', width: '60%' } })
+                          React.createElement('div', { className: 'h-4 rounded mb-2 animate-shimmer', style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', width: '80%' } }),
+                          React.createElement('div', { className: 'h-3 rounded animate-shimmer', style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', width: '60%' } })
                         )
                       )
                     ),
@@ -36377,7 +36368,6 @@ useEffect(() => {
                       Array.from({ length: 5 }).map((_, i) =>
                         React.createElement('div', {
                           key: `ai-artist-skeleton-${i}`,
-                          className: 'animate-pulse',
                           style: {
                             backgroundColor: '#ffffff',
                             borderRadius: '10px',
@@ -36386,10 +36376,10 @@ useEffect(() => {
                           }
                         },
                           React.createElement('div', {
-                            className: 'aspect-square rounded-lg mb-2',
-                            style: { backgroundColor: '#e5e7eb' }
+                            className: 'aspect-square rounded-lg mb-2 animate-shimmer',
+                            style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)' }
                           }),
-                          React.createElement('div', { className: 'h-4 rounded', style: { backgroundColor: '#e5e7eb', width: '70%' } })
+                          React.createElement('div', { className: 'h-4 rounded animate-shimmer', style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', width: '70%' } })
                         )
                       )
                     )
