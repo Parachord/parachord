@@ -35526,8 +35526,13 @@ useEffect(() => {
                               className: 'relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 group/mosaic'
                             },
                               React.createElement('div', {
-                                className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                                style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                                className: `w-full h-full grid grid-cols-2 grid-rows-2${!allPlaylistCovers[playlist.id] ? ' animate-shimmer' : ''}`,
+                                style: {
+                                  background: allPlaylistCovers[playlist.id]
+                                    ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                                    : 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)',
+                                  backgroundSize: !allPlaylistCovers[playlist.id] ? '200% 100%' : undefined
+                                }
                               },
                                 allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
                                   React.createElement('img', {
@@ -35536,10 +35541,12 @@ useEffect(() => {
                                     alt: '',
                                     className: 'w-full h-full object-cover'
                                   })
-                                ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
-                                  React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
-                                  )
+                                ) || Array.from({ length: 4 }).map((_, i) =>
+                                  React.createElement('div', {
+                                    key: `placeholder-${i}`,
+                                    className: 'w-full h-full',
+                                    style: { backgroundColor: 'transparent' }
+                                  })
                                 )
                               ),
                               // Hover play button overlay
