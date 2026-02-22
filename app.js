@@ -4981,6 +4981,7 @@ const Parachord = () => {
     surpriseMeSeeds: [],            // Seeds for AI playlist generation
     aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
+  const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -22768,11 +22769,39 @@ ${tracks}
     }
 
     const config = metaServiceConfigs[provider.id] || {};
+
+    // Build exclusion list from previously suggested albums/artists
+    const prevAlbums = previousAiSuggestions.current.albums;
+    const prevArtists = previousAiSuggestions.current.artists;
+    let exclusionNote = '';
+    if (prevAlbums.length > 0 || prevArtists.length > 0) {
+      const parts = [];
+      if (prevAlbums.length > 0) parts.push('Albums already suggested (DO NOT repeat these): ' + prevAlbums.map(a => `${a.artist} - ${a.title}`).join(', '));
+      if (prevArtists.length > 0) parts.push('Artists already suggested (DO NOT repeat these): ' + prevArtists.map(a => a.name).join(', '));
+      exclusionNote = '\n\n' + parts.join('\n');
+    }
+
+    // Variety themes to steer recommendations in different directions each time
+    const varietyThemes = [
+      'Focus on hidden gems and underrated albums that even dedicated music fans might have missed.',
+      'Lean toward albums from different decades — mix classic and contemporary.',
+      'Prioritize artists from diverse geographic regions and music scenes around the world.',
+      'Recommend albums known for exceptional production quality or sonic experimentation.',
+      'Focus on genre-crossing albums that blend unexpected influences.',
+      'Highlight debut albums or breakthrough records that defined an artist\'s sound.',
+      'Recommend albums that are critically acclaimed deep cuts, not the artist\'s most popular work.',
+      'Focus on albums from the last 5 years that push their genre forward.',
+      'Recommend albums with strong thematic or conceptual cohesion.',
+      'Lean toward collaborative albums, supergroups, or unexpected artist pairings.'
+    ];
+    const theme = varietyThemes[Math.floor(Math.random() * varietyThemes.length)];
+
     const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
 {"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
-Provide exactly 10 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.`;
+Provide exactly 10 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.
+Variety guidance: ${theme} Be creative and surprising — avoid defaulting to the most obvious or popular choices.`;
 
-    const userPrompt = `Based on this listening profile, recommend 5 albums and 5 artists I should check out:\n\n${contextInfo}`;
+    const userPrompt = `Based on this listening profile, recommend 10 albums and 5 artists I should check out:\n\n${contextInfo}${exclusionNote}`;
 
     try {
       const response = await provider.chat(
@@ -22859,6 +22888,12 @@ Provide exactly 10 albums and 5 artists. Each "reason" should be one short sente
         reason: a.reason || '',
         image: undefined // Will be loaded asynchronously
       }));
+
+      // Track these suggestions so we can exclude them on next refresh
+      previousAiSuggestions.current = {
+        albums: [...previousAiSuggestions.current.albums, ...albums].slice(-20),
+        artists: [...previousAiSuggestions.current.artists, ...artists].slice(-15)
+      };
 
       return { albums, artists };
     } catch (error) {
