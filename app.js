@@ -22875,6 +22875,72 @@ Provide exactly 8 albums and 5 artists. Each "reason" should be one short senten
     }
   };
 
+  // Fetch album tracklist from MusicBrainz and return playable track objects
+  const fetchAlbumTracksFromMusicBrainz = async (artistName, albumTitle, albumArt) => {
+    const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
+    try {
+      const query = encodeURIComponent(`${artistName} ${albumTitle}`);
+      const searchResp = await fetch(
+        `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
+        { headers: mbHeaders }
+      );
+      if (!searchResp.ok) return [];
+      const searchData = await searchResp.json();
+      const results = searchData['release-groups'] || [];
+      if (results.length === 0) return [];
+
+      // Find best studio album match
+      const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+      const match = results.find(r => {
+        const primaryType = r['primary-type']?.toLowerCase();
+        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+        const artistMatch = r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase();
+        return primaryType === 'album' && artistMatch && !secondaryTypes.some(t => nonStudioTypes.includes(t));
+      }) || results.find(r => r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase()) || results[0];
+
+      // Get first official release
+      const relResp = await fetch(
+        `https://musicbrainz.org/ws/2/release?release-group=${match.id}&status=official&fmt=json&limit=1`,
+        { headers: mbHeaders }
+      );
+      if (!relResp.ok) return [];
+      const relData = await relResp.json();
+      const release = relData.releases?.[0];
+      if (!release) return [];
+
+      // Fetch full release with recordings
+      const detailResp = await fetch(
+        `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
+        { headers: mbHeaders }
+      );
+      if (!detailResp.ok) return [];
+      const detailData = await detailResp.json();
+
+      // Convert to playable track objects (matching Critical Darlings format)
+      const tracks = [];
+      (detailData.media || []).forEach(medium => {
+        (medium.tracks || []).forEach(track => {
+          const trackTitle = track.title || track.recording?.title || 'Unknown Track';
+          tracks.push({
+            id: `${artistName}-${trackTitle}-${albumTitle}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+            position: track.position,
+            title: trackTitle,
+            artist: artistName,
+            album: albumTitle,
+            albumArt: albumArt || null,
+            length: track.length || 0,
+            recordingId: track.recording?.id,
+            sources: {} // Empty sources triggers on-demand resolution
+          });
+        });
+      });
+      return tracks;
+    } catch (error) {
+      console.error('Failed to fetch album tracks from MusicBrainz:', error);
+      return [];
+    }
+  };
+
   // Load AI recommendations when HOME is active and an AI plugin is enabled
   useEffect(() => {
     const fetchAiRecommendations = async () => {
@@ -36038,12 +36104,15 @@ useEffect(() => {
                               },
                                 // Add to Playlist button
                                 React.createElement('button', {
-                                  onClick: (e) => {
+                                  onClick: async (e) => {
                                     e.stopPropagation();
-                                    // For AI suggestions, search for album tracks in collection or resolve
-                                    const albumTracks = (collectionData?.tracks || [])
+                                    let albumTracks = (collectionData?.tracks || [])
                                       .filter(t => t.artist === album.artist && t.album === album.title)
                                       .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length === 0) {
+                                      showToast(`Loading ${album.title} tracks...`, 'info');
+                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
+                                    }
                                     if (albumTracks.length > 0) {
                                       setAddToPlaylistPanel({
                                         open: true,
@@ -36052,8 +36121,7 @@ useEffect(() => {
                                         sourceType: 'album'
                                       });
                                     } else {
-                                      // Navigate to album to discover tracks first
-                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                      showToast('Could not load album tracks', 'error');
                                     }
                                   },
                                   className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
@@ -36068,19 +36136,19 @@ useEffect(() => {
                                 ),
                                 // Play album button
                                 React.createElement('button', {
-                                  onClick: (e) => {
+                                  onClick: async (e) => {
                                     e.stopPropagation();
-                                    const albumTracks = (collectionData?.tracks || [])
+                                    let albumTracks = (collectionData?.tracks || [])
                                       .filter(t => t.artist === album.artist && t.album === album.title)
                                       .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length === 0) {
+                                      showToast(`Loading ${album.title}...`, 'info');
+                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
+                                    }
                                     if (albumTracks.length > 0) {
-                                      setTrackLoading(true);
-                                      const context = { type: 'album', name: album.title, artist: album.artist };
-                                      const [firstTrack, ...remainingTracks] = albumTracks;
-                                      setQueueWithContext(remainingTracks, context, true);
-                                      handlePlay(firstTrack);
+                                      playTrackCollection(albumTracks, { type: 'album', name: album.title, artist: album.artist });
                                     } else {
-                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                      showToast('Could not load album tracks', 'error');
                                     }
                                   },
                                   className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
@@ -36091,16 +36159,20 @@ useEffect(() => {
                                 ),
                                 // Add to queue button
                                 React.createElement('button', {
-                                  onClick: (e) => {
+                                  onClick: async (e) => {
                                     e.stopPropagation();
-                                    const albumTracks = (collectionData?.tracks || [])
+                                    let albumTracks = (collectionData?.tracks || [])
                                       .filter(t => t.artist === album.artist && t.album === album.title)
                                       .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                    if (albumTracks.length === 0) {
+                                      showToast(`Loading ${album.title} tracks...`, 'info');
+                                      albumTracks = await fetchAlbumTracksFromMusicBrainz(album.artist, album.title, album.art);
+                                    }
                                     if (albumTracks.length > 0) {
                                       addToQueue(albumTracks, { type: 'album', name: album.title, artist: album.artist });
                                       showToast(`Added ${albumTracks.length} tracks from ${album.title}`, 'success');
                                     } else {
-                                      handleCollectionAlbumClick({ title: album.title, artist: album.artist });
+                                      showToast('Could not load album tracks', 'error');
                                     }
                                   },
                                   className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
