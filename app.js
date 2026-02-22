@@ -22770,7 +22770,7 @@ ${tracks}
     const config = metaServiceConfigs[provider.id] || {};
     const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
 {"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
-Provide exactly 5 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history.`;
+Provide exactly 8 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.`;
 
     const userPrompt = `Based on this listening profile, recommend 5 albums and 5 artists I should check out:\n\n${contextInfo}`;
 
@@ -22799,12 +22799,69 @@ Provide exactly 5 albums and 5 artists. Each "reason" should be one short senten
       }
 
       const parsed = JSON.parse(jsonStr);
-      const albums = (parsed.albums || []).slice(0, 5).map(a => ({
+      const candidateAlbums = (parsed.albums || []).slice(0, 8).map(a => ({
         title: a.title || a.album || 'Unknown Album',
         artist: a.artist || 'Unknown Artist',
         reason: a.reason || '',
         art: null // Will be loaded asynchronously
       }));
+
+      // Validate albums against MusicBrainz: must be a studio album with a fetchable tracklist
+      const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
+      const validateAlbum = async (album) => {
+        try {
+          const query = encodeURIComponent(`${album.artist} ${album.title}`);
+          const searchResp = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
+            { headers: mbHeaders }
+          );
+          if (!searchResp.ok) return false;
+          const searchData = await searchResp.json();
+          const results = searchData['release-groups'] || [];
+          if (results.length === 0) return false;
+
+          // Find a studio album match (primary-type=Album, no live/compilation/etc secondary types)
+          const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
+          const match = results.find(r => {
+            const primaryType = r['primary-type']?.toLowerCase();
+            const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
+            const artistMatch = r['artist-credit']?.[0]?.name?.toLowerCase() === album.artist.toLowerCase();
+            return primaryType === 'album' && artistMatch && !secondaryTypes.some(t => nonStudioTypes.includes(t));
+          });
+          if (!match) return false;
+
+          // Check that we can get at least one official release with recordings
+          const relResp = await fetch(
+            `https://musicbrainz.org/ws/2/release?release-group=${match.id}&status=official&fmt=json&limit=1`,
+            { headers: mbHeaders }
+          );
+          if (!relResp.ok) return false;
+          const relData = await relResp.json();
+          const release = relData.releases?.[0];
+          if (!release) return false;
+
+          const detailResp = await fetch(
+            `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
+            { headers: mbHeaders }
+          );
+          if (!detailResp.ok) return false;
+          const detailData = await detailResp.json();
+          const trackCount = (detailData.media || []).reduce((sum, m) => sum + (m['track-count'] || 0), 0);
+          return trackCount >= 4; // A real studio album should have at least 4 tracks
+        } catch {
+          return false;
+        }
+      };
+
+      // Validate with staggered starts to respect MusicBrainz rate limits, then take first 5 that pass
+      const validationResults = await Promise.all(
+        candidateAlbums.map(async (album, i) => {
+          await new Promise(resolve => setTimeout(resolve, i * 350));
+          return { album, valid: await validateAlbum(album) };
+        })
+      );
+      const albums = validationResults.filter(r => r.valid).map(r => r.album).slice(0, 5);
+
       const artists = (parsed.artists || []).slice(0, 5).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
         reason: a.reason || '',
@@ -35262,9 +35319,9 @@ useEffect(() => {
                             }) :
                             React.createElement('div', {
                               className: 'w-full h-full flex items-center justify-center',
-                              style: { background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)' }
+                              style: { background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)' }
                             },
-                              React.createElement('svg', { className: 'w-12 h-12 text-indigo-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                              React.createElement('svg', { className: 'w-12 h-12', style: { color: 'rgba(255, 255, 255, 0.2)' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                               )
                             ),
@@ -35526,8 +35583,13 @@ useEffect(() => {
                               className: 'relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 group/mosaic'
                             },
                               React.createElement('div', {
-                                className: 'w-full h-full grid grid-cols-2 grid-rows-2',
-                                style: { background: 'linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)' }
+                                className: `w-full h-full grid grid-cols-2 grid-rows-2${!allPlaylistCovers[playlist.id] ? ' animate-shimmer' : ''}`,
+                                style: {
+                                  background: allPlaylistCovers[playlist.id]
+                                    ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                                    : 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)',
+                                  backgroundSize: !allPlaylistCovers[playlist.id] ? '200% 100%' : undefined
+                                }
                               },
                                 allPlaylistCovers[playlist.id]?.slice(0, 4).map((url, i) =>
                                   React.createElement('img', {
@@ -35536,10 +35598,12 @@ useEffect(() => {
                                     alt: '',
                                     className: 'w-full h-full object-cover'
                                   })
-                                ) || React.createElement('div', { className: 'col-span-2 row-span-2 flex items-center justify-center' },
-                                  React.createElement('svg', { className: 'w-6 h-6 text-purple-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 6h16M4 10h16M4 14h16M4 18h16' })
-                                  )
+                                ) || Array.from({ length: 4 }).map((_, i) =>
+                                  React.createElement('div', {
+                                    key: `placeholder-${i}`,
+                                    className: 'w-full h-full',
+                                    style: { backgroundColor: 'transparent' }
+                                  })
                                 )
                               ),
                               // Hover play button overlay
