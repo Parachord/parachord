@@ -2038,7 +2038,7 @@ ipcMain.handle('updater-get-version', () => {
 // IPC handlers for storage — restricted to a whitelist of safe keys
 const ALLOWED_STORE_KEYS = new Set([
   'active_resolvers', 'ai_chat_histories', 'ai_include_history',
-  'applemusic_authorized', 'applemusic_developer_token', 'applemusic_user_token',
+  'applemusic_audio_quality', 'applemusic_authorized', 'applemusic_developer_token', 'applemusic_user_token',
   'auto_launch_spotify', 'autoPinnedFriendIds',
   'cache_album_art', 'cache_album_release_ids', 'cache_artist_data',
   'cache_artist_images', 'cache_charts', 'cache_playlist_covers', 'cache_track_sources',
@@ -5246,6 +5246,17 @@ ipcMain.handle('musickit:set-volume', async (event, volume) => {
   const bridge = getMusicKitBridge();
   try {
     const result = await bridge.setVolume(volume);
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Set audio quality
+ipcMain.handle('musickit:set-audio-quality', async (event, quality) => {
+  const bridge = getMusicKitBridge();
+  try {
+    const result = await bridge.setAudioQuality(quality);
     return { success: true, ...result };
   } catch (error) {
     return { success: false, error: error.message };
