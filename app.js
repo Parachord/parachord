@@ -10559,6 +10559,204 @@ ${trackListXml}
     }
   }, [showToast]);
 
+  // Helper: resolve a single track query across all active resolvers, returning { urls, albumArt }
+  const resolveTrackUrls = useCallback(async (query) => {
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+    let resolvedAlbumArt = null;
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
+
+          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
+          if (!url) {
+            if (firstResult.spotifyId) url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
+            else if (firstResult.spotifyUri) {
+              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
+              if (match) url = `https://open.spotify.com/track/${match[1]}`;
+            }
+            else if (firstResult.youtubeId) url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+            else if (firstResult.youtubeUrl) url = firstResult.youtubeUrl;
+            else if (firstResult.soundcloudUrl) url = firstResult.soundcloudUrl;
+            else if (firstResult.bandcampUrl) url = firstResult.bandcampUrl;
+            else if (firstResult.appleMusicUrl) url = firstResult.appleMusicUrl;
+            else if (firstResult.appleMusicId) url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
+          }
+
+          if (url) {
+            const id = resolver.id.toLowerCase();
+            let service = null;
+            if (id.includes('spotify')) service = 'spotify';
+            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
+            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
+            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
+            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
+            else if (id.includes('tidal')) service = 'tidal';
+            else if (id.includes('deezer')) service = 'deezer';
+
+            if (service) resolvedUrls[service] = url;
+          }
+        }
+      } catch (err) {
+        // Skip failed resolvers
+      }
+    }
+
+    return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
+  }, []);
+
+  // Publish smart link for an album or playlist (with per-track resolver matches)
+  const publishCollectionSmartLink = useCallback(async (collection) => {
+    if (!collection || !collection.title) {
+      showToast('Cannot publish link: missing collection info', 'error');
+      return;
+    }
+
+    const tracks = collection.tracks || [];
+    const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+    showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
+
+    // Resolve each track across all active resolvers
+    const resolvedTracks = [];
+    for (const track of tracks) {
+      const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
+      if (!query) {
+        resolvedTracks.push({ ...track, urls: {} });
+        continue;
+      }
+
+      const { urls } = await resolveTrackUrls(query);
+      resolvedTracks.push({ ...track, urls });
+      console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
+    }
+
+    // Also resolve top-level album/playlist URLs (search for "artist album" as a whole)
+    const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
+    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveTrackUrls(topLevelQuery);
+
+    // POST to smart links API
+    try {
+      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: collection.title,
+          artist: collection.artist || null,
+          albumArt: collection.albumArt || resolvedAlbumArt || null,
+          type: collection.type || 'album',
+          urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
+          tracks: resolvedTracks.map(t => ({
+            title: t.title,
+            artist: t.artist || null,
+            duration: t.duration || null,
+            trackNumber: t.trackNumber || null,
+            urls: t.urls
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const { url } = await response.json();
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} smart link URL copied to clipboard!`);
+      } catch (e) {
+        window.prompt(`Copy this ${typeLabel} smart link URL:`, url);
+      }
+
+    } catch (error) {
+      console.error('[PublishCollectionSmartLink] Error:', error);
+      showToast('Failed to publish link. Is the backend running?', 'error');
+    }
+  }, [showToast, resolveTrackUrls]);
+
+  // Copy embed code for an album or playlist
+  const copyCollectionEmbedCode = useCallback(async (collection) => {
+    if (!collection || !collection.title) {
+      showToast('Cannot create embed: missing collection info', 'error');
+      return;
+    }
+
+    const tracks = collection.tracks || [];
+    const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+    showToast(`Creating ${typeLabel} embed code...`, 'info');
+
+    // Resolve each track
+    const resolvedTracks = [];
+    for (const track of tracks) {
+      const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
+      if (!query) {
+        resolvedTracks.push({ ...track, urls: {} });
+        continue;
+      }
+      const { urls } = await resolveTrackUrls(query);
+      resolvedTracks.push({ ...track, urls });
+    }
+
+    // Resolve top-level URLs
+    const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
+    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveTrackUrls(topLevelQuery);
+
+    // POST to smart links API
+    try {
+      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: collection.title,
+          artist: collection.artist || null,
+          albumArt: collection.albumArt || resolvedAlbumArt || null,
+          type: collection.type || 'album',
+          urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
+          tracks: resolvedTracks.map(t => ({
+            title: t.title,
+            artist: t.artist || null,
+            duration: t.duration || null,
+            trackNumber: t.trackNumber || null,
+            urls: t.urls
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const { url } = await response.json();
+
+      // Generate iframe embed code
+      const embedCode = `<iframe src="${url}/embed" width="400" height="152" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"></iframe>`;
+
+      try {
+        await navigator.clipboard.writeText(embedCode);
+        showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} embed code copied to clipboard!`);
+      } catch (e) {
+        window.prompt(`Copy this ${typeLabel} embed code:`, embedCode);
+      }
+
+    } catch (error) {
+      console.error('[CopyCollectionEmbedCode] Error:', error);
+      showToast('Failed to create embed. Is the backend running?', 'error');
+    }
+  }, [showToast, resolveTrackUrls]);
+
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
     if (window.electron?.collection?.save) {
@@ -11244,10 +11442,16 @@ ${trackListXml}
         } else if (data.action === 'copy-embed-code' && data.track) {
           // Copy iframe embed code to clipboard
           copyEmbedCode(data.track);
+        } else if (data.action === 'publish-collection-smart-link' && data.collection) {
+          // Publish album/playlist smart link with tracklist
+          publishCollectionSmartLink(data.collection);
+        } else if (data.action === 'copy-collection-embed-code' && data.collection) {
+          // Copy album/playlist embed code
+          copyCollectionEmbedCode(data.collection);
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, copyEmbedCode]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, copyEmbedCode, publishCollectionSmartLink, copyCollectionEmbedCode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -36140,7 +36344,25 @@ useEffect(() => {
                               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                               animationDelay: `${index * 50}ms`
                             },
-                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist })
+                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist }),
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              if (window.electron?.contextMenu?.showTrackMenu) {
+                                const albumTracks = (collectionData?.tracks || [])
+                                  .filter(t => t.artist === album.artist && t.album === album.title)
+                                  .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                window.electron.contextMenu.showTrackMenu({
+                                  type: 'release',
+                                  name: album.title,
+                                  album: {
+                                    title: album.title,
+                                    artist: album.artist,
+                                    art: album.art || null
+                                  },
+                                  tracks: albumTracks
+                                });
+                              }
+                            }
                           },
                             React.createElement('div', {
                               className: 'album-art-container group/art',
@@ -37115,9 +37337,13 @@ useEffect(() => {
                       }
                     },
                     onContextMenu: (e, albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
                       window.electron?.contextMenu?.showTrackMenu({
                         type: 'collection-album',
-                        album: albumData
+                        album: albumData,
+                        tracks: albumTracks
                       });
                     },
                     animationDelay: Math.min(index * 30, 300)
@@ -38142,7 +38368,23 @@ useEffect(() => {
                     animationDelay: `${Math.min(index * 30, 300)}ms`
                   },
                   onMouseEnter: () => prefetchChartsTracks(item),
-                  onClick: () => openChartsAlbum(item)
+                  onClick: () => openChartsAlbum(item),
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      const prefetched = prefetchedReleases[item.id];
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'release',
+                        name: item.title,
+                        album: {
+                          title: item.title,
+                          artist: item.artist,
+                          art: item.albumArt || null
+                        },
+                        tracks: prefetched?.tracks || []
+                      });
+                    }
+                  }
                 },
                   // Album art with hover overlay - Cinematic Light design
                   React.createElement('div', {
@@ -38878,7 +39120,23 @@ useEffect(() => {
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
                 },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
-                onClick: () => openCriticsPicksAlbum(album)
+                onClick: () => openCriticsPicksAlbum(album),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    const prefetched = prefetchedReleases[album.id];
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'release',
+                      name: album.title,
+                      album: {
+                        title: album.title,
+                        artist: album.artist,
+                        art: album.albumArt || null
+                      },
+                      tracks: prefetched?.tracks || []
+                    });
+                  }
+                }
               },
                 // Album art - left column - Cinematic Light design
                 React.createElement('div', {
@@ -40431,7 +40689,24 @@ useEffect(() => {
                         animationDelay: `${Math.min(index * 30, 300)}ms`
                       },
                       onClick: () => openTopAlbum(album),
-                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
+                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                          const cached = topAlbumTracksCache.current[cacheKey];
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'release',
+                            name: album.name,
+                            album: {
+                              title: album.name,
+                              artist: album.artist,
+                              art: album.image || null
+                            },
+                            tracks: cached || []
+                          });
+                        }
+                      }
                     },
                       // Album art - Cinematic Light design
                       React.createElement('div', {
@@ -41146,7 +41421,24 @@ useEffect(() => {
                           key: album.id || index,
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
                           onClick: () => openTopAlbum(album),
-                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
+                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                              const cached = topAlbumTracksCache.current[cacheKey];
+                              window.electron.contextMenu.showTrackMenu({
+                                type: 'release',
+                                name: album.name,
+                                album: {
+                                  title: album.name,
+                                  artist: album.artist,
+                                  art: album.image || null
+                                },
+                                tracks: cached || []
+                              });
+                            }
+                          }
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',

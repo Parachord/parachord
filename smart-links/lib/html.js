@@ -31,20 +31,67 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+// Format duration in seconds to M:SS
+function formatDuration(seconds) {
+  if (!seconds) return '';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Generate service badge HTML for a track's resolver matches
+function generateTrackBadgesHtml(trackUrls) {
+  if (!trackUrls || typeof trackUrls !== 'object') return '';
+  return SERVICES.map(s => {
+    const url = trackUrls[s.id];
+    if (!url) return '';
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="resolver-badge" style="--badge-color: ${s.color}" title="Open on ${s.name}">${SERVICE_ICONS[s.id]}</a>`;
+  }).filter(Boolean).join('');
+}
+
+// Generate the tracklist HTML for albums/playlists
+function generateTracklistHtml(tracks) {
+  if (!tracks || !tracks.length) return '';
+  return tracks.map((track, i) => {
+    const num = track.trackNumber || (i + 1);
+    const badges = generateTrackBadgesHtml(track.urls);
+    const dur = formatDuration(track.duration);
+    const artistHtml = track.artist ? `<span class="track-row-artist">${escapeHtml(track.artist)}</span>` : '';
+    return `
+      <div class="track-row">
+        <span class="track-num">${num}</span>
+        <div class="track-row-info">
+          <span class="track-row-title">${escapeHtml(track.title)}</span>
+          ${artistHtml}
+        </div>
+        <div class="track-row-badges">${badges}</div>
+        ${dur ? `<span class="track-row-duration">${dur}</span>` : ''}
+      </div>`;
+  }).join('');
+}
+
 export function generateLinkPageHtml(data, linkId, baseUrl) {
-  const { title, artist, albumArt, type, urls } = data;
+  const { title, artist, albumArt, type, urls, tracks } = data;
   const fullTitle = `${escapeHtml(title)}${artist ? ' - ' + escapeHtml(artist) : ''}`;
   const linkUrl = `${baseUrl}/${linkId}`;
+  const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
+  const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
+  const ogType = type === 'album' ? 'music.album' : (type === 'playlist' ? 'music.playlist' : 'music.song');
 
-  const serviceLinksHtml = SERVICES.map(s => {
-    const url = urls?.[s.id];
+  // Service links (top-level album/playlist URLs, or track URLs for single tracks)
+  const serviceLinksHtml = urls ? SERVICES.map(s => {
+    const url = urls[s.id];
     if (!url) return '';
     return `
       <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-link" style="--service-color: ${s.color}">
         <span class="service-icon">${SERVICE_ICONS[s.id]}</span>
         <span class="service-name">${s.name}</span>
       </a>`;
-  }).filter(Boolean).join('\n');
+  }).filter(Boolean).join('\n') : '';
+
+  // Tracklist for albums/playlists
+  const tracklistHtml = isCollection ? generateTracklistHtml(tracks) : '';
+  const trackCount = isCollection ? tracks.length : 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -53,13 +100,13 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${fullTitle} | Listen Now</title>
   <meta property="og:title" content="${fullTitle}">
-  <meta property="og:description" content="Listen on your favorite streaming service">
-  <meta property="og:type" content="music.${type === 'album' ? 'album' : 'song'}">
+  <meta property="og:description" content="${isCollection ? `${typeLabel} · ${trackCount} tracks` : 'Listen on your favorite streaming service'}">
+  <meta property="og:type" content="${ogType}">
   ${albumArt ? `<meta property="og:image" content="${escapeHtml(albumArt)}">` : ''}
   <meta property="og:url" content="${linkUrl}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${fullTitle}">
-  <meta name="twitter:description" content="Listen on your favorite streaming service">
+  <meta name="twitter:description" content="${isCollection ? `${typeLabel} · ${trackCount} tracks` : 'Listen on your favorite streaming service'}">
   ${albumArt ? `<meta name="twitter:image" content="${escapeHtml(albumArt)}">` : ''}
   <link rel="alternate" type="application/json+oembed"
         href="${baseUrl}/api/oembed?url=${encodeURIComponent(linkUrl)}"
@@ -69,6 +116,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     :root {
       --bg-primary: #0f0f0f;
       --bg-secondary: #1a1a1a;
+      --bg-tertiary: #252525;
       --text-primary: #ffffff;
       --text-secondary: #a0a0a0;
       --accent: #8b5cf6;
@@ -81,11 +129,10 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 20px;
+      ${isCollection ? 'justify-content: flex-start; padding: 40px 20px;' : 'justify-content: center; padding: 20px;'}
     }
     .container {
-      max-width: 400px;
+      max-width: ${isCollection ? '600px' : '400px'};
       width: 100%;
       text-align: center;
     }
@@ -103,7 +150,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       border-radius: 8px;
       margin-bottom: 20px;
       background: var(--bg-secondary);
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       font-size: 48px;
@@ -116,6 +163,13 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     }
     .artist {
       color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+    .type-label {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
       margin-bottom: 24px;
     }
     .services {
@@ -154,6 +208,96 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     }
     .service-name {
       font-weight: 500;
+    }
+    /* Tracklist styles */
+    .tracklist {
+      margin-top: 24px;
+      text-align: left;
+    }
+    .tracklist-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      padding: 0 12px;
+    }
+    .track-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      transition: background 0.15s ease;
+    }
+    .track-row:hover {
+      background: var(--bg-secondary);
+    }
+    .track-num {
+      width: 24px;
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .track-row-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .track-row-title {
+      font-size: 0.9rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-row-artist {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-row-badges {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .resolver-badge {
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--badge-color) 20%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .resolver-badge:hover {
+      background: color-mix(in srgb, var(--badge-color) 40%, transparent);
+      transform: scale(1.1);
+    }
+    .resolver-badge svg {
+      width: 13px;
+      height: 13px;
+      color: var(--badge-color);
+    }
+    .resolver-badge img {
+      width: 13px !important;
+      height: 13px !important;
+    }
+    .track-row-duration {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      min-width: 36px;
+      text-align: right;
     }
     .footer {
       margin-top: 32px;
@@ -218,14 +362,20 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
   <div class="container">
     ${albumArt
       ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
-      : `<div class="album-art-placeholder">♪</div>`
+      : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`
     }
     <h1>${escapeHtml(title)}</h1>
     ${artist ? `<p class="artist">${escapeHtml(artist)}</p>` : ''}
+    ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
-    <div class="services">
-      ${serviceLinksHtml}
+    ${serviceLinksHtml ? `<div class="services">${serviceLinksHtml}</div>` : ''}
+
+    ${isCollection ? `
+    <div class="tracklist">
+      <div class="tracklist-header">Tracklist</div>
+      ${tracklistHtml}
     </div>
+    ` : ''}
 
     <div class="parachord-section">
       <button id="parachord-btn" class="parachord-btn hidden" onclick="playInParachord()">
@@ -243,7 +393,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
   </div>
 
   <script>
-    const trackData = ${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
+    const linkData = ${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
     let ws = null;
 
     function connectToParachord() {
@@ -266,7 +416,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: trackData } }));
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
       }
     }
 
@@ -277,11 +427,18 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 }
 
 export function generateEmbedHtml(data, linkId, baseUrl) {
-  const { title, artist, albumArt, urls } = data;
+  const { title, artist, albumArt, type, urls, tracks } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
+  const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
+  const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
 
   // Find the first available service URL for fallback
   const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
+
+  // For collections, show subtitle with track count
+  const subtitle = isCollection
+    ? `${artist ? escapeHtml(artist) + ' · ' : ''}${typeLabel} · ${tracks.length} tracks`
+    : (artist ? escapeHtml(artist) : '');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -395,24 +552,19 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
   <div class="embed">
     ${albumArt
       ? `<img src="${escapeHtml(albumArt)}" alt="" class="art">`
-      : `<div class="art-placeholder">♪</div>`
+      : `<div class="art-placeholder">${isCollection ? '♫' : '♪'}</div>`
     }
     <div class="info">
       <div class="title">${escapeHtml(title)}</div>
-      ${artist ? `<div class="artist">${escapeHtml(artist)}</div>` : ''}
+      ${subtitle ? `<div class="artist">${subtitle}</div>` : ''}
       <div class="actions">
-        <button id="play-btn" class="btn btn-primary" onclick="playTrack()">Play</button>
-        <a href="${linkUrl}" target="_blank" class="btn btn-secondary">More</a>
+        <button id="play-btn" class="btn btn-primary" onclick="playTrack()">${isCollection ? 'Play All' : 'Play'}</button>
+        <a href="${linkUrl}" target="_blank" class="btn btn-secondary">${isCollection ? 'View Tracks' : 'More'}</a>
       </div>
     </div>
   </div>
   <script>
-    const trackData = {
-      title: ${JSON.stringify(title || '')},
-      artist: ${JSON.stringify(artist || '')},
-      albumArt: ${JSON.stringify(albumArt || null)},
-      urls: ${JSON.stringify(urls || {})}
-    };
+    const linkData = ${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
     const fallbackUrl = ${JSON.stringify(firstUrl || '')};
     let ws = null;
     let parachordConnected = false;
@@ -420,10 +572,10 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
     function updatePlayButton() {
       const btn = document.getElementById('play-btn');
       if (parachordConnected) {
-        btn.innerHTML = '<span class="status-dot"></span>Play';
+        btn.innerHTML = '<span class="status-dot"></span>${isCollection ? 'Play All' : 'Play'}';
         btn.classList.add('btn-connected');
       } else {
-        btn.innerHTML = 'Play';
+        btn.innerHTML = '${isCollection ? 'Play All' : 'Play'}';
         btn.classList.remove('btn-connected');
       }
     }
@@ -450,7 +602,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
 
     function playTrack() {
       if (parachordConnected && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: trackData } }));
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
       } else if (fallbackUrl) {
         window.open(fallbackUrl, '_blank');
       }

@@ -44,6 +44,11 @@ export async function onRequestGet({ request, env }) {
 
   const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`;
   const fullTitle = `${data.title}${data.artist ? ' - ' + data.artist : ''}`;
+  const isCollection = (data.type === 'album' || data.type === 'playlist') && data.tracks && data.tracks.length > 0;
+  const typeLabel = data.type === 'playlist' ? 'Playlist' : (data.type === 'album' ? 'Album' : 'Track');
+  const description = isCollection
+    ? `${typeLabel} · ${data.tracks.length} tracks`
+    : 'Listen on your favorite streaming service';
 
   // Return oEmbed response
   return Response.json({
@@ -52,6 +57,7 @@ export async function onRequestGet({ request, env }) {
     provider_name: 'Parachord',
     provider_url: 'https://parachord.app',
     title: fullTitle,
+    description,
     author_name: data.artist || undefined,
     thumbnail_url: data.albumArt || undefined,
     thumbnail_width: data.albumArt ? 300 : undefined,
