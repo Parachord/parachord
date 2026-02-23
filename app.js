@@ -20924,16 +20924,19 @@ ${trackListXml}
     }
 
     if (draggedResolver !== targetResolverId) {
-      const newOrder = [...resolverOrder];
-      const draggedIndex = newOrder.indexOf(draggedResolver);
-      const targetIndex = newOrder.indexOf(targetResolverId);
+      setResolverOrder(prev => {
+        const newOrder = [...prev];
+        const draggedIndex = newOrder.indexOf(draggedResolver);
+        const targetIndex = newOrder.indexOf(targetResolverId);
+        if (draggedIndex === -1 || targetIndex === -1) return prev;
 
-      // Remove dragged item and insert at target position
-      newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedResolver);
+        // Remove dragged item and insert at target position
+        newOrder.splice(draggedIndex, 1);
+        newOrder.splice(targetIndex, 0, draggedResolver);
 
-      setResolverOrder(newOrder);
-      console.log('Resolver order updated:', newOrder);
+        console.log('Resolver order updated:', newOrder);
+        return newOrder;
+      });
     }
 
     setDraggedResolver(null);
@@ -40802,13 +40805,20 @@ useEffect(() => {
                     // resolvers in resolverOrder but not in allResolvers still appear from marketplace
                     const addedIds = new Set(unifiedResolvers.map(r => r.id));
 
-                    // Loaded but not enabled
+                    // Helper: resolve priority from resolverOrder position even for
+                    // resolvers that weren't in the first section (e.g. still loading)
+                    const getPriorityFromOrder = (id) => {
+                      const idx = resolverOrder.indexOf(id);
+                      return idx !== -1 ? idx + 1 : null;
+                    };
+
+                    // Loaded but not in resolverOrder yet
                     allResolvers.forEach(resolver => {
                       if (resolver.capabilities?.resolve && !addedIds.has(resolver.id)) {
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: null,
+                          priorityNumber: getPriorityFromOrder(resolver.id),
                           marketplaceData: marketplaceResolver,
                           hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
                         });
@@ -40821,7 +40831,7 @@ useEffect(() => {
                       if (!addedIds.has(resolver.id)) {
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: null,
+                          priorityNumber: getPriorityFromOrder(resolver.id),
                           marketplaceData: resolver,
                           hasUpdate: false
                         });
