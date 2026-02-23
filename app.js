@@ -22708,7 +22708,7 @@ ${tracks}
   }, [homeData.weeklyJams, homeData.weeklyExploration]);
 
   // Load AI-generated recommendations for the home page
-  const loadAiRecommendations = async () => {
+  const loadAiRecommendations = async (onUpdate) => {
     const chatServices = getChatServices();
     const enabledServices = chatServices.filter(s => {
       const config = metaServiceConfigs[s.id] || {};
@@ -22867,28 +22867,32 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       };
 
-      // Validate with staggered starts to respect MusicBrainz rate limits, then take first 5 that pass
-      const validationResults = await Promise.all(
-        candidateAlbums.map(async (album, i) => {
-          await new Promise(resolve => setTimeout(resolve, i * 250));
-          return { album, result: await validateAlbum(album) };
-        })
-      );
-      const validAlbums = validationResults.filter(r => r.result).slice(0, 5);
-
-      // Pre-seed the album-to-release-id cache so getAlbumArt skips the MB search
-      for (const { album, result } of validAlbums) {
-        const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-        albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
-      }
-
-      const albums = validAlbums.map(r => r.album);
-
+      // Artists don't need validation — emit them immediately
       const artists = (parsed.artists || []).slice(0, 5).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
         reason: a.reason || '',
         image: undefined // Will be loaded asynchronously
       }));
+      if (onUpdate) onUpdate({ artists });
+
+      // Validate albums with staggered starts to respect MusicBrainz rate limits.
+      // Stream each valid album to the UI as it passes validation instead of waiting for all.
+      const validAlbums = [];
+      await Promise.all(
+        candidateAlbums.map(async (album, i) => {
+          await new Promise(resolve => setTimeout(resolve, i * 250));
+          const result = await validateAlbum(album);
+          if (result && validAlbums.length < 5) {
+            validAlbums.push({ album, result });
+            // Pre-seed the album-to-release-id cache so getAlbumArt skips the MB search
+            const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+            albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
+            if (onUpdate) onUpdate({ newAlbum: album });
+          }
+        })
+      );
+
+      const albums = validAlbums.map(r => r.album);
 
       // Track these suggestions so we can exclude them on next refresh
       previousAiSuggestions.current = {
@@ -22987,63 +22991,43 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Mark as loading
       setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
 
-      const result = await loadAiRecommendations();
-      if (result) {
-        setHomeData(prev => ({ ...prev, aiRecommendations: { ...result, loading: false } }));
-
-        // Asynchronously load album art and artist images
-        for (const album of result.albums) {
-          getAlbumArt(album.artist, album.title).then(artUrl => {
+      const onUpdate = ({ artists, newAlbum }) => {
+        if (artists) {
+          // Artists arrived — show them immediately and start loading images
+          setHomeData(prev => ({
+            ...prev,
+            aiRecommendations: { ...prev.aiRecommendations, artists }
+          }));
+          for (const artist of artists) {
+            getArtistImage(artist.name).then(imgResult => {
+              setHomeData(prev => {
+                if (!prev.aiRecommendations) return prev;
+                return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
+              });
+            }).catch(() => {});
+          }
+        }
+        if (newAlbum) {
+          // A single album passed validation — append it and start loading art
+          setHomeData(prev => ({
+            ...prev,
+            aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
+          }));
+          getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
             if (artUrl) {
               setHomeData(prev => {
                 if (!prev.aiRecommendations) return prev;
-                return {
-                  ...prev,
-                  aiRecommendations: {
-                    ...prev.aiRecommendations,
-                    albums: prev.aiRecommendations.albums.map(a =>
-                      a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a
-                    )
-                  }
-                };
+                return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
               });
             }
           }).catch(() => {});
         }
-        for (const artist of result.artists) {
-          getArtistImage(artist.name).then(result => {
-            if (result?.url) {
-              setHomeData(prev => {
-                if (!prev.aiRecommendations) return prev;
-                return {
-                  ...prev,
-                  aiRecommendations: {
-                    ...prev.aiRecommendations,
-                    artists: prev.aiRecommendations.artists.map(a =>
-                      a.name === artist.name ? { ...a, image: result.url } : a
-                    )
-                  }
-                };
-              });
-            } else {
-              // Mark as null (no image found) instead of undefined (still loading)
-              setHomeData(prev => {
-                if (!prev.aiRecommendations) return prev;
-                return {
-                  ...prev,
-                  aiRecommendations: {
-                    ...prev.aiRecommendations,
-                    artists: prev.aiRecommendations.artists.map(a =>
-                      a.name === artist.name ? { ...a, image: null } : a
-                    )
-                  }
-                };
-              });
-            }
-          }).catch(() => {});
-        }
+      };
+
+      const result = await loadAiRecommendations(onUpdate);
+      if (result) {
+        setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
       } else {
-        // Failed to load - clear loading state so we don't show loading forever
         setHomeData(prev => ({ ...prev, aiRecommendations: null }));
       }
     };
@@ -36042,27 +36026,39 @@ useEffect(() => {
                           className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
                           onClick: async () => {
                             setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
-                            const result = await loadAiRecommendations();
-                            if (result) {
-                              setHomeData(prev => ({ ...prev, aiRecommendations: { ...result, loading: false } }));
-                              for (const album of result.albums) {
-                                getAlbumArt(album.artist, album.title).then(artUrl => {
+                            const onUpdate = ({ artists, newAlbum }) => {
+                              if (artists) {
+                                setHomeData(prev => ({
+                                  ...prev,
+                                  aiRecommendations: { ...prev.aiRecommendations, artists }
+                                }));
+                                for (const artist of artists) {
+                                  getArtistImage(artist.name).then(imgResult => {
+                                    setHomeData(prev => {
+                                      if (!prev.aiRecommendations) return prev;
+                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
+                                    });
+                                  }).catch(() => {});
+                                }
+                              }
+                              if (newAlbum) {
+                                setHomeData(prev => ({
+                                  ...prev,
+                                  aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
+                                }));
+                                getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
                                   if (artUrl) {
                                     setHomeData(prev => {
                                       if (!prev.aiRecommendations) return prev;
-                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a) } };
+                                      return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
                                     });
                                   }
                                 }).catch(() => {});
                               }
-                              for (const artist of result.artists) {
-                                getArtistImage(artist.name).then(imgResult => {
-                                  setHomeData(prev => {
-                                    if (!prev.aiRecommendations) return prev;
-                                    return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
-                                  });
-                                }).catch(() => {});
-                              }
+                            };
+                            const result = await loadAiRecommendations(onUpdate);
+                            if (result) {
+                              setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
                             } else {
                               setHomeData(prev => ({ ...prev, aiRecommendations: null }));
                             }
