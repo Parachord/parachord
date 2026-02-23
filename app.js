@@ -10617,6 +10617,65 @@ ${trackListXml}
     return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
   }, []);
 
+  // Fetch album tracks from MusicBrainz (fallback when prefetch didn't complete in time)
+  const fetchAlbumTracksFromMusicBrainz = useCallback(async (artist, title, albumArt) => {
+    try {
+      const searchQuery = encodeURIComponent(`release:"${title}" AND artist:"${artist}"`);
+      const mbResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=5`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+      if (!mbResponse.ok) return [];
+
+      const mbData = await mbResponse.json();
+      const releases = mbData.releases || [];
+      if (releases.length === 0) return [];
+
+      // Prefer releases with more tracks (avoid singles/EPs matching the same name)
+      // Sort by track count descending, pick the first with a reasonable count
+      let bestRelease = releases[0];
+      for (const rel of releases) {
+        const trackCount = rel['track-count'] || 0;
+        if (trackCount > (bestRelease['track-count'] || 0)) {
+          bestRelease = rel;
+        }
+      }
+
+      const releaseId = bestRelease.id;
+      const releaseDetailsResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+      );
+      if (!releaseDetailsResponse.ok) return [];
+
+      const releaseData = await releaseDetailsResponse.json();
+      const tracks = [];
+      if (releaseData.media) {
+        releaseData.media.forEach(medium => {
+          if (medium.tracks) {
+            medium.tracks.forEach(track => {
+              tracks.push({
+                id: `${artist}-${track.title || 'untitled'}-${title}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                position: track.position,
+                title: track.title || track.recording?.title || 'Unknown Track',
+                length: track.length,
+                duration: track.length ? Math.round(track.length / 1000) : null,
+                artist: artist,
+                album: title,
+                albumArt: albumArt || null,
+                sources: {}
+              });
+            });
+          }
+        });
+      }
+      return tracks;
+    } catch (err) {
+      console.error('[fetchAlbumTracksFromMusicBrainz] Error:', err);
+      return [];
+    }
+  }, []);
+
   // Publish smart link for an album or playlist (with per-track resolver matches)
   const publishCollectionSmartLink = useCallback(async (collection) => {
     if (!collection || !collection.title) {
@@ -10624,8 +10683,15 @@ ${trackListXml}
       return;
     }
 
-    const tracks = collection.tracks || [];
+    let tracks = collection.tracks || [];
     const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+
+    // If tracks weren't prefetched in time (race condition), fetch them now
+    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
+      showToast('Fetching album tracklist...', 'info');
+      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    }
+
     showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
 
     // Resolve each track across all active resolvers
@@ -10685,7 +10751,7 @@ ${trackListXml}
       console.error('[PublishCollectionSmartLink] Error:', error);
       showToast('Failed to publish link. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls]);
+  }, [showToast, resolveTrackUrls, fetchAlbumTracksFromMusicBrainz]);
 
   // Copy embed code for an album or playlist
   const copyCollectionEmbedCode = useCallback(async (collection) => {
@@ -10694,8 +10760,15 @@ ${trackListXml}
       return;
     }
 
-    const tracks = collection.tracks || [];
+    let tracks = collection.tracks || [];
     const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+
+    // If tracks weren't prefetched in time (race condition), fetch them now
+    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
+      showToast('Fetching album tracklist...', 'info');
+      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    }
+
     showToast(`Creating ${typeLabel} embed code...`, 'info');
 
     // Resolve each track
@@ -10755,7 +10828,7 @@ ${trackListXml}
       console.error('[CopyCollectionEmbedCode] Error:', error);
       showToast('Failed to create embed. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls]);
+  }, [showToast, resolveTrackUrls, fetchAlbumTracksFromMusicBrainz]);
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
