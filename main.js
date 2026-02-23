@@ -3652,37 +3652,69 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
-  // Add Smart Link options for tracks and releases
-  if (data.type === 'track' || data.type === 'release') {
+  // Add Smart Link options for tracks, releases, playlists, and collection albums
+  if (data.type === 'track' || data.type === 'release' || data.type === 'playlist' || data.type === 'collection-album') {
     menuItems.push({ type: 'separator' });
 
-    // Build track data for smart link
-    const smartLinkTrack = data.type === 'track' ? data.track : {
-      title: data.name,
-      artist: data.artist,
-      albumArt: data.albumArt,
-      album: data.name
-    };
+    if (data.type === 'track') {
+      // Single track smart link
+      menuItems.push({
+        label: 'Publish Smart Link',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'publish-smart-link',
+            track: data.track
+          });
+        }
+      });
 
-    menuItems.push({
-      label: 'Publish Smart Link',
-      click: () => {
-        safeSendToRenderer('track-context-menu-action', {
-          action: 'publish-smart-link',
-          track: smartLinkTrack
-        });
-      }
-    });
+      menuItems.push({
+        label: 'Copy Embed Code',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'copy-embed-code',
+            track: data.track
+          });
+        }
+      });
+    } else {
+      // Album/playlist smart link with tracklist
+      const isPlaylist = data.type === 'playlist';
+      const collectionArtist = data.album?.artist || data.artist || data.tracks?.[0]?.artist || null;
+      const collectionArt = data.album?.art || data.albumArt || data.tracks?.[0]?.albumArt || null;
+      const collectionData = {
+        title: data.name || data.title || data.album?.title,
+        artist: collectionArtist,
+        albumArt: collectionArt,
+        type: isPlaylist ? 'playlist' : 'album',
+        tracks: (data.tracks || []).map((t, i) => ({
+          title: t.title || 'Unknown',
+          artist: t.artist || collectionArtist || null,
+          duration: t.duration || (t.length ? Math.round(t.length / 1000) : null),
+          trackNumber: t.trackNumber || t.position || (i + 1)
+        }))
+      };
 
-    menuItems.push({
-      label: 'Copy Embed Code',
-      click: () => {
-        safeSendToRenderer('track-context-menu-action', {
-          action: 'copy-embed-code',
-          track: smartLinkTrack
-        });
-      }
-    });
+      menuItems.push({
+        label: 'Publish Smart Link',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'publish-collection-smart-link',
+            collection: collectionData
+          });
+        }
+      });
+
+      menuItems.push({
+        label: 'Copy Embed Code',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'copy-collection-embed-code',
+            collection: collectionData
+          });
+        }
+      });
+    }
   }
 
   // Add friend-specific menu items

@@ -19,11 +19,24 @@ export async function onRequestPost({ request, env }) {
       );
     }
 
-    if (!data.urls || Object.keys(data.urls).length === 0) {
-      return Response.json(
-        { error: 'Missing required field: urls (must have at least one service URL)' },
-        { status: 400, headers: corsHeaders }
-      );
+    const type = data.type || 'track';
+    const isCollection = type === 'album' || type === 'playlist';
+
+    // For albums/playlists, require tracks array; for tracks, require urls
+    if (isCollection) {
+      if (!data.tracks || !Array.isArray(data.tracks) || data.tracks.length === 0) {
+        return Response.json(
+          { error: 'Missing required field: tracks (albums/playlists must have at least one track)' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+    } else {
+      if (!data.urls || Object.keys(data.urls).length === 0) {
+        return Response.json(
+          { error: 'Missing required field: urls (must have at least one service URL)' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
     }
 
     // Generate short ID
@@ -34,10 +47,21 @@ export async function onRequestPost({ request, env }) {
       title: data.title,
       artist: data.artist || null,
       albumArt: data.albumArt || null,
-      type: data.type || 'track',
-      urls: data.urls,
+      type,
+      urls: data.urls || null,
       createdAt: Date.now()
     };
+
+    // Include tracks for albums/playlists
+    if (isCollection && data.tracks) {
+      linkData.tracks = data.tracks.map(t => ({
+        title: t.title || 'Unknown',
+        artist: t.artist || null,
+        duration: t.duration || null,
+        trackNumber: t.trackNumber || null,
+        urls: t.urls || {}
+      }));
+    }
 
     await env.LINKS.put(id, JSON.stringify(linkData));
 
