@@ -16406,10 +16406,11 @@ ${trackListXml}
     // Query all enabled resolvers in priority order (using refs to avoid stale closure)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     // Parallel resolution with confidence scoring
@@ -18673,10 +18674,11 @@ ${trackListXml}
     // Query enabled resolvers in priority order (using refs for current values)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -18769,8 +18771,10 @@ ${trackListXml}
     const now = Date.now();
 
     // Get current active resolvers for filtering
+    // Use refs to avoid stale closure issues (same pattern as resolveTracksInBackground)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
 
     // Check if track has persisted sources (from collection/playlist storage)
     // Filter to only include sources that are:
@@ -18807,7 +18811,7 @@ ${trackListXml}
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
     const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
       !availableResolverIds.includes(id) &&
-      allResolvers.find(r => r.id === id)?.capabilities?.resolve
+      currentResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
     if (cachedData || hasValidPersistedSources) {
@@ -18873,7 +18877,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -18943,7 +18947,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -19053,7 +19057,7 @@ ${trackListXml}
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     console.log(`  📋 Active resolvers: ${currentActiveResolvers.join(', ')}`);
