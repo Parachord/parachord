@@ -16685,10 +16685,11 @@ ${trackListXml}
     // Query all enabled resolvers in priority order (using refs to avoid stale closure)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     // Parallel resolution with confidence scoring
@@ -18953,10 +18954,11 @@ ${trackListXml}
     // Query enabled resolvers in priority order (using refs for current values)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -19049,8 +19051,10 @@ ${trackListXml}
     const now = Date.now();
 
     // Get current active resolvers for filtering
+    // Use refs to avoid stale closure issues (same pattern as resolveTracksInBackground)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
 
     // Check if track has persisted sources (from collection/playlist storage)
     // Filter to only include sources that are:
@@ -19087,7 +19091,7 @@ ${trackListXml}
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
     const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
       !availableResolverIds.includes(id) &&
-      allResolvers.find(r => r.id === id)?.capabilities?.resolve
+      currentResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
     if (cachedData || hasValidPersistedSources) {
@@ -19153,7 +19157,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -19223,7 +19227,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -19333,7 +19337,7 @@ ${trackListXml}
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     console.log(`  📋 Active resolvers: ${currentActiveResolvers.join(', ')}`);
@@ -25236,72 +25240,68 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
   const albumToReleaseIdCache = useRef({});
 
-  // Cache for fast iTunes album art lookups
-  const itunesArtCache = useRef({});
+  // Cache for resolver-based album art lookups
+  const resolverArtCache = useRef({});
 
-  // Fast album art lookup using iTunes Search API (for ChatCards and other quick lookups)
-  // Much faster than MusicBrainz - typically returns in <500ms
-  const getAlbumArtFast = async (artist, album) => {
+  // Search enabled resolvers for album art (used as fallback when MusicBrainz/CAA fails)
+  // Returns the first albumArt URL found from the user's enabled resolvers
+  const getAlbumArtFromResolvers = async (artist, album) => {
     if (!artist || !album) return null;
 
     const cacheKey = `${artist}-${album}`.toLowerCase();
 
-    // Check cache first
-    if (itunesArtCache.current[cacheKey]) {
-      return itunesArtCache.current[cacheKey];
-    }
-
-    // Also check the main albumArtCache
-    const cachedArt = getCachedAlbumArt(artist, album);
-    if (cachedArt) {
-      itunesArtCache.current[cacheKey] = cachedArt;
-      return cachedArt;
+    // Check resolver art cache first
+    if (resolverArtCache.current[cacheKey] !== undefined) {
+      return resolverArtCache.current[cacheKey]; // null = previously failed
     }
 
     try {
-      // Search iTunes for the album
-      const query = `${artist} ${album}`;
-      const response = await window.iTunesRateLimiter.fetch(
-        `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=5`
-      );
+      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true });
+      if (!results || results.length === 0) {
+        resolverArtCache.current[cacheKey] = null;
+        return null;
+      }
 
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      if (!data.results || data.results.length === 0) return null;
-
-      // Find best match - prefer exact album name match
+      // Find best match - prefer exact artist+album match
       const normalizedAlbum = album.toLowerCase();
       const normalizedArtist = artist.toLowerCase();
 
-      const bestMatch = data.results.find(r =>
-        r.collectionName?.toLowerCase() === normalizedAlbum &&
-        r.artistName?.toLowerCase() === normalizedArtist
-      ) || data.results.find(r =>
-        // Also check if artist/album might be swapped (common AI mistake)
-        r.collectionName?.toLowerCase() === normalizedArtist &&
-        r.artistName?.toLowerCase() === normalizedAlbum
-      ) || data.results.find(r =>
-        r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
-        normalizedAlbum.includes(r.collectionName?.toLowerCase())
-      ) || data.results.find(r =>
-        // Check partial match with swapped values too
-        r.collectionName?.toLowerCase().includes(normalizedArtist) ||
-        normalizedArtist.includes(r.collectionName?.toLowerCase())
-      ) || data.results[0];
+      const bestMatch = results.find(r =>
+        r.albumArt &&
+        r.artist?.toLowerCase() === normalizedArtist &&
+        r.album?.toLowerCase() === normalizedAlbum
+      ) || results.find(r =>
+        r.albumArt &&
+        r.artist?.toLowerCase() === normalizedArtist
+      ) || results.find(r => r.albumArt);
 
-      if (bestMatch?.artworkUrl100) {
-        // Scale up artwork URL (iTunes supports various sizes)
-        const artUrl = bestMatch.artworkUrl100.replace('100x100', '500x500');
-        itunesArtCache.current[cacheKey] = artUrl;
-        return artUrl;
+      if (bestMatch?.albumArt) {
+        resolverArtCache.current[cacheKey] = bestMatch.albumArt;
+        // Also store in shared albumArtCache for cross-lookup
+        const artCacheEntry = { url: bestMatch.albumArt, timestamp: Date.now() };
+        const artLookupKey = `resolver:${cacheKey}`;
+        albumArtCache.current[artLookupKey] = artCacheEntry;
+        return bestMatch.albumArt;
       }
 
+      resolverArtCache.current[cacheKey] = null;
       return null;
     } catch (err) {
-      console.error('Fast album art lookup failed:', err);
+      console.error('Resolver album art lookup failed:', err);
       return null;
     }
+  };
+
+  // Fast album art lookup using enabled resolvers (for ChatCards and other quick lookups)
+  const getAlbumArtFast = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    // Check the main albumArtCache first
+    const cachedArt = getCachedAlbumArt(artist, album);
+    if (cachedArt) return cachedArt;
+
+    // Search enabled resolvers
+    return getAlbumArtFromResolvers(artist, album);
   };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
@@ -25313,7 +25313,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Check if we've already looked up this artist+album combo
     if (albumToReleaseIdCache.current[lookupKey] !== undefined) {
       const cached = albumToReleaseIdCache.current[lookupKey];
-      if (cached === null) return null; // Previously failed lookup
+      if (cached === null) return getAlbumArtFromResolvers(artist, album); // MusicBrainz failed, try resolvers
 
       // Support both old format (string) and new format ({ releaseId, releaseGroupId })
       const releaseId = typeof cached === 'string' ? cached : cached.releaseId;
@@ -25363,7 +25363,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
         }
       }
-      return null; // No art available for this release
+      return getAlbumArtFromResolvers(artist, album); // CAA failed, try resolvers
     }
 
     try {
@@ -25372,7 +25372,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (releases.length === 0) {
         albumToReleaseIdCache.current[lookupKey] = null;
-        return null;
+        return getAlbumArtFromResolvers(artist, album);
       }
 
       const releaseId = releases[0].id;
@@ -25424,11 +25424,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return artUrl;
       }
 
-      return null;
+      return getAlbumArtFromResolvers(artist, album);
     } catch (error) {
       console.log(`Cover art not found for: ${artist} - ${album}`);
       albumToReleaseIdCache.current[lookupKey] = null;
-      return null;
+      return getAlbumArtFromResolvers(artist, album);
     }
   };
 
