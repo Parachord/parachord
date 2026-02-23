@@ -20977,16 +20977,19 @@ ${trackListXml}
     }
 
     if (draggedResolver !== targetResolverId) {
-      const newOrder = [...resolverOrder];
-      const draggedIndex = newOrder.indexOf(draggedResolver);
-      const targetIndex = newOrder.indexOf(targetResolverId);
+      setResolverOrder(prev => {
+        const newOrder = [...prev];
+        const draggedIndex = newOrder.indexOf(draggedResolver);
+        const targetIndex = newOrder.indexOf(targetResolverId);
+        if (draggedIndex === -1 || targetIndex === -1) return prev;
 
-      // Remove dragged item and insert at target position
-      newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedResolver);
+        // Remove dragged item and insert at target position
+        newOrder.splice(draggedIndex, 1);
+        newOrder.splice(targetIndex, 0, draggedResolver);
 
-      setResolverOrder(newOrder);
-      console.log('Resolver order updated:', newOrder);
+        console.log('Resolver order updated:', newOrder);
+        return newOrder;
+      });
     }
 
     setDraggedResolver(null);
@@ -27524,41 +27527,37 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             if (authStatus.success && authStatus.authorized) {
               console.log('🍎 Native MusicKit already authorized - auto-reconnecting');
 
-              // Fetch and persist a fresh user token for sync
-              let hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
+              // Native MusicKit doesn't need a user token for search/playback —
+              // it uses the system Apple Music subscription directly. Always
+              // reconnect if native auth is valid. Fetch a user token in the
+              // background for sync features, but don't gate connection on it.
+              setAppleMusicConnected(true);
+              setActiveResolvers(prev => {
+                if (!prev.includes('applemusic')) {
+                  return [...prev, 'applemusic'];
+                }
+                return prev;
+              });
+              setResolverOrder(prev => {
+                if (!prev.includes('applemusic')) {
+                  return insertInCanonicalOrder(prev, 'applemusic');
+                }
+                return prev;
+              });
+
+              // Best-effort: fetch and persist a user token for sync features
+              const hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
               if (!hasToken && window.electron.musicKit.fetchUserToken) {
                 try {
                   const tokenResult = await window.electron.musicKit.fetchUserToken();
                   if (tokenResult.success && tokenResult.userToken) {
                     await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
                     localStorage.setItem('musickit_user_token', tokenResult.userToken);
-                    hasToken = true;
                     console.log('🍎 Fetched and stored user token from native MusicKit on startup');
                   }
                 } catch (e) {
-                  console.log('🍎 Failed to fetch user token from native MusicKit:', e.message);
+                  console.log('🍎 Failed to fetch user token from native MusicKit (sync features may be limited):', e.message);
                 }
-              }
-
-              if (!hasToken) {
-                console.log('🍎 Native MusicKit authorized but no user token available — skipping auto-connect');
-                await window.electron.store.set('applemusic_authorized', false);
-              } else {
-                setAppleMusicConnected(true);
-                // Ensure resolver is enabled (may be missing from saved state for
-                // users who connected before the auto-enable fix)
-                setActiveResolvers(prev => {
-                  if (!prev.includes('applemusic')) {
-                    return [...prev, 'applemusic'];
-                  }
-                  return prev;
-                });
-                setResolverOrder(prev => {
-                  if (!prev.includes('applemusic')) {
-                    return insertInCanonicalOrder(prev, 'applemusic');
-                  }
-                  return prev;
-                });
               }
             }
           } else {
@@ -41664,13 +41663,20 @@ useEffect(() => {
                     // resolvers in resolverOrder but not in allResolvers still appear from marketplace
                     const addedIds = new Set(unifiedResolvers.map(r => r.id));
 
-                    // Loaded but not enabled
+                    // Helper: resolve priority from resolverOrder position even for
+                    // resolvers that weren't in the first section (e.g. still loading)
+                    const getPriorityFromOrder = (id) => {
+                      const idx = resolverOrder.indexOf(id);
+                      return idx !== -1 ? idx + 1 : null;
+                    };
+
+                    // Loaded but not in resolverOrder yet
                     allResolvers.forEach(resolver => {
                       if (resolver.capabilities?.resolve && !addedIds.has(resolver.id)) {
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: null,
+                          priorityNumber: getPriorityFromOrder(resolver.id),
                           marketplaceData: marketplaceResolver,
                           hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
                         });
@@ -41683,7 +41689,7 @@ useEffect(() => {
                       if (!addedIds.has(resolver.id)) {
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: null,
+                          priorityNumber: getPriorityFromOrder(resolver.id),
                           marketplaceData: resolver,
                           hasUpdate: false
                         });
