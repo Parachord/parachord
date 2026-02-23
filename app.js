@@ -22867,30 +22867,51 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       };
 
+      // Filter out albums that were already suggested in previous refreshes
+      const prevAlbumKeys = new Set(
+        previousAiSuggestions.current.albums.map(a => `${a.artist}-${a.title}`.toLowerCase())
+      );
+      const freshCandidates = candidateAlbums.filter(a =>
+        !prevAlbumKeys.has(`${a.artist}-${a.title}`.toLowerCase())
+      );
+
       // Artists don't need validation — emit them immediately
-      const artists = (parsed.artists || []).slice(0, 5).map(a => ({
+      // Filter out previously suggested artists at the code level (in case the LLM repeats)
+      const prevArtistNames = new Set(
+        previousAiSuggestions.current.artists.map(a => a.name.toLowerCase())
+      );
+      const artists = (parsed.artists || []).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
         reason: a.reason || '',
         image: undefined // Will be loaded asynchronously
-      }));
+      })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
       if (onUpdate) onUpdate({ artists });
 
-      // Validate albums with staggered starts to respect MusicBrainz rate limits.
-      // Stream each valid album to the UI as it passes validation instead of waiting for all.
+      // Validate albums concurrently (max 2 in-flight to respect MusicBrainz ~1 req/sec).
+      // Stream each valid album to the UI as it passes validation.
       const validAlbums = [];
-      await Promise.all(
-        candidateAlbums.map(async (album, i) => {
-          await new Promise(resolve => setTimeout(resolve, i * 250));
+      let done = false;
+      const queue = [...freshCandidates];
+      let nextIndex = 0;
+
+      const runWorker = async () => {
+        while (!done && nextIndex < queue.length) {
+          const i = nextIndex++;
+          const album = queue[i];
           const result = await validateAlbum(album);
+          if (done) return;
           if (result && validAlbums.length < 5) {
             validAlbums.push({ album, result });
-            // Pre-seed the album-to-release-id cache so getAlbumArt skips the MB search
             const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
             albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
             if (onUpdate) onUpdate({ newAlbum: album });
+            if (validAlbums.length >= 5) done = true;
           }
-        })
-      );
+        }
+      };
+
+      // Run 2 concurrent workers — fast enough to stream results, light enough to avoid rate limits
+      await Promise.all([runWorker(), runWorker()]);
 
       const albums = validAlbums.map(r => r.album);
 
