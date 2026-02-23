@@ -36009,13 +36009,13 @@ useEffect(() => {
                 });
 
                 const aiRecs = homeData.aiRecommendations;
-                const hasAiRecs = aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
+                const hasAiRecs = aiRecs && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
 
                 // Show AI recommendations if loaded
                 if (hasAiRecs) {
                   return React.createElement('div', null,
                     // Row 1: Recommended Albums
-                    aiRecs.albums?.length > 0 && React.createElement('div', { className: 'mb-6' },
+                    (aiRecs.albums?.length > 0 || aiRecs.loading) && React.createElement('div', { className: 'mb-6' },
                       React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
                         React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Album Suggestions'),
                         React.createElement('span', {
@@ -36068,7 +36068,7 @@ useEffect(() => {
                       React.createElement('div', {
                         className: 'grid grid-cols-5 gap-4'
                       },
-                        aiRecs.albums.map((album, index) =>
+                        ...aiRecs.albums.map((album, index) =>
                           React.createElement('button', {
                             key: `ai-album-${album.artist}-${album.title}`,
                             className: 'group text-left release-card card-fade-up',
@@ -36231,7 +36231,26 @@ useEffect(() => {
                               )
                             )
                           )
-                        )
+                        ),
+                        // Skeleton placeholders for remaining album slots while loading
+                        ...(aiRecs.loading ? Array.from({ length: Math.max(0, 5 - (aiRecs.albums?.length || 0)) }).map((_, i) =>
+                          React.createElement('div', {
+                            key: `ai-album-skeleton-${i}`,
+                            style: {
+                              backgroundColor: '#ffffff',
+                              borderRadius: '10px',
+                              padding: '10px',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+                            }
+                          },
+                            React.createElement('div', {
+                              className: 'aspect-square rounded-md mb-2 animate-shimmer',
+                              style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)' }
+                            }),
+                            React.createElement('div', { className: 'h-4 rounded mb-2 animate-shimmer', style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', width: '80%' } }),
+                            React.createElement('div', { className: 'h-3 rounded animate-shimmer', style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', width: '60%' } })
+                          )
+                        ) : [])
                       )
                     ),
                     // Row 2: Recommended Artists
