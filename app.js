@@ -40687,7 +40687,24 @@ useEffect(() => {
                         animationDelay: `${Math.min(index * 30, 300)}ms`
                       },
                       onClick: () => openTopAlbum(album),
-                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
+                      onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                          const cached = topAlbumTracksCache.current[cacheKey];
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'release',
+                            name: album.name,
+                            album: {
+                              title: album.name,
+                              artist: album.artist,
+                              art: album.image || null
+                            },
+                            tracks: cached || []
+                          });
+                        }
+                      }
                     },
                       // Album art - Cinematic Light design
                       React.createElement('div', {
@@ -41402,7 +41419,24 @@ useEffect(() => {
                           key: album.id || index,
                           className: 'bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group',
                           onClick: () => openTopAlbum(album),
-                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image)
+                          onMouseEnter: () => prefetchTopAlbumTracks(album.artist, album.name, album.image),
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
+                              const cached = topAlbumTracksCache.current[cacheKey];
+                              window.electron.contextMenu.showTrackMenu({
+                                type: 'release',
+                                name: album.name,
+                                album: {
+                                  title: album.name,
+                                  artist: album.artist,
+                                  art: album.image || null
+                                },
+                                tracks: cached || []
+                              });
+                            }
+                          }
                         },
                           React.createElement('div', {
                             className: 'aspect-square relative group/art',
