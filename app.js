@@ -22566,8 +22566,9 @@ ${tracks}
 
     try {
       // Fetch playlists created for the user (includes Weekly Jams, Weekly Exploration, etc.)
+      // Request enough results to capture several weeks of both jams and exploration playlists
       const response = await fetch(
-        `https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/playlists/createdfor`
+        `https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/playlists/createdfor?count=100`
       );
 
       if (!response.ok) return { jams: null, exploration: null };
