@@ -5251,6 +5251,7 @@ const Parachord = () => {
   const listenAlongLastTrackRef = useRef(null); // Track what we last played in listen-along to detect changes
   const listenAlongPendingTrackRef = useRef(null); // Track queued to play when current song ends (friend is ahead)
   const listenAlongUserPausedRef = useRef(false); // True when user explicitly paused during listen-along
+  const listenAlongEndAfterSongRef = useRef(null); // Friend display name when listen-along should end after current song finishes
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
@@ -13830,6 +13831,16 @@ ${trackListXml}
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
 
+      // LISTEN-ALONG DEFERRED END: Friend went offline while we were playing - now the song has finished
+      const listenAlongEndingFriend = listenAlongEndAfterSongRef.current;
+      if (listenAlongEndingFriend) {
+        console.log(`🎧 Listen-along: Song finished, ending deferred listen-along session`);
+        listenAlongEndAfterSongRef.current = null;
+        setPlaybackContext(null);
+        showToast(`${listenAlongEndingFriend} stopped listening`);
+        // Fall through to play from queue below
+      }
+
       // LISTEN-ALONG MODE: Handle track progression when listening along with a friend
       // Skip this block if we already ended listen-along above (user clicked next)
       if (listenAlongFriendNow && !listenAlongEnded) {
@@ -13982,6 +13993,12 @@ ${trackListXml}
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       listenAlongPendingTrackRef.current = null;
+      setPlaybackContext(null);
+    }
+
+    // Clear deferred listen-along ending if user navigated manually
+    if (listenAlongEndAfterSongRef.current) {
+      listenAlongEndAfterSongRef.current = null;
       setPlaybackContext(null);
     }
 
@@ -14277,6 +14294,12 @@ ${trackListXml}
       setListenAlongFriend(null);
       listenAlongLastTrackRef.current = null;
       listenAlongPendingTrackRef.current = null;
+    }
+
+    // Clear deferred listen-along ending
+    if (listenAlongEndAfterSongRef.current) {
+      listenAlongEndAfterSongRef.current = null;
+      setPlaybackContext(null);
     }
 
     // Deduplicate by id
@@ -23984,17 +24007,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Check if the friend we're listening along to went inactive
         if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
           console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
-          showToast(`${friend.displayName} stopped listening`);
           // Abort and cleanup pool context
           abortSchedulerContext('listen-along');
-          setListenAlongFriend(null);
           listenAlongLastTrackRef.current = null;
           listenAlongPendingTrackRef.current = null;
           listenAlongUserPausedRef.current = false;
-          setPlaybackContext(null);
-          // Resume playback from queue if there are tracks
-          if (currentQueueRef.current.length > 0) {
-            handleNextRef.current?.();
+
+          // If a song is currently playing, let it finish before ending the session
+          if (isPlayingRef.current) {
+            console.log(`🎧 Listen-along: Deferring end until current song finishes`);
+            listenAlongEndAfterSongRef.current = friend.displayName;
+            setListenAlongFriend(null);
+            // Keep playbackContext so UI still shows "Listening along with..." until song ends
+          } else {
+            // Not playing - end immediately
+            showToast(`${friend.displayName} stopped listening`);
+            setListenAlongFriend(null);
+            setPlaybackContext(null);
+            // Resume playback from queue if there are tracks
+            if (currentQueueRef.current.length > 0) {
+              handleNextRef.current?.();
+            }
           }
           continue; // Skip further processing for this friend
         }
@@ -24115,16 +24148,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Deactivate listen-along mode
   const deactivateListenAlong = () => {
-    if (!listenAlongFriend) return;
+    // Also handle deferred ending case (friend already went offline)
+    if (!listenAlongFriend && !listenAlongEndAfterSongRef.current) return;
 
     // Abort and cleanup pool context
     abortSchedulerContext('listen-along');
 
-    const friendName = listenAlongFriend.displayName;
+    const friendName = listenAlongFriend?.displayName || listenAlongEndAfterSongRef.current;
     console.log(`🎧 Stopped listening along with ${friendName}`);
     setListenAlongFriend(null);
     listenAlongLastTrackRef.current = null;
     listenAlongUserPausedRef.current = false;
+    listenAlongEndAfterSongRef.current = null;
 
     // Clear the listen-along context - will use queue's context when next track plays
     setPlaybackContext(null);
@@ -26208,6 +26243,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       listenAlongLastTrackRef.current = null;
       // Don't show the "stopped listening along" toast since we'll show the spinoff toast
     }
+
+    // Clear deferred listen-along ending
+    listenAlongEndAfterSongRef.current = null;
 
     try {
       const similarTracks = await fetchSimilarTracks(track.artist, track.title);
