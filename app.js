@@ -36342,7 +36342,25 @@ useEffect(() => {
                               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                               animationDelay: `${index * 50}ms`
                             },
-                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist })
+                            onClick: () => handleCollectionAlbumClick({ title: album.title, artist: album.artist }),
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              if (window.electron?.contextMenu?.showTrackMenu) {
+                                const albumTracks = (collectionData?.tracks || [])
+                                  .filter(t => t.artist === album.artist && t.album === album.title)
+                                  .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                                window.electron.contextMenu.showTrackMenu({
+                                  type: 'release',
+                                  name: album.title,
+                                  album: {
+                                    title: album.title,
+                                    artist: album.artist,
+                                    art: album.art || null
+                                  },
+                                  tracks: albumTracks
+                                });
+                              }
+                            }
                           },
                             React.createElement('div', {
                               className: 'album-art-container group/art',
@@ -38348,7 +38366,23 @@ useEffect(() => {
                     animationDelay: `${Math.min(index * 30, 300)}ms`
                   },
                   onMouseEnter: () => prefetchChartsTracks(item),
-                  onClick: () => openChartsAlbum(item)
+                  onClick: () => openChartsAlbum(item),
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      const prefetched = prefetchedReleases[item.id];
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'release',
+                        name: item.title,
+                        album: {
+                          title: item.title,
+                          artist: item.artist,
+                          art: item.albumArt || null
+                        },
+                        tracks: prefetched?.tracks || []
+                      });
+                    }
+                  }
                 },
                   // Album art with hover overlay - Cinematic Light design
                   React.createElement('div', {
@@ -39084,7 +39118,23 @@ useEffect(() => {
                   e.dataTransfer.setData('text/plain', JSON.stringify(albumData));
                 },
                 onMouseEnter: () => prefetchCriticsPicksTracks(album),
-                onClick: () => openCriticsPicksAlbum(album)
+                onClick: () => openCriticsPicksAlbum(album),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    const prefetched = prefetchedReleases[album.id];
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'release',
+                      name: album.title,
+                      album: {
+                        title: album.title,
+                        artist: album.artist,
+                        art: album.albumArt || null
+                      },
+                      tracks: prefetched?.tracks || []
+                    });
+                  }
+                }
               },
                 // Album art - left column - Cinematic Light design
                 React.createElement('div', {
