@@ -27105,41 +27105,37 @@ ${tracks}
             if (authStatus.success && authStatus.authorized) {
               console.log('🍎 Native MusicKit already authorized - auto-reconnecting');
 
-              // Fetch and persist a fresh user token for sync
-              let hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
+              // Native MusicKit doesn't need a user token for search/playback —
+              // it uses the system Apple Music subscription directly. Always
+              // reconnect if native auth is valid. Fetch a user token in the
+              // background for sync features, but don't gate connection on it.
+              setAppleMusicConnected(true);
+              setActiveResolvers(prev => {
+                if (!prev.includes('applemusic')) {
+                  return [...prev, 'applemusic'];
+                }
+                return prev;
+              });
+              setResolverOrder(prev => {
+                if (!prev.includes('applemusic')) {
+                  return insertInCanonicalOrder(prev, 'applemusic');
+                }
+                return prev;
+              });
+
+              // Best-effort: fetch and persist a user token for sync features
+              const hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
               if (!hasToken && window.electron.musicKit.fetchUserToken) {
                 try {
                   const tokenResult = await window.electron.musicKit.fetchUserToken();
                   if (tokenResult.success && tokenResult.userToken) {
                     await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
                     localStorage.setItem('musickit_user_token', tokenResult.userToken);
-                    hasToken = true;
                     console.log('🍎 Fetched and stored user token from native MusicKit on startup');
                   }
                 } catch (e) {
-                  console.log('🍎 Failed to fetch user token from native MusicKit:', e.message);
+                  console.log('🍎 Failed to fetch user token from native MusicKit (sync features may be limited):', e.message);
                 }
-              }
-
-              if (!hasToken) {
-                console.log('🍎 Native MusicKit authorized but no user token available — skipping auto-connect');
-                await window.electron.store.set('applemusic_authorized', false);
-              } else {
-                setAppleMusicConnected(true);
-                // Ensure resolver is enabled (may be missing from saved state for
-                // users who connected before the auto-enable fix)
-                setActiveResolvers(prev => {
-                  if (!prev.includes('applemusic')) {
-                    return [...prev, 'applemusic'];
-                  }
-                  return prev;
-                });
-                setResolverOrder(prev => {
-                  if (!prev.includes('applemusic')) {
-                    return insertInCanonicalOrder(prev, 'applemusic');
-                  }
-                  return prev;
-                });
               }
             }
           } else {

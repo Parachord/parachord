@@ -4757,6 +4757,9 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
     const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
     if (developerToken && userToken) {
@@ -4786,6 +4789,9 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
   } else if (providerId === 'applemusic') {
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
     const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     const userToken = store.get('applemusic_user_token');
     if (developerToken && userToken) {
@@ -5056,6 +5062,10 @@ ipcMain.handle('musickit:unauthorize', async () => {
 ipcMain.handle('musickit:fetch-user-token', async () => {
   const bridge = getMusicKitBridge();
   try {
+    // Await .p8 token generation to avoid race with renderer startup
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
     const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
     if (!developerToken) {
       return { success: false, error: 'No developer token available' };
