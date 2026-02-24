@@ -8670,8 +8670,8 @@ const Parachord = () => {
     // Handle queue requests from embed (add track to end of queue)
     window.electron.embed.onQueue(({ track }) => {
       console.log('➕ Embed queue request:', track?.title);
-      if (track && setCurrentQueueRef.current) {
-        setCurrentQueueRef.current(prev => [...prev, track]);
+      if (track) {
+        setCurrentQueue(prev => [...prev, track]);
       }
     });
 
