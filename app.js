@@ -22601,11 +22601,17 @@ ${tracks}
   const loadNewReleases = async (forceRefresh = false) => {
     if (newReleasesLoading) return;
 
-    // Check cache first
+    // If we already have data in state and aren't force-refreshing, just show it
+    if (!forceRefresh && newReleases.length > 0 && newReleasesLoaded) {
+      console.log(`✨ Using ${newReleases.length} cached new releases from state`);
+      return;
+    }
+
+    // Check ref cache as fallback (e.g. state was cleared but ref persists)
     const now = Date.now();
     if (!forceRefresh && newReleasesCache.current.releases && (now - newReleasesCache.current.timestamp) < CACHE_TTL.newReleases) {
       const cacheAgeMin = Math.round((now - newReleasesCache.current.timestamp) / 60000);
-      console.log(`✨ Using cached new releases (${cacheAgeMin}m old)`);
+      console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
       setNewReleases(newReleasesCache.current.releases);
       setNewReleasesLoaded(true);
       return;
