@@ -44698,7 +44698,7 @@ useEffect(() => {
           currentTrack && !trackLoading ? [
             React.createElement(Tooltip, {
               key: 'album-art-tooltip',
-              content: currentTrack.album ? `Click to open "${currentTrack.album}"` : 'Drag to add to playlist',
+              content: currentTrack.album ? `View "${currentTrack.album}" · Drag to add to playlist` : 'Drag to add to playlist',
               position: 'top',
               variant: 'dark'
             },
@@ -44756,10 +44756,13 @@ useEffect(() => {
                           // Prefer albums over singles/EPs - find first album type, fall back to first result
                           const album = results.find(r => r['primary-type'] === 'Album') || results[0];
                           handleAlbumClick(album);
+                        } else {
+                          showToast(`Album "${currentTrack.album}" not found`);
                         }
                       }
                     }).catch(error => {
                       console.error('Error searching for album:', error);
+                      showToast('Failed to load album');
                     });
                   }
                 },
@@ -52760,7 +52763,11 @@ useEffect(() => {
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
             if (playlist) {
-              loadPlaylist(playlist); // loadPlaylist has its own "already viewing" check
+              if (activeView === 'playlist-view' && selectedPlaylist?.id === playlist.id) {
+                // Already viewing this playlist - just close the drawer
+              } else {
+                loadPlaylist(playlist);
+              }
             }
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
             // handleCollectionAlbumClick has its own "already viewing" check
