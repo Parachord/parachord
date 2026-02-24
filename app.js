@@ -3563,7 +3563,7 @@ const ReleasePage = ({
             }
           }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...'),
           // Share button
-          React.createElement('div', { className: 'relative mt-3' },
+          React.createElement('div', { className: 'relative mt-5 flex justify-center' },
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
               className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
@@ -3574,7 +3574,7 @@ const ReleasePage = ({
               'Share'
             ),
             shareDropdownOpen === 'album' && React.createElement('div', {
-              className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
+              className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
               onClick: (e) => e.stopPropagation()
             },
               React.createElement('button', {
@@ -34370,7 +34370,7 @@ useEffect(() => {
                   className: 'text-xs text-gray-400'
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
                 // Share button
-                React.createElement('div', { className: 'relative mt-3' },
+                React.createElement('div', { className: 'relative mt-5 flex justify-center' },
                   React.createElement('button', {
                     onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
                     className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
@@ -34381,7 +34381,7 @@ useEffect(() => {
                     'Share'
                   ),
                   shareDropdownOpen === 'playlist' && React.createElement('div', {
-                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
+                    className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
                     onClick: (e) => e.stopPropagation()
                   },
                     React.createElement('button', {
