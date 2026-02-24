@@ -4960,16 +4960,24 @@ const Parachord = () => {
   const [chartsLoaded, setChartsLoaded] = useState(false);
   const [chartsError, setChartsError] = useState(null);
 
+  // New Releases state
+  const [newReleases, setNewReleases] = useState([]);
+  const [newReleasesLoading, setNewReleasesLoading] = useState(false);
+  const [newReleasesLoaded, setNewReleasesLoaded] = useState(false);
+  const [newReleasesError, setNewReleasesError] = useState(null);
+
   // Unread badges for discovery features (shows when content has changed since last view)
   const [discoveryUnread, setDiscoveryUnread] = useState({
     recommendations: false,
     criticsPicks: false,
-    charts: false
+    charts: false,
+    newReleases: false
   });
   const discoverySeenHashes = useRef({
     recommendations: null,
     criticsPicks: null,
-    charts: null
+    charts: null,
+    newReleases: null
   });
 
   // HOME view state
@@ -5288,6 +5296,13 @@ const Parachord = () => {
   const [criticsSortDropdownOpen, setCriticsSortDropdownOpen] = useState(false);
   const [criticsSort, setCriticsSort] = useState('recent');
 
+  // New Releases page state
+  const [newReleasesHeaderCollapsed, setNewReleasesHeaderCollapsed] = useState(false);
+  const [newReleasesSearchOpen, setNewReleasesSearchOpen] = useState(false);
+  const [newReleasesSearch, setNewReleasesSearch] = useState('');
+  const [newReleasesFilter, setNewReleasesFilter] = useState('all'); // 'all' | 'album' | 'ep' | 'single'
+  const [newReleasesFilterDropdownOpen, setNewReleasesFilterDropdownOpen] = useState(false);
+
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
   const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
@@ -5423,6 +5438,15 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [criticsSortDropdownOpen]);
+
+  // Close new-releases filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setNewReleasesFilterDropdownOpen(false);
+    if (newReleasesFilterDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [newReleasesFilterDropdownOpen]);
 
   // Close history sort dropdown when clicking outside
   useEffect(() => {
@@ -5580,6 +5604,15 @@ const Parachord = () => {
       setCriticsHeaderCollapsed(false);
       setCriticsSearchOpen(false);
       setCriticsSearch('');
+    }
+  }, [activeView]);
+
+  // Reset new-releases header collapse when leaving new-releases view
+  useEffect(() => {
+    if (activeView !== 'new-releases') {
+      setNewReleasesHeaderCollapsed(false);
+      setNewReleasesSearchOpen(false);
+      setNewReleasesSearch('');
     }
   }, [activeView]);
 
@@ -7300,7 +7333,8 @@ const Parachord = () => {
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
-    charts: 24 * 60 * 60 * 1000             // 24 hours (charts update daily)
+    charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
+    newReleases: 6 * 60 * 60 * 1000         // 6 hours (new releases don't change that often)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -9020,6 +9054,10 @@ const Parachord = () => {
 
           case 'critics-picks':
             setActiveView('critics-picks');
+            break;
+
+          case 'new-releases':
+            setActiveView('new-releases');
             break;
 
           case 'search': {
@@ -17630,6 +17668,11 @@ ${trackListXml}
             setActiveView('critics-picks');
             setViewHistory(['library', 'critics-picks']);
             console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
+          } else if (savedLastView.view === 'new-releases') {
+            // Restore new-releases view - data will be loaded by useEffect when collection is loaded
+            setActiveView('new-releases');
+            setViewHistory(['library', 'new-releases']);
+            console.log(`📦 Restoring last view: new-releases (Fresh Drops)`);
           } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
             // Restore friend history view - need to find the friend and load their data
             setActiveView('friendHistory');
@@ -17825,8 +17868,11 @@ ${trackListXml}
     } else if (activeView === 'discover' && charts.length > 0) {
       const hash = generateDiscoveryHash(charts);
       markDiscoverySeen('charts', hash);
+    } else if (activeView === 'new-releases' && newReleases.length > 0) {
+      const hash = generateDiscoveryHash(newReleases);
+      markDiscoverySeen('newReleases', hash);
     }
-  }, [activeView, recommendations.artists, criticsPicks, charts, generateDiscoveryHash, markDiscoverySeen]);
+  }, [activeView, recommendations.artists, criticsPicks, charts, newReleases, generateDiscoveryHash, markDiscoverySeen]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -22550,6 +22596,252 @@ ${tracks}
     }
   };
 
+  // Load New Releases from MusicBrainz for artists in the user's collection and listening history
+  const newReleasesCache = useRef({ releases: null, timestamp: 0 });
+  const loadNewReleases = async (forceRefresh = false) => {
+    if (newReleasesLoading) return;
+
+    // Check cache first
+    const now = Date.now();
+    if (!forceRefresh && newReleasesCache.current.releases && (now - newReleasesCache.current.timestamp) < CACHE_TTL.newReleases) {
+      const cacheAgeMin = Math.round((now - newReleasesCache.current.timestamp) / 60000);
+      console.log(`✨ Using cached new releases (${cacheAgeMin}m old)`);
+      setNewReleases(newReleasesCache.current.releases);
+      setNewReleasesLoaded(true);
+      return;
+    }
+
+    setNewReleasesLoading(true);
+    setNewReleasesError(null);
+    console.log('✨ Loading New Releases...');
+
+    try {
+      // Step 1: Collect artists from multiple sources
+      const artistNames = new Map(); // name (lowercase) -> { name (display), source }
+
+      // Source 1: Collection artists
+      if (collectionData.artists?.length > 0) {
+        collectionData.artists.forEach(a => {
+          const key = a.name.trim().toLowerCase();
+          if (!artistNames.has(key)) {
+            artistNames.set(key, { name: a.name, source: 'collection' });
+          }
+        });
+      }
+
+      // Source 2: Artists from collection tracks (unique artists from saved tracks)
+      if (collectionData.tracks?.length > 0) {
+        collectionData.tracks.forEach(t => {
+          if (t.artist) {
+            const key = t.artist.trim().toLowerCase();
+            if (!artistNames.has(key)) {
+              artistNames.set(key, { name: t.artist, source: 'library' });
+            }
+          }
+        });
+      }
+
+      // Source 3: Artists from collection albums
+      if (collectionData.albums?.length > 0) {
+        collectionData.albums.forEach(a => {
+          if (a.artist) {
+            const key = a.artist.trim().toLowerCase();
+            if (!artistNames.has(key)) {
+              artistNames.set(key, { name: a.artist, source: 'library' });
+            }
+          }
+        });
+      }
+
+      // Source 4: Top artists from Last.fm listening history (if loaded)
+      if (topArtists.artists?.length > 0) {
+        topArtists.artists.forEach(a => {
+          const key = a.name.trim().toLowerCase();
+          if (!artistNames.has(key)) {
+            artistNames.set(key, { name: a.name, source: 'history' });
+          }
+        });
+      }
+
+      if (artistNames.size === 0) {
+        console.log('✨ No artists found in collection or history');
+        setNewReleases([]);
+        setNewReleasesLoaded(true);
+        setNewReleasesLoading(false);
+        return;
+      }
+
+      console.log(`✨ Found ${artistNames.size} unique artists to check for new releases`);
+
+      // Step 2: For each artist, check MusicBrainz for recent releases (last 6 months)
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
+
+      // Limit to 40 artists max to avoid excessive API calls
+      const artistList = Array.from(artistNames.values()).slice(0, 40);
+      const allNewReleases = [];
+      let artistsProcessed = 0;
+
+      // Process artists in batches of 2 (MusicBrainz rate limit ~1 req/sec)
+      for (const artist of artistList) {
+        try {
+          // First search for artist MBID if not cached
+          const cacheKey = artist.name.trim().toLowerCase();
+          let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
+
+          if (!mbid) {
+            const searchResponse = await fetch(
+              `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
+              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+            );
+            if (searchResponse.ok) {
+              const searchData = await searchResponse.json();
+              mbid = searchData.artists?.[0]?.id;
+            }
+            await new Promise(resolve => setTimeout(resolve, 1100)); // Rate limit
+          }
+
+          if (!mbid) {
+            artistsProcessed++;
+            continue;
+          }
+
+          // Fetch recent release-groups
+          const releasesResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+          );
+
+          if (releasesResponse.ok) {
+            const releasesData = await releasesResponse.json();
+            const releaseGroups = releasesData['release-groups'] || [];
+
+            releaseGroups.forEach(rg => {
+              const releaseDate = rg['first-release-date'] || '';
+              // Only include releases from the last 6 months
+              if (releaseDate && releaseDate >= cutoffDate) {
+                const primaryType = (rg['primary-type'] || '').toLowerCase();
+                const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
+
+                // Skip compilations and live albums
+                if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live')) return;
+
+                let releaseType = primaryType || 'album';
+                if (primaryType === 'album' && secondaryTypes.length === 0) {
+                  releaseType = 'album';
+                }
+
+                allNewReleases.push({
+                  id: rg.id,
+                  title: rg.title,
+                  artist: artist.name,
+                  artistSource: artist.source,
+                  date: releaseDate,
+                  releaseType: releaseType,
+                  disambiguation: rg.disambiguation,
+                  albumArt: null // Will be fetched in background
+                });
+              }
+            });
+          }
+
+          artistsProcessed++;
+          // Show progressive results every 5 artists
+          if (artistsProcessed % 5 === 0 && allNewReleases.length > 0) {
+            const sorted = [...allNewReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            setNewReleases(sorted);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 1100)); // Rate limit
+        } catch (error) {
+          console.error(`Error checking releases for ${artist.name}:`, error);
+          artistsProcessed++;
+        }
+      }
+
+      // Step 3: Sort by date (newest first) and deduplicate
+      const seen = new Set();
+      const uniqueReleases = allNewReleases
+        .filter(r => {
+          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+      console.log(`✨ Found ${uniqueReleases.length} new releases from ${artistsProcessed} artists`);
+
+      setNewReleases(uniqueReleases);
+      setNewReleasesLoaded(true);
+
+      // Cache the results
+      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now() };
+
+      // Check for new content (unread badge)
+      const hash = generateDiscoveryHash(uniqueReleases);
+      checkDiscoveryUnread('newReleases', hash);
+
+      // Step 4: Fetch album art in background
+      fetchNewReleasesAlbumArt(uniqueReleases);
+
+    } catch (error) {
+      console.error('Failed to load New Releases:', error);
+      setNewReleasesError('Failed to load new releases. Please try again.');
+    } finally {
+      setNewReleasesLoading(false);
+    }
+  };
+
+  // Fetch album art for New Releases in background
+  const fetchNewReleasesAlbumArt = async (releases) => {
+    for (const release of releases) {
+      if (release.albumArt) continue;
+
+      try {
+        // Try Cover Art Archive first (direct release-group ID)
+        const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
+        const coverResponse = await fetch(coverUrl, { method: 'HEAD' });
+
+        if (coverResponse.ok) {
+          setNewReleases(prev => prev.map(r =>
+            r.id === release.id ? { ...r, albumArt: coverUrl } : r
+          ));
+          // Also update cache
+          newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
+            r.id === release.id ? { ...r, albumArt: coverUrl } : r
+          );
+        } else {
+          // Fallback to getAlbumArt helper
+          const artUrl = await getAlbumArt(release.artist, release.title);
+          if (artUrl) {
+            setNewReleases(prev => prev.map(r =>
+              r.id === release.id ? { ...r, albumArt: artUrl } : r
+            ));
+            newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
+              r.id === release.id ? { ...r, albumArt: artUrl } : r
+            );
+          }
+        }
+      } catch (error) {
+        // Silent fail for art fetch
+      }
+      // Rate limit
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  };
+
+  // Handle scroll for New Releases header collapse
+  const handleNewReleasesScroll = (e) => {
+    const scrollTop = e.target.scrollTop;
+    if (scrollTop > 100 && !newReleasesHeaderCollapsed) {
+      setNewReleasesHeaderCollapsed(true);
+    } else if (scrollTop <= 50 && newReleasesHeaderCollapsed) {
+      setNewReleasesHeaderCollapsed(false);
+    }
+  };
+
   // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
   const loadRecommendations = async (forceRefresh = false) => {
     // Check if Last.fm or ListenBrainz is configured
@@ -23310,6 +23602,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       loadCriticsPicks();
     }
   }, [activeView, cacheLoaded, criticsPicksLoaded]);
+
+  // Load new releases when navigating to the new-releases page
+  useEffect(() => {
+    if (activeView === 'new-releases' && cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
+      loadNewReleases();
+    }
+  }, [activeView, cacheLoaded, newReleasesLoaded, newReleasesLoading]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
@@ -29060,6 +29359,29 @@ useEffect(() => {
                 "Critical Darlings",
                 showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
                   className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
+                })
+              )
+            ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('new-releases');
+                loadNewReleases();
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                color: activeView === 'new-releases' ? '#10b981' : '#4b5563',
+                fontWeight: activeView === 'new-releases' ? '500' : '400'
+              }
+            },
+              // Sparkle icon for New Releases
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                'Fresh Drops',
+                showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse'
                 })
               )
             )
@@ -35238,7 +35560,7 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
@@ -36092,7 +36414,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'mb-4' },
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Discover')
                 ),
-                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4' },
                   // 1. For You / Recommendations card (indigo->purple->pink)
                   React.createElement('div', {
                     className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
@@ -36263,6 +36585,64 @@ useEffect(() => {
                     ),
                     // Padding when no preview
                     charts.length === 0 && React.createElement('div', { className: 'flex-1' })
+                  ),
+
+                  // 4. Fresh Drops / New Releases card (emerald->teal->cyan)
+                  React.createElement('div', {
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
+                    style: {
+                      background: 'linear-gradient(135deg, #10b981 0%, #14b8a6 50%, #06b6d4 100%)',
+                      animationDelay: '150ms'
+                    }
+                  },
+                    // Header section - clickable to new-releases page
+                    React.createElement('button', {
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      onClick: () => { navigateTo('new-releases'); loadNewReleases(); }
+                    },
+                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                      ),
+                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
+                        'Fresh Drops',
+                        showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
+                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
+                        })
+                      ),
+                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'New from artists you love')
+                    ),
+                    // Newest release preview
+                    newReleases.length > 0 && React.createElement('button', {
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt });
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                      },
+                        newReleases[0].albumArt
+                          ? React.createElement('img', {
+                              src: newReleases[0].albumArt,
+                              alt: newReleases[0].title,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                              )
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, newReleases[0].title),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, newReleases[0].artist)
+                      )
+                    ),
+                    // Padding when no preview
+                    newReleases.length === 0 && React.createElement('div', { className: 'flex-1' })
                   )
                 )
               ),
@@ -38808,46 +39188,383 @@ useEffect(() => {
           )
         ),
 
-        // New Releases view with hero
+        // New Releases (Fresh Drops) view with collapsible hero header
         activeView === 'new-releases' && React.createElement('div', {
-          className: 'h-full overflow-y-auto scrollable-content'
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
         },
-          // Hero section
+          // Header section (outside scrollable area)
           React.createElement('div', {
-            className: 'relative h-64 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 overflow-hidden'
+            className: 'relative',
+            style: {
+              height: newReleasesHeaderCollapsed ? '80px' : '320px',
+              flexShrink: 0,
+              transition: 'height 300ms ease-out',
+              overflow: 'hidden'
+            }
           },
-            // Background pattern - sparkles
-            React.createElement('div', {
-              className: 'absolute inset-0 opacity-30',
-              style: {
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // Hero content
-            React.createElement('div', {
-              className: 'absolute inset-0 flex items-end p-8'
-            },
-              React.createElement('div', null,
+              // Gradient background
+              React.createElement('div', {
+                className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'
+              }),
+              // Background pattern - sparkles
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  opacity: 0.2,
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
+                }
+              }),
+              // EXPANDED STATE - Centered content
+              !newReleasesHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+                style: {
+                  opacity: newReleasesHeaderCollapsed ? 0 : 1,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-5xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.3em',
+                    textTransform: 'uppercase'
+                  }
+                }, 'FRESH DROPS'),
                 React.createElement('div', {
-                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                  className: 'flex items-center gap-1 mt-6',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
-                  ),
-                  'Fresh Music'
+                  React.createElement('span', {
+                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                  }, newReleasesLoading ? 'Loading...' : `${newReleases.length} Releases`)
                 ),
-                React.createElement('h1', { className: 'text-4xl font-light text-white mb-2', style: { letterSpacing: '0.2em', textTransform: 'uppercase' } }, 'NEW RELEASES'),
-                React.createElement('p', { className: 'text-white/80 text-lg' }, 'The latest albums and singles, just dropped')
+                React.createElement('p', {
+                  className: 'mt-2 text-white/80 text-sm'
+                }, 'New music from artists in your collection and listening history')
+              ),
+              // COLLAPSED STATE - Inline layout
+              newReleasesHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex items-center px-6 z-10',
+                style: {
+                  opacity: newReleasesHeaderCollapsed ? 1 : 0,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-2xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase'
+                  }
+                }, 'FRESH DROPS'),
+                React.createElement('div', { className: 'flex-1' }),
+                React.createElement('span', {
+                  className: 'text-sm font-medium uppercase tracking-wider text-white/80'
+                }, newReleasesLoading ? 'Loading...' : `${newReleases.length} Releases`)
               )
+          ),
+          // Filter bar (outside scrollable area)
+          React.createElement('div', {
+            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            style: { flexShrink: 0 }
+          },
+            // Type filter dropdown
+            React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setNewReleasesFilterDropdownOpen(!newReleasesFilterDropdownOpen); },
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              },
+                React.createElement('span', null,
+                  newReleasesFilter === 'all' ? 'All Types' :
+                  newReleasesFilter === 'album' ? 'Albums' :
+                  newReleasesFilter === 'ep' ? 'EPs' : 'Singles'
+                ),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              newReleasesFilterDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
+              },
+                [{ value: 'all', label: 'All Types' }, { value: 'album', label: 'Albums' }, { value: 'ep', label: 'EPs' }, { value: 'single', label: 'Singles' }].map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setNewReleasesFilter(option.value);
+                      setNewReleasesFilterDropdownOpen(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      newReleasesFilter === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    newReleasesFilter === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+            // Refresh button
+            React.createElement('button', {
+              onClick: () => { setNewReleasesLoaded(false); loadNewReleases(true); },
+              disabled: newReleasesLoading,
+              className: `ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors ${newReleasesLoading ? 'animate-spin' : ''}`,
+              title: 'Refresh'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+              )
+            ),
+            React.createElement('div', { className: 'flex-1' }),
+            // Search
+            React.createElement('div', { className: 'flex items-center' },
+              newReleasesSearchOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: newReleasesSearch,
+                    onChange: (e) => setNewReleasesSearch(e.target.value),
+                    onBlur: () => { if (!newReleasesSearch.trim()) setNewReleasesSearchOpen(false); },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '150px' }
+                  }),
+                  newReleasesSearch && React.createElement('button', {
+                    onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
+                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setNewReleasesSearchOpen(true),
+                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
             )
           ),
-          // Placeholder content
-          React.createElement('div', { className: 'p-6' },
-            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-              React.createElement('div', { className: 'text-5xl mb-4' }, '✨'),
-              React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'New Releases Coming Soon'),
-              React.createElement('div', { className: 'text-sm' }, 'Stay tuned for the freshest music')
-            )
+          // Content area (scrollable)
+          React.createElement('div', {
+            className: 'scrollable-content',
+            style: {
+              flex: 1,
+              overflowY: 'scroll',
+              pointerEvents: 'auto',
+              padding: '24px'
+            },
+            onScroll: handleNewReleasesScroll
+          },
+            // Error state
+            newReleasesError && !newReleasesLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, newReleasesError),
+              React.createElement('button', {
+                onClick: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
+            // Skeleton loading state
+            !newReleasesError && (newReleasesLoading && newReleases.length === 0) && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5'
+            },
+              Array.from({ length: 12 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `skeleton-${i}`,
+                  className: 'bg-white rounded-xl border border-gray-100 overflow-hidden'
+                },
+                  React.createElement('div', {
+                    className: 'aspect-square bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  React.createElement('div', { className: 'p-3 space-y-2' },
+                    React.createElement('div', {
+                      className: 'h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-3/4 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
+                    }),
+                    React.createElement('div', {
+                      className: 'h-3 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded w-1/2 animate-shimmer',
+                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
+                    })
+                  )
+                )
+              )
+            ),
+
+            // Empty state (no artists in collection)
+            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement('div', {
+              className: 'text-center py-16'
+            },
+              React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-gray-200', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              React.createElement('div', { className: 'text-gray-500 font-medium mb-2' }, 'No new releases found'),
+              React.createElement('div', { className: 'text-gray-400 text-sm max-w-md mx-auto' },
+                collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
+                  ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
+                  : 'None of your artists have released new music in the last 6 months. Check back later!'
+              )
+            ),
+
+            // Release grid
+            !newReleasesError && (newReleases.length > 0 || (newReleasesLoading && newReleases.length > 0)) && (() => {
+              // Filter releases
+              let filtered = newReleases;
+              if (newReleasesFilter !== 'all') {
+                filtered = filtered.filter(r => r.releaseType === newReleasesFilter);
+              }
+              if (newReleasesSearch.trim()) {
+                const q = newReleasesSearch.toLowerCase();
+                filtered = filtered.filter(r =>
+                  r.title.toLowerCase().includes(q) ||
+                  r.artist.toLowerCase().includes(q)
+                );
+              }
+
+              if (filtered.length === 0 && (newReleasesFilter !== 'all' || newReleasesSearch.trim())) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('div', { className: 'text-sm' }, 'No releases match your filters')
+                );
+              }
+
+              return React.createElement('div', null,
+                // Loading indicator when refreshing with existing data
+                newReleasesLoading && newReleases.length > 0 && React.createElement('div', {
+                  className: 'flex items-center gap-2 mb-4 text-sm text-emerald-600'
+                },
+                  React.createElement('div', { className: 'w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin' }),
+                  'Checking for new releases...'
+                ),
+                // Grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5'
+                },
+                  filtered.map((release, index) =>
+                    React.createElement('div', {
+                      key: release.id,
+                      className: 'release-card bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer card-fade-up',
+                      style: { animationDelay: `${Math.min(index, 20) * 30}ms` },
+                      onClick: () => {
+                        // Navigate to the album/release page
+                        openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt });
+                      }
+                    },
+                      // Album art
+                      React.createElement('div', {
+                        className: 'aspect-square relative overflow-hidden album-art-container'
+                      },
+                        release.albumArt
+                          ? React.createElement('img', {
+                              src: release.albumArt,
+                              alt: release.title,
+                              className: 'w-full h-full object-cover',
+                              loading: 'lazy'
+                            })
+                          : React.createElement('div', {
+                              className: 'w-full h-full flex items-center justify-center',
+                              style: {
+                                background: `linear-gradient(135deg, ${
+                                  ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#10b981', '#06b6d4', '#8b5cf6'][
+                                    Math.abs(release.title.length + release.artist.length) % 7
+                                  ]
+                                } 0%, ${
+                                  ['#a855f7', '#ec4899', '#f97316', '#10b981', '#06b6d4', '#8b5cf6', '#6366f1'][
+                                    Math.abs(release.title.length + release.artist.length) % 7
+                                  ]
+                                } 100%)`
+                              }
+                            },
+                              React.createElement('svg', { className: 'w-12 h-12 text-white/40', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                              )
+                            ),
+                        // Release type badge
+                        React.createElement('div', {
+                          className: 'absolute top-2 right-2'
+                        },
+                          React.createElement('span', {
+                            className: 'release-badge',
+                            style: {
+                              backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :
+                                             release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :
+                                             'rgba(236, 72, 153, 0.9)',
+                              color: 'white'
+                            }
+                          }, release.releaseType === 'ep' ? 'EP' : release.releaseType.charAt(0).toUpperCase() + release.releaseType.slice(1))
+                        ),
+                        // Hover overlay with play button
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100'
+                        },
+                          React.createElement('div', {
+                            className: 'w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg'
+                          },
+                            React.createElement('svg', { className: 'w-5 h-5 text-gray-900 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                              React.createElement('path', { d: 'M8 5v14l11-7z' })
+                            )
+                          )
+                        )
+                      ),
+                      // Release info
+                      React.createElement('div', { className: 'p-3' },
+                        React.createElement('p', {
+                          className: 'font-medium text-gray-900 text-sm truncate',
+                          title: release.title
+                        }, release.title),
+                        React.createElement('p', {
+                          className: 'text-gray-500 text-xs truncate mt-0.5 cursor-pointer hover:text-gray-700',
+                          title: release.artist,
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            fetchArtistData(release.artist);
+                          }
+                        }, release.artist),
+                        React.createElement('div', { className: 'flex items-center gap-2 mt-1.5' },
+                          release.date && React.createElement('span', {
+                            className: 'text-gray-400 text-xs'
+                          }, (() => {
+                            const d = new Date(release.date + 'T00:00:00');
+                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                          })()),
+                          release.artistSource && React.createElement('span', {
+                            className: 'text-xs px-1.5 py-0.5 rounded-full',
+                            style: {
+                              backgroundColor: release.artistSource === 'collection' ? 'rgba(16, 185, 129, 0.1)' :
+                                             release.artistSource === 'history' ? 'rgba(99, 102, 241, 0.1)' :
+                                             'rgba(107, 114, 128, 0.1)',
+                              color: release.artistSource === 'collection' ? '#10b981' :
+                                    release.artistSource === 'history' ? '#6366f1' :
+                                    '#6b7280'
+                            }
+                          }, release.artistSource === 'collection' ? 'Collection' :
+                             release.artistSource === 'history' ? 'History' : 'Library')
+                        )
+                      )
+                    )
+                  )
+                )
+              );
+            })()
           )
         ),
 
