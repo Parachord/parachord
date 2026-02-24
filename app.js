@@ -17350,17 +17350,26 @@ ${trackListXml}
         console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
       }
 
-      // Load new releases cache
+      // Load new releases cache and show instantly on Home
       const newReleasesData = await window.electron.store.get('cache_new_releases');
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+        // Filter out broadcasts that may have been cached before the filter was added
+        const filteredReleases = newReleasesData.releases.filter(r =>
+          !(r.secondaryTypes || []).includes('broadcast')
+        );
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
-          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: newReleasesData.timestamp };
-          console.log(`📦 Loaded ${newReleasesData.releases.length} new releases from cache`);
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
+          console.log(`📦 Loaded ${filteredReleases.length} new releases from cache`);
         } else {
           // Cache expired but still useful as stale data to show instantly
-          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: 0 };
-          console.log(`📦 Loaded ${newReleasesData.releases.length} stale new releases from cache (will refresh)`);
+          newReleasesCache.current = { releases: filteredReleases, timestamp: 0 };
+          console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
+        }
+        // Populate state immediately so Fresh Drops preview shows on Home
+        if (filteredReleases.length > 0) {
+          setNewReleases(filteredReleases);
+          setNewReleasesLoaded(true);
         }
       }
 
@@ -22834,6 +22843,7 @@ ${tracks}
                 artistSource: artist.source,
                 date: releaseDate,
                 releaseType: primaryType || 'album',
+                secondaryTypes,
                 disambiguation: rg.disambiguation,
                 albumArt: null
               });
