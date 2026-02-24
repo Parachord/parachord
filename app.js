@@ -3574,7 +3574,8 @@ const ReleasePage = ({
               'Share'
             ),
             shareDropdownOpen === 'album' && React.createElement('div', {
-              className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
+              className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
+              style: { backgroundColor: '#1f2937', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
               onClick: (e) => e.stopPropagation()
             },
               React.createElement('button', {
@@ -3594,7 +3595,8 @@ const ReleasePage = ({
                   };
                   publishCollectionSmartLink(collectionData);
                 },
-                className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                style: { fontSize: '12px', fontWeight: 500 }
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
@@ -3618,7 +3620,8 @@ const ReleasePage = ({
                   };
                   copyCollectionEmbedCode(collectionData);
                 },
-                className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                style: { fontSize: '12px', fontWeight: 500 }
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
@@ -34410,7 +34413,8 @@ useEffect(() => {
                   'Share'
                 ),
                 shareDropdownOpen === 'playlist' && React.createElement('div', {
-                  className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
+                  className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
+                  style: { backgroundColor: '#1f2937', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
                   onClick: (e) => e.stopPropagation()
                 },
                   React.createElement('button', {
@@ -34431,7 +34435,8 @@ useEffect(() => {
                       };
                       publishCollectionSmartLink(collectionData);
                     },
-                    className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
@@ -34456,7 +34461,8 @@ useEffect(() => {
                       };
                       copyCollectionEmbedCode(collectionData);
                     },
-                    className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
                   },
                     React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
