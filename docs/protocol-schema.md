@@ -585,7 +585,11 @@ if (Parachord.isConnected) {
 }
 ```
 
-The button automatically detects whether Parachord is running locally via WebSocket. If connected, playlists are sent directly. If not, it falls back to opening a `parachord://import` protocol URL which will launch the app.
+The button uses a three-tier delivery mechanism:
+
+1. **WebSocket** (`ws://127.0.0.1:9876`) — preferred when Parachord is detected as running. Provides a persistent connection indicator (green dot) and instant delivery.
+2. **HTTP POST** (`http://127.0.0.1:9876/import`) — fallback when WebSocket is blocked (e.g., HTTPS pages subject to Private Network Access restrictions). Sends the playlist payload as JSON.
+3. **Protocol URL** (`parachord://import?…`) — last resort. Opens the OS protocol handler which may show a confirmation dialog and launch the app.
 
 ---
 
@@ -647,6 +651,41 @@ GET http://127.0.0.1:8888/protocol?url={encoded_protocol_url}
   "error": "Parachord not ready"
 }
 ```
+
+### Embed Import Endpoint
+
+The extension/embed server on port `9876` also accepts direct HTTP POST requests for importing playlists. This is used by the embeddable button as a fallback when WebSocket is blocked.
+
+```
+POST http://127.0.0.1:9876/import
+Content-Type: application/json
+```
+
+**Request body (XSPF URL):**
+```json
+{
+  "xspfUrl": "https://example.com/playlist.xspf"
+}
+```
+
+**Request body (inline tracks):**
+```json
+{
+  "title": "Road Trip Mix",
+  "creator": "MyWebsite",
+  "tracks": [
+    { "title": "Karma Police", "artist": "Radiohead", "album": "OK Computer" },
+    { "title": "Hyperballad", "artist": "Bjork", "album": "Post" }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true }
+```
+
+> **Note:** This endpoint handles CORS and [Private Network Access](https://developer.chrome.com/blog/private-network-access-preflight/) preflight requests so that HTTPS pages can reach it.
 
 ### Examples
 
