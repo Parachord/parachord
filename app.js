@@ -34842,73 +34842,6 @@ useEffect(() => {
                 selectedPlaylist.lastModified && React.createElement('p', {
                   className: 'text-xs text-gray-400'
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
-                // Share button
-                React.createElement('div', { className: 'relative mt-5 flex justify-center' },
-                  React.createElement('button', {
-                    onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
-                    className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
-                    ),
-                    'Share'
-                  ),
-                  shareDropdownOpen === 'playlist' && React.createElement('div', {
-                    className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
-                    onClick: (e) => e.stopPropagation()
-                  },
-                    React.createElement('button', {
-                      onClick: () => {
-                        setShareDropdownOpen(false);
-                        const collectionData = {
-                          title: selectedPlaylist.title,
-                          artist: null,
-                          creator: selectedPlaylist.creator || null,
-                          albumArt: playlistCoverArt?.[0] || null,
-                          type: 'playlist',
-                          tracks: (playlistTracks || []).map((t, i) => ({
-                            title: t.title || 'Unknown',
-                            artist: t.artist || null,
-                            duration: t.duration || null,
-                            trackNumber: t.trackNumber || (i + 1)
-                          }))
-                        };
-                        publishCollectionSmartLink(collectionData);
-                      },
-                      className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
-                    },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
-                      ),
-                      'Copy Link'
-                    ),
-                    React.createElement('button', {
-                      onClick: () => {
-                        setShareDropdownOpen(false);
-                        const collectionData = {
-                          title: selectedPlaylist.title,
-                          artist: null,
-                          creator: selectedPlaylist.creator || null,
-                          albumArt: playlistCoverArt?.[0] || null,
-                          type: 'playlist',
-                          tracks: (playlistTracks || []).map((t, i) => ({
-                            title: t.title || 'Unknown',
-                            artist: t.artist || null,
-                            duration: t.duration || null,
-                            trackNumber: t.trackNumber || (i + 1)
-                          }))
-                        };
-                        copyCollectionEmbedCode(collectionData);
-                      },
-                      className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
-                    },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
-                      ),
-                      'Copy Embed Code'
-                    )
-                  )
-                ),
                 // Delete Playlist button (only in edit mode)
                 playlistEditMode && React.createElement('button', {
                   onClick: () => {
@@ -34937,6 +34870,73 @@ useEffect(() => {
                   },
                   className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
                 }, 'Delete Playlist')
+              ),
+              // Share button (outside space-y-1 metadata div for independent spacing)
+              React.createElement('div', { className: 'relative mt-3 flex justify-center' },
+                React.createElement('button', {
+                  onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
+                  className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
+                  ),
+                  'Share'
+                ),
+                shareDropdownOpen === 'playlist' && React.createElement('div', {
+                  className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200',
+                  onClick: (e) => e.stopPropagation()
+                },
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      const collectionData = {
+                        title: selectedPlaylist.title,
+                        artist: null,
+                        creator: selectedPlaylist.creator || null,
+                        albumArt: playlistCoverArt?.[0] || null,
+                        type: 'playlist',
+                        tracks: (playlistTracks || []).map((t, i) => ({
+                          title: t.title || 'Unknown',
+                          artist: t.artist || null,
+                          duration: t.duration || null,
+                          trackNumber: t.trackNumber || (i + 1)
+                        }))
+                      };
+                      publishCollectionSmartLink(collectionData);
+                    },
+                    className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
+                    ),
+                    'Copy Link'
+                  ),
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      const collectionData = {
+                        title: selectedPlaylist.title,
+                        artist: null,
+                        creator: selectedPlaylist.creator || null,
+                        albumArt: playlistCoverArt?.[0] || null,
+                        type: 'playlist',
+                        tracks: (playlistTracks || []).map((t, i) => ({
+                          title: t.title || 'Unknown',
+                          artist: t.artist || null,
+                          duration: t.duration || null,
+                          trackNumber: t.trackNumber || (i + 1)
+                        }))
+                      };
+                      copyCollectionEmbedCode(collectionData);
+                    },
+                    className: 'w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 flex items-center gap-2 no-drag'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
+                    ),
+                    'Copy Embed Code'
+                  )
+                )
               )
             ),
 
