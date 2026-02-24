@@ -12,7 +12,6 @@ class MusicKitWeb {
     this.isAuthorized = false;
     this.developerToken = null;
     this.loadPromise = null;
-    this._audioQuality = 'high-quality'; // default
   }
 
   /**
@@ -97,51 +96,10 @@ class MusicKitWeb {
       // Set up event listeners
       this.setupEventListeners();
 
-      // Apply audio quality preference
-      this.setAudioQuality(this._audioQuality);
-
       return true;
     } catch (error) {
       console.error('[MusicKitWeb] Configuration failed:', error);
       throw error;
-    }
-  }
-
-  /**
-   * Set audio quality preference for MusicKit playback.
-   * Maps Parachord quality names to MusicKit PlaybackBitrate values.
-   * @param {string} quality - 'standard', 'high-quality', 'lossless', or 'hi-res-lossless'
-   */
-  setAudioQuality(quality) {
-    this._audioQuality = quality || 'high-quality';
-    console.log('[MusicKitWeb] Audio quality set to:', this._audioQuality);
-
-    if (!this.musicKit) return;
-
-    // MusicKit JS v3 PlaybackBitrate enum
-    const MK = window.MusicKit;
-    if (!MK) return;
-
-    const bitrateMap = {
-      'standard': 64,        // MusicKit.PlaybackBitrate.STANDARD (HE-AAC 64kbps)
-      'high-quality': 256,   // MusicKit.PlaybackBitrate.HIGH (AAC 256kbps)
-      'lossless': 2048,      // MusicKit.PlaybackBitrate.LOSSLESS (ALAC up to 24-bit/48kHz)
-      'hi-res-lossless': 4096 // MusicKit.PlaybackBitrate.HI_RES_LOSSLESS (ALAC up to 24-bit/192kHz)
-    };
-
-    // Try using the enum if available, fall back to numeric values
-    const bitrate = (MK.PlaybackBitrate && {
-      'standard': MK.PlaybackBitrate.STANDARD,
-      'high-quality': MK.PlaybackBitrate.HIGH,
-      'lossless': MK.PlaybackBitrate.LOSSLESS,
-      'hi-res-lossless': MK.PlaybackBitrate.HI_RES_LOSSLESS
-    }[quality]) || bitrateMap[quality] || 256;
-
-    try {
-      this.musicKit.audioQuality = bitrate;
-      console.log('[MusicKitWeb] MusicKit audioQuality set to:', bitrate);
-    } catch (e) {
-      console.log('[MusicKitWeb] Could not set audioQuality:', e.message);
     }
   }
 

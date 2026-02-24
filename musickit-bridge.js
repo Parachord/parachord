@@ -524,21 +524,6 @@ class MusicKitBridge extends EventEmitter {
     return this.send('setVolume', { volume });
   }
 
-  /**
-   * Set audio quality preference for native MusicKit playback.
-   * @param {string} quality - 'standard', 'high-quality', 'lossless', or 'hi-res-lossless'
-   */
-  async setAudioQuality(quality) {
-    console.log('[MusicKit] Setting audio quality:', quality);
-    try {
-      return await this.send('setAudioQuality', { quality });
-    } catch (e) {
-      // The native helper may not support this command yet; log but don't throw
-      console.log('[MusicKit] setAudioQuality not supported by helper:', e.message);
-      return { quality };
-    }
-  }
-
   async ping() {
     return this.send('ping');
   }

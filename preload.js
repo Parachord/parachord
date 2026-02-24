@@ -427,8 +427,6 @@ contextBridge.exposeInMainWorld('electron', {
     addToQueue: (songId) => ipcRenderer.invoke('musickit:add-to-queue', songId),
     // Volume control
     setVolume: (volume) => ipcRenderer.invoke('musickit:set-volume', volume),
-    // Audio quality control (lossless, hi-res, etc.)
-    setAudioQuality: (quality) => ipcRenderer.invoke('musickit:set-audio-quality', quality),
 
     // Main process polling controls (background-safe, for auto-advance)
     polling: {
