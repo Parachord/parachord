@@ -4995,6 +4995,7 @@ const Parachord = () => {
   });
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
   const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
+  const [homeVisitCount, setHomeVisitCount] = useState(0); // Increments each time user navigates to Home
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -8893,6 +8894,7 @@ const Parachord = () => {
           // === Navigation Commands ===
           case 'home':
             setActiveView('home');
+            setHomeVisitCount(c => c + 1);
             break;
 
           case 'artist': {
@@ -23813,7 +23815,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     };
     fetchAiRecommendations();
-  }, [activeView, cacheLoaded, metaServices]);
+  }, [activeView, cacheLoaded, metaServices, homeVisitCount]);
 
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
@@ -27450,6 +27452,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Navigation helpers
   const navigateTo = (view) => {
+    if (view === 'home') {
+      setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
+    }
     if (view !== activeView) {
       // Clear search state when leaving search view
       if (activeView === 'search') {
@@ -36945,7 +36950,14 @@ useEffect(() => {
                             if (result) {
                               setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
                             } else {
-                              setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                              // Keep cached data visible on failure
+                              setHomeData(prev => {
+                                const existing = prev.aiRecommendations;
+                                if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+                                  return { ...prev, aiRecommendations: { ...existing, loading: false } };
+                                }
+                                return { ...prev, aiRecommendations: null };
+                              });
                             }
                           }
                         }, 'Refresh')
