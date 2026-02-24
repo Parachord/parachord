@@ -5073,6 +5073,7 @@ const Parachord = () => {
   });
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
   const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
+  const [homeVisitCount, setHomeVisitCount] = useState(0); // Increments each time user navigates to Home
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -8987,6 +8988,7 @@ const Parachord = () => {
           // === Navigation Commands ===
           case 'home':
             setActiveView('home');
+            setHomeVisitCount(c => c + 1);
             break;
 
           case 'artist': {
@@ -17521,17 +17523,26 @@ ${trackListXml}
         console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
       }
 
-      // Load new releases cache
+      // Load new releases cache and show instantly on Home
       const newReleasesData = await window.electron.store.get('cache_new_releases');
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+        // Filter out broadcasts that may have been cached before the filter was added
+        const filteredReleases = newReleasesData.releases.filter(r =>
+          !(r.secondaryTypes || []).includes('broadcast')
+        );
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
-          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: newReleasesData.timestamp };
-          console.log(`📦 Loaded ${newReleasesData.releases.length} new releases from cache`);
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
+          console.log(`📦 Loaded ${filteredReleases.length} new releases from cache`);
         } else {
           // Cache expired but still useful as stale data to show instantly
-          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: 0 };
-          console.log(`📦 Loaded ${newReleasesData.releases.length} stale new releases from cache (will refresh)`);
+          newReleasesCache.current = { releases: filteredReleases, timestamp: 0 };
+          console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
+        }
+        // Populate state immediately so Fresh Drops preview shows on Home
+        if (filteredReleases.length > 0) {
+          setNewReleases(filteredReleases);
+          setNewReleasesLoaded(true);
         }
       }
 
@@ -23005,6 +23016,7 @@ ${tracks}
                 artistSource: artist.source,
                 date: releaseDate,
                 releaseType: primaryType || 'album',
+                secondaryTypes,
                 disambiguation: rg.disambiguation,
                 albumArt: null
               });
@@ -23986,7 +23998,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     };
     fetchAiRecommendations();
-  }, [activeView, cacheLoaded, metaServices]);
+  }, [activeView, cacheLoaded, metaServices, homeVisitCount]);
 
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
@@ -27623,6 +27635,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Navigation helpers
   const navigateTo = (view) => {
+    if (view === 'home') {
+      setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
+    }
     if (view !== activeView) {
       // Clear search state when leaving search view
       if (activeView === 'search') {
@@ -37257,7 +37272,14 @@ useEffect(() => {
                             if (result) {
                               setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
                             } else {
-                              setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                              // Keep cached data visible on failure
+                              setHomeData(prev => {
+                                const existing = prev.aiRecommendations;
+                                if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+                                  return { ...prev, aiRecommendations: { ...existing, loading: false } };
+                                }
+                                return { ...prev, aiRecommendations: null };
+                              });
                             }
                           }
                         }, 'Refresh')
