@@ -37406,7 +37406,9 @@ useEffect(() => {
                           style: { backgroundColor: '#ede9fe', color: '#7c3aed' }
                         }, 'Shuffleupagus'),
                         React.createElement('button', {
-                          className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
+                          className: 'ml-auto p-1.5 text-purple-600 hover:text-purple-700 transition-colors',
+                          disabled: aiRecs.loading,
+                          title: 'Refresh',
                           onClick: async () => {
                             // Keep existing data visible, just mark as loading
                             setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: true } }));
@@ -37461,7 +37463,11 @@ useEffect(() => {
                               });
                             }
                           }
-                        }, 'Refresh')
+                        },
+                          React.createElement('svg', { className: 'w-4 h-4' + (aiRecs.loading ? ' animate-spin' : ''), fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                          )
+                        )
                       ),
                       React.createElement('div', {
                         className: 'grid grid-cols-5 gap-4'
