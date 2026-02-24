@@ -869,20 +869,49 @@ function startExtensionServer() {
   // browser silently blocks the WebSocket upgrade.
   const http = require('http');
   const httpServer = http.createServer((req, res) => {
+    const origin = req.headers.origin || '*';
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Private-Network': 'true',
+      'Access-Control-Max-Age': '86400'
+    };
+
     // Handle CORS / PNA preflight
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': req.headers.origin || '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Private-Network': 'true',
-        'Access-Control-Max-Age': '86400'
-      });
+      res.writeHead(204, corsHeaders);
       res.end();
       return;
     }
-    // All other HTTP requests get a simple 200 (health check)
-    res.writeHead(200);
+
+    // HTTP POST endpoint for embed buttons (fallback when WebSocket is blocked)
+    if (req.method === 'POST' && req.url === '/import') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const message = JSON.parse(body);
+          // Reuse the embed message handler with a no-op sendResponse
+          const fakeWs = { send: () => {} };
+          handleEmbedMessage(fakeWs, {
+            type: 'embed',
+            action: 'importPlaylist',
+            requestId: 'http-' + Date.now(),
+            payload: message
+          });
+          res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch (e) {
+          res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    // Health check — also lets embed buttons detect if Parachord is running
+    res.writeHead(200, corsHeaders);
     res.end('Parachord WS');
   });
 

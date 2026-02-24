@@ -125,9 +125,19 @@
 
   // --- Core API ---
 
+  var HTTP_ENDPOINT = 'http://127.0.0.1:' + WEBSOCKET_PORT + '/import';
+
+  // Try sending payload via fetch POST to the local HTTP server.
+  // Returns a promise that resolves with { success: true } or rejects.
+  function fetchImport(payload) {
+    return fetch(HTTP_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); });
+  }
+
   // Trigger a custom-protocol URL without navigating the page away.
-  // A temporary <a> click opens the OS "Open Parachord?" dialog while
-  // keeping the current page intact so button feedback text can render.
   function openProtocolUrl(url) {
     var a = document.createElement('a');
     a.href = url;
@@ -145,16 +155,27 @@
         tracks: playlist.tracks || []
       });
     }
-    openProtocolUrl(buildImportUrl(playlist));
-    return Promise.resolve({ success: true, method: 'protocol' });
+    // Try HTTP fetch (works when WS is blocked but Parachord is running)
+    return fetchImport({
+      title: playlist.title || 'Imported Playlist',
+      creator: playlist.creator || 'Unknown',
+      tracks: playlist.tracks || [],
+      xspfUrl: playlist.xspfUrl || undefined
+    }).catch(function () {
+      // Last resort: protocol URL
+      openProtocolUrl(buildImportUrl(playlist));
+      return { success: true, method: 'protocol' };
+    });
   }
 
   function sendXspfUrl(url) {
     if (wsConnected) {
       return sendWsMessage('importPlaylist', { xspfUrl: url });
     }
-    openProtocolUrl(PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url));
-    return Promise.resolve({ success: true, method: 'protocol' });
+    return fetchImport({ xspfUrl: url }).catch(function () {
+      openProtocolUrl(PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url));
+      return { success: true, method: 'protocol' };
+    });
   }
 
   // --- Button rendering ---
