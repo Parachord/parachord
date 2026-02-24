@@ -3295,7 +3295,11 @@ const ReleasePage = ({
   onAlbumPlay,
   onAlbumAddToQueue,
   onAlbumAddToPlaylist,
-  onAlbumContextMenu
+  onAlbumContextMenu,
+  shareDropdownOpen,
+  setShareDropdownOpen,
+  publishCollectionSmartLink,
+  copyCollectionEmbedCode
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -32457,7 +32461,11 @@ useEffect(() => {
                   tracks: rel.tracks || []
                 });
               }
-            }
+            },
+            shareDropdownOpen: shareDropdownOpen,
+            setShareDropdownOpen: setShareDropdownOpen,
+            publishCollectionSmartLink: publishCollectionSmartLink,
+            copyCollectionEmbedCode: copyCollectionEmbedCode
           })
         ),
         
