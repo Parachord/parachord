@@ -1049,6 +1049,10 @@ async function handleEmbedMessage(ws, message) {
     case 'importPlaylist':
       // Import a playlist from embed/button data
       if (mainWindow && payload) {
+        // Bring window to front so the user sees the confirmation dialog
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+
         if (payload.xspfUrl) {
           // XSPF URL — let the renderer fetch and parse it
           safeSendToRenderer('protocol-url',
