@@ -17617,6 +17617,137 @@ ${trackListXml}
         console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
       }
 
+      // *** EARLY VIEW RESTORATION ***
+      // Load and set activeView immediately after display-critical cached data (new releases, AI suggestions)
+      // so the UI can render with cached results while the rest of settings continue loading.
+      // Previously this was at the end of loadCacheFromStore, causing a 10+ second blank screen
+      // while resolver auth checks, friends, preferences, etc. loaded sequentially.
+      const savedLastView = await window.electron.store.get('last_active_view');
+      if (savedLastView) {
+        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
+        if (validViews.includes(savedLastView.view)) {
+          // For artist view, we need to restore the artist data
+          if (savedLastView.view === 'artist' && savedLastView.artistName) {
+            // Set the view first, then fetch artist data
+            setActiveView('artist');
+            setViewHistory(['library', 'artist']);
+            // Restore artist page tab if saved
+            if (savedLastView.artistPageTab) {
+              setArtistPageTab(savedLastView.artistPageTab);
+              // Mark that we're restoring state so useEffect doesn't reset the tab
+              restoringStateRef.current = true;
+            }
+            // If a release/album was open, save it to load after artist data is fetched
+            if (savedLastView.releaseId) {
+              pendingReleaseLoad.current = {
+                id: savedLastView.releaseId,
+                title: savedLastView.releaseTitle,
+                releaseType: savedLastView.releaseType,
+                date: savedLastView.releaseDate
+              };
+            }
+            // Fetch the artist data (this will populate currentArtist)
+            setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
+            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
+          } else if (savedLastView.view === 'history') {
+            // Restore history view with tab
+            setActiveView('history');
+            setViewHistory(['library', 'history']);
+            const tab = savedLastView.historyTab || 'topTracks';
+            setHistoryTab(tab);
+            // Mark that we need to load data once metaServiceConfigs is ready
+            pendingHistoryLoad.current = tab;
+            console.log(`📦 Restoring last view: history [${tab}]`);
+          } else if (savedLastView.view === 'settings') {
+            // Restore settings view with tab
+            setActiveView('settings');
+            setViewHistory(['library', 'settings']);
+            if (savedLastView.settingsTab) {
+              setSettingsTab(savedLastView.settingsTab);
+            }
+            console.log(`📦 Restoring last view: settings [${savedLastView.settingsTab || 'installed'}]`);
+          } else if (savedLastView.view === 'library') {
+            // Restore library view with tab
+            setActiveView('library');
+            if (savedLastView.collectionTab) {
+              setCollectionTab(savedLastView.collectionTab);
+            }
+            console.log(`📦 Restoring last view: library [${savedLastView.collectionTab || 'tracks'}]`);
+          } else if (savedLastView.view === 'recommendations') {
+            // Restore recommendations view with tab
+            setActiveView('recommendations');
+            setViewHistory(['library', 'recommendations']);
+            if (savedLastView.recommendationsTab) {
+              setRecommendationsTab(savedLastView.recommendationsTab);
+            }
+            console.log(`📦 Restoring last view: recommendations [${savedLastView.recommendationsTab || 'artists'}]`);
+          } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
+            // Restore playlist detail view - need to find the playlist by ID
+            setActiveView('playlist-view');
+            // Use different view history for ephemeral playlists (e.g., Weekly Jams from home)
+            if (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz') {
+              setViewHistory(['home', 'playlist-view']);
+            } else {
+              setViewHistory(['library', 'playlists', 'playlist-view']);
+            }
+            // Store pending playlist load - will be processed once playlists are loaded
+            // For ephemeral ListenBrainz playlists, include extra info for reconstruction
+            setPendingPlaylistLoad({
+              id: savedLastView.playlistId,
+              title: savedLastView.playlistTitle,
+              isEphemeral: savedLastView.isEphemeral,
+              source: savedLastView.playlistSource,
+              listenbrainzId: savedLastView.listenbrainzId,
+              weekLabel: savedLastView.weekLabel
+            });
+            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})${savedLastView.isEphemeral ? ' [ephemeral]' : ''}`);
+          } else if (savedLastView.view === 'discover') {
+            // Restore discover view - charts will be loaded by useEffect when cacheLoaded is true
+            setActiveView('discover');
+            setViewHistory(['library', 'discover']);
+            console.log(`📦 Restoring last view: discover (Pop of the Tops)`);
+          } else if (savedLastView.view === 'critics-picks') {
+            // Restore critics-picks view - data will be loaded by useEffect when cacheLoaded is true
+            setActiveView('critics-picks');
+            setViewHistory(['library', 'critics-picks']);
+            console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
+          } else if (savedLastView.view === 'new-releases') {
+            // Restore new-releases view - data will be loaded by useEffect when collection is loaded
+            setActiveView('new-releases');
+            setViewHistory(['library', 'new-releases']);
+            console.log(`📦 Restoring last view: new-releases (Fresh Drops)`);
+          } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
+            // Restore friend history view - need to find the friend and load their data
+            setActiveView('friendHistory');
+            setViewHistory(['library', 'friendHistory']);
+            // Store pending friend load - will be processed once friends are loaded
+            setPendingFriendLoad({
+              id: savedLastView.friendId,
+              tab: savedLastView.friendHistoryTab || 'recent'
+            });
+            console.log(`📦 Restoring last view: friendHistory (${savedLastView.friendId})`);
+          } else if (savedLastView.view === 'home') {
+            // Restore home view
+            setActiveView('home');
+            setViewHistory(['home']);
+            console.log(`📦 Restoring last view: home`);
+          } else if (savedLastView.view !== 'artist') {
+            // For other views, just set the view directly
+            setActiveView(savedLastView.view);
+            setViewHistory(['home', savedLastView.view]);
+            console.log(`📦 Restoring last view: ${savedLastView.view}`);
+          }
+        } else {
+          // No saved view or invalid - default to home
+          setActiveView('home');
+          setViewHistory(['home']);
+        }
+      } else {
+        // No saved view data - default to home
+        setActiveView('home');
+        setViewHistory(['home']);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -17860,132 +17991,7 @@ ${trackListXml}
         }
       }
 
-      // Load last active view
-      const savedLastView = await window.electron.store.get('last_active_view');
-      if (savedLastView) {
-        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
-        if (validViews.includes(savedLastView.view)) {
-          // For artist view, we need to restore the artist data
-          if (savedLastView.view === 'artist' && savedLastView.artistName) {
-            // Set the view first, then fetch artist data
-            setActiveView('artist');
-            setViewHistory(['library', 'artist']);
-            // Restore artist page tab if saved
-            if (savedLastView.artistPageTab) {
-              setArtistPageTab(savedLastView.artistPageTab);
-              // Mark that we're restoring state so useEffect doesn't reset the tab
-              restoringStateRef.current = true;
-            }
-            // If a release/album was open, save it to load after artist data is fetched
-            if (savedLastView.releaseId) {
-              pendingReleaseLoad.current = {
-                id: savedLastView.releaseId,
-                title: savedLastView.releaseTitle,
-                releaseType: savedLastView.releaseType,
-                date: savedLastView.releaseDate
-              };
-            }
-            // Fetch the artist data (this will populate currentArtist)
-            setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
-            console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
-          } else if (savedLastView.view === 'history') {
-            // Restore history view with tab
-            setActiveView('history');
-            setViewHistory(['library', 'history']);
-            const tab = savedLastView.historyTab || 'topTracks';
-            setHistoryTab(tab);
-            // Mark that we need to load data once metaServiceConfigs is ready
-            pendingHistoryLoad.current = tab;
-            console.log(`📦 Restoring last view: history [${tab}]`);
-          } else if (savedLastView.view === 'settings') {
-            // Restore settings view with tab
-            setActiveView('settings');
-            setViewHistory(['library', 'settings']);
-            if (savedLastView.settingsTab) {
-              setSettingsTab(savedLastView.settingsTab);
-            }
-            console.log(`📦 Restoring last view: settings [${savedLastView.settingsTab || 'installed'}]`);
-          } else if (savedLastView.view === 'library') {
-            // Restore library view with tab
-            setActiveView('library');
-            if (savedLastView.collectionTab) {
-              setCollectionTab(savedLastView.collectionTab);
-            }
-            console.log(`📦 Restoring last view: library [${savedLastView.collectionTab || 'tracks'}]`);
-          } else if (savedLastView.view === 'recommendations') {
-            // Restore recommendations view with tab
-            setActiveView('recommendations');
-            setViewHistory(['library', 'recommendations']);
-            if (savedLastView.recommendationsTab) {
-              setRecommendationsTab(savedLastView.recommendationsTab);
-            }
-            console.log(`📦 Restoring last view: recommendations [${savedLastView.recommendationsTab || 'artists'}]`);
-          } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
-            // Restore playlist detail view - need to find the playlist by ID
-            setActiveView('playlist-view');
-            // Use different view history for ephemeral playlists (e.g., Weekly Jams from home)
-            if (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz') {
-              setViewHistory(['home', 'playlist-view']);
-            } else {
-              setViewHistory(['library', 'playlists', 'playlist-view']);
-            }
-            // Store pending playlist load - will be processed once playlists are loaded
-            // For ephemeral ListenBrainz playlists, include extra info for reconstruction
-            setPendingPlaylistLoad({
-              id: savedLastView.playlistId,
-              title: savedLastView.playlistTitle,
-              isEphemeral: savedLastView.isEphemeral,
-              source: savedLastView.playlistSource,
-              listenbrainzId: savedLastView.listenbrainzId,
-              weekLabel: savedLastView.weekLabel
-            });
-            console.log(`📦 Restoring last view: playlist-view (${savedLastView.playlistTitle})${savedLastView.isEphemeral ? ' [ephemeral]' : ''}`);
-          } else if (savedLastView.view === 'discover') {
-            // Restore discover view - charts will be loaded by useEffect when cacheLoaded is true
-            setActiveView('discover');
-            setViewHistory(['library', 'discover']);
-            console.log(`📦 Restoring last view: discover (Pop of the Tops)`);
-          } else if (savedLastView.view === 'critics-picks') {
-            // Restore critics-picks view - data will be loaded by useEffect when cacheLoaded is true
-            setActiveView('critics-picks');
-            setViewHistory(['library', 'critics-picks']);
-            console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
-          } else if (savedLastView.view === 'new-releases') {
-            // Restore new-releases view - data will be loaded by useEffect when collection is loaded
-            setActiveView('new-releases');
-            setViewHistory(['library', 'new-releases']);
-            console.log(`📦 Restoring last view: new-releases (Fresh Drops)`);
-          } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
-            // Restore friend history view - need to find the friend and load their data
-            setActiveView('friendHistory');
-            setViewHistory(['library', 'friendHistory']);
-            // Store pending friend load - will be processed once friends are loaded
-            setPendingFriendLoad({
-              id: savedLastView.friendId,
-              tab: savedLastView.friendHistoryTab || 'recent'
-            });
-            console.log(`📦 Restoring last view: friendHistory (${savedLastView.friendId})`);
-          } else if (savedLastView.view === 'home') {
-            // Restore home view
-            setActiveView('home');
-            setViewHistory(['home']);
-            console.log(`📦 Restoring last view: home`);
-          } else if (savedLastView.view !== 'artist') {
-            // For other views, just set the view directly
-            setActiveView(savedLastView.view);
-            setViewHistory(['home', savedLastView.view]);
-            console.log(`📦 Restoring last view: ${savedLastView.view}`);
-          }
-        } else {
-          // No saved view or invalid - default to home
-          setActiveView('home');
-          setViewHistory(['home']);
-        }
-      } else {
-        // No saved view data - default to home
-        setActiveView('home');
-        setViewHistory(['home']);
-      }
+      // (View restoration already happened earlier — right after loading display-critical caches)
 
       // Check if this is the first run (tutorial not completed)
       const tutorialCompleted = await window.electron.store.get('tutorial_completed');
