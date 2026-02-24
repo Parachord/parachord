@@ -7910,7 +7910,6 @@ const Parachord = () => {
 
     const playlistName = playlist.name || 'Scraped Playlist';
     const playlistUrl = playlist.url || null;
-    const playlistOwner = playlist.owner || null;
     console.log(`📋 Processing scraped playlist: "${playlistName}" with ${playlist.tracks.length} tracks from ${playlistUrl}`);
 
     showToast(`Adding ${playlist.tracks.length} tracks from "${playlistName}"...`, 'info');
@@ -7943,32 +7942,6 @@ const Parachord = () => {
       setPlaybackContext(context);
       setCurrentTrack(firstTrack);
       setPlaybackSource(null);
-    }
-
-    // Save the playlist to the library
-    const playlistId = `web-${Date.now()}`;
-    const newPlaylist = {
-      id: playlistId,
-      title: playlistName,
-      creator: playlistOwner,
-      tracks: tracks,
-      source: 'web',
-      sourceUrl: playlistUrl,
-      createdAt: Date.now(),
-      addedAt: Date.now(),
-      lastModified: Date.now()
-    };
-
-    // Save to electron-store
-    const saveResult = await window.electron.playlists.save(newPlaylist);
-    if (saveResult.success) {
-      // Add to state (prepend so it appears at top)
-      setPlaylists(prev => [newPlaylist, ...prev]);
-      // Fetch covers for the 2x2 grid display
-      fetchPlaylistCovers(playlistId, tracks);
-      console.log(`✅ Saved web playlist: ${playlistName} (${tracks.length} tracks)`);
-    } else {
-      console.error(`❌ Failed to save web playlist: ${saveResult.error}`);
     }
 
     showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
