@@ -140,8 +140,6 @@
 
   function sendXspfUrl(url) {
     if (wsConnected) {
-      // Use protocol URL via WS - the import handler will fetch the XSPF
-      var protocolUrl = PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url);
       return sendWsMessage('importPlaylist', { xspfUrl: url });
     }
     window.location.href = PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url);
@@ -193,17 +191,22 @@
 
     btn.addEventListener('click', function (e) {
       e.preventDefault();
-      if (playlist.xspfUrl) {
-        sendXspfUrl(playlist.xspfUrl);
-      } else {
-        sendPlaylist(playlist);
-      }
-      // Brief visual feedback
       var origLabel = btn.querySelector('span:last-child');
-      if (origLabel) {
-        origLabel.textContent = 'Sent!';
+      var promise = playlist.xspfUrl ? sendXspfUrl(playlist.xspfUrl) : sendPlaylist(playlist);
+
+      promise.then(function (result) {
+        if (!origLabel) return;
+        if (result && result.success) {
+          if (result.method === 'protocol') {
+            origLabel.textContent = 'Opening\u2026';
+          } else {
+            origLabel.textContent = 'Sent!';
+          }
+        } else {
+          origLabel.textContent = 'Not connected';
+        }
         setTimeout(function () { origLabel.textContent = label; }, 2000);
-      }
+      });
     });
 
     // Store render function for updates

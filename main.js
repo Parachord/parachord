@@ -1049,10 +1049,21 @@ async function handleEmbedMessage(ws, message) {
     case 'importPlaylist':
       // Import a playlist from embed/button data
       if (mainWindow && payload) {
-        const tracksB64 = Buffer.from(JSON.stringify(payload.tracks || [])).toString('base64');
-        safeSendToRenderer('protocol-url',
-          `parachord://import?title=${encodeURIComponent(payload.title || 'Imported Playlist')}&creator=${encodeURIComponent(payload.creator || 'Unknown')}&tracks=${encodeURIComponent(tracksB64)}`
-        );
+        // Bring window to front so the user sees the confirmation dialog
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+
+        if (payload.xspfUrl) {
+          // XSPF URL — let the renderer fetch and parse it
+          safeSendToRenderer('protocol-url',
+            `parachord://import?url=${encodeURIComponent(payload.xspfUrl)}`
+          );
+        } else {
+          const tracksB64 = Buffer.from(JSON.stringify(payload.tracks || [])).toString('base64');
+          safeSendToRenderer('protocol-url',
+            `parachord://import?title=${encodeURIComponent(payload.title || 'Imported Playlist')}&creator=${encodeURIComponent(payload.creator || 'Unknown')}&tracks=${encodeURIComponent(tracksB64)}`
+          );
+        }
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready or missing payload' });
