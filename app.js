@@ -169,7 +169,8 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
           sources: ['applemusic'],
           appleMusicId: String(song.id),
           albumArt: song.artworkUrl,
-          isrc: song.isrc
+          isrc: song.isrc,
+          audioTraits: song.audioTraits || []
         }));
       } catch (mkError) {
         console.log('[AppleMusicSearch] MusicKit JS search failed, falling back to iTunes:', mkError.message);
@@ -249,7 +250,8 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
             albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
             previewUrl: song.attributes.previews?.[0]?.url || null,
             genre: song.attributes.genreNames?.[0],
-            isrc: song.attributes.isrc
+            isrc: song.attributes.isrc,
+            audioTraits: song.attributes.audioTraits || []
           };
         }
       } catch (e) {
@@ -306,6 +308,7 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
         const album = result.data.data?.[0];
         if (album) {
           const albumArt = album.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null;
+          const albumAudioTraits = album.attributes.audioTraits || [];
           const tracks = (album.relationships?.tracks?.data || []).map((song, idx) => ({
             id: 'applemusic-' + song.id,
             title: song.attributes.name,
@@ -318,7 +321,8 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
             albumArt: albumArt,
             previewUrl: song.attributes.previews?.[0]?.url || null,
             trackNumber: song.attributes.trackNumber || (idx + 1),
-            discNumber: song.attributes.discNumber || 1
+            discNumber: song.attributes.discNumber || 1,
+            audioTraits: song.attributes.audioTraits || albumAudioTraits
           }));
           tracks.sort((a, b) => a.discNumber !== b.discNumber ? a.discNumber - b.discNumber : a.trackNumber - b.trackNumber);
           return {
@@ -1386,7 +1390,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
-        })
+        }),
       ),
       primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),

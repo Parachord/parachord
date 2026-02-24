@@ -673,7 +673,8 @@ class MusicKitWeb {
         album: song.attributes.albumName,
         duration: Math.floor(song.attributes.durationInMillis / 1000),
         artworkUrl: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500'),
-        isrc: song.attributes.isrc
+        isrc: song.attributes.isrc,
+        audioTraits: song.attributes.audioTraits || []
       }));
     } catch (error) {
       console.error('[MusicKitWeb] Search failed:', error);
