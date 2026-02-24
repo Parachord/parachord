@@ -125,6 +125,18 @@
 
   // --- Core API ---
 
+  // Trigger a custom-protocol URL without navigating the page away.
+  // A temporary <a> click opens the OS "Open Parachord?" dialog while
+  // keeping the current page intact so button feedback text can render.
+  function openProtocolUrl(url) {
+    var a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); }, 100);
+  }
+
   function sendPlaylist(playlist) {
     if (wsConnected) {
       return sendWsMessage('importPlaylist', {
@@ -133,11 +145,7 @@
         tracks: playlist.tracks || []
       });
     }
-    // Fallback: trigger the OS protocol handler via top-level navigation.
-    // Browsers show an "Open Parachord?" prompt and stay on the current page
-    // for registered custom protocols.  (Hidden iframes do NOT work — browsers
-    // silently ignore custom-scheme URLs in iframe.src.)
-    window.location.href = buildImportUrl(playlist);
+    openProtocolUrl(buildImportUrl(playlist));
     return Promise.resolve({ success: true, method: 'protocol' });
   }
 
@@ -145,7 +153,7 @@
     if (wsConnected) {
       return sendWsMessage('importPlaylist', { xspfUrl: url });
     }
-    window.location.href = PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url);
+    openProtocolUrl(PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url));
     return Promise.resolve({ success: true, method: 'protocol' });
   }
 
