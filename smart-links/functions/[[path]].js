@@ -14,6 +14,12 @@ export async function onRequestGet({ params, request, env, waitUntil }) {
     return env.ASSETS.fetch(request);
   }
 
+  // Handle /:id.xspf
+  if (pathParts.length === 1 && pathParts[0].endsWith('.xspf')) {
+    const id = pathParts[0].slice(0, -5); // strip .xspf
+    return handleXspf(id, env);
+  }
+
   // Handle /:id/playlist.xspf
   if (pathParts.length === 2 && pathParts[1] === 'playlist.xspf') {
     return handleXspf(pathParts[0], env);

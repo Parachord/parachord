@@ -8667,6 +8667,14 @@ const Parachord = () => {
       }
     });
 
+    // Handle queue requests from embed (add track to end of queue)
+    window.electron.embed.onQueue(({ track }) => {
+      console.log('➕ Embed queue request:', track?.title);
+      if (track && setCurrentQueueRef.current) {
+        setCurrentQueueRef.current(prev => [...prev, track]);
+      }
+    });
+
     // Handle pause requests from embed
     window.electron.embed.onPause(() => {
       console.log('⏸️ Embed pause request');
@@ -10832,8 +10840,15 @@ ${trackListXml}
       return;
     }
 
-    const tracks = collection.tracks || [];
+    let tracks = collection.tracks || [];
     const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+
+    // If tracks weren't prefetched in time (race condition), fetch them now
+    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
+      showToast('Fetching album tracklist...', 'info');
+      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    }
+
     showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
 
     try {
@@ -10903,7 +10918,7 @@ ${trackListXml}
       console.error('[PublishCollectionSmartLink] Error:', error);
       showToast('Failed to publish link. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls, resolveAlbumUrls]);
+  }, [showToast, resolveTrackUrls, resolveAlbumUrls, fetchAlbumTracksFromMusicBrainz]);
 
   // Copy embed code for an album or playlist
   const copyCollectionEmbedCode = useCallback(async (collection) => {
@@ -10912,8 +10927,15 @@ ${trackListXml}
       return;
     }
 
-    const tracks = collection.tracks || [];
+    let tracks = collection.tracks || [];
     const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+
+    // If tracks weren't prefetched in time (race condition), fetch them now
+    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
+      showToast('Fetching album tracklist...', 'info');
+      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    }
+
     showToast(`Creating ${typeLabel} embed code...`, 'info');
 
     // Resolve each track
@@ -10973,7 +10995,7 @@ ${trackListXml}
       console.error('[CopyCollectionEmbedCode] Error:', error);
       showToast('Failed to create embed. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls]);
+  }, [showToast, resolveTrackUrls, fetchAlbumTracksFromMusicBrainz]);
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {

@@ -232,6 +232,39 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       flex-direction: column;
       gap: 12px;
     }
+    .services-row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .service-icon-link {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .service-icon-link:hover {
+      border-color: var(--service-color);
+      transform: translateY(-2px);
+      background: var(--bg-tertiary);
+    }
+    .service-icon-link svg {
+      width: 22px;
+      height: 22px;
+      color: var(--service-color);
+    }
+    .service-icon-link img {
+      width: 22px !important;
+      height: 22px !important;
+      object-fit: contain;
+    }
     .service-link {
       display: flex;
       align-items: center;
