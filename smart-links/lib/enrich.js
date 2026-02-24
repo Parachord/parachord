@@ -206,8 +206,21 @@ async function enrichAlbumUrls(albumObj, title, artist, spotifyToken) {
 
   const resolved = await Promise.all(searches);
 
+  const normTitle = normalize(title);
+  const normArtist = normalize(artist);
+
   for (const { service, results } of resolved) {
-    const match = findBestMatch(results, title, artist || '');
+    // Match by album name (not track name) since we're looking for the album
+    const match = results.find(r => {
+      const normAlbum = normalize(r.album);
+      const normResultArtist = normalize(r.artist);
+      return normAlbum === normTitle && normResultArtist.includes(normArtist);
+    }) || results.find(r => {
+      const normAlbum = normalize(r.album);
+      const normResultArtist = normalize(r.artist);
+      return (normAlbum.includes(normTitle) || normTitle.includes(normAlbum)) &&
+             (normResultArtist.includes(normArtist) || normArtist.includes(normResultArtist));
+    });
     if (match && match.albumUrl) {
       albumObj.urls[service] = match.albumUrl;
       changed = true;
