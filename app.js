@@ -17596,10 +17596,25 @@ ${trackListXml}
           newReleasesCache.current = { releases: filteredReleases, timestamp: 0 };
           console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
         }
+        // Hydrate albumArt from albumArtCache for releases missing art
+        const hydratedReleases = filteredReleases.map(release => {
+          if (release.albumArt) return release;
+          const cached = albumArtCache.current[release.id];
+          if (cached?.url) return { ...release, albumArt: cached.url };
+          // Assign deterministic CAA URL if not in cache (and not known-missing)
+          if (!cached) {
+            const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
+            albumArtCache.current[release.id] = { url: coverUrl, timestamp: Date.now() };
+            return { ...release, albumArt: coverUrl };
+          }
+          return release;
+        });
         // Populate state immediately so Fresh Drops preview shows on Home
-        if (filteredReleases.length > 0) {
-          setNewReleases(filteredReleases);
+        if (hydratedReleases.length > 0) {
+          setNewReleases(hydratedReleases);
           setNewReleasesLoaded(true);
+          // Update the cache ref too so it has the hydrated art
+          newReleasesCache.current.releases = hydratedReleases;
         }
       }
 
@@ -23297,41 +23312,39 @@ ${tracks}
     }
   };
 
-  // Fetch album art for New Releases in background
-  const fetchNewReleasesAlbumArt = async (releases) => {
+  // Assign album art URLs for New Releases instantly using deterministic CAA URLs
+  // No HEAD requests needed - the URL format is known, and onError in rendering handles 404s
+  const fetchNewReleasesAlbumArt = (releases) => {
+    const updates = {};
     for (const release of releases) {
       if (release.albumArt) continue;
 
-      try {
-        // Try Cover Art Archive first (direct release-group ID)
-        const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
-        const coverResponse = await fetch(coverUrl, { method: 'HEAD' });
-
-        if (coverResponse.ok) {
-          setNewReleases(prev => prev.map(r =>
-            r.id === release.id ? { ...r, albumArt: coverUrl } : r
-          ));
-          // Also update cache
-          newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
-            r.id === release.id ? { ...r, albumArt: coverUrl } : r
-          );
-        } else {
-          // Fallback to getAlbumArt helper
-          const artUrl = await getAlbumArt(release.artist, release.title);
-          if (artUrl) {
-            setNewReleases(prev => prev.map(r =>
-              r.id === release.id ? { ...r, albumArt: artUrl } : r
-            ));
-            newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
-              r.id === release.id ? { ...r, albumArt: artUrl } : r
-            );
-          }
+      // Check albumArtCache first (cross-session persistence)
+      const cached = albumArtCache.current[release.id];
+      if (cached) {
+        if (cached.url) {
+          updates[release.id] = cached.url;
         }
-      } catch (error) {
-        // Silent fail for art fetch
+        // If cached.url is null, we previously found no art - skip
+        continue;
       }
-      // Rate limit
-      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Assign deterministic Cover Art Archive URL (browser handles actual fetch)
+      const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
+      updates[release.id] = coverUrl;
+
+      // Persist to albumArtCache for cross-session use
+      albumArtCache.current[release.id] = { url: coverUrl, timestamp: Date.now() };
+    }
+
+    if (Object.keys(updates).length > 0) {
+      const applyUpdates = (list) => list.map(r =>
+        updates[r.id] ? { ...r, albumArt: updates[r.id] } : r
+      );
+      setNewReleases(prev => applyUpdates(prev));
+      if (newReleasesCache.current.releases) {
+        newReleasesCache.current.releases = applyUpdates(newReleasesCache.current.releases);
+      }
     }
   };
 
@@ -24143,12 +24156,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   }, [activeView, cacheLoaded, criticsPicksLoaded]);
 
-  // Load new releases when navigating to the new-releases page
+  // Load new releases lazily in background once cache is loaded (data updates at most daily)
+  // This ensures Fresh Drops tab is ready when the user navigates to it
   useEffect(() => {
-    if (activeView === 'new-releases' && cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
+    if (cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
       loadNewReleases();
     }
-  }, [activeView, cacheLoaded, newReleasesLoaded, newReleasesLoading]);
+  }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
@@ -37302,20 +37316,22 @@ useEffect(() => {
                       }
                     },
                       React.createElement('div', {
-                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 relative',
                         style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
                       },
-                        newReleases[0].albumArt
-                          ? React.createElement('img', {
-                              src: newReleases[0].albumArt,
-                              alt: newReleases[0].title,
-                              className: 'w-full h-full object-cover'
-                            })
-                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
-                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                              )
-                            )
+                        // Always show placeholder underneath
+                        React.createElement('div', { className: 'absolute inset-0 flex items-center justify-center text-white/40' },
+                          React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                            React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                          )
+                        ),
+                        // Overlay image when art URL exists
+                        newReleases[0].albumArt && React.createElement('img', {
+                          src: newReleases[0].albumArt,
+                          alt: newReleases[0].title,
+                          className: 'absolute inset-0 w-full h-full object-cover',
+                          onError: (e) => { e.target.style.display = 'none'; }
+                        })
                       ),
                       React.createElement('div', { className: 'flex-1 min-w-0' },
                         React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest'),
@@ -40193,30 +40209,12 @@ useEffect(() => {
                           marginBottom: '10px',
                           overflow: 'hidden',
                           position: 'relative',
-                          background: release.albumArt
-                            ? '#f3f4f6'
-                            : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                          background: 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
                         }
                       },
-                        // Show image when art exists
-                        release.albumArt && React.createElement('img', {
-                          src: release.albumArt,
-                          alt: release.title,
-                          className: 'group-hover/art:scale-105',
-                          style: {
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            transition: 'opacity 0.35s ease-out, transform 0.3s ease'
-                          },
-                          loading: 'lazy',
-                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
-                          onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
-                        }),
-                        // Placeholder icon when no art
-                        !release.albumArt && React.createElement('div', {
-                          style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                        // Always show placeholder underneath (visible when no art or img fails)
+                        React.createElement('div', {
+                          style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
                         },
                           React.createElement('svg', {
                             style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
@@ -40227,6 +40225,30 @@ useEffect(() => {
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
                           )
                         ),
+                        // Overlay image on top of placeholder (hides itself on error, revealing placeholder)
+                        release.albumArt && React.createElement('img', {
+                          src: release.albumArt,
+                          alt: release.title,
+                          className: 'group-hover/art:scale-105',
+                          style: {
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            transition: 'opacity 0.35s ease-out, transform 0.3s ease'
+                          },
+                          loading: 'lazy',
+                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                          onLoad: (e) => { e.target.style.opacity = '1'; },
+                          onError: (e) => {
+                            e.target.style.display = 'none';
+                            // Mark as no-art in albumArtCache so we don't retry
+                            if (albumArtCache.current[release.id]) {
+                              albumArtCache.current[release.id] = { url: null, timestamp: Date.now() };
+                            }
+                          }
+                        }),
                         // Release type badge
                         React.createElement('div', {
                           style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }
