@@ -256,7 +256,7 @@ class MusicKitBridge extends EventEmitter {
 
         // Check for ready signal
         if (response.id === 'ready') {
-          console.log('[MusicKit] Got ready signal!');
+          console.log('[MusicKit] Got ready signal! version:', response.data?.version || 'unknown');
           this.isReady = true;
           this.emit('ready', response.data);
           continue;

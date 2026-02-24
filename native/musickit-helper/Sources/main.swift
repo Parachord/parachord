@@ -476,7 +476,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Send ready signal
-            let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.0.0", "platform": "macOS 14+", "appBundle": true]), error: nil)
+            let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.1.0-audioVariant", "platform": "macOS 14+", "appBundle": true]), error: nil)
             self.sendResponse(readyResponse)
 
             // Start reading from stdin in background
