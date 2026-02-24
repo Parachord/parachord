@@ -17615,6 +17615,59 @@ ${trackListXml}
           }
         }));
         console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
+
+        // Resolve album art for cached suggestions that are missing it.
+        // albumArtCache.current is already populated above, so cache hits are instant.
+        // Network lookups (cache misses) happen in the background without blocking.
+        const albumsMissingArt = (aiSuggestionsData.albums || []).filter(a => !a.art && a.artist && a.title);
+        if (albumsMissingArt.length > 0) {
+          console.log(`🎨 Resolving art for ${albumsMissingArt.length} cached AI suggestion(s)...`);
+          setTimeout(() => {
+            for (const album of albumsMissingArt) {
+              getAlbumArt(album.artist, album.title).then(artUrl => {
+                if (artUrl) {
+                  setHomeData(prev => {
+                    if (!prev.aiRecommendations) return prev;
+                    return {
+                      ...prev,
+                      aiRecommendations: {
+                        ...prev.aiRecommendations,
+                        albums: prev.aiRecommendations.albums.map(a =>
+                          a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a
+                        )
+                      }
+                    };
+                  });
+                }
+              }).catch(() => {});
+            }
+          }, 100);
+        }
+
+        // Resolve artist images for cached suggestions missing them
+        const artistsMissingImages = (aiSuggestionsData.artists || []).filter(a => !a.image && a.name);
+        if (artistsMissingImages.length > 0) {
+          setTimeout(() => {
+            for (const artist of artistsMissingImages) {
+              getArtistImage(artist.name).then(imgResult => {
+                if (imgResult?.url) {
+                  setHomeData(prev => {
+                    if (!prev.aiRecommendations) return prev;
+                    return {
+                      ...prev,
+                      aiRecommendations: {
+                        ...prev.aiRecommendations,
+                        artists: prev.aiRecommendations.artists.map(a =>
+                          a.name === artist.name ? { ...a, image: imgResult.url } : a
+                        )
+                      }
+                    };
+                  });
+                }
+              }).catch(() => {});
+            }
+          }, 100);
+        }
       }
 
       // *** EARLY VIEW RESTORATION ***
@@ -17756,7 +17809,12 @@ ${trackListXml}
         // Deduplicate in case of corrupted data
         const dedupedActive = [...new Set(savedActiveResolvers)];
 
-        // Filter out auth-requiring resolvers whose tokens are missing/expired
+        // Set resolvers optimistically so they're available immediately,
+        // then run auth checks in parallel (non-blocking) to filter invalid ones.
+        // This avoids blocking cacheLoaded (and all dependent useEffects) on slow
+        // network calls to Spotify/SoundCloud/Apple Music token endpoints.
+        setActiveResolvers(dedupedActive);
+
         const authChecks = {
           spotify: async () => {
             const td = await window.electron?.spotify?.checkToken();
@@ -17768,32 +17826,32 @@ ${trackListXml}
           },
           applemusic: async () => {
             const authorized = await window.electron?.store?.get('applemusic_authorized');
-            // Check for user token (MusicKit JS) or native auth (macOS)
             const userToken = await window.electron?.store?.get('applemusic_user_token');
             const hasNativeAuth = !!window.electron?.musicKit;
             return !!(authorized && (userToken || hasNativeAuth));
           }
         };
 
-        const validActive = [];
-        for (const id of dedupedActive) {
+        // Run all auth checks in parallel, non-blocking — resolvers update when done
+        Promise.all(dedupedActive.map(async id => {
           if (authChecks[id]) {
             try {
-              if (await authChecks[id]()) {
-                validActive.push(id);
-              } else {
-                console.log(`⏭️ Skipping resolver '${id}' — no valid token`);
-              }
+              return (await authChecks[id]()) ? id : null;
             } catch {
               console.log(`⏭️ Skipping resolver '${id}' — token check failed`);
+              return null;
             }
-          } else {
-            validActive.push(id); // No auth required
           }
-        }
-
-        setActiveResolvers(validActive);
-        console.log(`📦 Loaded ${validActive.length} active resolvers from storage (${dedupedActive.length - validActive.length} skipped — no auth)`);
+          return id; // No auth required
+        })).then(results => {
+          const validActive = results.filter(Boolean);
+          setActiveResolvers(validActive);
+          resolverSettingsLoaded.current = true;
+          console.log(`📦 Loaded ${validActive.length} active resolvers from storage (${dedupedActive.length - validActive.length} skipped — no auth)`);
+        });
+      } else {
+        // No saved resolvers — mark resolver settings as loaded immediately
+        resolverSettingsLoaded.current = true;
       }
 
       if (savedResolverOrder) {
@@ -18000,10 +18058,10 @@ ${trackListXml}
         setFirstRunTutorial(prev => ({ ...prev, open: true }));
       }
 
-      // Mark settings as loaded so save useEffect knows it's safe to save
-      resolverSettingsLoaded.current = true;
+      // Mark cache as loaded — resolver auth checks may still be in-flight (non-blocking).
+      // resolverSettingsLoaded is set by the auth check callback above (or immediately if no resolvers).
       setCacheLoaded(true);
-      console.log('📦 All caches loaded from persistent storage');
+      console.log('📦 Cache loaded from persistent storage (resolver auth checks may still be completing)');
     } catch (error) {
       console.error('Failed to load cache from store:', error);
       // Even on error, mark as loaded so app can function
@@ -23995,7 +24053,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       aiSuggestionsRefreshing.current = true;
 
-      // Mark as loading but keep existing data visible (cached results stay on screen)
+      // Mark as loading but keep existing cached data visible on screen
       setHomeData(prev => ({
         ...prev,
         aiRecommendations: {
@@ -24005,7 +24063,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }));
 
-      let refreshStarted = false;
+      // Accumulate fresh albums in a local array — swap all at once when done
+      // so cached albums (with art) stay visible the entire time instead of being
+      // cleared on the first fresh album arrival.
+      const freshAlbums = [];
       const onUpdate = ({ artists, newAlbum }) => {
         if (artists) {
           // Artists arrived — replace cached artists with fresh ones
@@ -24023,19 +24084,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           }
         }
         if (newAlbum) {
-          // First fresh album clears the cached albums; subsequent ones append
-          setHomeData(prev => {
-            const albums = refreshStarted
-              ? [...prev.aiRecommendations.albums, newAlbum]
-              : [newAlbum];
-            refreshStarted = true;
-            return {
-              ...prev,
-              aiRecommendations: { ...prev.aiRecommendations, albums }
-            };
-          });
+          // Accumulate — don't push to state yet (cached albums stay visible)
+          freshAlbums.push(newAlbum);
+          // Pre-fetch art so it's ready when we swap the batch in
           getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
             if (artUrl) {
+              const idx = freshAlbums.findIndex(a => a.title === newAlbum.title && a.artist === newAlbum.artist);
+              if (idx >= 0) freshAlbums[idx] = { ...freshAlbums[idx], art: artUrl };
+              // Also update state if the batch has already been swapped in
               setHomeData(prev => {
                 if (!prev.aiRecommendations) return prev;
                 return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
@@ -24048,8 +24104,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const result = await loadAiRecommendations(onUpdate);
       aiSuggestionsRefreshing.current = false;
       if (result) {
-        setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
-      } else if (!refreshStarted) {
+        // Swap in the full fresh batch at once (with any art that loaded during validation)
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: {
+            ...prev.aiRecommendations,
+            albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
+            loading: false
+          }
+        }));
+      } else {
         // LLM call failed — keep cached data visible if we have any, otherwise clear
         setHomeData(prev => {
           const existing = prev.aiRecommendations;
@@ -29786,9 +29850,9 @@ useEffect(() => {
                 fontWeight: activeView === 'new-releases' ? '500' : '400'
               }
             },
-              // Sparkle icon for New Releases
+              // Droplet icon for New Releases (Fresh Drops)
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
               ),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Fresh Drops',
@@ -29855,7 +29919,7 @@ useEffect(() => {
             },
               // Award/trophy icon for Critical Darlings
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' })
               ),
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Critical Darlings",
@@ -37102,7 +37166,7 @@ useEffect(() => {
                       onClick: () => { navigateTo('critics-picks'); loadCriticsPicks(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3h14a1 1 0 011 1v3a7 7 0 01-7 7 7 7 0 01-7-7V4a1 1 0 011-1zM8.5 21h7M12 17v4M8 14l-3-3m11 3l3-3' })
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' })
                       ),
                       React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
                         'Critical Darlings',
@@ -37219,7 +37283,7 @@ useEffect(() => {
                       onClick: () => { navigateTo('new-releases'); loadNewReleases(); }
                     },
                       React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
                       ),
                       React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
                         'Fresh Drops',
@@ -37293,7 +37357,7 @@ useEffect(() => {
                           onClick: async () => {
                             // Keep existing data visible, just mark as loading
                             setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: true } }));
-                            let refreshStarted = false;
+                            const freshAlbums = [];
                             const onUpdate = ({ artists, newAlbum }) => {
                               if (artists) {
                                 setHomeData(prev => ({
@@ -37310,19 +37374,11 @@ useEffect(() => {
                                 }
                               }
                               if (newAlbum) {
-                                setHomeData(prev => {
-                                  // On first new album, clear old albums and start fresh
-                                  const albums = refreshStarted
-                                    ? [...prev.aiRecommendations.albums, newAlbum]
-                                    : [newAlbum];
-                                  refreshStarted = true;
-                                  return {
-                                    ...prev,
-                                    aiRecommendations: { ...prev.aiRecommendations, albums }
-                                  };
-                                });
+                                freshAlbums.push(newAlbum);
                                 getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
                                   if (artUrl) {
+                                    const idx = freshAlbums.findIndex(a => a.title === newAlbum.title && a.artist === newAlbum.artist);
+                                    if (idx >= 0) freshAlbums[idx] = { ...freshAlbums[idx], art: artUrl };
                                     setHomeData(prev => {
                                       if (!prev.aiRecommendations) return prev;
                                       return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
@@ -37333,7 +37389,14 @@ useEffect(() => {
                             };
                             const result = await loadAiRecommendations(onUpdate);
                             if (result) {
-                              setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
+                              setHomeData(prev => ({
+                                ...prev,
+                                aiRecommendations: {
+                                  ...prev.aiRecommendations,
+                                  albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
+                                  loading: false
+                                }
+                              }));
                             } else {
                               // Keep cached data visible on failure
                               setHomeData(prev => {
@@ -39841,7 +39904,7 @@ useEffect(() => {
               React.createElement('div', {
                 className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'
               }),
-              // Background pattern - sparkles
+              // Background pattern - droplets
               React.createElement('div', {
                 className: 'absolute inset-0',
                 style: {
@@ -40053,7 +40116,7 @@ useEffect(() => {
               className: 'text-center py-16'
             },
               React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-gray-200', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 22a7 7 0 0 0 7-7c0-5-7-13-7-13S5 10 5 15a7 7 0 0 0 7 7z' })
               ),
               React.createElement('div', { className: 'text-gray-500 font-medium mb-2' }, 'No new releases found'),
               React.createElement('div', { className: 'text-gray-400 text-sm max-w-md mx-auto' },
