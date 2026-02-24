@@ -3563,13 +3563,12 @@ const ReleasePage = ({
             }
           }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...'),
           // Share button
-          React.createElement('div', { className: 'relative mt-2' },
+          React.createElement('div', { className: 'relative mt-3' },
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
-              className: 'flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors no-drag',
-              style: { fontSize: isCompact ? '0.75rem' : '0.8rem' }
+              className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
             },
-              React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
               ),
               'Share'
@@ -34371,13 +34370,12 @@ useEffect(() => {
                   className: 'text-xs text-gray-400'
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
                 // Share button
-                React.createElement('div', { className: 'relative mt-2' },
+                React.createElement('div', { className: 'relative mt-3' },
                   React.createElement('button', {
                     onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
-                    className: 'flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors no-drag',
-                    style: { fontSize: '0.8rem' }
+                    className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
                   },
-                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
                     ),
                     'Share'
