@@ -59,7 +59,12 @@ function generateTracklistHtml(tracks) {
     const artistHtml = track.artist ? `<span class="track-row-artist">${escapeHtml(track.artist)}</span>` : '';
     return `
       <div class="track-row">
-        <span class="track-num">${num}</span>
+        <div class="track-num-container">
+          <span class="track-num">${num}</span>
+          <button class="track-play-btn" onclick="playTrackInParachord(${i})" title="Play in Parachord">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
         <div class="track-row-info">
           <span class="track-row-title">${escapeHtml(track.title)}</span>
           ${artistHtml}
@@ -271,13 +276,45 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     .track-row:hover {
       background: var(--bg-secondary);
     }
+    .track-num-container {
+      width: 24px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
     .track-num {
       width: 24px;
       text-align: right;
       font-size: 0.8rem;
       color: var(--text-secondary);
-      flex-shrink: 0;
       font-variant-numeric: tabular-nums;
+    }
+    .track-play-btn {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-primary);
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    .track-play-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .track-play-btn:hover {
+      color: var(--accent);
+    }
+    body.parachord-connected .track-row:hover .track-num {
+      display: none;
+    }
+    body.parachord-connected .track-row:hover .track-play-btn {
+      display: flex;
     }
     .track-row-info {
       flex: 1;
@@ -439,9 +476,11 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         ws = new WebSocket('ws://localhost:9876');
         ws.onopen = () => {
           document.getElementById('parachord-btn').classList.remove('hidden');
+          document.body.classList.add('parachord-connected');
         };
         ws.onclose = () => {
           document.getElementById('parachord-btn').classList.add('hidden');
+          document.body.classList.remove('parachord-connected');
           setTimeout(connectToParachord, 3000);
         };
         ws.onerror = () => {
@@ -469,6 +508,22 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         } else {
           ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
         }
+      }
+    }
+
+    function playTrackInParachord(index) {
+      if (ws && ws.readyState === WebSocket.OPEN && linkData.tracks && linkData.tracks[index]) {
+        const t = linkData.tracks[index];
+        const track = {
+          title: t.title,
+          artist: t.artist || linkData.artist,
+          album: linkData.title,
+          albumArt: linkData.albumArt,
+          duration: t.duration,
+          trackNumber: t.trackNumber,
+          urls: t.urls
+        };
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track } }));
       }
     }
 
