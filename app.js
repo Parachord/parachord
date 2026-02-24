@@ -5669,38 +5669,6 @@ const Parachord = () => {
     }
   }, [activeView]);
 
-  // Auto-select a populated collection tab when entering the library view
-  // This fixes the issue where sidebar navigation lands on an empty tab
-  // (e.g., 'artists' tab with no data) while other tabs have synced content
-  useEffect(() => {
-    if (activeView !== 'library' || collectionLoading) return;
-
-    const currentTabHasData = (() => {
-      switch (collectionTab) {
-        case 'artists': return collectionData.artists.length > 0;
-        case 'albums': return collectionData.albums.length > 0;
-        case 'tracks': return (library.length + collectionData.tracks.length) > 0;
-        case 'friends': return friends.length > 0;
-        default: return false;
-      }
-    })();
-
-    if (currentTabHasData) return;
-
-    // Current tab is empty - switch to the first tab that has data
-    const tabsWithData = [
-      { key: 'albums', hasData: collectionData.albums.length > 0 },
-      { key: 'tracks', hasData: (library.length + collectionData.tracks.length) > 0 },
-      { key: 'artists', hasData: collectionData.artists.length > 0 },
-      { key: 'friends', hasData: friends.length > 0 }
-    ];
-
-    const bestTab = tabsWithData.find(t => t.hasData);
-    if (bestTab) {
-      setCollectionTab(bestTab.key);
-    }
-  }, [activeView, collectionLoading, collectionTab, collectionData, library, friends]);
-
   // Reset playlists header collapse when leaving playlists view
   useEffect(() => {
     if (activeView !== 'playlists') {
@@ -6049,6 +6017,39 @@ const Parachord = () => {
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' | 'info', action?: { label: string, onClick: () => void } }
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const [collectionLoading, setCollectionLoading] = useState(true);
+
+  // Auto-select a populated collection tab when entering the library view
+  // This fixes the issue where sidebar navigation lands on an empty tab
+  // (e.g., 'artists' tab with no data) while other tabs have synced content
+  useEffect(() => {
+    if (activeView !== 'library' || collectionLoading) return;
+
+    const currentTabHasData = (() => {
+      switch (collectionTab) {
+        case 'artists': return collectionData.artists.length > 0;
+        case 'albums': return collectionData.albums.length > 0;
+        case 'tracks': return (library.length + collectionData.tracks.length) > 0;
+        case 'friends': return friends.length > 0;
+        default: return false;
+      }
+    })();
+
+    if (currentTabHasData) return;
+
+    // Current tab is empty - switch to the first tab that has data
+    const tabsWithData = [
+      { key: 'albums', hasData: collectionData.albums.length > 0 },
+      { key: 'tracks', hasData: (library.length + collectionData.tracks.length) > 0 },
+      { key: 'artists', hasData: collectionData.artists.length > 0 },
+      { key: 'friends', hasData: friends.length > 0 }
+    ];
+
+    const bestTab = tabsWithData.find(t => t.hasData);
+    if (bestTab) {
+      setCollectionTab(bestTab.key);
+    }
+  }, [activeView, collectionLoading, collectionTab, collectionData, library, friends]);
+
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
