@@ -863,8 +863,34 @@ function startExtensionServer() {
 
   const EXTENSION_PORT = 9876;
 
-  wss = new WebSocket.Server({ port: EXTENSION_PORT, host: '127.0.0.1' });
-  console.log(`Extension WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
+  // Create an HTTP server that handles Private Network Access (PNA) preflight
+  // requests.  HTTPS pages (like parachord.com/demos) connecting to ws://127.0.0.1
+  // trigger a CORS preflight in modern browsers.  Without a proper response the
+  // browser silently blocks the WebSocket upgrade.
+  const http = require('http');
+  const httpServer = http.createServer((req, res) => {
+    // Handle CORS / PNA preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Private-Network': 'true',
+        'Access-Control-Max-Age': '86400'
+      });
+      res.end();
+      return;
+    }
+    // All other HTTP requests get a simple 200 (health check)
+    res.writeHead(200);
+    res.end('Parachord WS');
+  });
+
+  httpServer.listen(EXTENSION_PORT, '127.0.0.1', () => {
+    console.log(`Extension WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
+  });
+
+  wss = new WebSocket.Server({ server: httpServer });
 
   wss.on('connection', (ws) => {
     // Track connection type - will be set on first message
