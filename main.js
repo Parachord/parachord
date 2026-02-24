@@ -407,7 +407,8 @@ const appleMusicPoller = {
         status,
         position,
         duration: this.trackDuration,
-        percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0
+        percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0,
+        audioVariant: state?.audioVariant || null
       });
 
       // Detect track ended - MusicKit may report 'stopped' or 'paused' when track finishes

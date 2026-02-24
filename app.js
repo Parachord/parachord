@@ -1299,11 +1299,6 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
       })
     : [];
 
-  // Audio quality traits (from Apple Music MusicKit API)
-  const audioTraits = track.audioTraits
-    || (track.sources?.applemusic?.audioTraits)
-    || [];
-
   // Resolver metadata for badge display
   const resolverMeta = {
     spotify: { label: 'Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
@@ -1396,18 +1391,6 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
         }),
-        // Audio quality badges (Lossless only — Atmos removed because
-        // MusicKit's ApplicationMusicPlayer outputs a stereo downmix, not real multichannel)
-        audioTraits.includes('hi-res-lossless') && React.createElement('span', {
-          key: 'hires',
-          className: 'text-xs px-2 py-0.5 bg-amber-600/20 text-amber-500 rounded-full',
-          title: 'Hi-Res Lossless available on Apple Music (ALAC up to 24-bit/192 kHz). Actual playback quality depends on your Apple Music app settings.'
-        }, 'Hi-Res'),
-        !audioTraits.includes('hi-res-lossless') && audioTraits.includes('lossless') && React.createElement('span', {
-          key: 'lossless',
-          className: 'text-xs px-2 py-0.5 bg-amber-600/20 text-amber-500 rounded-full',
-          title: 'Lossless available on Apple Music (ALAC up to 24-bit/48 kHz). Actual playback quality depends on your Apple Music app settings.'
-        }, 'Lossless')
       ),
       primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),
@@ -4816,6 +4799,7 @@ const Parachord = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
+  const [activeAudioVariant, setActiveAudioVariant] = useState(null); // Live audio quality from MusicKit ('lossless', 'hi-res-lossless', etc.)
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
   const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
@@ -9359,6 +9343,8 @@ ${trackListXml}
           if (window.scrobbleManager) {
             window.scrobbleManager.onProgressUpdate(data.position);
           }
+          // Update live audio variant from MusicKit playback state
+          setActiveAudioVariant(data.audioVariant || null);
         }
       });
     }
@@ -12001,6 +11987,7 @@ ${trackListXml}
 
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
+    setActiveAudioVariant(null); // Clear stale audio variant from previous track
 
     // Stop all local audio sources (HTML5 Audio, Qobuz) - do this first to prevent overlap
     // Always stop regardless of paused state to handle edge cases
@@ -43545,8 +43532,18 @@ useEffect(() => {
                 }
               }
             },
-              // Line 1: Track title
-              React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
+              // Line 1: Track title + live audio quality badge
+              React.createElement('div', { className: 'flex items-center gap-1.5 min-w-0' },
+                React.createElement('span', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
+                isPlaying && activeAudioVariant === 'hi-res-lossless' && React.createElement('span', {
+                  className: 'text-[10px] px-1.5 py-0.5 bg-amber-600/20 text-amber-400 rounded-full flex-shrink-0 leading-none',
+                  title: 'Streaming Hi-Res Lossless (ALAC up to 24-bit/192 kHz)'
+                }, 'Hi-Res'),
+                isPlaying && activeAudioVariant === 'lossless' && React.createElement('span', {
+                  className: 'text-[10px] px-1.5 py-0.5 bg-amber-600/20 text-amber-400 rounded-full flex-shrink-0 leading-none',
+                  title: 'Streaming Lossless (ALAC up to 24-bit/48 kHz)'
+                }, 'Lossless')
+              ),
               // Line 2: Artist name with bio tooltip
               React.createElement('div', { className: 'text-xs text-gray-400' },
                 (() => {

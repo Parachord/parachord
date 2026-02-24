@@ -343,7 +343,21 @@ class MusicKitBridge {
                 result["songTitle"] = entry.title
             }
         }
+        // Active audio variant — reflects what is actually streaming right now
+        if let variant = state.audioVariant {
+            result["audioVariant"] = audioVariantString(variant)
+        }
         return result
+    }
+
+    private func audioVariantString(_ variant: AudioVariant) -> String {
+        switch variant {
+        case .dolbyAtmos: return "dolby-atmos"
+        case .dolbyAudio: return "dolby-audio"
+        case .highResolutionLossless: return "hi-res-lossless"
+        case .lossless: return "lossless"
+        @unknown default: return "unknown"
+        }
     }
 
     private func playbackStatusString(_ status: MusicPlayer.PlaybackStatus) -> String {
