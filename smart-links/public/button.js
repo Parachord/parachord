@@ -123,19 +123,6 @@
     return url;
   }
 
-  // Open a protocol URL without navigating the page away.  Uses a temporary
-  // hidden iframe so the browser triggers the OS protocol handler while the
-  // current page stays intact.
-  function openProtocolUrl(url) {
-    var iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = url;
-    document.body.appendChild(iframe);
-    setTimeout(function () {
-      try { document.body.removeChild(iframe); } catch (e) { /* already gone */ }
-    }, 2000);
-  }
-
   // --- Core API ---
 
   function sendPlaylist(playlist) {
@@ -146,8 +133,11 @@
         tracks: playlist.tracks || []
       });
     }
-    // Fallback: open protocol URL via hidden iframe (keeps page intact)
-    openProtocolUrl(buildImportUrl(playlist));
+    // Fallback: trigger the OS protocol handler via top-level navigation.
+    // Browsers show an "Open Parachord?" prompt and stay on the current page
+    // for registered custom protocols.  (Hidden iframes do NOT work — browsers
+    // silently ignore custom-scheme URLs in iframe.src.)
+    window.location.href = buildImportUrl(playlist);
     return Promise.resolve({ success: true, method: 'protocol' });
   }
 
@@ -155,7 +145,7 @@
     if (wsConnected) {
       return sendWsMessage('importPlaylist', { xspfUrl: url });
     }
-    openProtocolUrl(PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url));
+    window.location.href = PROTOCOL_SCHEME + '://import?url=' + encodeURIComponent(url);
     return Promise.resolve({ success: true, method: 'protocol' });
   }
 
