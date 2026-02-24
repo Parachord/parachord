@@ -542,7 +542,7 @@ For third-party websites that want to let users send playlists to Parachord. Inc
 
 **Declarative (data attributes):**
 ```html
-<script src="https://parachord.com/button.js"></script>
+<script src="https://go.parachord.com/button.js"></script>
 
 <!-- Inline tracks -->
 <div class="parachord-button"
