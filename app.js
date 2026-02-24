@@ -3294,7 +3294,8 @@ const ReleasePage = ({
   // Album action props (hover buttons)
   onAlbumPlay,
   onAlbumAddToQueue,
-  onAlbumAddToPlaylist
+  onAlbumAddToPlaylist,
+  onAlbumContextMenu
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -3383,7 +3384,11 @@ const ReleasePage = ({
             padding: '10px',
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
             transition: 'width 300ms ease'
-          }
+          },
+          onContextMenu: onAlbumContextMenu ? (e) => {
+            e.preventDefault();
+            onAlbumContextMenu(release);
+          } : undefined
         },
           // Album art container
           React.createElement('div', {
@@ -32281,6 +32286,22 @@ useEffect(() => {
                 });
                 setSelectedPlaylistsForAdd([]);
               }
+            },
+            onAlbumContextMenu: (rel) => {
+              if (window.electron?.contextMenu?.showTrackMenu) {
+                window.electron.contextMenu.showTrackMenu({
+                  type: 'release',
+                  name: rel.title,
+                  artist: rel.artist?.name,
+                  albumArt: rel.albumArt,
+                  album: {
+                    title: rel.title,
+                    artist: rel.artist?.name,
+                    art: rel.albumArt
+                  },
+                  tracks: rel.tracks || []
+                });
+              }
             }
           })
         ),
@@ -35654,7 +35675,18 @@ useEffect(() => {
                           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                           animationDelay: `${index * 50}ms`
                         },
-                        onClick: () => handleCollectionAlbumClick(album)
+                        onClick: () => handleCollectionAlbumClick(album),
+                        onContextMenu: (e) => {
+                          e.preventDefault();
+                          const albumTracks = collectionData.tracks
+                            .filter(t => t.artist === album.artist && t.album === album.title)
+                            .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                          window.electron?.contextMenu?.showTrackMenu({
+                            type: 'collection-album',
+                            album: album,
+                            tracks: albumTracks
+                          });
+                        }
                       },
                         React.createElement('div', {
                           className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
