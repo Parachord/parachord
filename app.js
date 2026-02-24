@@ -36814,7 +36814,9 @@ useEffect(() => {
                         React.createElement('button', {
                           className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
                           onClick: async () => {
-                            setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+                            // Keep existing data visible, just mark as loading
+                            setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: true } }));
+                            let refreshStarted = false;
                             const onUpdate = ({ artists, newAlbum }) => {
                               if (artists) {
                                 setHomeData(prev => ({
@@ -36831,10 +36833,17 @@ useEffect(() => {
                                 }
                               }
                               if (newAlbum) {
-                                setHomeData(prev => ({
-                                  ...prev,
-                                  aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
-                                }));
+                                setHomeData(prev => {
+                                  // On first new album, clear old albums and start fresh
+                                  const albums = refreshStarted
+                                    ? [...prev.aiRecommendations.albums, newAlbum]
+                                    : [newAlbum];
+                                  refreshStarted = true;
+                                  return {
+                                    ...prev,
+                                    aiRecommendations: { ...prev.aiRecommendations, albums }
+                                  };
+                                });
                                 getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
                                   if (artUrl) {
                                     setHomeData(prev => {
