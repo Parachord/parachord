@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import MusicKit
+import Combine
 import Darwin
 
 // MARK: - JSON Message Types
@@ -73,6 +74,21 @@ struct AnyCodable: Codable {
 class MusicKitBridge {
     private let player = ApplicationMusicPlayer.shared
     private var isAuthorized = false
+    private var cancellables = Set<AnyCancellable>()
+    private var cachedAudioVariant: AudioVariant?
+
+    func startObservingState() {
+        // Subscribe to state changes so audioVariant is kept up to date.
+        // Without an active Combine subscription the ObservableObject may
+        // not publish updates in a non-SwiftUI context.
+        player.state.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.cachedAudioVariant = self.player.state.audioVariant
+            }
+            .store(in: &cancellables)
+    }
 
     // Check current authorization status
     func checkAuthStatus() async -> [String: Any] {
@@ -344,7 +360,9 @@ class MusicKitBridge {
             }
         }
         // Active audio variant — reflects what is actually streaming right now
-        if let variant = state.audioVariant {
+        // Try the live read first, fall back to the Combine-cached value
+        let variant = state.audioVariant ?? cachedAudioVariant
+        if let variant {
             result["audioVariant"] = audioVariantString(variant)
         }
         return result
@@ -437,6 +455,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
             self.bridge = MusicKitBridge()
+            self.bridge!.startObservingState()
 
             // Warm up MusicKit before accepting requests — establishes the
             // XPC connection to AMSd so the first real request doesn't race
