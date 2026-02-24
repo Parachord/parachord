@@ -10709,32 +10709,41 @@ ${trackListXml}
     const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
     showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
 
-    // Resolve each track across all active resolvers
-    const resolvedTracks = [];
-    for (const track of tracks) {
-      const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
-      if (!query) {
-        resolvedTracks.push({ ...track, urls: {} });
-        continue;
-      }
-
-      const { urls } = await resolveTrackUrls(query);
-      resolvedTracks.push({ ...track, urls });
-      console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
-    }
-
-    // Resolve top-level album/playlist URLs (album pages, not individual tracks)
-    const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
-    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveAlbumUrls(topLevelQuery);
-
-    // POST to smart links API
     try {
+      // Resolve all tracks in parallel (much faster than sequential)
+      const trackPromises = tracks.map(async (track) => {
+        const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
+        if (!query) return { ...track, urls: {} };
+        try {
+          const { urls, albumArt: trackAlbumArt } = await resolveTrackUrls(query);
+          console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
+          return { ...track, urls, albumArt: trackAlbumArt || null };
+        } catch (err) {
+          console.error(`[CollectionSmartLink] Failed to resolve "${track.title}":`, err);
+          return { ...track, urls: {}, albumArt: null };
+        }
+      });
+
+      // Also resolve top-level album/playlist URLs in parallel with tracks
+      const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
+      const albumUrlsPromise = resolveAlbumUrls(topLevelQuery).catch(err => {
+        console.error('[CollectionSmartLink] Failed to resolve album URLs:', err);
+        return { urls: {}, albumArt: null };
+      });
+
+      const [resolvedTracks, { urls: topLevelUrls, albumArt: resolvedAlbumArt }] = await Promise.all([
+        Promise.all(trackPromises),
+        albumUrlsPromise
+      ]);
+
+      // POST to smart links API
       const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: collection.title,
           artist: collection.artist || null,
+          creator: collection.creator || null,
           albumArt: collection.albumArt || resolvedAlbumArt || null,
           type: collection.type || 'album',
           urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
@@ -10743,7 +10752,8 @@ ${trackListXml}
             artist: t.artist || null,
             duration: t.duration || null,
             trackNumber: t.trackNumber || null,
-            urls: t.urls
+            urls: t.urls,
+            albumArt: t.albumArt || null
           }))
         })
       });
@@ -34041,6 +34051,7 @@ useEffect(() => {
                         type: 'playlist',
                         playlistId: selectedPlaylist.id,
                         name: selectedPlaylist.title,
+                        creator: selectedPlaylist.creator || null,
                         tracks: playlistTracks || []
                       });
                     }
@@ -34924,6 +34935,7 @@ useEffect(() => {
                           type: 'playlist',
                           playlistId: playlist.id,
                           name: playlist.title,
+                          creator: playlist.creator || null,
                           tracks: tracksWithIds
                         });
                       }
@@ -35206,6 +35218,7 @@ useEffect(() => {
                         type: 'playlist',
                         playlistId: playlist.id,
                         name: playlist.title,
+                        creator: playlist.creator || null,
                         tracks: tracksWithIds
                       });
                     }
@@ -35926,6 +35939,7 @@ useEffect(() => {
                                 type: 'playlist',
                                 playlistId: `listenbrainz-${jam.id}`,
                                 name: jam.title,
+                                creator: 'ListenBrainz',
                                 tracks: jam.tracks || []
                               });
                             }
@@ -36056,6 +36070,7 @@ useEffect(() => {
                                   type: 'playlist',
                                   playlistId: playlist.id,
                                   name: playlist.title,
+                                  creator: playlist.creator || null,
                                   tracks: playlist.tracks || []
                                 });
                               }

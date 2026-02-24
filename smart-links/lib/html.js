@@ -76,15 +76,16 @@ function generateTracklistHtml(tracks) {
 }
 
 export function generateLinkPageHtml(data, linkId, baseUrl) {
-  const { title, artist, albumArt, type, urls, tracks } = data;
+  const { title, artist, albumArt, type, urls, tracks, creator } = data;
+  const isPlaylist = type === 'playlist';
   const fullTitle = `${escapeHtml(title)}${artist ? ' - ' + escapeHtml(artist) : ''}`;
   const linkUrl = `${baseUrl}/${linkId}`;
   const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
-  const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
-  const ogType = type === 'album' ? 'music.album' : (type === 'playlist' ? 'music.playlist' : 'music.song');
+  const typeLabel = isPlaylist ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
+  const ogType = type === 'album' ? 'music.album' : (isPlaylist ? 'music.playlist' : 'music.song');
 
-  // Service links - icon row for collections, full buttons for single tracks
-  const serviceLinksHtml = urls ? SERVICES.map(s => {
+  // Service links - icon row for albums, full buttons for single tracks, none for playlists
+  const serviceLinksHtml = (!isPlaylist && urls) ? SERVICES.map(s => {
     const url = urls[s.id];
     if (!url) return '';
     if (isCollection) {
@@ -96,6 +97,9 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         <span class="service-name">${s.name}</span>
       </a>`;
   }).filter(Boolean).join('\n') : '';
+
+  // For playlists, collect unique album art URLs for a 2x2 mosaic
+  const playlistCovers = isPlaylist && tracks ? [...new Set(tracks.map(t => t.albumArt).filter(Boolean))].slice(0, 4) : [];
 
   // Tracklist for albums/playlists
   const tracklistHtml = isCollection ? generateTracklistHtml(tracks) : '';
@@ -163,6 +167,22 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       justify-content: center;
       font-size: 48px;
       color: var(--text-secondary);
+    }
+    .playlist-mosaic {
+      width: 200px;
+      height: 200px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .playlist-mosaic img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     h1 {
       font-size: 1.5rem;
@@ -435,12 +455,14 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 </head>
 <body>
   <div class="container">
-    ${albumArt
-      ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
-      : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`
+    ${isPlaylist && playlistCovers.length >= 4
+      ? `<div class="playlist-mosaic">${playlistCovers.map(src => `<img src="${escapeHtml(src)}" alt="">`).join('')}</div>`
+      : (albumArt
+        ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
+        : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`)
     }
     <h1>${escapeHtml(title)}</h1>
-    ${artist ? `<p class="artist">${escapeHtml(artist)}</p>` : ''}
+    ${isPlaylist && creator ? `<p class="artist">by ${escapeHtml(creator)}</p>` : (artist ? `<p class="artist">${escapeHtml(artist)}</p>` : '')}
     ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
     ${serviceLinksHtml ? `<div class="${isCollection ? 'services-row' : 'services'}">${serviceLinksHtml}</div>` : ''}

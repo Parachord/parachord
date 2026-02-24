@@ -3685,6 +3685,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       const collectionData = {
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
+        creator: data.creator || null,
         albumArt: collectionArt,
         type: isPlaylist ? 'playlist' : 'album',
         tracks: (data.tracks || []).map((t, i) => ({

@@ -46,6 +46,7 @@ export async function onRequestPost({ request, env }) {
     const linkData = {
       title: data.title,
       artist: data.artist || null,
+      creator: data.creator || null,
       albumArt: data.albumArt || null,
       type,
       urls: data.urls || null,
@@ -59,7 +60,8 @@ export async function onRequestPost({ request, env }) {
         artist: t.artist || null,
         duration: t.duration || null,
         trackNumber: t.trackNumber || null,
-        urls: t.urls || {}
+        urls: t.urls || {},
+        albumArt: t.albumArt || null
       }));
     }
 
