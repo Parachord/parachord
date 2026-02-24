@@ -1,5 +1,5 @@
-// Dynamic route handler for /:id and /:id/embed
-import { generateLinkPageHtml, generateEmbedHtml } from '../lib/html.js';
+// Dynamic route handler for /:id, /:id/embed, /:id/playlist.xspf
+import { generateLinkPageHtml, generateEmbedHtml, generateXspf } from '../lib/html.js';
 import { enrichLinkData } from '../lib/enrich.js';
 
 // Static file extensions to pass through to assets
@@ -12,6 +12,11 @@ export async function onRequestGet({ params, request, env, waitUntil }) {
   // Check if this is a static file request - pass through to assets
   if (STATIC_EXTENSIONS.some(ext => fullPath.toLowerCase().endsWith(ext))) {
     return env.ASSETS.fetch(request);
+  }
+
+  // Handle /:id/playlist.xspf
+  if (pathParts.length === 2 && pathParts[1] === 'playlist.xspf') {
+    return handleXspf(pathParts[0], env);
   }
 
   // Handle /:id/embed
@@ -94,6 +99,24 @@ async function handleEmbed(id, request, env, waitUntil) {
       'Content-Type': 'text/html',
       'Cache-Control': 'public, max-age=300',
       'X-Frame-Options': 'ALLOWALL' // Allow embedding
+    }
+  });
+}
+
+async function handleXspf(id, env) {
+  const data = await env.LINKS.get(id, 'json');
+
+  if (!data || !data.tracks || data.tracks.length === 0) {
+    return new Response('Not Found', { status: 404 });
+  }
+
+  const filename = (data.title || 'playlist').replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'playlist';
+
+  return new Response(generateXspf(data), {
+    headers: {
+      'Content-Type': 'application/xspf+xml',
+      'Content-Disposition': `attachment; filename="${filename}.xspf"`,
+      'Cache-Control': 'public, max-age=300'
     }
   });
 }
