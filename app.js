@@ -23780,6 +23780,30 @@ ${tracks}
 
     // Build listening context for the prompt
     let contextInfo = '';
+
+    // Helper: extract unique artists and albums from collection tracks (songs)
+    const extractCollectionTrackContext = () => {
+      const tracks = collectionData?.tracks || [];
+      if (tracks.length === 0) return { artists: [], albums: [] };
+      const seenArtists = new Set();
+      const seenAlbums = new Set();
+      const artists = [];
+      const albums = [];
+      for (const t of tracks) {
+        const artistKey = (t.artist || '').toLowerCase();
+        if (artistKey && !seenArtists.has(artistKey)) {
+          seenArtists.add(artistKey);
+          artists.push(t.artist);
+        }
+        const albumKey = `${(t.artist || '').toLowerCase()}|${(t.album || '').toLowerCase()}`;
+        if (t.album && !seenAlbums.has(albumKey)) {
+          seenAlbums.add(albumKey);
+          albums.push({ artist: t.artist, title: t.album });
+        }
+      }
+      return { artists, albums };
+    };
+
     if (aiIncludeHistoryRef.current) {
       try {
         const listeningHistory = await fetchListeningContext();
@@ -23789,22 +23813,50 @@ ${tracks}
           if (listeningHistory.recently_played?.length > 0) {
             parts.push('Recently played: ' + listeningHistory.recently_played.slice(0, 15).map(t => `${t.artist} - ${t.title}`).join(', '));
           }
-          // Top artists this week
-          const weekData = Array.isArray(listeningHistory) ? listeningHistory.find(p => p.period === 'last_7_days') : listeningHistory.periods?.find(p => p.period === 'last_7_days');
-          if (weekData?.top_artists?.length > 0) {
-            parts.push('Top artists this week: ' + weekData.top_artists.slice(0, 10).join(', '));
+          // Top artists across all time periods (not just this week)
+          if (listeningHistory.top_artists?.length > 0) {
+            parts.push('Top artists: ' + listeningHistory.top_artists.slice(0, 25).join(', '));
           }
-          if (weekData?.top_albums?.length > 0) {
-            parts.push('Top albums this week: ' + weekData.top_albums.slice(0, 10).map(a => `${a.artist} - ${a.title}`).join(', '));
+          // Top tracks across all time periods
+          if (listeningHistory.top_tracks?.length > 0) {
+            parts.push('Top tracks: ' + listeningHistory.top_tracks.slice(0, 20).map(t => `${t.artist} - ${t.title}`).join(', '));
           }
-          // Collection favorites
+          // Top albums across all time periods
+          if (listeningHistory.top_albums?.length > 0) {
+            parts.push('Top albums: ' + listeningHistory.top_albums.slice(0, 15).map(a => `${a.artist} - ${a.title}`).join(', '));
+          }
+          // Collection bookmarked artists
           const favArtists = (collectionData?.artists || []).slice(0, 15).map(a => a.name || a.artist);
           if (favArtists.length > 0) {
             parts.push('Favorite artists in collection: ' + favArtists.join(', '));
           }
+          // Collection bookmarked albums
           const favAlbums = (collectionData?.albums || []).slice(0, 10).map(a => `${a.artist} - ${a.title || a.album}`);
           if (favAlbums.length > 0) {
             parts.push('Favorite albums in collection: ' + favAlbums.join(', '));
+          }
+          // Artists and albums extracted from collection tracks (songs)
+          const trackContext = extractCollectionTrackContext();
+          if (trackContext.artists.length > 0) {
+            // Filter out artists already mentioned in top_artists or favArtists
+            const alreadyMentioned = new Set([
+              ...(listeningHistory.top_artists || []).map(a => a.toLowerCase()),
+              ...favArtists.map(a => a.toLowerCase())
+            ]);
+            const newArtists = trackContext.artists.filter(a => !alreadyMentioned.has(a.toLowerCase()));
+            if (newArtists.length > 0) {
+              parts.push('Artists from saved songs: ' + newArtists.slice(0, 15).join(', '));
+            }
+          }
+          if (trackContext.albums.length > 0) {
+            const alreadyMentionedAlbums = new Set([
+              ...(listeningHistory.top_albums || []).map(a => `${a.artist.toLowerCase()}|${a.title.toLowerCase()}`),
+              ...favAlbums.map(a => a.toLowerCase())
+            ]);
+            const newAlbums = trackContext.albums.filter(a => !alreadyMentionedAlbums.has(`${a.artist.toLowerCase()}|${a.title.toLowerCase()}`));
+            if (newAlbums.length > 0) {
+              parts.push('Albums from saved songs: ' + newAlbums.slice(0, 10).map(a => `${a.artist} - ${a.title}`).join(', '));
+            }
           }
           contextInfo = parts.join('\n');
         }
@@ -23820,6 +23872,18 @@ ${tracks}
       if (favArtists.length > 0) parts.push('Favorite artists: ' + favArtists.join(', '));
       const favAlbums = (collectionData?.albums || []).slice(0, 10).map(a => `${a.artist} - ${a.title || a.album}`);
       if (favAlbums.length > 0) parts.push('Favorite albums: ' + favAlbums.join(', '));
+      // Also mine collection tracks for artists and albums
+      const trackContext = extractCollectionTrackContext();
+      if (trackContext.artists.length > 0) {
+        const alreadyMentioned = new Set(favArtists.map(a => a.toLowerCase()));
+        const newArtists = trackContext.artists.filter(a => !alreadyMentioned.has(a.toLowerCase()));
+        if (newArtists.length > 0) parts.push('Artists from saved songs: ' + newArtists.slice(0, 20).join(', '));
+      }
+      if (trackContext.albums.length > 0) {
+        const alreadyMentionedAlbums = new Set(favAlbums.map(a => a.toLowerCase()));
+        const newAlbums = trackContext.albums.filter(a => !alreadyMentionedAlbums.has(`${a.artist.toLowerCase()}|${a.title.toLowerCase()}`));
+        if (newAlbums.length > 0) parts.push('Albums from saved songs: ' + newAlbums.slice(0, 10).map(a => `${a.artist} - ${a.title}`).join(', '));
+      }
       contextInfo = parts.join('\n') || 'No listening history available. Recommend diverse, acclaimed music.';
     }
 
