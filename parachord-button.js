@@ -123,20 +123,19 @@
     return url;
   }
 
-  // Open a protocol URL without navigating the page away.  Uses a temporary
-  // hidden iframe so the browser triggers the OS protocol handler while the
-  // current page stays intact.
-  function openProtocolUrl(url) {
-    var iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = url;
-    document.body.appendChild(iframe);
-    setTimeout(function () {
-      try { document.body.removeChild(iframe); } catch (e) { /* already gone */ }
-    }, 2000);
-  }
-
   // --- Core API ---
+
+  // Trigger a custom-protocol URL without navigating the page away.
+  // A temporary <a> click opens the OS "Open Parachord?" dialog while
+  // keeping the current page intact so button feedback text can render.
+  function openProtocolUrl(url) {
+    var a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); }, 100);
+  }
 
   function sendPlaylist(playlist) {
     if (wsConnected) {
@@ -146,7 +145,6 @@
         tracks: playlist.tracks || []
       });
     }
-    // Fallback: open protocol URL via hidden iframe (keeps page intact)
     openProtocolUrl(buildImportUrl(playlist));
     return Promise.resolve({ success: true, method: 'protocol' });
   }
