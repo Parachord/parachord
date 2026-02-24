@@ -1,6 +1,7 @@
 // POST /api/create - Create a new smart link
+import { enrichLinkData } from '../../lib/enrich.js';
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -46,6 +47,7 @@ export async function onRequestPost({ request, env }) {
     const linkData = {
       title: data.title,
       artist: data.artist || null,
+      creator: data.creator || null,
       albumArt: data.albumArt || null,
       type,
       urls: data.urls || null,
@@ -59,11 +61,24 @@ export async function onRequestPost({ request, env }) {
         artist: t.artist || null,
         duration: t.duration || null,
         trackNumber: t.trackNumber || null,
-        urls: t.urls || {}
+        urls: t.urls || {},
+        albumArt: t.albumArt || null
       }));
     }
 
     await env.LINKS.put(id, JSON.stringify(linkData));
+
+    // Background enrichment: fill in missing service URLs using server-side resolvers
+    // This runs after the response is sent so it doesn't slow down link creation
+    waitUntil((async () => {
+      try {
+        const changed = await enrichLinkData(linkData, env);
+        linkData.enrichedAt = Date.now();
+        await env.LINKS.put(id, JSON.stringify(linkData));
+      } catch (e) {
+        // Enrichment is best-effort, don't fail the request
+      }
+    })());
 
     // Determine base URL from request or use default
     const url = new URL(request.url);

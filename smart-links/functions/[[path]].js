@@ -1,10 +1,11 @@
-// Dynamic route handler for /:id and /:id/embed
-import { generateLinkPageHtml, generateEmbedHtml } from '../lib/html.js';
+// Dynamic route handler for /:id, /:id/embed, /:id/playlist.xspf
+import { generateLinkPageHtml, generateEmbedHtml, generateXspf } from '../lib/html.js';
+import { enrichLinkData } from '../lib/enrich.js';
 
 // Static file extensions to pass through to assets
 const STATIC_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2'];
 
-export async function onRequestGet({ params, request, env }) {
+export async function onRequestGet({ params, request, env, waitUntil }) {
   const pathParts = params.path || [];
   const fullPath = '/' + pathParts.join('/');
 
@@ -16,23 +17,28 @@ export async function onRequestGet({ params, request, env }) {
   // Handle /:id.xspf
   if (pathParts.length === 1 && pathParts[0].endsWith('.xspf')) {
     const id = pathParts[0].slice(0, -5); // strip .xspf
-    return handleXspf(id, request, env);
+    return handleXspf(id, env);
+  }
+
+  // Handle /:id/playlist.xspf
+  if (pathParts.length === 2 && pathParts[1] === 'playlist.xspf') {
+    return handleXspf(pathParts[0], env);
   }
 
   // Handle /:id/embed
   if (pathParts.length === 2 && pathParts[1] === 'embed') {
-    return handleEmbed(pathParts[0], request, env);
+    return handleEmbed(pathParts[0], request, env, waitUntil);
   }
 
   // Handle /:id
   if (pathParts.length === 1) {
-    return handleLinkPage(pathParts[0], request, env);
+    return handleLinkPage(pathParts[0], request, env, waitUntil);
   }
 
   return new Response('Not Found', { status: 404 });
 }
 
-async function handleLinkPage(id, request, env) {
+async function handleLinkPage(id, request, env, waitUntil) {
   const data = await env.LINKS.get(id, 'json');
 
   if (!data) {
@@ -40,6 +46,21 @@ async function handleLinkPage(id, request, env) {
       status: 404,
       headers: { 'Content-Type': 'text/html' }
     });
+  }
+
+  // Lazy enrichment: fill in missing service URLs in the background
+  // This catches links created before enrichment was added, or where
+  // background enrichment at creation time didn't complete
+  if (!data.enrichedAt) {
+    waitUntil((async () => {
+      try {
+        await enrichLinkData(data, env);
+        data.enrichedAt = Date.now();
+        await env.LINKS.put(id, JSON.stringify(data));
+      } catch (e) {
+        // Best-effort
+      }
+    })());
   }
 
   // Increment view count (fire and forget)
@@ -56,11 +77,24 @@ async function handleLinkPage(id, request, env) {
   });
 }
 
-async function handleEmbed(id, request, env) {
+async function handleEmbed(id, request, env, waitUntil) {
   const data = await env.LINKS.get(id, 'json');
 
   if (!data) {
     return new Response('Not Found', { status: 404 });
+  }
+
+  // Lazy enrichment for embeds too
+  if (!data.enrichedAt) {
+    waitUntil((async () => {
+      try {
+        await enrichLinkData(data, env);
+        data.enrichedAt = Date.now();
+        await env.LINKS.put(id, JSON.stringify(data));
+      } catch (e) {
+        // Best-effort
+      }
+    })());
   }
 
   const url = new URL(request.url);
@@ -75,76 +109,19 @@ async function handleEmbed(id, request, env) {
   });
 }
 
-function escapeXml(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-}
-
-async function handleXspf(id, request, env) {
+async function handleXspf(id, env) {
   const data = await env.LINKS.get(id, 'json');
 
-  if (!data) {
+  if (!data || !data.tracks || data.tracks.length === 0) {
     return new Response('Not Found', { status: 404 });
   }
 
-  if (data.type !== 'album' && data.type !== 'playlist') {
-    // For single tracks, wrap it as a one-track playlist
-    const trackLocation = data.urls?.spotify || data.urls?.youtube || data.urls?.appleMusic
-      || data.urls?.soundcloud || data.urls?.bandcamp || data.urls?.tidal || data.urls?.deezer || '';
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<playlist version="1" xmlns="http://xspf.org/ns/0/">
-  <title>${escapeXml(data.title)}</title>
-  ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
-  ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
-  <trackList>
-    <track>
-      <title>${escapeXml(data.title)}</title>
-      ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
-      ${trackLocation ? `<location>${escapeXml(trackLocation)}</location>` : ''}
-      ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
-    </track>
-  </trackList>
-</playlist>`;
+  const filename = (data.title || 'playlist').replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'playlist';
 
-    return new Response(xml, {
-      headers: {
-        'Content-Type': 'application/xspf+xml',
-        'Cache-Control': 'public, max-age=300'
-      }
-    });
-  }
-
-  // Album or playlist
-  const tracks = (data.tracks || []).map(t => {
-    const location = t.urls?.spotify || t.urls?.youtube || t.urls?.appleMusic
-      || t.urls?.soundcloud || t.urls?.bandcamp || t.urls?.tidal || t.urls?.deezer || '';
-    const artist = t.artist || data.artist;
-    return `    <track>
-      <title>${escapeXml(t.title)}</title>
-      ${artist ? `<creator>${escapeXml(artist)}</creator>` : ''}
-      ${location ? `<location>${escapeXml(location)}</location>` : ''}
-      ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
-      ${t.duration ? `<duration>${Math.round(t.duration * 1000)}</duration>` : ''}
-      ${t.trackNumber != null ? `<trackNum>${t.trackNumber}</trackNum>` : ''}
-      ${t.urls?.spotify ? `<link rel="https://open.spotify.com">${escapeXml(t.urls.spotify)}</link>` : ''}
-      ${t.urls?.appleMusic ? `<link rel="https://music.apple.com">${escapeXml(t.urls.appleMusic)}</link>` : ''}
-      ${t.urls?.youtube ? `<link rel="https://youtube.com">${escapeXml(t.urls.youtube)}</link>` : ''}
-    </track>`;
-  }).join('\n');
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<playlist version="1" xmlns="http://xspf.org/ns/0/">
-  <title>${escapeXml(data.title)}</title>
-  ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
-  ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
-  <trackList>
-${tracks}
-  </trackList>
-</playlist>`;
-
-  return new Response(xml, {
+  return new Response(generateXspf(data), {
     headers: {
       'Content-Type': 'application/xspf+xml',
+      'Content-Disposition': `attachment; filename="${filename}.xspf"`,
       'Cache-Control': 'public, max-age=300'
     }
   });

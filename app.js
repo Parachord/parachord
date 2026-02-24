@@ -169,7 +169,8 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
           sources: ['applemusic'],
           appleMusicId: String(song.id),
           albumArt: song.artworkUrl,
-          isrc: song.isrc
+          isrc: song.isrc,
+          audioTraits: song.audioTraits || []
         }));
       } catch (mkError) {
         console.log('[AppleMusicSearch] MusicKit JS search failed, falling back to iTunes:', mkError.message);
@@ -249,7 +250,8 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
             albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
             previewUrl: song.attributes.previews?.[0]?.url || null,
             genre: song.attributes.genreNames?.[0],
-            isrc: song.attributes.isrc
+            isrc: song.attributes.isrc,
+            audioTraits: song.attributes.audioTraits || []
           };
         }
       } catch (e) {
@@ -306,6 +308,7 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
         const album = result.data.data?.[0];
         if (album) {
           const albumArt = album.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null;
+          const albumAudioTraits = album.attributes.audioTraits || [];
           const tracks = (album.relationships?.tracks?.data || []).map((song, idx) => ({
             id: 'applemusic-' + song.id,
             title: song.attributes.name,
@@ -318,7 +321,8 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
             albumArt: albumArt,
             previewUrl: song.attributes.previews?.[0]?.url || null,
             trackNumber: song.attributes.trackNumber || (idx + 1),
-            discNumber: song.attributes.discNumber || 1
+            discNumber: song.attributes.discNumber || 1,
+            audioTraits: song.attributes.audioTraits || albumAudioTraits
           }));
           tracks.sort((a, b) => a.discNumber !== b.discNumber ? a.discNumber - b.discNumber : a.trackNumber - b.trackNumber);
           return {
@@ -1386,7 +1390,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
-        })
+        }),
       ),
       primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),
@@ -3294,7 +3298,12 @@ const ReleasePage = ({
   // Album action props (hover buttons)
   onAlbumPlay,
   onAlbumAddToQueue,
-  onAlbumAddToPlaylist
+  onAlbumAddToPlaylist,
+  onAlbumContextMenu,
+  shareDropdownOpen,
+  setShareDropdownOpen,
+  publishCollectionSmartLink,
+  copyCollectionEmbedCode
 }) => {
   const formatDuration = (ms) => {
     if (!ms) return '';
@@ -3383,7 +3392,11 @@ const ReleasePage = ({
             padding: '10px',
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
             transition: 'width 300ms ease'
-          }
+          },
+          onContextMenu: onAlbumContextMenu ? (e) => {
+            e.preventDefault();
+            onAlbumContextMenu(release);
+          } : undefined
         },
           // Album art container
           React.createElement('div', {
@@ -3552,7 +3565,75 @@ const ReleasePage = ({
               fontSize: isCompact ? '0.75rem' : '0.875rem',
               transition: 'font-size 300ms ease'
             }
-          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...')
+          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...'),
+          // Share button
+          React.createElement('div', { className: 'relative mt-5 flex justify-center' },
+            React.createElement('button', {
+              onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
+              className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
+              ),
+              'Share'
+            ),
+            shareDropdownOpen === 'album' && React.createElement('div', {
+              className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
+              style: { backgroundColor: '#1f2937', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
+              onClick: (e) => e.stopPropagation()
+            },
+              React.createElement('button', {
+                onClick: () => {
+                  setShareDropdownOpen(false);
+                  const collectionData = {
+                    title: release.title,
+                    artist: release.artist?.name || release.artist,
+                    albumArt: release.albumArt,
+                    type: 'album',
+                    tracks: (release.tracks || []).map((t, i) => ({
+                      title: t.title || 'Unknown',
+                      artist: t.artist || release.artist?.name || null,
+                      duration: t.duration || null,
+                      trackNumber: t.trackNumber || (i + 1)
+                    }))
+                  };
+                  publishCollectionSmartLink(collectionData);
+                },
+                className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                style: { fontSize: '12px', fontWeight: 500 }
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
+                ),
+                'Copy Link'
+              ),
+              React.createElement('button', {
+                onClick: () => {
+                  setShareDropdownOpen(false);
+                  const collectionData = {
+                    title: release.title,
+                    artist: release.artist?.name || release.artist,
+                    albumArt: release.albumArt,
+                    type: 'album',
+                    tracks: (release.tracks || []).map((t, i) => ({
+                      title: t.title || 'Unknown',
+                      artist: t.artist || release.artist?.name || null,
+                      duration: t.duration || null,
+                      trackNumber: t.trackNumber || (i + 1)
+                    }))
+                  };
+                  copyCollectionEmbedCode(collectionData);
+                },
+                className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                style: { fontSize: '12px', fontWeight: 500 }
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
+                ),
+                'Copy Embed Code'
+              )
+            )
+          )
         )
       );
     })(),
@@ -4914,6 +4995,7 @@ const Parachord = () => {
   const [playlistDropTarget, setPlaylistDropTarget] = useState(null); // Index where track will be dropped
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
+  const [shareDropdownOpen, setShareDropdownOpen] = useState(false); // Share dropdown on album/playlist detail pages
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -4956,16 +5038,24 @@ const Parachord = () => {
   const [chartsLoaded, setChartsLoaded] = useState(false);
   const [chartsError, setChartsError] = useState(null);
 
+  // New Releases state
+  const [newReleases, setNewReleases] = useState([]);
+  const [newReleasesLoading, setNewReleasesLoading] = useState(false);
+  const [newReleasesLoaded, setNewReleasesLoaded] = useState(false);
+  const [newReleasesError, setNewReleasesError] = useState(null);
+
   // Unread badges for discovery features (shows when content has changed since last view)
   const [discoveryUnread, setDiscoveryUnread] = useState({
     recommendations: false,
     criticsPicks: false,
-    charts: false
+    charts: false,
+    newReleases: false
   });
   const discoverySeenHashes = useRef({
     recommendations: null,
     criticsPicks: null,
-    charts: null
+    charts: null,
+    newReleases: null
   });
 
   // HOME view state
@@ -4982,6 +5072,8 @@ const Parachord = () => {
     aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
+  const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
+  const [homeVisitCount, setHomeVisitCount] = useState(0); // Increments each time user navigates to Home
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -5284,6 +5376,13 @@ const Parachord = () => {
   const [criticsSortDropdownOpen, setCriticsSortDropdownOpen] = useState(false);
   const [criticsSort, setCriticsSort] = useState('recent');
 
+  // New Releases page state
+  const [newReleasesHeaderCollapsed, setNewReleasesHeaderCollapsed] = useState(false);
+  const [newReleasesSearchOpen, setNewReleasesSearchOpen] = useState(false);
+  const [newReleasesSearch, setNewReleasesSearch] = useState('');
+  const [newReleasesFilter, setNewReleasesFilter] = useState('all'); // 'all' | 'album' | 'ep' | 'single'
+  const [newReleasesFilterDropdownOpen, setNewReleasesFilterDropdownOpen] = useState(false);
+
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
   const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
@@ -5369,6 +5468,15 @@ const Parachord = () => {
     }
   }, [collectionSortDropdownOpen]);
 
+  // Close share dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setShareDropdownOpen(false);
+    if (shareDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [shareDropdownOpen]);
+
   // Track main content width for responsive header buttons
   useEffect(() => {
     if (!mainContentRef.current) return;
@@ -5419,6 +5527,15 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [criticsSortDropdownOpen]);
+
+  // Close new-releases filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setNewReleasesFilterDropdownOpen(false);
+    if (newReleasesFilterDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [newReleasesFilterDropdownOpen]);
 
   // Close history sort dropdown when clicking outside
   useEffect(() => {
@@ -5576,6 +5693,15 @@ const Parachord = () => {
       setCriticsHeaderCollapsed(false);
       setCriticsSearchOpen(false);
       setCriticsSearch('');
+    }
+  }, [activeView]);
+
+  // Reset new-releases header collapse when leaving new-releases view
+  useEffect(() => {
+    if (activeView !== 'new-releases') {
+      setNewReleasesHeaderCollapsed(false);
+      setNewReleasesSearchOpen(false);
+      setNewReleasesSearch('');
     }
   }, [activeView]);
 
@@ -7296,7 +7422,8 @@ const Parachord = () => {
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
-    charts: 24 * 60 * 60 * 1000             // 24 hours (charts update daily)
+    charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
+    newReleases: 6 * 60 * 60 * 1000         // 6 hours (new releases don't change that often)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -8526,9 +8653,16 @@ const Parachord = () => {
     });
 
     // Handle play requests from embed
-    window.electron.embed.onPlay(({ track }) => {
-      console.log('▶️ Embed play request:', track?.title);
+    window.electron.embed.onPlay(({ track, queue }) => {
+      console.log('▶️ Embed play request:', track?.title, queue ? `(+${queue.length} queued)` : '');
       if (track && handlePlayRef.current) {
+        if (queue && queue.length > 0) {
+          // Album/playlist: set queue with remaining tracks, then play first
+          const context = { type: 'smartlink', name: track.album || track.title };
+          const taggedTracks = queue.map(t => ({ ...t, _playbackContext: context }));
+          setCurrentQueue(taggedTracks);
+          setPlaybackContext(context);
+        }
         handlePlayRef.current(track);
       }
     });
@@ -8862,6 +8996,7 @@ const Parachord = () => {
           // === Navigation Commands ===
           case 'home':
             setActiveView('home');
+            setHomeVisitCount(c => c + 1);
             break;
 
           case 'artist': {
@@ -9024,6 +9159,10 @@ const Parachord = () => {
 
           case 'critics-picks':
             setActiveView('critics-picks');
+            break;
+
+          case 'new-releases':
+            setActiveView('new-releases');
             break;
 
           case 'search': {
@@ -9553,31 +9692,31 @@ ${trackListXml}
   // Use loaded resolvers or fallback to empty array
   const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
 
-  // Sync loaded resolvers with resolverOrder - add any new resolvers not yet in the order
-  // This runs after both resolvers are loaded AND cache/settings are loaded from storage
+  // Sync resolverOrder with activeResolvers - only active resolvers belong in
+  // the priority order. Add any active resolvers that are missing, and remove
+  // any that were disabled.
   useEffect(() => {
     if (loadedResolvers.length === 0) return;
     if (!cacheLoaded) return; // Wait until storage settings are loaded
 
-    // Ensure ALL loaded content resolvers appear in resolverOrder so they get a
-    // priority position and badge in the UI. This doesn't auto-enable them —
-    // it just gives them a slot in the order for when the user does enable them.
-    const loadedButMissing = loadedResolvers
-      .filter(r => r.capabilities?.resolve && !resolverOrder.includes(r.id))
-      .map(r => r.id);
+    setResolverOrder(prev => {
+      // Remove resolvers that are no longer active
+      let newOrder = prev.filter(id => activeResolvers.includes(id));
 
-    if (loadedButMissing.length > 0) {
-      console.log('📦 Syncing resolver order with loaded resolvers:', loadedButMissing);
-      setResolverOrder(prev => {
-        let newOrder = [...prev];
-        for (const id of loadedButMissing) {
-          if (!newOrder.includes(id)) {
-            newOrder = insertInCanonicalOrder(newOrder, id);
-          }
+      // Add any active resolvers missing from the order
+      for (const id of activeResolvers) {
+        if (!newOrder.includes(id) && loadedResolvers.some(r => r.id === id && r.capabilities?.resolve)) {
+          newOrder = insertInCanonicalOrder(newOrder, id);
         }
-        return newOrder;
-      });
-    }
+      }
+
+      // Only update if something actually changed
+      if (newOrder.length === prev.length && newOrder.every((id, i) => prev[i] === id)) {
+        return prev;
+      }
+      console.log('📦 Syncing resolver order with active resolvers:', newOrder);
+      return newOrder;
+    });
   }, [loadedResolvers, cacheLoaded, activeResolvers]);
 
   // Get resolvers in priority order
@@ -10625,63 +10764,73 @@ ${trackListXml}
     return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
   }, []);
 
-  // Fetch album tracks from MusicBrainz (fallback when prefetch didn't complete in time)
-  const fetchAlbumTracksFromMusicBrainz = useCallback(async (artist, title, albumArt) => {
-    try {
-      const searchQuery = encodeURIComponent(`release:"${title}" AND artist:"${artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=5`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
-      if (!mbResponse.ok) return [];
+  // Helper: resolve album-level URLs (album pages, not individual tracks) across all active resolvers
+  const resolveAlbumUrls = useCallback(async (query) => {
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+    let resolvedAlbumArt = null;
 
-      const mbData = await mbResponse.json();
-      const releases = mbData.releases || [];
-      if (releases.length === 0) return [];
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
 
-      // Prefer releases with more tracks (avoid singles/EPs matching the same name)
-      // Sort by track count descending, pick the first with a reasonable count
-      let bestRelease = releases[0];
-      for (const rel of releases) {
-        const trackCount = rel['track-count'] || 0;
-        if (trackCount > (bestRelease['track-count'] || 0)) {
-          bestRelease = rel;
-        }
-      }
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
 
-      const releaseId = bestRelease.id;
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
-      if (!releaseDetailsResponse.ok) return [];
-
-      const releaseData = await releaseDetailsResponse.json();
-      const tracks = [];
-      if (releaseData.media) {
-        releaseData.media.forEach(medium => {
-          if (medium.tracks) {
-            medium.tracks.forEach(track => {
-              tracks.push({
-                id: `${artist}-${track.title || 'untitled'}-${title}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                duration: track.length ? Math.round(track.length / 1000) : null,
-                artist: artist,
-                album: title,
-                albumArt: albumArt || null,
-                sources: {}
-              });
-            });
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
           }
-        });
+
+          // Extract album-level URLs instead of track URLs
+          let albumUrl = null;
+          const id = resolver.id.toLowerCase();
+          let service = null;
+          if (id.includes('spotify')) {
+            service = 'spotify';
+            if (firstResult.spotifyAlbumId) {
+              albumUrl = `https://open.spotify.com/album/${firstResult.spotifyAlbumId}`;
+            }
+          } else if (id.includes('apple') || id.includes('itunes')) {
+            service = 'appleMusic';
+            if (firstResult.appleMusicAlbumUrl) {
+              albumUrl = firstResult.appleMusicAlbumUrl;
+            } else if (firstResult.collectionId) {
+              albumUrl = `https://music.apple.com/album/${firstResult.collectionId}`;
+            }
+          } else if (id.includes('bandcamp') || id.includes('bc')) {
+            service = 'bandcamp';
+            // Bandcamp track URLs are like https://artist.bandcamp.com/track/name
+            // Album URLs are like https://artist.bandcamp.com/album/name
+            // We can't derive album slug from track URL, so use track URL as fallback
+            if (firstResult.bandcampUrl) {
+              albumUrl = firstResult.bandcampUrl;
+            }
+          } else if (id.includes('youtube') || id.includes('yt')) {
+            service = 'youtube';
+            // YouTube has no album pages; use the video URL as fallback
+            if (firstResult.youtubeUrl) albumUrl = firstResult.youtubeUrl;
+            else if (firstResult.youtubeId) albumUrl = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+          } else if (id.includes('soundcloud') || id.includes('sc')) {
+            service = 'soundcloud';
+            if (firstResult.soundcloudUrl) albumUrl = firstResult.soundcloudUrl;
+          } else if (id.includes('tidal')) {
+            service = 'tidal';
+          } else if (id.includes('deezer')) {
+            service = 'deezer';
+          }
+
+          if (service && albumUrl) resolvedUrls[service] = albumUrl;
+        }
+      } catch (err) {
+        // Skip failed resolvers
       }
-      return tracks;
-    } catch (err) {
-      console.error('[fetchAlbumTracksFromMusicBrainz] Error:', err);
-      return [];
     }
+
+    return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
   }, []);
 
   // Publish smart link for an album or playlist (with per-track resolver matches)
@@ -10702,32 +10851,41 @@ ${trackListXml}
 
     showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
 
-    // Resolve each track across all active resolvers
-    const resolvedTracks = [];
-    for (const track of tracks) {
-      const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
-      if (!query) {
-        resolvedTracks.push({ ...track, urls: {} });
-        continue;
-      }
-
-      const { urls } = await resolveTrackUrls(query);
-      resolvedTracks.push({ ...track, urls });
-      console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
-    }
-
-    // Also resolve top-level album/playlist URLs (search for "artist album" as a whole)
-    const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
-    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveTrackUrls(topLevelQuery);
-
-    // POST to smart links API
     try {
+      // Resolve all tracks in parallel (much faster than sequential)
+      const trackPromises = tracks.map(async (track) => {
+        const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
+        if (!query) return { ...track, urls: {} };
+        try {
+          const { urls, albumArt: trackAlbumArt } = await resolveTrackUrls(query);
+          console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
+          return { ...track, urls, albumArt: trackAlbumArt || null };
+        } catch (err) {
+          console.error(`[CollectionSmartLink] Failed to resolve "${track.title}":`, err);
+          return { ...track, urls: {}, albumArt: null };
+        }
+      });
+
+      // Also resolve top-level album/playlist URLs in parallel with tracks
+      const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
+      const albumUrlsPromise = resolveAlbumUrls(topLevelQuery).catch(err => {
+        console.error('[CollectionSmartLink] Failed to resolve album URLs:', err);
+        return { urls: {}, albumArt: null };
+      });
+
+      const [resolvedTracks, { urls: topLevelUrls, albumArt: resolvedAlbumArt }] = await Promise.all([
+        Promise.all(trackPromises),
+        albumUrlsPromise
+      ]);
+
+      // POST to smart links API
       const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: collection.title,
           artist: collection.artist || null,
+          creator: collection.creator || null,
           albumArt: collection.albumArt || resolvedAlbumArt || null,
           type: collection.type || 'album',
           urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
@@ -10736,7 +10894,8 @@ ${trackListXml}
             artist: t.artist || null,
             duration: t.duration || null,
             trackNumber: t.trackNumber || null,
-            urls: t.urls
+            urls: t.urls,
+            albumArt: t.albumArt || null
           }))
         })
       });
@@ -10759,7 +10918,7 @@ ${trackListXml}
       console.error('[PublishCollectionSmartLink] Error:', error);
       showToast('Failed to publish link. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls, fetchAlbumTracksFromMusicBrainz]);
+  }, [showToast, resolveTrackUrls, resolveAlbumUrls, fetchAlbumTracksFromMusicBrainz]);
 
   // Copy embed code for an album or playlist
   const copyCollectionEmbedCode = useCallback(async (collection) => {
@@ -11858,6 +12017,18 @@ ${trackListXml}
       window.electron.store.set('resolver_blocklist', resolverBlocklist);
     }
   }, [resolverBlocklist, cacheLoaded]);
+
+  // Persist AI suggestions when they finish loading (so they appear instantly on next session)
+  useEffect(() => {
+    const aiRecs = homeData.aiRecommendations;
+    if (cacheLoaded && window.electron?.store && aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0)) {
+      window.electron.store.set('cache_ai_suggestions', {
+        albums: aiRecs.albums,
+        artists: aiRecs.artists,
+        timestamp: Date.now()
+      });
+    }
+  }, [homeData.aiRecommendations, cacheLoaded]);
 
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -16766,10 +16937,11 @@ ${trackListXml}
     // Query all enabled resolvers in priority order (using refs to avoid stale closure)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     // Parallel resolution with confidence scoring
@@ -17373,6 +17545,43 @@ ${trackListXml}
         console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
       }
 
+      // Load new releases cache and show instantly on Home
+      const newReleasesData = await window.electron.store.get('cache_new_releases');
+      if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+        // Filter out broadcasts that may have been cached before the filter was added
+        const filteredReleases = newReleasesData.releases.filter(r =>
+          !(r.secondaryTypes || []).includes('broadcast')
+        );
+        const now = Date.now();
+        if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
+          console.log(`📦 Loaded ${filteredReleases.length} new releases from cache`);
+        } else {
+          // Cache expired but still useful as stale data to show instantly
+          newReleasesCache.current = { releases: filteredReleases, timestamp: 0 };
+          console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
+        }
+        // Populate state immediately so Fresh Drops preview shows on Home
+        if (filteredReleases.length > 0) {
+          setNewReleases(filteredReleases);
+          setNewReleasesLoaded(true);
+        }
+      }
+
+      // Load AI suggestions cache (show previous session's suggestions instantly)
+      const aiSuggestionsData = await window.electron.store.get('cache_ai_suggestions');
+      if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: {
+            albums: aiSuggestionsData.albums || [],
+            artists: aiSuggestionsData.artists || [],
+            loading: false
+          }
+        }));
+        console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -17706,6 +17915,11 @@ ${trackListXml}
             setActiveView('critics-picks');
             setViewHistory(['library', 'critics-picks']);
             console.log(`📦 Restoring last view: critics-picks (Critical Darlings)`);
+          } else if (savedLastView.view === 'new-releases') {
+            // Restore new-releases view - data will be loaded by useEffect when collection is loaded
+            setActiveView('new-releases');
+            setViewHistory(['library', 'new-releases']);
+            console.log(`📦 Restoring last view: new-releases (Fresh Drops)`);
           } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
             // Restore friend history view - need to find the friend and load their data
             setActiveView('friendHistory');
@@ -17793,6 +18007,14 @@ ${trackListXml}
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
+
+      // Save new releases cache
+      if (newReleasesCache.current.releases) {
+        await window.electron.store.set('cache_new_releases', {
+          releases: newReleasesCache.current.releases,
+          timestamp: newReleasesCache.current.timestamp
+        });
+      }
 
       // Save playlists view mode
       await window.electron.store.set('playlists_view_mode', playlistsViewMode);
@@ -17901,8 +18123,11 @@ ${trackListXml}
     } else if (activeView === 'discover' && charts.length > 0) {
       const hash = generateDiscoveryHash(charts);
       markDiscoverySeen('charts', hash);
+    } else if (activeView === 'new-releases' && newReleases.length > 0) {
+      const hash = generateDiscoveryHash(newReleases);
+      markDiscoverySeen('newReleases', hash);
     }
-  }, [activeView, recommendations.artists, criticsPicks, charts, generateDiscoveryHash, markDiscoverySeen]);
+  }, [activeView, recommendations.artists, criticsPicks, charts, newReleases, generateDiscoveryHash, markDiscoverySeen]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -19034,10 +19259,11 @@ ${trackListXml}
     // Query enabled resolvers in priority order (using refs for current values)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     const resolverPromises = enabledResolvers.map(async (resolver) => {
@@ -19130,8 +19356,10 @@ ${trackListXml}
     const now = Date.now();
 
     // Get current active resolvers for filtering
+    // Use refs to avoid stale closure issues (same pattern as resolveTracksInBackground)
     const currentActiveResolvers = activeResolversRef.current;
     const currentResolverOrder = resolverOrderRef.current;
+    const currentResolvers = loadedResolversRef.current;
 
     // Check if track has persisted sources (from collection/playlist storage)
     // Filter to only include sources that are:
@@ -19168,7 +19396,7 @@ ${trackListXml}
     const availableResolverIds = [...new Set([...cachedResolverIds, ...persistedResolverIds])];
     const missingResolvers = cacheValid ? [] : currentActiveResolvers.filter(id =>
       !availableResolverIds.includes(id) &&
-      allResolvers.find(r => r.id === id)?.capabilities?.resolve
+      currentResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
     if (cachedData || hasValidPersistedSources) {
@@ -19234,7 +19462,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -19304,7 +19532,7 @@ ${trackListXml}
 
       // Query only missing resolvers
       const missingResolverInstances = missingResolvers
-        .map(id => allResolvers.find(r => r.id === id))
+        .map(id => currentResolvers.find(r => r.id === id))
         .filter(Boolean);
 
       const resolverPromises = missingResolverInstances.map(async (resolver) => {
@@ -19414,7 +19642,7 @@ ${trackListXml}
     const orderedIds = currentResolverOrder.filter(id => currentActiveResolvers.includes(id));
     const unorderedIds = currentActiveResolvers.filter(id => !orderedIds.includes(id));
     const enabledResolvers = [...orderedIds, ...unorderedIds]
-      .map(id => allResolvers.find(r => r.id === id))
+      .map(id => currentResolvers.find(r => r.id === id))
       .filter(Boolean);
 
     console.log(`  📋 Active resolvers: ${currentActiveResolvers.join(', ')}`);
@@ -21236,9 +21464,11 @@ ${trackListXml}
         : [...prev, resolverId]
     );
 
-    // When enabling, ensure resolver is in resolverOrder so it gets a priority
-    // position and appears in resolver-filtered views (album page, etc.)
-    if (!isCurrentlyActive) {
+    if (isCurrentlyActive) {
+      // Disabling: remove from resolverOrder (only active resolvers get a priority slot)
+      setResolverOrder(prev => prev.filter(id => id !== resolverId));
+    } else {
+      // Enabling: add to resolverOrder in canonical position
       setResolverOrder(prev => {
         if (!prev.includes(resolverId)) {
           return insertInCanonicalOrder(prev, resolverId);
@@ -22621,6 +22851,407 @@ ${tracks}
     }
   };
 
+  // Load New Releases from MusicBrainz for artists in the user's collection and listening history
+  const newReleasesCache = useRef({ releases: null, timestamp: 0 });
+  // Gather artists from all sources (collection, library, listening history)
+  const gatherNewReleasesArtists = async () => {
+    const seen = new Set();
+    const collectionArtists = [];
+    const libraryArtists = [];
+    const historyArtists = [];
+
+    // Source 1: Collection artists
+    if (collectionData.artists?.length > 0) {
+      collectionData.artists.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          collectionArtists.push({ name: a.name, source: 'collection' });
+        }
+      });
+    }
+
+    // Source 2: Artists from collection tracks
+    if (collectionData.tracks?.length > 0) {
+      collectionData.tracks.forEach(t => {
+        if (t.artist) {
+          const key = t.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: t.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 3: Artists from collection albums
+    if (collectionData.albums?.length > 0) {
+      collectionData.albums.forEach(a => {
+        if (a.artist) {
+          const key = a.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: a.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
+    let historyArtistData = topArtists.artists || [];
+    if (historyArtistData.length === 0) {
+      const historyFetches = [];
+
+      const lastfmConfig = metaServiceConfigs.lastfm;
+      const apiKey = getLastfmApiKey();
+      if (lastfmConfig?.username && apiKey) {
+        historyFetches.push((async () => {
+          try {
+            console.log('✨ Fetching Last.fm top artists for New Releases...');
+            const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=12month&limit=50`;
+            const response = await lastfmFetch(url);
+            if (response.ok) {
+              const data = await response.json();
+              return (data.topartists?.artist || []).map(a => ({ name: a.name }));
+            }
+          } catch (e) {
+            console.log('✨ Could not fetch Last.fm top artists:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+      if (listenbrainzConfig?.username) {
+        historyFetches.push((async () => {
+          try {
+            console.log('✨ Fetching ListenBrainz top artists for New Releases...');
+            const response = await fetch(
+              `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=year&count=50`
+            );
+            if (response.ok && response.status !== 204) {
+              const data = await response.json();
+              return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
+            }
+          } catch (e) {
+            console.log('✨ Could not fetch ListenBrainz top artists:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      if (historyFetches.length > 0) {
+        const results = await Promise.all(historyFetches);
+        const mergedNames = new Set();
+        historyArtistData = [];
+        for (const result of results) {
+          for (const a of result) {
+            const key = a.name.trim().toLowerCase();
+            if (!mergedNames.has(key)) {
+              mergedNames.add(key);
+              historyArtistData.push(a);
+            }
+          }
+        }
+      }
+    }
+
+    if (historyArtistData.length > 0) {
+      historyArtistData.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          historyArtists.push({ name: a.name, source: 'history' });
+        }
+      });
+    }
+
+    // Interleave sources so each gets fair representation in the 40-artist limit
+    const maxArtists = 40;
+    const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
+    const artistList = [];
+    let round = 0;
+    while (artistList.length < maxArtists) {
+      let added = false;
+      for (const bucket of buckets) {
+        if (round < bucket.length && artistList.length < maxArtists) {
+          artistList.push(bucket[round]);
+          added = true;
+        }
+      }
+      if (!added) break;
+      round++;
+    }
+
+    console.log(`✨ Found ${collectionArtists.length + libraryArtists.length + historyArtists.length} unique artists (${collectionArtists.length} collection, ${libraryArtists.length} library, ${historyArtists.length} history), checking ${artistList.length}`);
+    return artistList;
+  };
+
+  // Fetch releases from MusicBrainz for a list of artists, filtering by cutoff date
+  const fetchReleasesForArtists = async (artistList, cutoffDate, onProgress) => {
+    const allNewReleases = [];
+    let artistsProcessed = 0;
+
+    for (const artist of artistList) {
+      try {
+        const cacheKey = artist.name.trim().toLowerCase();
+        let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
+
+        if (!mbid) {
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+          );
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            mbid = searchData.artists?.[0]?.id;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1100));
+        }
+
+        if (!mbid) {
+          artistsProcessed++;
+          continue;
+        }
+
+        const releasesResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+        );
+
+        if (releasesResponse.ok) {
+          const releasesData = await releasesResponse.json();
+          const releaseGroups = releasesData['release-groups'] || [];
+
+          releaseGroups.forEach(rg => {
+            const releaseDate = rg['first-release-date'] || '';
+            if (releaseDate && releaseDate >= cutoffDate) {
+              const primaryType = (rg['primary-type'] || '').toLowerCase();
+              const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
+
+              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
+
+              allNewReleases.push({
+                id: rg.id,
+                title: rg.title,
+                artist: artist.name,
+                artistSource: artist.source,
+                date: releaseDate,
+                releaseType: primaryType || 'album',
+                secondaryTypes,
+                disambiguation: rg.disambiguation,
+                albumArt: null
+              });
+            }
+          });
+        }
+
+        artistsProcessed++;
+        if (onProgress && artistsProcessed % 5 === 0 && allNewReleases.length > 0) {
+          onProgress(allNewReleases, artistsProcessed);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      } catch (error) {
+        console.error(`Error checking releases for ${artist.name}:`, error);
+        artistsProcessed++;
+      }
+    }
+
+    return { releases: allNewReleases, artistsProcessed };
+  };
+
+  const loadNewReleases = async (forceRefresh = false) => {
+    if (newReleasesLoading) return;
+
+    // If we already have data in state and aren't force-refreshing, just show it
+    if (!forceRefresh && newReleases.length > 0 && newReleasesLoaded) {
+      console.log(`✨ Using ${newReleases.length} cached new releases from state`);
+      return;
+    }
+
+    // Check ref cache as fallback
+    const now = Date.now();
+    if (!forceRefresh && newReleasesCache.current.releases) {
+      const cacheAge = now - newReleasesCache.current.timestamp;
+      if (cacheAge < CACHE_TTL.newReleases) {
+        const cacheAgeMin = Math.round(cacheAge / 60000);
+        console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
+        setNewReleases(newReleasesCache.current.releases);
+        setNewReleasesLoaded(true);
+        return;
+      }
+      // Stale cache: show it immediately, then continue to refresh in background
+      console.log(`✨ Showing ${newReleasesCache.current.releases.length} stale cached releases while refreshing...`);
+      setNewReleases(newReleasesCache.current.releases);
+      setNewReleasesLoaded(true);
+    }
+
+    // For refresh: if we have existing data, do an incremental update
+    if (forceRefresh && newReleases.length > 0) {
+      console.log('✨ Incremental refresh: checking for new releases...');
+      setNewReleasesLoading(true);
+      setNewReleasesError(null);
+
+      try {
+        const artistList = await gatherNewReleasesArtists();
+        if (artistList.length === 0) {
+          setNewReleasesLoading(false);
+          return;
+        }
+
+        // Use the newest existing release date as the cutoff (only find newer ones)
+        const newestDate = newReleases[0]?.date || '';
+        const { releases: freshReleases, artistsProcessed } = await fetchReleasesForArtists(artistList, newestDate);
+
+        // Filter out releases we already have
+        const existingIds = new Set(newReleases.map(r => r.id));
+        const existingKeys = new Set(newReleases.map(r => `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`));
+        const brandNew = freshReleases.filter(r => {
+          if (existingIds.has(r.id)) return false;
+          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
+          if (existingKeys.has(key)) return false;
+          return true;
+        });
+
+        if (brandNew.length > 0) {
+          console.log(`✨ Found ${brandNew.length} new releases to add`);
+          // Prepend new releases and re-sort
+          const merged = [...brandNew, ...newReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setNewReleases(merged);
+          newReleasesCache.current = { releases: merged, timestamp: Date.now() };
+
+          const hash = generateDiscoveryHash(merged);
+          checkDiscoveryUnread('newReleases', hash);
+
+          // Fetch art only for the new ones
+          fetchNewReleasesAlbumArt(brandNew);
+        } else {
+          console.log(`✨ No new releases found (checked ${artistsProcessed} artists)`);
+          newReleasesCache.current.timestamp = Date.now();
+        }
+      } catch (error) {
+        console.error('Failed to refresh New Releases:', error);
+      } finally {
+        setNewReleasesLoading(false);
+      }
+      return;
+    }
+
+    // Full initial load
+    setNewReleasesLoading(true);
+    setNewReleasesError(null);
+    console.log('✨ Loading New Releases (full fetch)...');
+
+    try {
+      const artistList = await gatherNewReleasesArtists();
+
+      if (artistList.length === 0) {
+        console.log('✨ No artists found in collection or history');
+        setNewReleases([]);
+        setNewReleasesLoaded(true);
+        setNewReleasesLoading(false);
+        return;
+      }
+
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
+
+      const { releases: allNewReleases, artistsProcessed } = await fetchReleasesForArtists(
+        artistList,
+        cutoffDate,
+        (results) => {
+          const sorted = [...results].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setNewReleases(sorted);
+        }
+      );
+
+      // Sort and deduplicate
+      const seenReleases = new Set();
+      const uniqueReleases = allNewReleases
+        .filter(r => {
+          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
+          if (seenReleases.has(key)) return false;
+          seenReleases.add(key);
+          return true;
+        })
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+      console.log(`✨ Found ${uniqueReleases.length} new releases from ${artistsProcessed} artists`);
+
+      setNewReleases(uniqueReleases);
+      setNewReleasesLoaded(true);
+
+      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now() };
+
+      const hash = generateDiscoveryHash(uniqueReleases);
+      checkDiscoveryUnread('newReleases', hash);
+
+      fetchNewReleasesAlbumArt(uniqueReleases);
+
+    } catch (error) {
+      console.error('Failed to load New Releases:', error);
+      setNewReleasesError('Failed to load new releases. Please try again.');
+    } finally {
+      setNewReleasesLoading(false);
+    }
+  };
+
+  // Fetch album art for New Releases in background
+  const fetchNewReleasesAlbumArt = async (releases) => {
+    for (const release of releases) {
+      if (release.albumArt) continue;
+
+      try {
+        // Try Cover Art Archive first (direct release-group ID)
+        const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
+        const coverResponse = await fetch(coverUrl, { method: 'HEAD' });
+
+        if (coverResponse.ok) {
+          setNewReleases(prev => prev.map(r =>
+            r.id === release.id ? { ...r, albumArt: coverUrl } : r
+          ));
+          // Also update cache
+          newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
+            r.id === release.id ? { ...r, albumArt: coverUrl } : r
+          );
+        } else {
+          // Fallback to getAlbumArt helper
+          const artUrl = await getAlbumArt(release.artist, release.title);
+          if (artUrl) {
+            setNewReleases(prev => prev.map(r =>
+              r.id === release.id ? { ...r, albumArt: artUrl } : r
+            ));
+            newReleasesCache.current.releases = newReleasesCache.current.releases?.map(r =>
+              r.id === release.id ? { ...r, albumArt: artUrl } : r
+            );
+          }
+        }
+      } catch (error) {
+        // Silent fail for art fetch
+      }
+      // Rate limit
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  };
+
+  // Handle scroll for New Releases header collapse
+  const handleNewReleasesScroll = (e) => {
+    const scrollTop = e.target.scrollTop;
+    const container = e.target;
+    if (scrollTop > 100 && !newReleasesHeaderCollapsed) {
+      // Only collapse if there's enough scrollable content to sustain it
+      // (header shrinks by 240px, so content must exceed viewport by at least that much)
+      const hasEnoughContent = container.scrollHeight - container.clientHeight > 300;
+      if (hasEnoughContent) {
+        setNewReleasesHeaderCollapsed(true);
+      }
+    } else if (scrollTop <= 50 && newReleasesHeaderCollapsed) {
+      setNewReleasesHeaderCollapsed(false);
+    }
+  };
+
   // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
   const loadRecommendations = async (forceRefresh = false) => {
     // Check if Last.fm or ListenBrainz is configured
@@ -23306,10 +23937,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Load AI recommendations when HOME is active and an AI plugin is enabled
+  // Always refreshes on each visit, but shows cached/previous results until fresh ones arrive
   useEffect(() => {
     const fetchAiRecommendations = async () => {
-      // Only fetch if we're on home, data sharing is on, and we haven't already fetched
-      if (activeView !== 'home' || !cacheLoaded || homeData.aiRecommendations) return;
+      if (activeView !== 'home' || !cacheLoaded) return;
+      if (aiSuggestionsRefreshing.current) return; // Already fetching
 
       const chatServices = getChatServices();
       const hasEnabledChat = chatServices.some(s => {
@@ -23320,12 +23952,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
-      // Mark as loading
-      setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+      aiSuggestionsRefreshing.current = true;
 
+      // Mark as loading but keep existing data visible (cached results stay on screen)
+      setHomeData(prev => ({
+        ...prev,
+        aiRecommendations: {
+          albums: prev.aiRecommendations?.albums || [],
+          artists: prev.aiRecommendations?.artists || [],
+          loading: true
+        }
+      }));
+
+      let refreshStarted = false;
       const onUpdate = ({ artists, newAlbum }) => {
         if (artists) {
-          // Artists arrived — show them immediately and start loading images
+          // Artists arrived — replace cached artists with fresh ones
           setHomeData(prev => ({
             ...prev,
             aiRecommendations: { ...prev.aiRecommendations, artists }
@@ -23340,11 +23982,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           }
         }
         if (newAlbum) {
-          // A single album passed validation — append it and start loading art
-          setHomeData(prev => ({
-            ...prev,
-            aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
-          }));
+          // First fresh album clears the cached albums; subsequent ones append
+          setHomeData(prev => {
+            const albums = refreshStarted
+              ? [...prev.aiRecommendations.albums, newAlbum]
+              : [newAlbum];
+            refreshStarted = true;
+            return {
+              ...prev,
+              aiRecommendations: { ...prev.aiRecommendations, albums }
+            };
+          });
           getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
             if (artUrl) {
               setHomeData(prev => {
@@ -23357,14 +24005,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
 
       const result = await loadAiRecommendations(onUpdate);
+      aiSuggestionsRefreshing.current = false;
       if (result) {
         setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
-      } else {
-        setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+      } else if (!refreshStarted) {
+        // LLM call failed — keep cached data visible if we have any, otherwise clear
+        setHomeData(prev => {
+          const existing = prev.aiRecommendations;
+          if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+            return { ...prev, aiRecommendations: { ...existing, loading: false } };
+          }
+          return { ...prev, aiRecommendations: null };
+        });
       }
     };
     fetchAiRecommendations();
-  }, [activeView, cacheLoaded, metaServices]);
+  }, [activeView, cacheLoaded, metaServices, homeVisitCount]);
 
   // Load charts when navigating to discover page (Pop of the Tops)
   useEffect(() => {
@@ -23381,6 +24037,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       loadCriticsPicks();
     }
   }, [activeView, cacheLoaded, criticsPicksLoaded]);
+
+  // Load new releases when navigating to the new-releases page
+  useEffect(() => {
+    if (activeView === 'new-releases' && cacheLoaded && !newReleasesLoaded && !newReleasesLoading) {
+      loadNewReleases();
+    }
+  }, [activeView, cacheLoaded, newReleasesLoaded, newReleasesLoading]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
@@ -25315,72 +25978,68 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Cache for mapping artist+album -> MusicBrainz release ID (to avoid repeated searches)
   const albumToReleaseIdCache = useRef({});
 
-  // Cache for fast iTunes album art lookups
-  const itunesArtCache = useRef({});
+  // Cache for resolver-based album art lookups
+  const resolverArtCache = useRef({});
 
-  // Fast album art lookup using iTunes Search API (for ChatCards and other quick lookups)
-  // Much faster than MusicBrainz - typically returns in <500ms
-  const getAlbumArtFast = async (artist, album) => {
+  // Search enabled resolvers for album art (used as fallback when MusicBrainz/CAA fails)
+  // Returns the first albumArt URL found from the user's enabled resolvers
+  const getAlbumArtFromResolvers = async (artist, album) => {
     if (!artist || !album) return null;
 
     const cacheKey = `${artist}-${album}`.toLowerCase();
 
-    // Check cache first
-    if (itunesArtCache.current[cacheKey]) {
-      return itunesArtCache.current[cacheKey];
-    }
-
-    // Also check the main albumArtCache
-    const cachedArt = getCachedAlbumArt(artist, album);
-    if (cachedArt) {
-      itunesArtCache.current[cacheKey] = cachedArt;
-      return cachedArt;
+    // Check resolver art cache first
+    if (resolverArtCache.current[cacheKey] !== undefined) {
+      return resolverArtCache.current[cacheKey]; // null = previously failed
     }
 
     try {
-      // Search iTunes for the album
-      const query = `${artist} ${album}`;
-      const response = await window.iTunesRateLimiter.fetch(
-        `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=5`
-      );
+      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true });
+      if (!results || results.length === 0) {
+        resolverArtCache.current[cacheKey] = null;
+        return null;
+      }
 
-      if (!response.ok) return null;
-
-      const data = await response.json();
-      if (!data.results || data.results.length === 0) return null;
-
-      // Find best match - prefer exact album name match
+      // Find best match - prefer exact artist+album match
       const normalizedAlbum = album.toLowerCase();
       const normalizedArtist = artist.toLowerCase();
 
-      const bestMatch = data.results.find(r =>
-        r.collectionName?.toLowerCase() === normalizedAlbum &&
-        r.artistName?.toLowerCase() === normalizedArtist
-      ) || data.results.find(r =>
-        // Also check if artist/album might be swapped (common AI mistake)
-        r.collectionName?.toLowerCase() === normalizedArtist &&
-        r.artistName?.toLowerCase() === normalizedAlbum
-      ) || data.results.find(r =>
-        r.collectionName?.toLowerCase().includes(normalizedAlbum) ||
-        normalizedAlbum.includes(r.collectionName?.toLowerCase())
-      ) || data.results.find(r =>
-        // Check partial match with swapped values too
-        r.collectionName?.toLowerCase().includes(normalizedArtist) ||
-        normalizedArtist.includes(r.collectionName?.toLowerCase())
-      ) || data.results[0];
+      const bestMatch = results.find(r =>
+        r.albumArt &&
+        r.artist?.toLowerCase() === normalizedArtist &&
+        r.album?.toLowerCase() === normalizedAlbum
+      ) || results.find(r =>
+        r.albumArt &&
+        r.artist?.toLowerCase() === normalizedArtist
+      ) || results.find(r => r.albumArt);
 
-      if (bestMatch?.artworkUrl100) {
-        // Scale up artwork URL (iTunes supports various sizes)
-        const artUrl = bestMatch.artworkUrl100.replace('100x100', '500x500');
-        itunesArtCache.current[cacheKey] = artUrl;
-        return artUrl;
+      if (bestMatch?.albumArt) {
+        resolverArtCache.current[cacheKey] = bestMatch.albumArt;
+        // Also store in shared albumArtCache for cross-lookup
+        const artCacheEntry = { url: bestMatch.albumArt, timestamp: Date.now() };
+        const artLookupKey = `resolver:${cacheKey}`;
+        albumArtCache.current[artLookupKey] = artCacheEntry;
+        return bestMatch.albumArt;
       }
 
+      resolverArtCache.current[cacheKey] = null;
       return null;
     } catch (err) {
-      console.error('Fast album art lookup failed:', err);
+      console.error('Resolver album art lookup failed:', err);
       return null;
     }
+  };
+
+  // Fast album art lookup using enabled resolvers (for ChatCards and other quick lookups)
+  const getAlbumArtFast = async (artist, album) => {
+    if (!artist || !album) return null;
+
+    // Check the main albumArtCache first
+    const cachedArt = getCachedAlbumArt(artist, album);
+    if (cachedArt) return cachedArt;
+
+    // Search enabled resolvers
+    return getAlbumArtFromResolvers(artist, album);
   };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
@@ -25392,7 +26051,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Check if we've already looked up this artist+album combo
     if (albumToReleaseIdCache.current[lookupKey] !== undefined) {
       const cached = albumToReleaseIdCache.current[lookupKey];
-      if (cached === null) return null; // Previously failed lookup
+      if (cached === null) return getAlbumArtFromResolvers(artist, album); // MusicBrainz failed, try resolvers
 
       // Support both old format (string) and new format ({ releaseId, releaseGroupId })
       const releaseId = typeof cached === 'string' ? cached : cached.releaseId;
@@ -25442,7 +26101,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
         }
       }
-      return null; // No art available for this release
+      return getAlbumArtFromResolvers(artist, album); // CAA failed, try resolvers
     }
 
     try {
@@ -25451,7 +26110,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (releases.length === 0) {
         albumToReleaseIdCache.current[lookupKey] = null;
-        return null;
+        return getAlbumArtFromResolvers(artist, album);
       }
 
       const releaseId = releases[0].id;
@@ -25503,11 +26162,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return artUrl;
       }
 
-      return null;
+      return getAlbumArtFromResolvers(artist, album);
     } catch (error) {
       console.log(`Cover art not found for: ${artist} - ${album}`);
       albumToReleaseIdCache.current[lookupKey] = null;
-      return null;
+      return getAlbumArtFromResolvers(artist, album);
     }
   };
 
@@ -26998,6 +27657,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Navigation helpers
   const navigateTo = (view) => {
+    if (view === 'home') {
+      setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
+    }
     if (view !== activeView) {
       // Clear search state when leaving search view
       if (activeView === 'search') {
@@ -29072,6 +29734,29 @@ useEffect(() => {
               }
             }, 'Discover'),
             React.createElement('button', {
+              onClick: () => {
+                navigateTo('new-releases');
+                loadNewReleases();
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                color: activeView === 'new-releases' ? '#10b981' : '#4b5563',
+                fontWeight: activeView === 'new-releases' ? '500' : '400'
+              }
+            },
+              // Sparkle icon for New Releases
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                'Fresh Drops',
+                showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse'
+                })
+              )
+            ),
+            React.createElement('button', {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
@@ -29137,7 +29822,7 @@ useEffect(() => {
                   className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
                 })
               )
-            )
+            ),
           ),
 
           // FRIENDS section (always visible so new users can discover and add friends)
@@ -32353,7 +33038,27 @@ useEffect(() => {
                 });
                 setSelectedPlaylistsForAdd([]);
               }
-            }
+            },
+            onAlbumContextMenu: (rel) => {
+              if (window.electron?.contextMenu?.showTrackMenu) {
+                window.electron.contextMenu.showTrackMenu({
+                  type: 'release',
+                  name: rel.title,
+                  artist: rel.artist?.name,
+                  albumArt: rel.albumArt,
+                  album: {
+                    title: rel.title,
+                    artist: rel.artist?.name,
+                    art: rel.albumArt
+                  },
+                  tracks: rel.tracks || []
+                });
+              }
+            },
+            shareDropdownOpen: shareDropdownOpen,
+            setShareDropdownOpen: setShareDropdownOpen,
+            publishCollectionSmartLink: publishCollectionSmartLink,
+            copyCollectionEmbedCode: copyCollectionEmbedCode
           })
         ),
         
@@ -34015,6 +34720,18 @@ useEffect(() => {
                     backgroundColor: '#ffffff',
                     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                     width: '212px'
+                  },
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'playlist',
+                        playlistId: selectedPlaylist.id,
+                        name: selectedPlaylist.title,
+                        creator: selectedPlaylist.creator || null,
+                        tracks: playlistTracks || []
+                      });
+                    }
                   }
                 },
                   // Album art mosaic with hover overlay
@@ -34274,6 +34991,76 @@ useEffect(() => {
                   },
                   className: 'mt-2 flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:text-red-700 border border-red-300 rounded hover:bg-red-50 transition-colors no-drag w-full justify-center'
                 }, 'Delete Playlist')
+              ),
+              // Share button (outside space-y-1 metadata div for independent spacing)
+              React.createElement('div', { className: 'relative mt-3 flex justify-center' },
+                React.createElement('button', {
+                  onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
+                  className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
+                  ),
+                  'Share'
+                ),
+                shareDropdownOpen === 'playlist' && React.createElement('div', {
+                  className: 'absolute left-1/2 -translate-x-1/2 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
+                  style: { backgroundColor: '#1f2937', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
+                  onClick: (e) => e.stopPropagation()
+                },
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      const collectionData = {
+                        title: selectedPlaylist.title,
+                        artist: null,
+                        creator: selectedPlaylist.creator || null,
+                        albumArt: playlistCoverArt?.[0] || null,
+                        type: 'playlist',
+                        tracks: (playlistTracks || []).map((t, i) => ({
+                          title: t.title || 'Unknown',
+                          artist: t.artist || null,
+                          duration: t.duration || null,
+                          trackNumber: t.trackNumber || (i + 1)
+                        }))
+                      };
+                      publishCollectionSmartLink(collectionData);
+                    },
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
+                    ),
+                    'Copy Link'
+                  ),
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      const collectionData = {
+                        title: selectedPlaylist.title,
+                        artist: null,
+                        creator: selectedPlaylist.creator || null,
+                        albumArt: playlistCoverArt?.[0] || null,
+                        type: 'playlist',
+                        tracks: (playlistTracks || []).map((t, i) => ({
+                          title: t.title || 'Unknown',
+                          artist: t.artist || null,
+                          duration: t.duration || null,
+                          trackNumber: t.trackNumber || (i + 1)
+                        }))
+                      };
+                      copyCollectionEmbedCode(collectionData);
+                    },
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
+                    ),
+                    'Copy Embed Code'
+                  )
+                )
               )
             ),
 
@@ -34895,6 +35682,7 @@ useEffect(() => {
                           type: 'playlist',
                           playlistId: playlist.id,
                           name: playlist.title,
+                          creator: playlist.creator || null,
                           tracks: tracksWithIds
                         });
                       }
@@ -35177,6 +35965,7 @@ useEffect(() => {
                         type: 'playlist',
                         playlistId: playlist.id,
                         name: playlist.title,
+                        creator: playlist.creator || null,
                         tracks: tracksWithIds
                       });
                     }
@@ -35313,7 +36102,7 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['home', 'library', 'discover', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
@@ -35726,7 +36515,18 @@ useEffect(() => {
                           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                           animationDelay: `${index * 50}ms`
                         },
-                        onClick: () => handleCollectionAlbumClick(album)
+                        onClick: () => handleCollectionAlbumClick(album),
+                        onContextMenu: (e) => {
+                          e.preventDefault();
+                          const albumTracks = collectionData.tracks
+                            .filter(t => t.artist === album.artist && t.album === album.title)
+                            .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                          window.electron?.contextMenu?.showTrackMenu({
+                            type: 'collection-album',
+                            album: album,
+                            tracks: albumTracks
+                          });
+                        }
                       },
                         React.createElement('div', {
                           className: 'album-art-container aspect-square rounded-md overflow-hidden mb-2',
@@ -35878,6 +36678,18 @@ useEffect(() => {
                               creator: 'ListenBrainz'
                             };
                             loadPlaylist(playlist);
+                          },
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              window.electron.contextMenu.showTrackMenu({
+                                type: 'playlist',
+                                playlistId: `listenbrainz-${jam.id}`,
+                                name: jam.title,
+                                creator: 'ListenBrainz',
+                                tracks: jam.tracks || []
+                              });
+                            }
                           }
                         },
                           React.createElement('div', {
@@ -35997,6 +36809,18 @@ useEffect(() => {
                             },
                             onClick: () => {
                               loadPlaylist(playlist);
+                            },
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              if (window.electron?.contextMenu?.showTrackMenu) {
+                                window.electron.contextMenu.showTrackMenu({
+                                  type: 'playlist',
+                                  playlistId: playlist.id,
+                                  name: playlist.title,
+                                  creator: playlist.creator || null,
+                                  tracks: playlist.tracks || []
+                                });
+                              }
                             }
                           },
                             // 2x2 album art grid or placeholder with hover play button
@@ -36167,7 +36991,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'mb-4' },
                   React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Discover')
                 ),
-                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
+                React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4' },
                   // 1. For You / Recommendations card (indigo->purple->pink)
                   React.createElement('div', {
                     className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
@@ -36338,6 +37162,64 @@ useEffect(() => {
                     ),
                     // Padding when no preview
                     charts.length === 0 && React.createElement('div', { className: 'flex-1' })
+                  ),
+
+                  // 4. Fresh Drops / New Releases card (emerald->teal->cyan)
+                  React.createElement('div', {
+                    className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
+                    style: {
+                      background: 'linear-gradient(135deg, #10b981 0%, #14b8a6 50%, #06b6d4 100%)',
+                      animationDelay: '150ms'
+                    }
+                  },
+                    // Header section - clickable to new-releases page
+                    React.createElement('button', {
+                      className: 'w-full block p-5 pb-4 text-left hover:bg-white/10 transition-colors',
+                      onClick: () => { navigateTo('new-releases'); loadNewReleases(); }
+                    },
+                      React.createElement('svg', { className: 'w-8 h-8 mb-3 opacity-90', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+                      ),
+                      React.createElement('h3', { className: 'font-semibold text-lg flex items-center gap-2' },
+                        'Fresh Drops',
+                        showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
+                          className: 'w-2.5 h-2.5 rounded-full bg-white animate-pulse'
+                        })
+                      ),
+                      React.createElement('p', { className: 'text-white/70 text-sm mt-1' }, 'New from artists you love')
+                    ),
+                    // Newest release preview
+                    newReleases.length > 0 && React.createElement('button', {
+                      className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt });
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'w-12 h-12 rounded-lg overflow-hidden flex-shrink-0',
+                        style: { background: 'linear-gradient(135deg, #1f1f1f 0%, #2d2d2d 100%)' }
+                      },
+                        newReleases[0].albumArt
+                          ? React.createElement('img', {
+                              src: newReleases[0].albumArt,
+                              alt: newReleases[0].title,
+                              className: 'w-full h-full object-cover'
+                            })
+                          : React.createElement('div', { className: 'w-full h-full flex items-center justify-center text-white/40' },
+                              React.createElement('svg', { className: 'w-5 h-5', fill: 'currentColor', viewBox: '0 0 24 24' },
+                                React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                              )
+                            )
+                      ),
+                      React.createElement('div', { className: 'flex-1 min-w-0' },
+                        React.createElement('p', { className: 'text-white/60 text-xs' }, 'Latest'),
+                        React.createElement('p', { className: 'text-white font-medium truncate' }, newReleases[0].title),
+                        React.createElement('p', { className: 'text-white/70 text-xs truncate' }, newReleases[0].artist)
+                      )
+                    ),
+                    // Padding when no preview
+                    newReleases.length === 0 && React.createElement('div', { className: 'flex-1' })
                   )
                 )
               ),
@@ -36368,7 +37250,9 @@ useEffect(() => {
                         React.createElement('button', {
                           className: 'ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors',
                           onClick: async () => {
-                            setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+                            // Keep existing data visible, just mark as loading
+                            setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: true } }));
+                            let refreshStarted = false;
                             const onUpdate = ({ artists, newAlbum }) => {
                               if (artists) {
                                 setHomeData(prev => ({
@@ -36385,10 +37269,17 @@ useEffect(() => {
                                 }
                               }
                               if (newAlbum) {
-                                setHomeData(prev => ({
-                                  ...prev,
-                                  aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
-                                }));
+                                setHomeData(prev => {
+                                  // On first new album, clear old albums and start fresh
+                                  const albums = refreshStarted
+                                    ? [...prev.aiRecommendations.albums, newAlbum]
+                                    : [newAlbum];
+                                  refreshStarted = true;
+                                  return {
+                                    ...prev,
+                                    aiRecommendations: { ...prev.aiRecommendations, albums }
+                                  };
+                                });
                                 getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
                                   if (artUrl) {
                                     setHomeData(prev => {
@@ -36403,7 +37294,14 @@ useEffect(() => {
                             if (result) {
                               setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
                             } else {
-                              setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+                              // Keep cached data visible on failure
+                              setHomeData(prev => {
+                                const existing = prev.aiRecommendations;
+                                if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+                                  return { ...prev, aiRecommendations: { ...existing, loading: false } };
+                                }
+                                return { ...prev, aiRecommendations: null };
+                              });
                             }
                           }
                         }, 'Refresh')
@@ -38883,46 +39781,493 @@ useEffect(() => {
           )
         ),
 
-        // New Releases view with hero
+        // New Releases (Fresh Drops) view with collapsible hero header
         activeView === 'new-releases' && React.createElement('div', {
-          className: 'h-full overflow-y-auto scrollable-content'
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
         },
-          // Hero section
+          // Header section (outside scrollable area)
           React.createElement('div', {
-            className: 'relative h-64 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 overflow-hidden'
+            className: 'relative',
+            style: {
+              height: newReleasesHeaderCollapsed ? '80px' : '320px',
+              flexShrink: 0,
+              transition: 'height 300ms ease-out',
+              overflow: 'hidden'
+            }
           },
-            // Background pattern - sparkles
-            React.createElement('div', {
-              className: 'absolute inset-0 opacity-30',
-              style: {
-                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
-              }
-            }),
-            // Hero content
-            React.createElement('div', {
-              className: 'absolute inset-0 flex items-end p-8'
-            },
-              React.createElement('div', null,
+              // Gradient background
+              React.createElement('div', {
+                className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'
+              }),
+              // Background pattern - sparkles
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  opacity: 0.2,
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'25\' cy=\'25\' r=\'2\'/%3E%3Ccircle cx=\'75\' cy=\'25\' r=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'2.5\'/%3E%3Ccircle cx=\'25\' cy=\'75\' r=\'1.5\'/%3E%3Ccircle cx=\'75\' cy=\'75\' r=\'2\'/%3E%3Ccircle cx=\'10\' cy=\'50\' r=\'1\'/%3E%3Ccircle cx=\'90\' cy=\'50\' r=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
+                }
+              }),
+              // EXPANDED STATE - Centered content
+              !newReleasesHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+                style: {
+                  opacity: newReleasesHeaderCollapsed ? 0 : 1,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-5xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.3em',
+                    textTransform: 'uppercase'
+                  }
+                }, 'FRESH DROPS'),
                 React.createElement('div', {
-                  className: 'inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 text-sm mb-3'
+                  className: 'flex items-center gap-1 mt-6',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
                 },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
-                  ),
-                  'Fresh Music'
+                  React.createElement('span', {
+                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                  }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
                 ),
-                React.createElement('h1', { className: 'text-4xl font-light text-white mb-2', style: { letterSpacing: '0.2em', textTransform: 'uppercase' } }, 'NEW RELEASES'),
-                React.createElement('p', { className: 'text-white/80 text-lg' }, 'The latest albums and singles, just dropped')
+                React.createElement('p', {
+                  className: 'mt-2 text-white/80 text-sm'
+                }, 'New music from artists in your collection and listening history')
+              ),
+              // COLLAPSED STATE - Inline layout
+              newReleasesHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex items-center px-6 z-10',
+                style: {
+                  opacity: newReleasesHeaderCollapsed ? 1 : 0,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-2xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase'
+                  }
+                }, 'FRESH DROPS'),
+                React.createElement('div', { className: 'flex-1' }),
+                React.createElement('span', {
+                  className: 'text-sm font-medium uppercase tracking-wider text-white/80'
+                }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
               )
+          ),
+          // Filter bar (outside scrollable area)
+          React.createElement('div', {
+            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            style: { flexShrink: 0 }
+          },
+            // Type filter dropdown
+            React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setNewReleasesFilterDropdownOpen(!newReleasesFilterDropdownOpen); },
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              },
+                React.createElement('span', null,
+                  newReleasesFilter === 'all' ? 'All Types' :
+                  newReleasesFilter === 'album' ? 'Albums' :
+                  newReleasesFilter === 'ep' ? 'EPs' : 'Singles'
+                ),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              newReleasesFilterDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[140px] z-30 border border-gray-200'
+              },
+                [{ value: 'all', label: 'All Types' }, { value: 'album', label: 'Albums' }, { value: 'ep', label: 'EPs' }, { value: 'single', label: 'Singles' }].map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setNewReleasesFilter(option.value);
+                      setNewReleasesFilterDropdownOpen(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      newReleasesFilter === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    newReleasesFilter === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+            // Refresh button
+            React.createElement('button', {
+              onClick: () => loadNewReleases(true),
+              disabled: newReleasesLoading,
+              className: 'ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors',
+              title: 'Refresh'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+              )
+            ),
+            React.createElement('div', { className: 'flex-1' }),
+            // Search
+            React.createElement('div', { className: 'flex items-center' },
+              newReleasesSearchOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: newReleasesSearch,
+                    onChange: (e) => setNewReleasesSearch(e.target.value),
+                    onBlur: () => { if (!newReleasesSearch.trim()) setNewReleasesSearchOpen(false); },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '150px' }
+                  }),
+                  newReleasesSearch && React.createElement('button', {
+                    onClick: () => { setNewReleasesSearch(''); setNewReleasesSearchOpen(false); },
+                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setNewReleasesSearchOpen(true),
+                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
             )
           ),
-          // Placeholder content
-          React.createElement('div', { className: 'p-6' },
-            React.createElement('div', { className: 'text-center py-12 text-gray-400' },
-              React.createElement('div', { className: 'text-5xl mb-4' }, '✨'),
-              React.createElement('div', { className: 'text-lg font-medium text-gray-600 mb-2' }, 'New Releases Coming Soon'),
-              React.createElement('div', { className: 'text-sm' }, 'Stay tuned for the freshest music')
-            )
+          // Content area (scrollable)
+          React.createElement('div', {
+            className: 'scrollable-content',
+            style: {
+              flex: 1,
+              overflowY: 'scroll',
+              pointerEvents: 'auto',
+              padding: '24px'
+            },
+            onScroll: handleNewReleasesScroll
+          },
+            // Error state
+            newReleasesError && !newReleasesLoading && React.createElement('div', {
+              className: 'text-center py-12'
+            },
+              React.createElement('svg', { className: 'w-12 h-12 mx-auto mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z' })
+              ),
+              React.createElement('div', { className: 'text-gray-400 mb-4' }, newReleasesError),
+              React.createElement('button', {
+                onClick: () => { setNewReleasesError(null); setNewReleasesLoaded(false); loadNewReleases(true); },
+                className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+              }, 'Retry')
+            ),
+
+            // Skeleton loading state
+            !newReleasesError && newReleasesLoading && newReleases.length === 0 && React.createElement('div', {
+              className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+            },
+              Array.from({ length: 12 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `skeleton-${i}`,
+                  style: {
+                    backgroundColor: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '10px',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)'
+                  }
+                },
+                  React.createElement('div', {
+                    className: 'animate-shimmer',
+                    style: { aspectRatio: '1', borderRadius: '6px', marginBottom: '10px', background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-4 rounded animate-shimmer',
+                    style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', backgroundSize: '200% 100%', width: '80%', marginBottom: '6px', animationDelay: `${i * 50 + 25}ms` }
+                  }),
+                  React.createElement('div', {
+                    className: 'h-3 rounded animate-shimmer',
+                    style: { background: 'linear-gradient(to right, #f3f4f6, #e5e7eb, #f3f4f6)', backgroundSize: '200% 100%', width: '60%', animationDelay: `${i * 50 + 50}ms` }
+                  })
+                )
+              )
+            ),
+
+            // Empty state (no artists in collection)
+            !newReleasesError && !newReleasesLoading && newReleasesLoaded && newReleases.length === 0 && React.createElement('div', {
+              className: 'text-center py-16'
+            },
+              React.createElement('svg', { className: 'w-16 h-16 mx-auto mb-4 text-gray-200', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              React.createElement('div', { className: 'text-gray-500 font-medium mb-2' }, 'No new releases found'),
+              React.createElement('div', { className: 'text-gray-400 text-sm max-w-md mx-auto' },
+                collectionData.artists?.length === 0 && collectionData.tracks?.length === 0
+                  ? 'Add artists to your collection or listen to some music to see new releases from artists you like.'
+                  : 'None of your artists have released new music in the last 6 months. Check back later!'
+              )
+            ),
+
+            // Release grid
+            !newReleasesError && newReleases.length > 0 && (() => {
+              // Filter releases
+              let filtered = newReleases;
+              if (newReleasesFilter !== 'all') {
+                filtered = filtered.filter(r => r.releaseType === newReleasesFilter);
+              }
+              if (newReleasesSearch.trim()) {
+                const q = newReleasesSearch.toLowerCase();
+                filtered = filtered.filter(r =>
+                  r.title.toLowerCase().includes(q) ||
+                  r.artist.toLowerCase().includes(q)
+                );
+              }
+
+              if (filtered.length === 0 && (newReleasesFilter !== 'all' || newReleasesSearch.trim())) {
+                return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
+                  React.createElement('div', { className: 'text-sm' }, 'No releases match your filters')
+                );
+              }
+
+              return React.createElement('div', null,
+                // Grid
+                React.createElement('div', {
+                  className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
+                },
+                  filtered.map((release, index) =>
+                    React.createElement('div', {
+                      key: release.id,
+                      className: 'group text-left release-card card-fade-up',
+                      style: {
+                        padding: '10px',
+                        borderRadius: '10px',
+                        backgroundColor: '#ffffff',
+                        border: 'none',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
+                        animationDelay: `${Math.min(index, 20) * 30}ms`,
+                        cursor: 'pointer'
+                      },
+                      onMouseEnter: () => prefetchChartsTracks(release),
+                      onClick: () => openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt }),
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          const prefetched = prefetchedReleases[release.id];
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'release',
+                            name: release.title,
+                            album: {
+                              title: release.title,
+                              artist: release.artist,
+                              art: release.albumArt || null
+                            },
+                            tracks: prefetched?.tracks || []
+                          });
+                        }
+                      }
+                    },
+                      React.createElement('div', {
+                        className: 'album-art-container group/art',
+                        style: {
+                          width: '100%',
+                          aspectRatio: '1',
+                          borderRadius: '6px',
+                          marginBottom: '10px',
+                          overflow: 'hidden',
+                          position: 'relative',
+                          background: release.albumArt
+                            ? '#f3f4f6'
+                            : 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
+                        }
+                      },
+                        // Show image when art exists
+                        release.albumArt && React.createElement('img', {
+                          src: release.albumArt,
+                          alt: release.title,
+                          className: 'group-hover/art:scale-105',
+                          style: {
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            transition: 'opacity 0.35s ease-out, transform 0.3s ease'
+                          },
+                          loading: 'lazy',
+                          ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
+                          onLoad: (e) => { e.target.style.opacity = '1'; },
+                          onError: (e) => { e.target.style.display = 'none'; }
+                        }),
+                        // Placeholder icon when no art
+                        !release.albumArt && React.createElement('div', {
+                          style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                        },
+                          React.createElement('svg', {
+                            style: { width: '36px', height: '36px', color: 'rgba(255, 255, 255, 0.2)' },
+                            fill: 'none',
+                            viewBox: '0 0 24 24',
+                            stroke: 'currentColor'
+                          },
+                            React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                          )
+                        ),
+                        // Release type badge
+                        React.createElement('div', {
+                          style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }
+                        },
+                          React.createElement('span', {
+                            className: 'release-badge',
+                            style: {
+                              backgroundColor: release.releaseType === 'album' ? 'rgba(99, 102, 241, 0.9)' :
+                                             release.releaseType === 'ep' ? 'rgba(168, 85, 247, 0.9)' :
+                                             'rgba(236, 72, 153, 0.9)',
+                              color: 'white'
+                            }
+                          }, release.releaseType === 'ep' ? 'EP' : release.releaseType.charAt(0).toUpperCase() + release.releaseType.slice(1))
+                        ),
+                        // Hover overlay with action buttons
+                        React.createElement('div', {
+                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                          style: { borderRadius: '6px', zIndex: 20 }
+                        },
+                          // Add to Playlist button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              let tracks = prefetchedReleases[release.id]?.tracks;
+                              if (!tracks?.length) {
+                                showToast(`Loading ${release.title} tracks...`, 'info');
+                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
+                              }
+                              if (tracks?.length > 0) {
+                                setAddToPlaylistPanel({
+                                  open: true,
+                                  tracks: tracks,
+                                  sourceName: `${release.title} by ${release.artist}`,
+                                  sourceType: 'album'
+                                });
+                              } else {
+                                showToast('Could not load album tracks', 'error');
+                              }
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add to Playlist'
+                          },
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                            )
+                          ),
+                          // Play album button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              let tracks = prefetchedReleases[release.id]?.tracks;
+                              if (!tracks?.length) {
+                                showToast(`Loading ${release.title}...`, 'info');
+                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
+                              }
+                              if (tracks?.length > 0) {
+                                playTrackCollection(tracks, { type: 'album', name: release.title, artist: release.artist });
+                              } else {
+                                showToast('Could not load album tracks', 'error');
+                              }
+                            },
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            style: { border: 'none', cursor: 'pointer' },
+                            title: 'Play album'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          ),
+                          // Add to queue button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              let tracks = prefetchedReleases[release.id]?.tracks;
+                              if (!tracks?.length) {
+                                showToast(`Loading ${release.title} tracks...`, 'info');
+                                tracks = await fetchAlbumTracksFromMusicBrainz(release.artist, release.title, release.albumArt);
+                              }
+                              if (tracks?.length > 0) {
+                                addToQueue(tracks, { type: 'album', name: release.title, artist: release.artist });
+                                showToast(`Added ${tracks.length} tracks from ${release.title}`, 'success');
+                              } else {
+                                showToast('Could not load album tracks', 'error');
+                              }
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add album to queue'
+                          },
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                            )
+                          )
+                        )
+                      ),
+                      // Album title + artist with reason tooltip
+                      React.createElement(FixedTooltip, {
+                        content: release.artistSource === 'collection' ? `${release.artist} is in your collection`
+                          : release.artistSource === 'history' ? `Based on your listening history of ${release.artist}`
+                          : `${release.artist} is in your library`
+                      },
+                        React.createElement('div', null,
+                          React.createElement('h3', {
+                            style: {
+                              fontWeight: '500',
+                              fontSize: '13px',
+                              color: '#1f2937',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              marginBottom: '2px'
+                            }
+                          }, release.title),
+                          React.createElement('p', {
+                            style: {
+                              fontSize: '12px',
+                              color: '#6b7280',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                              transition: 'color 0.2s ease'
+                            },
+                            className: 'hover:text-purple-600',
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              fetchArtistData(release.artist);
+                            }
+                          }, release.artist),
+                          release.date && React.createElement('p', {
+                            style: { fontSize: '11px', color: '#9ca3af', marginTop: '2px' }
+                          }, (() => {
+                            const d = new Date(release.date + 'T00:00:00');
+                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                          })())
+                        )
+                      )
+                    )
+                  )
+                )
+              );
+            })()
           )
         ),
 
@@ -42074,20 +43419,13 @@ useEffect(() => {
                     // resolvers in resolverOrder but not in allResolvers still appear from marketplace
                     const addedIds = new Set(unifiedResolvers.map(r => r.id));
 
-                    // Helper: resolve priority from resolverOrder position even for
-                    // resolvers that weren't in the first section (e.g. still loading)
-                    const getPriorityFromOrder = (id) => {
-                      const idx = resolverOrder.indexOf(id);
-                      return idx !== -1 ? idx + 1 : null;
-                    };
-
-                    // Loaded but not in resolverOrder yet
+                    // Loaded but not active (no priority number - only active resolvers have priority)
                     allResolvers.forEach(resolver => {
                       if (resolver.capabilities?.resolve && !addedIds.has(resolver.id)) {
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: getPriorityFromOrder(resolver.id),
+                          priorityNumber: null,
                           marketplaceData: marketplaceResolver,
                           hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
                         });
@@ -42100,7 +43438,7 @@ useEffect(() => {
                       if (!addedIds.has(resolver.id)) {
                         unifiedResolvers.push({
                           ...resolver,
-                          priorityNumber: getPriorityFromOrder(resolver.id),
+                          priorityNumber: null,
                           marketplaceData: resolver,
                           hasUpdate: false
                         });
@@ -43491,7 +44829,7 @@ useEffect(() => {
           currentTrack && !trackLoading ? [
             React.createElement(Tooltip, {
               key: 'album-art-tooltip',
-              content: currentTrack.album ? `Click to open "${currentTrack.album}"` : 'Drag to add to playlist',
+              content: currentTrack.album ? `View "${currentTrack.album}" · Drag to add to playlist` : 'Drag to add to playlist',
               position: 'top',
               variant: 'dark'
             },
@@ -43549,10 +44887,13 @@ useEffect(() => {
                           // Prefer albums over singles/EPs - find first album type, fall back to first result
                           const album = results.find(r => r['primary-type'] === 'Album') || results[0];
                           handleAlbumClick(album);
+                        } else {
+                          showToast(`Album "${currentTrack.album}" not found`);
                         }
                       }
                     }).catch(error => {
                       console.error('Error searching for album:', error);
+                      showToast('Failed to load album');
                     });
                   }
                 },
@@ -51553,7 +52894,11 @@ useEffect(() => {
           if (playbackContext.type === 'playlist' && playbackContext.id) {
             const playlist = playlists.find(p => p.id === playbackContext.id);
             if (playlist) {
-              loadPlaylist(playlist); // loadPlaylist has its own "already viewing" check
+              if (activeView === 'playlist-view' && selectedPlaylist?.id === playlist.id) {
+                // Already viewing this playlist - just close the drawer
+              } else {
+                loadPlaylist(playlist);
+              }
             }
           } else if (playbackContext.type === 'album' && playbackContext.artist) {
             // handleCollectionAlbumClick has its own "already viewing" check

@@ -985,7 +985,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'play':
       if (mainWindow) {
-        safeSendToRenderer('embed-play', { track: payload?.track });
+        safeSendToRenderer('embed-play', { track: payload?.track, queue: payload?.queue });
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
@@ -3694,6 +3694,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       const collectionData = {
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
+        creator: data.creator || null,
         albumArt: collectionArt,
         type: isPlaylist ? 'playlist' : 'album',
         tracks: (data.tracks || []).map((t, i) => ({

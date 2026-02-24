@@ -31,6 +31,33 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+// Generate XSPF playlist XML from smart link data
+export function generateXspf(data) {
+  const escapeXml = (str) => {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  };
+
+  const tracks = (data.tracks || []).map(t => `    <track>
+      <title>${escapeXml(t.title)}</title>
+      <creator>${escapeXml(t.artist || data.artist || '')}</creator>
+      <album>${escapeXml(data.title || '')}</album>
+      <duration>${Math.round((t.duration || 0) * 1000)}</duration>
+    </track>`).join('\n');
+
+  const date = data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>${escapeXml(data.title)}</title>
+  <creator>${escapeXml(data.creator || data.artist || 'Parachord')}</creator>
+  <date>${date}</date>
+  <trackList>
+${tracks}
+  </trackList>
+</playlist>`;
+}
+
 // Format duration in seconds to M:SS
 function formatDuration(seconds) {
   if (!seconds) return '';
@@ -59,7 +86,12 @@ function generateTracklistHtml(tracks) {
     const artistHtml = track.artist ? `<span class="track-row-artist">${escapeHtml(track.artist)}</span>` : '';
     return `
       <div class="track-row">
-        <span class="track-num">${num}</span>
+        <div class="track-num-container">
+          <span class="track-num">${num}</span>
+          <button class="track-play-btn" onclick="playTrackInParachord(${i})" title="Play in Parachord">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
         <div class="track-row-info">
           <span class="track-row-title">${escapeHtml(track.title)}</span>
           ${artistHtml}
@@ -71,19 +103,19 @@ function generateTracklistHtml(tracks) {
 }
 
 export function generateLinkPageHtml(data, linkId, baseUrl) {
-  const { title, artist, albumArt, type, urls, tracks } = data;
+  const { title, artist, albumArt, type, urls, tracks, creator } = data;
+  const isPlaylist = type === 'playlist';
   const fullTitle = `${escapeHtml(title)}${artist ? ' - ' + escapeHtml(artist) : ''}`;
   const linkUrl = `${baseUrl}/${linkId}`;
   const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
-  const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
-  const ogType = type === 'album' ? 'music.album' : (type === 'playlist' ? 'music.playlist' : 'music.song');
+  const typeLabel = isPlaylist ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
+  const ogType = type === 'album' ? 'music.album' : (isPlaylist ? 'music.playlist' : 'music.song');
 
-  // Service links (top-level album/playlist URLs, or track URLs for single tracks)
-  const serviceLinksHtml = urls ? SERVICES.map(s => {
+  // Service links - icon row for albums, full buttons for single tracks, none for playlists
+  const serviceLinksHtml = (!isPlaylist && urls) ? SERVICES.map(s => {
     const url = urls[s.id];
     if (!url) return '';
     if (isCollection) {
-      // Album/playlist: compact icon row linking to album pages
       return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-icon-link" style="--service-color: ${s.color}" title="${s.name}">${SERVICE_ICONS[s.id]}</a>`;
     }
     return `
@@ -92,6 +124,9 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         <span class="service-name">${s.name}</span>
       </a>`;
   }).filter(Boolean).join('\n') : '';
+
+  // For playlists, collect unique album art URLs for a 2x2 mosaic
+  const playlistCovers = isPlaylist && tracks ? [...new Set(tracks.map(t => t.albumArt).filter(Boolean))].slice(0, 4) : [];
 
   // Tracklist for albums/playlists
   const tracklistHtml = isCollection ? generateTracklistHtml(tracks) : '';
@@ -159,6 +194,22 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       justify-content: center;
       font-size: 48px;
       color: var(--text-secondary);
+    }
+    .playlist-mosaic {
+      width: 200px;
+      height: 200px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .playlist-mosaic img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     h1 {
       font-size: 1.5rem;
@@ -246,6 +297,41 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     .service-name {
       font-weight: 500;
     }
+    /* Icon row for album/playlist service links */
+    .services-row {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .service-icon-link {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .service-icon-link:hover {
+      border-color: var(--service-color);
+      background: color-mix(in srgb, var(--service-color) 15%, var(--bg-secondary));
+      transform: translateY(-2px);
+    }
+    .service-icon-link svg {
+      width: 22px;
+      height: 22px;
+      color: var(--service-color);
+    }
+    .service-icon-link img {
+      width: 22px !important;
+      height: 22px !important;
+      object-fit: contain;
+    }
     /* Tracklist styles */
     .tracklist {
       margin-top: 24px;
@@ -270,13 +356,45 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     .track-row:hover {
       background: var(--bg-secondary);
     }
+    .track-num-container {
+      width: 24px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
     .track-num {
       width: 24px;
       text-align: right;
       font-size: 0.8rem;
       color: var(--text-secondary);
-      flex-shrink: 0;
       font-variant-numeric: tabular-nums;
+    }
+    .track-play-btn {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-primary);
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    .track-play-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .track-play-btn:hover {
+      color: var(--accent);
+    }
+    body.parachord-connected .track-row:hover .track-num {
+      display: none;
+    }
+    body.parachord-connected .track-row:hover .track-play-btn {
+      display: flex;
     }
     .track-row-info {
       flex: 1;
@@ -363,6 +481,29 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       padding-top: 24px;
       border-top: 1px solid var(--bg-secondary);
     }
+    .xspf-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .xspf-btn:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .xspf-btn svg {
+      width: 16px;
+      height: 16px;
+      color: var(--accent);
+    }
     .parachord-btn {
       display: inline-flex;
       align-items: center;
@@ -397,15 +538,18 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 </head>
 <body>
   <div class="container">
-    ${albumArt
-      ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
-      : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`
+    ${isPlaylist && playlistCovers.length >= 4
+      ? `<div class="playlist-mosaic">${playlistCovers.map(src => `<img src="${escapeHtml(src)}" alt="">`).join('')}</div>`
+      : (albumArt
+        ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
+        : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`)
     }
     <h1>${escapeHtml(title)}</h1>
-    ${artist ? `<p class="artist">${escapeHtml(artist)}</p>` : ''}
+    ${isPlaylist && creator ? `<p class="artist">by ${escapeHtml(creator)}</p>` : (artist ? `<p class="artist">${escapeHtml(artist)}</p>` : '')}
     ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
     ${serviceLinksHtml ? `<div class="${isCollection ? 'services-row' : 'services'}">${serviceLinksHtml}</div>` : ''}
+    ${isPlaylist && isCollection ? `<div class="services-row"><a href="${linkUrl}/playlist.xspf" class="xspf-btn" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>.xspf</a></div>` : ''}
 
     ${isCollection ? `
     <div class="tracklist">
@@ -438,9 +582,11 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         ws = new WebSocket('ws://localhost:9876');
         ws.onopen = () => {
           document.getElementById('parachord-btn').classList.remove('hidden');
+          document.body.classList.add('parachord-connected');
         };
         ws.onclose = () => {
           document.getElementById('parachord-btn').classList.add('hidden');
+          document.body.classList.remove('parachord-connected');
           setTimeout(connectToParachord, 3000);
         };
         ws.onerror = () => {
@@ -453,26 +599,37 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        const isCollection = linkData.type === 'album' || linkData.type === 'playlist';
-        if (isCollection && linkData.tracks && linkData.tracks.length > 0) {
-          // Send each track individually so they queue up
-          linkData.tracks.forEach((track, i) => {
-            const trackData = {
-              title: track.title,
-              artist: track.artist || linkData.artist,
-              album: linkData.title,
-              albumArt: linkData.albumArt,
-              urls: track.urls || {}
-            };
-            ws.send(JSON.stringify({
-              type: 'embed',
-              action: i === 0 ? 'play' : 'queue',
-              payload: { track: trackData }
-            }));
-          });
+        if (linkData.tracks && linkData.tracks.length > 0) {
+          // For albums/playlists, send all individual tracks with album context
+          const tracks = linkData.tracks.map(t => ({
+            title: t.title,
+            artist: t.artist || linkData.artist,
+            album: linkData.title,
+            albumArt: linkData.albumArt,
+            duration: t.duration,
+            trackNumber: t.trackNumber,
+            urls: t.urls
+          }));
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: tracks[0], queue: tracks.slice(1) } }));
         } else {
           ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
         }
+      }
+    }
+
+    function playTrackInParachord(index) {
+      if (ws && ws.readyState === WebSocket.OPEN && linkData.tracks && linkData.tracks[index]) {
+        const t = linkData.tracks[index];
+        const track = {
+          title: t.title,
+          artist: t.artist || linkData.artist,
+          album: linkData.title,
+          albumArt: linkData.albumArt,
+          duration: t.duration,
+          trackNumber: t.trackNumber,
+          urls: t.urls
+        };
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track } }));
       }
     }
 
