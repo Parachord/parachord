@@ -29380,6 +29380,29 @@ useEffect(() => {
               }
             }, 'Discover'),
             React.createElement('button', {
+              onClick: () => {
+                navigateTo('new-releases');
+                loadNewReleases();
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                color: activeView === 'new-releases' ? '#10b981' : '#4b5563',
+                fontWeight: activeView === 'new-releases' ? '500' : '400'
+              }
+            },
+              // Sparkle icon for New Releases
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
+              ),
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                'Fresh Drops',
+                showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse'
+                })
+              )
+            ),
+            React.createElement('button', {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
@@ -29446,29 +29469,6 @@ useEffect(() => {
                 })
               )
             ),
-            React.createElement('button', {
-              onClick: () => {
-                navigateTo('new-releases');
-                loadNewReleases();
-              },
-              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
-                backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                color: activeView === 'new-releases' ? '#10b981' : '#4b5563',
-                fontWeight: activeView === 'new-releases' ? '500' : '400'
-              }
-            },
-              // Sparkle icon for New Releases
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z' })
-              ),
-              React.createElement('span', { className: 'flex items-center gap-1.5' },
-                'Fresh Drops',
-                showDiscoveryBadges && discoveryUnread.newReleases && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse'
-                })
-              )
-            )
           ),
 
           // FRIENDS section (always visible so new users can discover and add friends)
