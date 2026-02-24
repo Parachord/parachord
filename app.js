@@ -10996,7 +10996,8 @@ ${trackListXml}
       console.error('[CopyCollectionEmbedCode] Error:', error);
       showToast('Failed to create embed. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls, fetchAlbumTracksFromMusicBrainz]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showToast, resolveTrackUrls]);
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
