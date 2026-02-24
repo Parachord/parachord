@@ -44548,7 +44548,7 @@ useEffect(() => {
           currentTrack && !trackLoading ? [
             React.createElement(Tooltip, {
               key: 'album-art-tooltip',
-              content: currentTrack.album ? `View album "${currentTrack.album}"` : 'Drag to add to playlist',
+              content: currentTrack.album ? `View "${currentTrack.album}" · Drag to add to playlist` : 'Drag to add to playlist',
               position: 'top',
               variant: 'dark'
             },
