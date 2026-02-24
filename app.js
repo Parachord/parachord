@@ -39462,11 +39462,28 @@ useEffect(() => {
                   filtered.map((release, index) =>
                     React.createElement('div', {
                       key: release.id,
-                      className: 'release-card bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer card-fade-up',
+                      className: 'group release-card bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer card-fade-up',
                       style: { animationDelay: `${Math.min(index, 20) * 30}ms` },
+                      onMouseEnter: () => prefetchChartsTracks(release),
                       onClick: () => {
                         // Navigate to the album/release page
                         openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt });
+                      },
+                      onContextMenu: (e) => {
+                        e.preventDefault();
+                        if (window.electron?.contextMenu?.showTrackMenu) {
+                          const prefetched = prefetchedReleases[release.id];
+                          window.electron.contextMenu.showTrackMenu({
+                            type: 'release',
+                            name: release.title,
+                            album: {
+                              title: release.title,
+                              artist: release.artist,
+                              art: release.albumArt || null
+                            },
+                            tracks: prefetched?.tracks || []
+                          });
+                        }
                       }
                     },
                       // Album art
@@ -39512,15 +39529,84 @@ useEffect(() => {
                             }
                           }, release.releaseType === 'ep' ? 'EP' : release.releaseType.charAt(0).toUpperCase() + release.releaseType.slice(1))
                         ),
-                        // Hover overlay with play button
+                        // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                         React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100'
+                          className: 'opacity-0 group-hover:opacity-100',
+                          style: {
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            transition: 'opacity 0.2s ease'
+                          }
                         },
-                          React.createElement('div', {
-                            className: 'w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg'
+                          // Add to Playlist button
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              const prefetched = prefetchedReleases[release.id];
+                              if (prefetched?.tracks?.length > 0) {
+                                setAddToPlaylistPanel({
+                                  open: true,
+                                  tracks: prefetched.tracks,
+                                  sourceName: release.title,
+                                  sourceType: 'album'
+                                });
+                              }
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add to Playlist'
                           },
-                            React.createElement('svg', { className: 'w-5 h-5 text-gray-900 ml-0.5', fill: 'currentColor', viewBox: '0 0 24 24' },
-                              React.createElement('path', { d: 'M8 5v14l11-7z' })
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                            )
+                          ),
+                          // Play button (center, larger)
+                          React.createElement('button', {
+                            onClick: async (e) => {
+                              e.stopPropagation();
+                              setTrackLoading(true);
+                              let tracks = prefetchedReleases[release.id]?.tracks;
+                              if (!tracks?.length) {
+                                await prefetchChartsTracks(release);
+                                tracks = prefetchedReleases[release.id]?.tracks;
+                              }
+                              if (tracks?.length > 0) {
+                                const context = { type: 'album', id: release.id, name: release.title, artist: release.artist };
+                                const [firstTrack, ...remainingTracks] = tracks;
+                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                                setQueueWithContext(remainingTracks, context, true);
+                                handlePlay(taggedFirstTrack);
+                              } else {
+                                setTrackLoading(false);
+                              }
+                            },
+                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                            style: { border: 'none', cursor: 'pointer' },
+                            title: 'Play'
+                          },
+                            React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })
+                          ),
+                          // Add to Queue button
+                          React.createElement('button', {
+                            onClick: (e) => {
+                              e.stopPropagation();
+                              addChartsToQueue(release);
+                            },
+                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                            onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)',
+                            onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)',
+                            title: 'Add to Queue'
+                          },
+                            React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                             )
                           )
                         )
