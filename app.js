@@ -22823,7 +22823,7 @@ ${tracks}
               const primaryType = (rg['primary-type'] || '').toLowerCase();
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
-              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live')) return;
+              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
 
               allNewReleases.push({
                 id: rg.id,
