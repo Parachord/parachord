@@ -343,25 +343,7 @@ class MusicKitBridge {
                 result["songTitle"] = entry.title
             }
         }
-        // Active audio variant — reflects what is actually streaming right now
-        let variant = state.audioVariant
-        fputs("[MusicKitHelper] getPlaybackState audioVariant: \(variant.map { String(describing: $0) } ?? "nil")\n", stderr)
-        if let variant {
-            result["audioVariant"] = audioVariantString(variant)
-        }
         return result
-    }
-
-    private func audioVariantString(_ variant: AudioVariant) -> String {
-        switch variant {
-        case .dolbyAtmos: return "dolby-atmos"
-        case .dolbyAudio: return "dolby-audio"
-        case .highResolutionLossless: return "hi-res-lossless"
-        case .lossless: return "lossless"
-        case .lossyStereo: return "lossy-stereo"
-        case .spatialAudio: return "spatial-audio"
-        @unknown default: return "unknown"
-        }
     }
 
     private func playbackStatusString(_ status: MusicPlayer.PlaybackStatus) -> String {
@@ -459,7 +441,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Send ready signal
-            let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.1.0-audioVariant", "platform": "macOS 14+", "appBundle": true]), error: nil)
+            let readyResponse = Response(id: "ready", success: true, data: AnyCodable(["version": "1.0.0", "platform": "macOS 14+", "appBundle": true]), error: nil)
             self.sendResponse(readyResponse)
 
             // Start reading from stdin in background

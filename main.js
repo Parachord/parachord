@@ -395,12 +395,6 @@ const appleMusicPoller = {
       const status = state?.status;
       const position = state?.position || 0;
 
-      // Log audio variant when it changes (for debugging lossless badge)
-      if (state?.audioVariant && state.audioVariant !== this._lastLoggedVariant) {
-        console.log(`🍎 [Main] Audio variant: ${state.audioVariant}`);
-        this._lastLoggedVariant = state.audioVariant;
-      }
-
       // Use duration from MusicKit if we don't have it (or it's 0)
       // The Swift helper now includes duration from the Song object
       if ((!this.trackDuration || this.trackDuration === 0) && state?.duration) {
@@ -413,8 +407,7 @@ const appleMusicPoller = {
         status,
         position,
         duration: this.trackDuration,
-        percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0,
-        audioVariant: state?.audioVariant || null
+        percentComplete: this.trackDuration > 0 ? (position / this.trackDuration) * 100 : 0
       });
 
       // Detect track ended - MusicKit may report 'stopped' or 'paused' when track finishes

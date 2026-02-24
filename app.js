@@ -4799,7 +4799,6 @@ const Parachord = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
-  const [activeAudioVariant, setActiveAudioVariant] = useState(null); // Live audio quality from MusicKit ('lossless', 'hi-res-lossless', etc.)
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
   const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
@@ -9343,8 +9342,6 @@ ${trackListXml}
           if (window.scrobbleManager) {
             window.scrobbleManager.onProgressUpdate(data.position);
           }
-          // Update live audio variant from MusicKit playback state
-          setActiveAudioVariant(data.audioVariant || null);
         }
       });
     }
@@ -11987,7 +11984,6 @@ ${trackListXml}
 
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
-    setActiveAudioVariant(null); // Clear stale audio variant from previous track
 
     // Stop all local audio sources (HTML5 Audio, Qobuz) - do this first to prevent overlap
     // Always stop regardless of paused state to handle edge cases
@@ -43532,18 +43528,8 @@ useEffect(() => {
                 }
               }
             },
-              // Line 1: Track title + live audio quality badge
-              React.createElement('div', { className: 'flex items-center gap-1.5 min-w-0' },
-                React.createElement('span', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
-                isPlaying && activeAudioVariant === 'hi-res-lossless' && React.createElement('span', {
-                  className: 'text-[10px] px-1.5 py-0.5 bg-amber-600/20 text-amber-400 rounded-full flex-shrink-0 leading-none',
-                  title: 'Streaming Hi-Res Lossless (ALAC up to 24-bit/192 kHz)'
-                }, 'Hi-Res'),
-                isPlaying && activeAudioVariant === 'lossless' && React.createElement('span', {
-                  className: 'text-[10px] px-1.5 py-0.5 bg-amber-600/20 text-amber-400 rounded-full flex-shrink-0 leading-none',
-                  title: 'Streaming Lossless (ALAC up to 24-bit/48 kHz)'
-                }, 'Lossless')
-              ),
+              // Line 1: Track title
+              React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
               // Line 2: Artist name with bio tooltip
               React.createElement('div', { className: 'text-xs text-gray-400' },
                 (() => {
