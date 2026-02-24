@@ -78,14 +78,13 @@ class MusicKitBridge {
     private var cachedAudioVariant: AudioVariant?
 
     func startObservingState() {
-        // Subscribe to state changes so audioVariant is kept up to date.
-        // Without an active Combine subscription the ObservableObject may
-        // not publish updates in a non-SwiftUI context.
-        player.state.objectWillChange
+        // Observe the specific audioVariant publisher ($audioVariant fires
+        // AFTER the value updates, unlike objectWillChange which fires before).
+        player.state.$audioVariant
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.cachedAudioVariant = self.player.state.audioVariant
+            .sink { [weak self] variant in
+                self?.cachedAudioVariant = variant
+                fputs("[MusicKitHelper] audioVariant changed: \(variant.map { String(describing: $0) } ?? "nil")\n", stderr)
             }
             .store(in: &cancellables)
     }
@@ -361,7 +360,9 @@ class MusicKitBridge {
         }
         // Active audio variant — reflects what is actually streaming right now
         // Try the live read first, fall back to the Combine-cached value
-        let variant = state.audioVariant ?? cachedAudioVariant
+        let liveVariant = state.audioVariant
+        let variant = liveVariant ?? cachedAudioVariant
+        fputs("[MusicKitHelper] getPlaybackState audioVariant — live: \(liveVariant.map { String(describing: $0) } ?? "nil"), cached: \(cachedAudioVariant.map { String(describing: $0) } ?? "nil")\n", stderr)
         if let variant {
             result["audioVariant"] = audioVariantString(variant)
         }
