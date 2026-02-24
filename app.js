@@ -11820,6 +11820,18 @@ ${trackListXml}
     }
   }, [resolverBlocklist, cacheLoaded]);
 
+  // Persist AI suggestions when they finish loading (so they appear instantly on next session)
+  useEffect(() => {
+    const aiRecs = homeData.aiRecommendations;
+    if (cacheLoaded && window.electron?.store && aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0)) {
+      window.electron.store.set('cache_ai_suggestions', {
+        albums: aiRecs.albums,
+        artists: aiRecs.artists,
+        timestamp: Date.now()
+      });
+    }
+  }, [homeData.aiRecommendations, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -17335,6 +17347,34 @@ ${trackListXml}
         console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
       }
 
+      // Load new releases cache
+      const newReleasesData = await window.electron.store.get('cache_new_releases');
+      if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+        const now = Date.now();
+        if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
+          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: newReleasesData.timestamp };
+          console.log(`📦 Loaded ${newReleasesData.releases.length} new releases from cache`);
+        } else {
+          // Cache expired but still useful as stale data to show instantly
+          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: 0 };
+          console.log(`📦 Loaded ${newReleasesData.releases.length} stale new releases from cache (will refresh)`);
+        }
+      }
+
+      // Load AI suggestions cache (show previous session's suggestions instantly)
+      const aiSuggestionsData = await window.electron.store.get('cache_ai_suggestions');
+      if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: {
+            albums: aiSuggestionsData.albums || [],
+            artists: aiSuggestionsData.artists || [],
+            loading: false
+          }
+        }));
+        console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -17760,6 +17800,14 @@ ${trackListXml}
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
+
+      // Save new releases cache
+      if (newReleasesCache.current.releases) {
+        await window.electron.store.set('cache_new_releases', {
+          releases: newReleasesCache.current.releases,
+          timestamp: newReleasesCache.current.timestamp
+        });
+      }
 
       // Save playlists view mode
       await window.electron.store.set('playlists_view_mode', playlistsViewMode);
@@ -22816,12 +22864,19 @@ ${tracks}
 
     // Check ref cache as fallback
     const now = Date.now();
-    if (!forceRefresh && newReleasesCache.current.releases && (now - newReleasesCache.current.timestamp) < CACHE_TTL.newReleases) {
-      const cacheAgeMin = Math.round((now - newReleasesCache.current.timestamp) / 60000);
-      console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
+    if (!forceRefresh && newReleasesCache.current.releases) {
+      const cacheAge = now - newReleasesCache.current.timestamp;
+      if (cacheAge < CACHE_TTL.newReleases) {
+        const cacheAgeMin = Math.round(cacheAge / 60000);
+        console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
+        setNewReleases(newReleasesCache.current.releases);
+        setNewReleasesLoaded(true);
+        return;
+      }
+      // Stale cache: show it immediately, then continue to refresh in background
+      console.log(`✨ Showing ${newReleasesCache.current.releases.length} stale cached releases while refreshing...`);
       setNewReleases(newReleasesCache.current.releases);
       setNewReleasesLoaded(true);
-      return;
     }
 
     // For refresh: if we have existing data, do an incremental update
