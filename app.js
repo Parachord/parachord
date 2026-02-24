@@ -1396,7 +1396,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
         }),
-        // Audio quality badges (Lossless / Dolby Atmos)
+        // Audio quality badges (Lossless only — Atmos removed because
+        // MusicKit's ApplicationMusicPlayer outputs a stereo downmix, not real multichannel)
         audioTraits.includes('hi-res-lossless') && React.createElement('span', {
           key: 'hires',
           className: 'text-xs px-2 py-0.5 bg-amber-600/20 text-amber-500 rounded-full',
@@ -1406,12 +1407,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
           key: 'lossless',
           className: 'text-xs px-2 py-0.5 bg-amber-600/20 text-amber-500 rounded-full',
           title: 'Lossless available on Apple Music (ALAC up to 24-bit/48 kHz). Actual playback quality depends on your Apple Music app settings.'
-        }, 'Lossless'),
-        audioTraits.includes('dolby-atmos') && React.createElement('span', {
-          key: 'atmos',
-          className: 'text-xs px-2 py-0.5 bg-indigo-600/20 text-indigo-400 rounded-full',
-          title: 'Dolby Atmos available on Apple Music. Note: Multichannel Atmos playback requires the Apple Music app directly \u2014 third-party apps receive a stereo downmix due to Apple platform limitations.'
-        }, 'Atmos')
+        }, 'Lossless')
       ),
       primaryResolver && React.createElement('div', { className: 'text-xs text-gray-400 mt-0.5' }, `via ${primaryResolver.name}`)
     ),
