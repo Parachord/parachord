@@ -4994,6 +4994,7 @@ const Parachord = () => {
     aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
+  const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -23729,10 +23730,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Load AI recommendations when HOME is active and an AI plugin is enabled
+  // Always refreshes on each visit, but shows cached/previous results until fresh ones arrive
   useEffect(() => {
     const fetchAiRecommendations = async () => {
-      // Only fetch if we're on home, data sharing is on, and we haven't already fetched
-      if (activeView !== 'home' || !cacheLoaded || homeData.aiRecommendations) return;
+      if (activeView !== 'home' || !cacheLoaded) return;
+      if (aiSuggestionsRefreshing.current) return; // Already fetching
 
       const chatServices = getChatServices();
       const hasEnabledChat = chatServices.some(s => {
@@ -23743,12 +23745,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
-      // Mark as loading
-      setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+      aiSuggestionsRefreshing.current = true;
 
+      // Mark as loading but keep existing data visible (cached results stay on screen)
+      setHomeData(prev => ({
+        ...prev,
+        aiRecommendations: {
+          albums: prev.aiRecommendations?.albums || [],
+          artists: prev.aiRecommendations?.artists || [],
+          loading: true
+        }
+      }));
+
+      let refreshStarted = false;
       const onUpdate = ({ artists, newAlbum }) => {
         if (artists) {
-          // Artists arrived — show them immediately and start loading images
+          // Artists arrived — replace cached artists with fresh ones
           setHomeData(prev => ({
             ...prev,
             aiRecommendations: { ...prev.aiRecommendations, artists }
@@ -23763,11 +23775,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           }
         }
         if (newAlbum) {
-          // A single album passed validation — append it and start loading art
-          setHomeData(prev => ({
-            ...prev,
-            aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
-          }));
+          // First fresh album clears the cached albums; subsequent ones append
+          setHomeData(prev => {
+            const albums = refreshStarted
+              ? [...prev.aiRecommendations.albums, newAlbum]
+              : [newAlbum];
+            refreshStarted = true;
+            return {
+              ...prev,
+              aiRecommendations: { ...prev.aiRecommendations, albums }
+            };
+          });
           getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
             if (artUrl) {
               setHomeData(prev => {
@@ -23780,10 +23798,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
 
       const result = await loadAiRecommendations(onUpdate);
+      aiSuggestionsRefreshing.current = false;
       if (result) {
         setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
-      } else {
-        setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+      } else if (!refreshStarted) {
+        // LLM call failed — keep cached data visible if we have any, otherwise clear
+        setHomeData(prev => {
+          const existing = prev.aiRecommendations;
+          if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+            return { ...prev, aiRecommendations: { ...existing, loading: false } };
+          }
+          return { ...prev, aiRecommendations: null };
+        });
       }
     };
     fetchAiRecommendations();
