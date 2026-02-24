@@ -39237,7 +39237,7 @@ useEffect(() => {
                 },
                   React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                  }, newReleasesLoading ? 'Loading...' : `${newReleases.length} Releases`)
+                  }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
                 ),
                 React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
@@ -39262,7 +39262,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, newReleasesLoading ? 'Loading...' : `${newReleases.length} Releases`)
+                }, newReleases.length > 0 ? `${newReleases.length} Releases` : '')
               )
           ),
           // Filter bar (outside scrollable area)
@@ -39317,7 +39317,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => { setNewReleasesLoaded(false); loadNewReleases(true); },
               disabled: newReleasesLoading,
-              className: `ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors ${newReleasesLoading ? 'animate-spin' : ''}`,
+              className: 'ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors',
               title: 'Refresh'
             },
               React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -39385,7 +39385,7 @@ useEffect(() => {
             ),
 
             // Skeleton loading state
-            !newReleasesError && (newReleasesLoading && newReleases.length === 0) && React.createElement('div', {
+            !newReleasesError && newReleasesLoading && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5'
             },
               Array.from({ length: 12 }).map((_, i) =>
@@ -39427,7 +39427,7 @@ useEffect(() => {
             ),
 
             // Release grid
-            !newReleasesError && (newReleases.length > 0 || (newReleasesLoading && newReleases.length > 0)) && (() => {
+            !newReleasesError && !newReleasesLoading && newReleases.length > 0 && (() => {
               // Filter releases
               let filtered = newReleases;
               if (newReleasesFilter !== 'all') {
@@ -39448,13 +39448,6 @@ useEffect(() => {
               }
 
               return React.createElement('div', null,
-                // Loading indicator when refreshing with existing data
-                newReleasesLoading && newReleases.length > 0 && React.createElement('div', {
-                  className: 'flex items-center gap-2 mb-4 text-sm text-emerald-600'
-                },
-                  React.createElement('div', { className: 'w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin' }),
-                  'Checking for new releases...'
-                ),
                 // Grid
                 React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5'
