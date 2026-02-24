@@ -10629,6 +10629,75 @@ ${trackListXml}
     return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
   }, []);
 
+  // Helper: resolve album-level URLs (album pages, not individual tracks) across all active resolvers
+  const resolveAlbumUrls = useCallback(async (query) => {
+    const resolvers = loadedResolversRef.current || [];
+    const activeResolverIds = activeResolversRef.current || [];
+    const resolvedUrls = {};
+    let resolvedAlbumArt = null;
+
+    for (const resolver of resolvers) {
+      if (!activeResolverIds.includes(resolver.id)) continue;
+      if (!resolver.search) continue;
+
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        const results = await resolver.search(query, config);
+        if (Array.isArray(results) && results.length > 0) {
+          const firstResult = results[0];
+
+          if (!resolvedAlbumArt && firstResult.albumArt) {
+            resolvedAlbumArt = firstResult.albumArt;
+          }
+
+          // Extract album-level URLs instead of track URLs
+          let albumUrl = null;
+          const id = resolver.id.toLowerCase();
+          let service = null;
+          if (id.includes('spotify')) {
+            service = 'spotify';
+            if (firstResult.spotifyAlbumId) {
+              albumUrl = `https://open.spotify.com/album/${firstResult.spotifyAlbumId}`;
+            }
+          } else if (id.includes('apple') || id.includes('itunes')) {
+            service = 'appleMusic';
+            if (firstResult.appleMusicAlbumUrl) {
+              albumUrl = firstResult.appleMusicAlbumUrl;
+            } else if (firstResult.collectionId) {
+              albumUrl = `https://music.apple.com/album/${firstResult.collectionId}`;
+            }
+          } else if (id.includes('bandcamp') || id.includes('bc')) {
+            service = 'bandcamp';
+            // Bandcamp track URLs are like https://artist.bandcamp.com/track/name
+            // Album URLs are like https://artist.bandcamp.com/album/name
+            // We can't derive album slug from track URL, so use track URL as fallback
+            if (firstResult.bandcampUrl) {
+              albumUrl = firstResult.bandcampUrl;
+            }
+          } else if (id.includes('youtube') || id.includes('yt')) {
+            service = 'youtube';
+            // YouTube has no album pages; use the video URL as fallback
+            if (firstResult.youtubeUrl) albumUrl = firstResult.youtubeUrl;
+            else if (firstResult.youtubeId) albumUrl = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
+          } else if (id.includes('soundcloud') || id.includes('sc')) {
+            service = 'soundcloud';
+            if (firstResult.soundcloudUrl) albumUrl = firstResult.soundcloudUrl;
+          } else if (id.includes('tidal')) {
+            service = 'tidal';
+          } else if (id.includes('deezer')) {
+            service = 'deezer';
+          }
+
+          if (service && albumUrl) resolvedUrls[service] = albumUrl;
+        }
+      } catch (err) {
+        // Skip failed resolvers
+      }
+    }
+
+    return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
+  }, []);
+
   // Publish smart link for an album or playlist (with per-track resolver matches)
   const publishCollectionSmartLink = useCallback(async (collection) => {
     if (!collection || !collection.title) {
@@ -10654,9 +10723,9 @@ ${trackListXml}
       console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
     }
 
-    // Also resolve top-level album/playlist URLs (search for "artist album" as a whole)
+    // Resolve top-level album/playlist URLs (album pages, not individual tracks)
     const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
-    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveTrackUrls(topLevelQuery);
+    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveAlbumUrls(topLevelQuery);
 
     // POST to smart links API
     try {
@@ -10697,7 +10766,7 @@ ${trackListXml}
       console.error('[PublishCollectionSmartLink] Error:', error);
       showToast('Failed to publish link. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls]);
+  }, [showToast, resolveTrackUrls, resolveAlbumUrls]);
 
   // Copy embed code for an album or playlist
   const copyCollectionEmbedCode = useCallback(async (collection) => {
