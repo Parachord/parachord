@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import MusicKit
-import Combine
 import Darwin
 
 // MARK: - JSON Message Types
@@ -74,20 +73,6 @@ struct AnyCodable: Codable {
 class MusicKitBridge {
     private let player = ApplicationMusicPlayer.shared
     private var isAuthorized = false
-    private var cancellables = Set<AnyCancellable>()
-    private var cachedAudioVariant: AudioVariant?
-
-    func startObservingState() {
-        // Observe the specific audioVariant publisher ($audioVariant fires
-        // AFTER the value updates, unlike objectWillChange which fires before).
-        player.state.$audioVariant
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] variant in
-                self?.cachedAudioVariant = variant
-                fputs("[MusicKitHelper] audioVariant changed: \(variant.map { String(describing: $0) } ?? "nil")\n", stderr)
-            }
-            .store(in: &cancellables)
-    }
 
     // Check current authorization status
     func checkAuthStatus() async -> [String: Any] {
@@ -359,10 +344,8 @@ class MusicKitBridge {
             }
         }
         // Active audio variant — reflects what is actually streaming right now
-        // Try the live read first, fall back to the Combine-cached value
-        let liveVariant = state.audioVariant
-        let variant = liveVariant ?? cachedAudioVariant
-        fputs("[MusicKitHelper] getPlaybackState audioVariant — live: \(liveVariant.map { String(describing: $0) } ?? "nil"), cached: \(cachedAudioVariant.map { String(describing: $0) } ?? "nil")\n", stderr)
+        let variant = state.audioVariant
+        fputs("[MusicKitHelper] getPlaybackState audioVariant: \(variant.map { String(describing: $0) } ?? "nil")\n", stderr)
         if let variant {
             result["audioVariant"] = audioVariantString(variant)
         }
@@ -376,6 +359,7 @@ class MusicKitBridge {
         case .highResolutionLossless: return "hi-res-lossless"
         case .lossless: return "lossless"
         case .lossyStereo: return "lossy-stereo"
+        case .spatialAudio: return "spatial-audio"
         @unknown default: return "unknown"
         }
     }
@@ -456,7 +440,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
             self.bridge = MusicKitBridge()
-            self.bridge!.startObservingState()
 
             // Warm up MusicKit before accepting requests — establishes the
             // XPC connection to AMSd so the first real request doesn't race
