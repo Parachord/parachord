@@ -5072,6 +5072,7 @@ const Parachord = () => {
     aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
+  const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -11993,6 +11994,18 @@ ${trackListXml}
     }
   }, [resolverBlocklist, cacheLoaded]);
 
+  // Persist AI suggestions when they finish loading (so they appear instantly on next session)
+  useEffect(() => {
+    const aiRecs = homeData.aiRecommendations;
+    if (cacheLoaded && window.electron?.store && aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0)) {
+      window.electron.store.set('cache_ai_suggestions', {
+        albums: aiRecs.albums,
+        artists: aiRecs.artists,
+        timestamp: Date.now()
+      });
+    }
+  }, [homeData.aiRecommendations, cacheLoaded]);
+
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -17508,6 +17521,34 @@ ${trackListXml}
         console.log(`📦 Loaded ${validEntries.length} charts cache entries`);
       }
 
+      // Load new releases cache
+      const newReleasesData = await window.electron.store.get('cache_new_releases');
+      if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+        const now = Date.now();
+        if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
+          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: newReleasesData.timestamp };
+          console.log(`📦 Loaded ${newReleasesData.releases.length} new releases from cache`);
+        } else {
+          // Cache expired but still useful as stale data to show instantly
+          newReleasesCache.current = { releases: newReleasesData.releases, timestamp: 0 };
+          console.log(`📦 Loaded ${newReleasesData.releases.length} stale new releases from cache (will refresh)`);
+        }
+      }
+
+      // Load AI suggestions cache (show previous session's suggestions instantly)
+      const aiSuggestionsData = await window.electron.store.get('cache_ai_suggestions');
+      if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: {
+            albums: aiSuggestionsData.albums || [],
+            artists: aiSuggestionsData.artists || [],
+            loading: false
+          }
+        }));
+        console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
+      }
+
       // Load resolver settings
       const savedActiveResolvers = await window.electron.store.get('active_resolvers');
       const savedResolverOrder = await window.electron.store.get('resolver_order');
@@ -17933,6 +17974,14 @@ ${trackListXml}
 
       // Save volume normalization offsets (use ref to avoid stale closure)
       await window.electron.store.set('resolver_volume_offsets', resolverVolumeOffsetsRef.current);
+
+      // Save new releases cache
+      if (newReleasesCache.current.releases) {
+        await window.electron.store.set('cache_new_releases', {
+          releases: newReleasesCache.current.releases,
+          timestamp: newReleasesCache.current.timestamp
+        });
+      }
 
       // Save playlists view mode
       await window.electron.store.set('playlists_view_mode', playlistsViewMode);
@@ -22947,7 +22996,7 @@ ${tracks}
               const primaryType = (rg['primary-type'] || '').toLowerCase();
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
-              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live')) return;
+              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
 
               allNewReleases.push({
                 id: rg.id,
@@ -22989,12 +23038,19 @@ ${tracks}
 
     // Check ref cache as fallback
     const now = Date.now();
-    if (!forceRefresh && newReleasesCache.current.releases && (now - newReleasesCache.current.timestamp) < CACHE_TTL.newReleases) {
-      const cacheAgeMin = Math.round((now - newReleasesCache.current.timestamp) / 60000);
-      console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
+    if (!forceRefresh && newReleasesCache.current.releases) {
+      const cacheAge = now - newReleasesCache.current.timestamp;
+      if (cacheAge < CACHE_TTL.newReleases) {
+        const cacheAgeMin = Math.round(cacheAge / 60000);
+        console.log(`✨ Using ref-cached new releases (${cacheAgeMin}m old)`);
+        setNewReleases(newReleasesCache.current.releases);
+        setNewReleasesLoaded(true);
+        return;
+      }
+      // Stale cache: show it immediately, then continue to refresh in background
+      console.log(`✨ Showing ${newReleasesCache.current.releases.length} stale cached releases while refreshing...`);
       setNewReleases(newReleasesCache.current.releases);
       setNewReleasesLoaded(true);
-      return;
     }
 
     // For refresh: if we have existing data, do an incremental update
@@ -23847,10 +23903,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Load AI recommendations when HOME is active and an AI plugin is enabled
+  // Always refreshes on each visit, but shows cached/previous results until fresh ones arrive
   useEffect(() => {
     const fetchAiRecommendations = async () => {
-      // Only fetch if we're on home, data sharing is on, and we haven't already fetched
-      if (activeView !== 'home' || !cacheLoaded || homeData.aiRecommendations) return;
+      if (activeView !== 'home' || !cacheLoaded) return;
+      if (aiSuggestionsRefreshing.current) return; // Already fetching
 
       const chatServices = getChatServices();
       const hasEnabledChat = chatServices.some(s => {
@@ -23861,12 +23918,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
-      // Mark as loading
-      setHomeData(prev => ({ ...prev, aiRecommendations: { albums: [], artists: [], loading: true } }));
+      aiSuggestionsRefreshing.current = true;
 
+      // Mark as loading but keep existing data visible (cached results stay on screen)
+      setHomeData(prev => ({
+        ...prev,
+        aiRecommendations: {
+          albums: prev.aiRecommendations?.albums || [],
+          artists: prev.aiRecommendations?.artists || [],
+          loading: true
+        }
+      }));
+
+      let refreshStarted = false;
       const onUpdate = ({ artists, newAlbum }) => {
         if (artists) {
-          // Artists arrived — show them immediately and start loading images
+          // Artists arrived — replace cached artists with fresh ones
           setHomeData(prev => ({
             ...prev,
             aiRecommendations: { ...prev.aiRecommendations, artists }
@@ -23881,11 +23948,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           }
         }
         if (newAlbum) {
-          // A single album passed validation — append it and start loading art
-          setHomeData(prev => ({
-            ...prev,
-            aiRecommendations: { ...prev.aiRecommendations, albums: [...prev.aiRecommendations.albums, newAlbum] }
-          }));
+          // First fresh album clears the cached albums; subsequent ones append
+          setHomeData(prev => {
+            const albums = refreshStarted
+              ? [...prev.aiRecommendations.albums, newAlbum]
+              : [newAlbum];
+            refreshStarted = true;
+            return {
+              ...prev,
+              aiRecommendations: { ...prev.aiRecommendations, albums }
+            };
+          });
           getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
             if (artUrl) {
               setHomeData(prev => {
@@ -23898,10 +23971,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
 
       const result = await loadAiRecommendations(onUpdate);
+      aiSuggestionsRefreshing.current = false;
       if (result) {
         setHomeData(prev => ({ ...prev, aiRecommendations: { ...prev.aiRecommendations, loading: false } }));
-      } else {
-        setHomeData(prev => ({ ...prev, aiRecommendations: null }));
+      } else if (!refreshStarted) {
+        // LLM call failed — keep cached data visible if we have any, otherwise clear
+        setHomeData(prev => {
+          const existing = prev.aiRecommendations;
+          if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+            return { ...prev, aiRecommendations: { ...existing, loading: false } };
+          }
+          return { ...prev, aiRecommendations: null };
+        });
       }
     };
     fetchAiRecommendations();
