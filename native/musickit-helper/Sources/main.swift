@@ -356,6 +356,7 @@ class MusicKitBridge {
         case .dolbyAudio: return "dolby-audio"
         case .highResolutionLossless: return "hi-res-lossless"
         case .lossless: return "lossless"
+        case .lossyStereo: return "lossy-stereo"
         @unknown default: return "unknown"
         }
     }
