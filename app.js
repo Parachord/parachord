@@ -33964,6 +33964,17 @@ useEffect(() => {
                     backgroundColor: '#ffffff',
                     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03)',
                     width: '212px'
+                  },
+                  onContextMenu: (e) => {
+                    e.preventDefault();
+                    if (window.electron?.contextMenu?.showTrackMenu) {
+                      window.electron.contextMenu.showTrackMenu({
+                        type: 'playlist',
+                        playlistId: selectedPlaylist.id,
+                        name: selectedPlaylist.title,
+                        tracks: playlistTracks || []
+                      });
+                    }
                   }
                 },
                   // Album art mosaic with hover overlay
@@ -35838,6 +35849,17 @@ useEffect(() => {
                               creator: 'ListenBrainz'
                             };
                             loadPlaylist(playlist);
+                          },
+                          onContextMenu: (e) => {
+                            e.preventDefault();
+                            if (window.electron?.contextMenu?.showTrackMenu) {
+                              window.electron.contextMenu.showTrackMenu({
+                                type: 'playlist',
+                                playlistId: `listenbrainz-${jam.id}`,
+                                name: jam.title,
+                                tracks: jam.tracks || []
+                              });
+                            }
                           }
                         },
                           React.createElement('div', {
@@ -35957,6 +35979,17 @@ useEffect(() => {
                             },
                             onClick: () => {
                               loadPlaylist(playlist);
+                            },
+                            onContextMenu: (e) => {
+                              e.preventDefault();
+                              if (window.electron?.contextMenu?.showTrackMenu) {
+                                window.electron.contextMenu.showTrackMenu({
+                                  type: 'playlist',
+                                  playlistId: playlist.id,
+                                  name: playlist.title,
+                                  tracks: playlist.tracks || []
+                                });
+                              }
                             }
                           },
                             // 2x2 album art grid or placeholder with hover play button
