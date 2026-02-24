@@ -22598,6 +22598,213 @@ ${tracks}
 
   // Load New Releases from MusicBrainz for artists in the user's collection and listening history
   const newReleasesCache = useRef({ releases: null, timestamp: 0 });
+  // Gather artists from all sources (collection, library, listening history)
+  const gatherNewReleasesArtists = async () => {
+    const seen = new Set();
+    const collectionArtists = [];
+    const libraryArtists = [];
+    const historyArtists = [];
+
+    // Source 1: Collection artists
+    if (collectionData.artists?.length > 0) {
+      collectionData.artists.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          collectionArtists.push({ name: a.name, source: 'collection' });
+        }
+      });
+    }
+
+    // Source 2: Artists from collection tracks
+    if (collectionData.tracks?.length > 0) {
+      collectionData.tracks.forEach(t => {
+        if (t.artist) {
+          const key = t.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: t.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 3: Artists from collection albums
+    if (collectionData.albums?.length > 0) {
+      collectionData.albums.forEach(a => {
+        if (a.artist) {
+          const key = a.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: a.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
+    let historyArtistData = topArtists.artists || [];
+    if (historyArtistData.length === 0) {
+      const historyFetches = [];
+
+      const lastfmConfig = metaServiceConfigs.lastfm;
+      const apiKey = getLastfmApiKey();
+      if (lastfmConfig?.username && apiKey) {
+        historyFetches.push((async () => {
+          try {
+            console.log('✨ Fetching Last.fm top artists for New Releases...');
+            const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=12month&limit=50`;
+            const response = await lastfmFetch(url);
+            if (response.ok) {
+              const data = await response.json();
+              return (data.topartists?.artist || []).map(a => ({ name: a.name }));
+            }
+          } catch (e) {
+            console.log('✨ Could not fetch Last.fm top artists:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+      if (listenbrainzConfig?.username) {
+        historyFetches.push((async () => {
+          try {
+            console.log('✨ Fetching ListenBrainz top artists for New Releases...');
+            const response = await fetch(
+              `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=year&count=50`
+            );
+            if (response.ok && response.status !== 204) {
+              const data = await response.json();
+              return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
+            }
+          } catch (e) {
+            console.log('✨ Could not fetch ListenBrainz top artists:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      if (historyFetches.length > 0) {
+        const results = await Promise.all(historyFetches);
+        const mergedNames = new Set();
+        historyArtistData = [];
+        for (const result of results) {
+          for (const a of result) {
+            const key = a.name.trim().toLowerCase();
+            if (!mergedNames.has(key)) {
+              mergedNames.add(key);
+              historyArtistData.push(a);
+            }
+          }
+        }
+      }
+    }
+
+    if (historyArtistData.length > 0) {
+      historyArtistData.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          historyArtists.push({ name: a.name, source: 'history' });
+        }
+      });
+    }
+
+    // Interleave sources so each gets fair representation in the 40-artist limit
+    const maxArtists = 40;
+    const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
+    const artistList = [];
+    let round = 0;
+    while (artistList.length < maxArtists) {
+      let added = false;
+      for (const bucket of buckets) {
+        if (round < bucket.length && artistList.length < maxArtists) {
+          artistList.push(bucket[round]);
+          added = true;
+        }
+      }
+      if (!added) break;
+      round++;
+    }
+
+    console.log(`✨ Found ${collectionArtists.length + libraryArtists.length + historyArtists.length} unique artists (${collectionArtists.length} collection, ${libraryArtists.length} library, ${historyArtists.length} history), checking ${artistList.length}`);
+    return artistList;
+  };
+
+  // Fetch releases from MusicBrainz for a list of artists, filtering by cutoff date
+  const fetchReleasesForArtists = async (artistList, cutoffDate, onProgress) => {
+    const allNewReleases = [];
+    let artistsProcessed = 0;
+
+    for (const artist of artistList) {
+      try {
+        const cacheKey = artist.name.trim().toLowerCase();
+        let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
+
+        if (!mbid) {
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+          );
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            mbid = searchData.artists?.[0]?.id;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1100));
+        }
+
+        if (!mbid) {
+          artistsProcessed++;
+          continue;
+        }
+
+        const releasesResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+        );
+
+        if (releasesResponse.ok) {
+          const releasesData = await releasesResponse.json();
+          const releaseGroups = releasesData['release-groups'] || [];
+
+          releaseGroups.forEach(rg => {
+            const releaseDate = rg['first-release-date'] || '';
+            if (releaseDate && releaseDate >= cutoffDate) {
+              const primaryType = (rg['primary-type'] || '').toLowerCase();
+              const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
+
+              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live')) return;
+
+              allNewReleases.push({
+                id: rg.id,
+                title: rg.title,
+                artist: artist.name,
+                artistSource: artist.source,
+                date: releaseDate,
+                releaseType: primaryType || 'album',
+                disambiguation: rg.disambiguation,
+                albumArt: null
+              });
+            }
+          });
+        }
+
+        artistsProcessed++;
+        if (onProgress && artistsProcessed % 5 === 0 && allNewReleases.length > 0) {
+          onProgress(allNewReleases, artistsProcessed);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      } catch (error) {
+        console.error(`Error checking releases for ${artist.name}:`, error);
+        artistsProcessed++;
+      }
+    }
+
+    return { releases: allNewReleases, artistsProcessed };
+  };
+
   const loadNewReleases = async (forceRefresh = false) => {
     if (newReleasesLoading) return;
 
@@ -22607,7 +22814,7 @@ ${tracks}
       return;
     }
 
-    // Check ref cache as fallback (e.g. state was cleared but ref persists)
+    // Check ref cache as fallback
     const now = Date.now();
     if (!forceRefresh && newReleasesCache.current.releases && (now - newReleasesCache.current.timestamp) < CACHE_TTL.newReleases) {
       const cacheAgeMin = Math.round((now - newReleasesCache.current.timestamp) / 60000);
@@ -22617,129 +22824,66 @@ ${tracks}
       return;
     }
 
+    // For refresh: if we have existing data, do an incremental update
+    if (forceRefresh && newReleases.length > 0) {
+      console.log('✨ Incremental refresh: checking for new releases...');
+      setNewReleasesLoading(true);
+      setNewReleasesError(null);
+
+      try {
+        const artistList = await gatherNewReleasesArtists();
+        if (artistList.length === 0) {
+          setNewReleasesLoading(false);
+          return;
+        }
+
+        // Use the newest existing release date as the cutoff (only find newer ones)
+        const newestDate = newReleases[0]?.date || '';
+        const { releases: freshReleases, artistsProcessed } = await fetchReleasesForArtists(artistList, newestDate);
+
+        // Filter out releases we already have
+        const existingIds = new Set(newReleases.map(r => r.id));
+        const existingKeys = new Set(newReleases.map(r => `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`));
+        const brandNew = freshReleases.filter(r => {
+          if (existingIds.has(r.id)) return false;
+          const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
+          if (existingKeys.has(key)) return false;
+          return true;
+        });
+
+        if (brandNew.length > 0) {
+          console.log(`✨ Found ${brandNew.length} new releases to add`);
+          // Prepend new releases and re-sort
+          const merged = [...brandNew, ...newReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setNewReleases(merged);
+          newReleasesCache.current = { releases: merged, timestamp: Date.now() };
+
+          const hash = generateDiscoveryHash(merged);
+          checkDiscoveryUnread('newReleases', hash);
+
+          // Fetch art only for the new ones
+          fetchNewReleasesAlbumArt(brandNew);
+        } else {
+          console.log(`✨ No new releases found (checked ${artistsProcessed} artists)`);
+          newReleasesCache.current.timestamp = Date.now();
+        }
+      } catch (error) {
+        console.error('Failed to refresh New Releases:', error);
+      } finally {
+        setNewReleasesLoading(false);
+      }
+      return;
+    }
+
+    // Full initial load
     setNewReleasesLoading(true);
     setNewReleasesError(null);
-    console.log('✨ Loading New Releases...');
+    console.log('✨ Loading New Releases (full fetch)...');
 
     try {
-      // Step 1: Collect artists from multiple sources into separate buckets
-      const seen = new Set(); // track lowercase names across all sources
-      const collectionArtists = [];
-      const libraryArtists = [];
-      const historyArtists = [];
+      const artistList = await gatherNewReleasesArtists();
 
-      // Source 1: Collection artists
-      if (collectionData.artists?.length > 0) {
-        collectionData.artists.forEach(a => {
-          const key = a.name.trim().toLowerCase();
-          if (!seen.has(key)) {
-            seen.add(key);
-            collectionArtists.push({ name: a.name, source: 'collection' });
-          }
-        });
-      }
-
-      // Source 2: Artists from collection tracks (unique artists from saved tracks)
-      if (collectionData.tracks?.length > 0) {
-        collectionData.tracks.forEach(t => {
-          if (t.artist) {
-            const key = t.artist.trim().toLowerCase();
-            if (!seen.has(key)) {
-              seen.add(key);
-              libraryArtists.push({ name: t.artist, source: 'library' });
-            }
-          }
-        });
-      }
-
-      // Source 3: Artists from collection albums
-      if (collectionData.albums?.length > 0) {
-        collectionData.albums.forEach(a => {
-          if (a.artist) {
-            const key = a.artist.trim().toLowerCase();
-            if (!seen.has(key)) {
-              seen.add(key);
-              libraryArtists.push({ name: a.artist, source: 'library' });
-            }
-          }
-        });
-      }
-
-      // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
-      // Use already-loaded topArtists if available, otherwise fetch inline
-      let historyArtistData = topArtists.artists || [];
-      if (historyArtistData.length === 0) {
-        const historyFetches = [];
-
-        // Try Last.fm
-        const lastfmConfig = metaServiceConfigs.lastfm;
-        const apiKey = getLastfmApiKey();
-        if (lastfmConfig?.username && apiKey) {
-          historyFetches.push((async () => {
-            try {
-              console.log('✨ Fetching Last.fm top artists for New Releases...');
-              const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=12month&limit=50`;
-              const response = await lastfmFetch(url);
-              if (response.ok) {
-                const data = await response.json();
-                return (data.topartists?.artist || []).map(a => ({ name: a.name }));
-              }
-            } catch (e) {
-              console.log('✨ Could not fetch Last.fm top artists:', e.message);
-            }
-            return [];
-          })());
-        }
-
-        // Try ListenBrainz
-        const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-        if (listenbrainzConfig?.username) {
-          historyFetches.push((async () => {
-            try {
-              console.log('✨ Fetching ListenBrainz top artists for New Releases...');
-              const response = await fetch(
-                `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=year&count=50`
-              );
-              if (response.ok && response.status !== 204) {
-                const data = await response.json();
-                return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
-              }
-            } catch (e) {
-              console.log('✨ Could not fetch ListenBrainz top artists:', e.message);
-            }
-            return [];
-          })());
-        }
-
-        if (historyFetches.length > 0) {
-          const results = await Promise.all(historyFetches);
-          // Merge and deduplicate across sources
-          const mergedNames = new Set();
-          historyArtistData = [];
-          for (const result of results) {
-            for (const a of result) {
-              const key = a.name.trim().toLowerCase();
-              if (!mergedNames.has(key)) {
-                mergedNames.add(key);
-                historyArtistData.push(a);
-              }
-            }
-          }
-        }
-      }
-
-      if (historyArtistData.length > 0) {
-        historyArtistData.forEach(a => {
-          const key = a.name.trim().toLowerCase();
-          if (!seen.has(key)) {
-            seen.add(key);
-            historyArtists.push({ name: a.name, source: 'history' });
-          }
-        });
-      }
-
-      const totalArtists = collectionArtists.length + libraryArtists.length + historyArtists.length;
-      if (totalArtists === 0) {
+      if (artistList.length === 0) {
         console.log('✨ No artists found in collection or history');
         setNewReleases([]);
         setNewReleasesLoaded(true);
@@ -22747,110 +22891,20 @@ ${tracks}
         return;
       }
 
-      // Interleave sources so each gets fair representation in the 40-artist limit
-      const maxArtists = 40;
-      const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
-      const artistList = [];
-      let round = 0;
-      while (artistList.length < maxArtists) {
-        let added = false;
-        for (const bucket of buckets) {
-          if (round < bucket.length && artistList.length < maxArtists) {
-            artistList.push(bucket[round]);
-            added = true;
-          }
-        }
-        if (!added) break;
-        round++;
-      }
-
-      console.log(`✨ Found ${totalArtists} unique artists (${collectionArtists.length} collection, ${libraryArtists.length} library, ${historyArtists.length} history), checking ${artistList.length}`);
-
-      // Step 2: For each artist, check MusicBrainz for recent releases (last 6 months)
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
-      const allNewReleases = [];
-      let artistsProcessed = 0;
 
-      // Process artists in batches of 2 (MusicBrainz rate limit ~1 req/sec)
-      for (const artist of artistList) {
-        try {
-          // First search for artist MBID if not cached
-          const cacheKey = artist.name.trim().toLowerCase();
-          let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
-
-          if (!mbid) {
-            const searchResponse = await fetch(
-              `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
-              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
-            );
-            if (searchResponse.ok) {
-              const searchData = await searchResponse.json();
-              mbid = searchData.artists?.[0]?.id;
-            }
-            await new Promise(resolve => setTimeout(resolve, 1100)); // Rate limit
-          }
-
-          if (!mbid) {
-            artistsProcessed++;
-            continue;
-          }
-
-          // Fetch recent release-groups
-          const releasesResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
-          );
-
-          if (releasesResponse.ok) {
-            const releasesData = await releasesResponse.json();
-            const releaseGroups = releasesData['release-groups'] || [];
-
-            releaseGroups.forEach(rg => {
-              const releaseDate = rg['first-release-date'] || '';
-              // Only include releases from the last 6 months
-              if (releaseDate && releaseDate >= cutoffDate) {
-                const primaryType = (rg['primary-type'] || '').toLowerCase();
-                const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
-
-                // Skip compilations and live albums
-                if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live')) return;
-
-                let releaseType = primaryType || 'album';
-                if (primaryType === 'album' && secondaryTypes.length === 0) {
-                  releaseType = 'album';
-                }
-
-                allNewReleases.push({
-                  id: rg.id,
-                  title: rg.title,
-                  artist: artist.name,
-                  artistSource: artist.source,
-                  date: releaseDate,
-                  releaseType: releaseType,
-                  disambiguation: rg.disambiguation,
-                  albumArt: null // Will be fetched in background
-                });
-              }
-            });
-          }
-
-          artistsProcessed++;
-          // Show progressive results every 5 artists
-          if (artistsProcessed % 5 === 0 && allNewReleases.length > 0) {
-            const sorted = [...allNewReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-            setNewReleases(sorted);
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 1100)); // Rate limit
-        } catch (error) {
-          console.error(`Error checking releases for ${artist.name}:`, error);
-          artistsProcessed++;
+      const { releases: allNewReleases, artistsProcessed } = await fetchReleasesForArtists(
+        artistList,
+        cutoffDate,
+        (results) => {
+          const sorted = [...results].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setNewReleases(sorted);
         }
-      }
+      );
 
-      // Step 3: Sort by date (newest first) and deduplicate
+      // Sort and deduplicate
       const seenReleases = new Set();
       const uniqueReleases = allNewReleases
         .filter(r => {
@@ -22866,14 +22920,11 @@ ${tracks}
       setNewReleases(uniqueReleases);
       setNewReleasesLoaded(true);
 
-      // Cache the results
       newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now() };
 
-      // Check for new content (unread badge)
       const hash = generateDiscoveryHash(uniqueReleases);
       checkDiscoveryUnread('newReleases', hash);
 
-      // Step 4: Fetch album art in background
       fetchNewReleasesAlbumArt(uniqueReleases);
 
     } catch (error) {
@@ -39405,7 +39456,7 @@ useEffect(() => {
             ),
             // Refresh button
             React.createElement('button', {
-              onClick: () => { setNewReleasesLoaded(false); loadNewReleases(true); },
+              onClick: () => loadNewReleases(true),
               disabled: newReleasesLoading,
               className: 'ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors',
               title: 'Refresh'
@@ -39475,7 +39526,7 @@ useEffect(() => {
             ),
 
             // Skeleton loading state
-            !newReleasesError && newReleasesLoading && React.createElement('div', {
+            !newReleasesError && newReleasesLoading && newReleases.length === 0 && React.createElement('div', {
               className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
             },
               Array.from({ length: 12 }).map((_, i) =>
@@ -39520,7 +39571,7 @@ useEffect(() => {
             ),
 
             // Release grid
-            !newReleasesError && !newReleasesLoading && newReleases.length > 0 && (() => {
+            !newReleasesError && newReleases.length > 0 && (() => {
               // Filter releases
               let filtered = newReleases;
               if (newReleasesFilter !== 'all') {
