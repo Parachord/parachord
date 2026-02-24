@@ -10918,7 +10918,8 @@ ${trackListXml}
       console.error('[PublishCollectionSmartLink] Error:', error);
       showToast('Failed to publish link. Is the backend running?', 'error');
     }
-  }, [showToast, resolveTrackUrls, resolveAlbumUrls, fetchAlbumTracksFromMusicBrainz]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showToast, resolveTrackUrls, resolveAlbumUrls]);
 
   // Copy embed code for an album or playlist
   const copyCollectionEmbedCode = useCallback(async (collection) => {
