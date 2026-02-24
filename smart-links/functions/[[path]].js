@@ -1,10 +1,11 @@
 // Dynamic route handler for /:id and /:id/embed
 import { generateLinkPageHtml, generateEmbedHtml } from '../lib/html.js';
+import { enrichLinkData } from '../lib/enrich.js';
 
 // Static file extensions to pass through to assets
 const STATIC_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2'];
 
-export async function onRequestGet({ params, request, env }) {
+export async function onRequestGet({ params, request, env, waitUntil }) {
   const pathParts = params.path || [];
   const fullPath = '/' + pathParts.join('/');
 
@@ -15,18 +16,18 @@ export async function onRequestGet({ params, request, env }) {
 
   // Handle /:id/embed
   if (pathParts.length === 2 && pathParts[1] === 'embed') {
-    return handleEmbed(pathParts[0], request, env);
+    return handleEmbed(pathParts[0], request, env, waitUntil);
   }
 
   // Handle /:id
   if (pathParts.length === 1) {
-    return handleLinkPage(pathParts[0], request, env);
+    return handleLinkPage(pathParts[0], request, env, waitUntil);
   }
 
   return new Response('Not Found', { status: 404 });
 }
 
-async function handleLinkPage(id, request, env) {
+async function handleLinkPage(id, request, env, waitUntil) {
   const data = await env.LINKS.get(id, 'json');
 
   if (!data) {
@@ -34,6 +35,21 @@ async function handleLinkPage(id, request, env) {
       status: 404,
       headers: { 'Content-Type': 'text/html' }
     });
+  }
+
+  // Lazy enrichment: fill in missing service URLs in the background
+  // This catches links created before enrichment was added, or where
+  // background enrichment at creation time didn't complete
+  if (!data.enrichedAt) {
+    waitUntil((async () => {
+      try {
+        await enrichLinkData(data, env);
+        data.enrichedAt = Date.now();
+        await env.LINKS.put(id, JSON.stringify(data));
+      } catch (e) {
+        // Best-effort
+      }
+    })());
   }
 
   // Increment view count (fire and forget)
@@ -50,11 +66,24 @@ async function handleLinkPage(id, request, env) {
   });
 }
 
-async function handleEmbed(id, request, env) {
+async function handleEmbed(id, request, env, waitUntil) {
   const data = await env.LINKS.get(id, 'json');
 
   if (!data) {
     return new Response('Not Found', { status: 404 });
+  }
+
+  // Lazy enrichment for embeds too
+  if (!data.enrichedAt) {
+    waitUntil((async () => {
+      try {
+        await enrichLinkData(data, env);
+        data.enrichedAt = Date.now();
+        await env.LINKS.put(id, JSON.stringify(data));
+      } catch (e) {
+        // Best-effort
+      }
+    })());
   }
 
   const url = new URL(request.url);
