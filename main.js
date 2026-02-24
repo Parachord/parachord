@@ -992,6 +992,15 @@ async function handleEmbedMessage(ws, message) {
       }
       break;
 
+    case 'queue':
+      if (mainWindow) {
+        safeSendToRenderer('embed-queue', { track: payload?.track });
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'App not ready' });
+      }
+      break;
+
     case 'pause':
       if (mainWindow) {
         safeSendToRenderer('embed-pause');

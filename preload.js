@@ -244,6 +244,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('embed-set-volume', (event, data) => {
         callback(data);
       });
+    },
+    onQueue: (callback) => {
+      ipcRenderer.on('embed-queue', (event, data) => {
+        callback(data);
+      });
     }
   },
 

@@ -13,6 +13,12 @@ export async function onRequestGet({ params, request, env }) {
     return env.ASSETS.fetch(request);
   }
 
+  // Handle /:id.xspf
+  if (pathParts.length === 1 && pathParts[0].endsWith('.xspf')) {
+    const id = pathParts[0].slice(0, -5); // strip .xspf
+    return handleXspf(id, request, env);
+  }
+
   // Handle /:id/embed
   if (pathParts.length === 2 && pathParts[1] === 'embed') {
     return handleEmbed(pathParts[0], request, env);
@@ -65,6 +71,81 @@ async function handleEmbed(id, request, env) {
       'Content-Type': 'text/html',
       'Cache-Control': 'public, max-age=300',
       'X-Frame-Options': 'ALLOWALL' // Allow embedding
+    }
+  });
+}
+
+function escapeXml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+async function handleXspf(id, request, env) {
+  const data = await env.LINKS.get(id, 'json');
+
+  if (!data) {
+    return new Response('Not Found', { status: 404 });
+  }
+
+  if (data.type !== 'album' && data.type !== 'playlist') {
+    // For single tracks, wrap it as a one-track playlist
+    const trackLocation = data.urls?.spotify || data.urls?.youtube || data.urls?.appleMusic
+      || data.urls?.soundcloud || data.urls?.bandcamp || data.urls?.tidal || data.urls?.deezer || '';
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>${escapeXml(data.title)}</title>
+  ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
+  ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
+  <trackList>
+    <track>
+      <title>${escapeXml(data.title)}</title>
+      ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
+      ${trackLocation ? `<location>${escapeXml(trackLocation)}</location>` : ''}
+      ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
+    </track>
+  </trackList>
+</playlist>`;
+
+    return new Response(xml, {
+      headers: {
+        'Content-Type': 'application/xspf+xml',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
+  }
+
+  // Album or playlist
+  const tracks = (data.tracks || []).map(t => {
+    const location = t.urls?.spotify || t.urls?.youtube || t.urls?.appleMusic
+      || t.urls?.soundcloud || t.urls?.bandcamp || t.urls?.tidal || t.urls?.deezer || '';
+    const artist = t.artist || data.artist;
+    return `    <track>
+      <title>${escapeXml(t.title)}</title>
+      ${artist ? `<creator>${escapeXml(artist)}</creator>` : ''}
+      ${location ? `<location>${escapeXml(location)}</location>` : ''}
+      ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
+      ${t.duration ? `<duration>${Math.round(t.duration * 1000)}</duration>` : ''}
+      ${t.trackNumber != null ? `<trackNum>${t.trackNumber}</trackNum>` : ''}
+      ${t.urls?.spotify ? `<link rel="https://open.spotify.com">${escapeXml(t.urls.spotify)}</link>` : ''}
+      ${t.urls?.appleMusic ? `<link rel="https://music.apple.com">${escapeXml(t.urls.appleMusic)}</link>` : ''}
+      ${t.urls?.youtube ? `<link rel="https://youtube.com">${escapeXml(t.urls.youtube)}</link>` : ''}
+    </track>`;
+  }).join('\n');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>${escapeXml(data.title)}</title>
+  ${data.artist ? `<creator>${escapeXml(data.artist)}</creator>` : ''}
+  ${data.albumArt ? `<image>${escapeXml(data.albumArt)}</image>` : ''}
+  <trackList>
+${tracks}
+  </trackList>
+</playlist>`;
+
+  return new Response(xml, {
+    headers: {
+      'Content-Type': 'application/xspf+xml',
+      'Cache-Control': 'public, max-age=300'
     }
   });
 }

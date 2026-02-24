@@ -8533,6 +8533,14 @@ const Parachord = () => {
       }
     });
 
+    // Handle queue requests from embed (add track to end of queue)
+    window.electron.embed.onQueue(({ track }) => {
+      console.log('➕ Embed queue request:', track?.title);
+      if (track && setCurrentQueueRef.current) {
+        setCurrentQueueRef.current(prev => [...prev, track]);
+      }
+    });
+
     // Handle pause requests from embed
     window.electron.embed.onPause(() => {
       console.log('⏸️ Embed pause request');

@@ -82,6 +82,10 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
   const serviceLinksHtml = urls ? SERVICES.map(s => {
     const url = urls[s.id];
     if (!url) return '';
+    if (isCollection) {
+      // Album/playlist: compact icon row linking to album pages
+      return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-icon-link" style="--service-color: ${s.color}" title="${s.name}">${SERVICE_ICONS[s.id]}</a>`;
+    }
     return `
       <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-link" style="--service-color: ${s.color}">
         <span class="service-icon">${SERVICE_ICONS[s.id]}</span>
@@ -176,6 +180,39 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       display: flex;
       flex-direction: column;
       gap: 12px;
+    }
+    .services-row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .service-icon-link {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .service-icon-link:hover {
+      border-color: var(--service-color);
+      transform: translateY(-2px);
+      background: var(--bg-tertiary);
+    }
+    .service-icon-link svg {
+      width: 22px;
+      height: 22px;
+      color: var(--service-color);
+    }
+    .service-icon-link img {
+      width: 22px !important;
+      height: 22px !important;
+      object-fit: contain;
     }
     .service-link {
       display: flex;
@@ -368,7 +405,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     ${artist ? `<p class="artist">${escapeHtml(artist)}</p>` : ''}
     ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
-    ${serviceLinksHtml ? `<div class="services">${serviceLinksHtml}</div>` : ''}
+    ${serviceLinksHtml ? `<div class="${isCollection ? 'services-row' : 'services'}">${serviceLinksHtml}</div>` : ''}
 
     ${isCollection ? `
     <div class="tracklist">
@@ -416,7 +453,26 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
+        const isCollection = linkData.type === 'album' || linkData.type === 'playlist';
+        if (isCollection && linkData.tracks && linkData.tracks.length > 0) {
+          // Send each track individually so they queue up
+          linkData.tracks.forEach((track, i) => {
+            const trackData = {
+              title: track.title,
+              artist: track.artist || linkData.artist,
+              album: linkData.title,
+              albumArt: linkData.albumArt,
+              urls: track.urls || {}
+            };
+            ws.send(JSON.stringify({
+              type: 'embed',
+              action: i === 0 ? 'play' : 'queue',
+              payload: { track: trackData }
+            }));
+          });
+        } else {
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
+        }
       }
     }
 
