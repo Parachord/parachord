@@ -8530,9 +8530,16 @@ const Parachord = () => {
     });
 
     // Handle play requests from embed
-    window.electron.embed.onPlay(({ track }) => {
-      console.log('▶️ Embed play request:', track?.title);
+    window.electron.embed.onPlay(({ track, queue }) => {
+      console.log('▶️ Embed play request:', track?.title, queue ? `(+${queue.length} queued)` : '');
       if (track && handlePlayRef.current) {
+        if (queue && queue.length > 0) {
+          // Album/playlist: set queue with remaining tracks, then play first
+          const context = { type: 'smartlink', name: track.album || track.title };
+          const taggedTracks = queue.map(t => ({ ...t, _playbackContext: context }));
+          setCurrentQueue(taggedTracks);
+          setPlaybackContext(context);
+        }
         handlePlayRef.current(track);
       }
     });

@@ -78,10 +78,13 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
   const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
   const ogType = type === 'album' ? 'music.album' : (type === 'playlist' ? 'music.playlist' : 'music.song');
 
-  // Service links (top-level album/playlist URLs, or track URLs for single tracks)
+  // Service links - icon row for collections, full buttons for single tracks
   const serviceLinksHtml = urls ? SERVICES.map(s => {
     const url = urls[s.id];
     if (!url) return '';
+    if (isCollection) {
+      return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-icon-link" style="--service-color: ${s.color}" title="${s.name}">${SERVICE_ICONS[s.id]}</a>`;
+    }
     return `
       <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-link" style="--service-color: ${s.color}">
         <span class="service-icon">${SERVICE_ICONS[s.id]}</span>
@@ -208,6 +211,41 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     }
     .service-name {
       font-weight: 500;
+    }
+    /* Icon row for album/playlist service links */
+    .services-row {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .service-icon-link {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .service-icon-link:hover {
+      border-color: var(--service-color);
+      background: color-mix(in srgb, var(--service-color) 15%, var(--bg-secondary));
+      transform: translateY(-2px);
+    }
+    .service-icon-link svg {
+      width: 22px;
+      height: 22px;
+      color: var(--service-color);
+    }
+    .service-icon-link img {
+      width: 22px !important;
+      height: 22px !important;
+      object-fit: contain;
     }
     /* Tracklist styles */
     .tracklist {
@@ -368,7 +406,7 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     ${artist ? `<p class="artist">${escapeHtml(artist)}</p>` : ''}
     ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
-    ${serviceLinksHtml ? `<div class="services">${serviceLinksHtml}</div>` : ''}
+    ${serviceLinksHtml ? `<div class="${isCollection ? 'services-row' : 'services'}">${serviceLinksHtml}</div>` : ''}
 
     ${isCollection ? `
     <div class="tracklist">
@@ -416,7 +454,21 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
+        if (linkData.tracks && linkData.tracks.length > 0) {
+          // For albums/playlists, send all individual tracks with album context
+          const tracks = linkData.tracks.map(t => ({
+            title: t.title,
+            artist: t.artist || linkData.artist,
+            album: linkData.title,
+            albumArt: linkData.albumArt,
+            duration: t.duration,
+            trackNumber: t.trackNumber,
+            urls: t.urls
+          }));
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: tracks[0], queue: tracks.slice(1) } }));
+        } else {
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
+        }
       }
     }
 

@@ -985,7 +985,7 @@ async function handleEmbedMessage(ws, message) {
 
     case 'play':
       if (mainWindow) {
-        safeSendToRenderer('embed-play', { track: payload?.track });
+        safeSendToRenderer('embed-play', { track: payload?.track, queue: payload?.queue });
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'App not ready' });
