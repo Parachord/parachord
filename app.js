@@ -22976,8 +22976,14 @@ ${tracks}
   // Handle scroll for New Releases header collapse
   const handleNewReleasesScroll = (e) => {
     const scrollTop = e.target.scrollTop;
+    const container = e.target;
     if (scrollTop > 100 && !newReleasesHeaderCollapsed) {
-      setNewReleasesHeaderCollapsed(true);
+      // Only collapse if there's enough scrollable content to sustain it
+      // (header shrinks by 240px, so content must exceed viewport by at least that much)
+      const hasEnoughContent = container.scrollHeight - container.clientHeight > 300;
+      if (hasEnoughContent) {
+        setNewReleasesHeaderCollapsed(true);
+      }
     } else if (scrollTop <= 50 && newReleasesHeaderCollapsed) {
       setNewReleasesHeaderCollapsed(false);
     }
