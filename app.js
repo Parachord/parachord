@@ -3567,7 +3567,7 @@ const ReleasePage = ({
             }
           }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...'),
           // Share button
-          React.createElement('div', { className: 'relative mt-5 flex justify-center' },
+          React.createElement('div', { className: 'relative mt-5 flex justify-center', style: { width: `${albumArtSize}px` } },
             React.createElement('button', {
               onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
               className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
@@ -34995,7 +34995,7 @@ useEffect(() => {
                 }, 'Delete Playlist')
               ),
               // Share button (outside space-y-1 metadata div for independent spacing)
-              React.createElement('div', { className: 'relative mt-3 flex justify-center' },
+              React.createElement('div', { className: 'relative mt-3 flex justify-center', style: { width: '212px' } },
                 React.createElement('button', {
                   onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'playlist' ? false : 'playlist'); },
                   className: 'px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 no-drag'
