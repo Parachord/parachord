@@ -40539,12 +40539,15 @@ useEffect(() => {
                               fetchArtistData(release.artist);
                             }
                           }, release.artist),
-                          release.date && React.createElement('p', {
-                            style: { fontSize: '11px', color: '#9ca3af', marginTop: '2px' }
-                          }, (() => {
+                          release.date && (() => {
                             const d = new Date(release.date + 'T00:00:00');
-                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                          })())
+                            const today = new Date(); today.setHours(0, 0, 0, 0);
+                            const isFuture = d > today;
+                            const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            return React.createElement('p', {
+                              style: { fontSize: '11px', color: isFuture ? '#8b5cf6' : '#9ca3af', marginTop: '2px' }
+                            }, isFuture ? `Coming ${formatted}` : formatted);
+                          })()
                         )
                       )
                     )
