@@ -11984,8 +11984,11 @@ ${trackListXml}
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
   useEffect(() => {
-    // Skip until settings are loaded to avoid overwriting saved queue
-    if (!resolverSettingsLoaded.current) return;
+    // Skip until cache is fully loaded to avoid overwriting saved queue with empty data.
+    // Previously used resolverSettingsLoaded ref, but that is set before queue restoration
+    // completes (especially with no resolvers configured), causing a race condition where
+    // the save effect fires with empty queue state and overwrites persisted data.
+    if (!cacheLoaded) return;
     if (!rememberQueue) return;
 
     // Debounce the save to avoid saving too frequently
