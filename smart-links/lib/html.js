@@ -792,7 +792,7 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #22c55e;
+      background: #fff;
       display: inline-block;
       margin-right: 6px;
       animation: pulse 2s infinite;
@@ -1185,7 +1185,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #22c55e;
+      background: #fff;
       display: inline-block;
       margin-right: 6px;
       animation: pulse 2s infinite;
