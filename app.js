@@ -11984,8 +11984,11 @@ ${trackListXml}
   // Save queue when it changes (if remember queue is enabled)
   // Include currentTrack so it can be restored as the playing track
   useEffect(() => {
-    // Skip until settings are loaded to avoid overwriting saved queue
-    if (!resolverSettingsLoaded.current) return;
+    // Skip until cache is fully loaded to avoid overwriting saved queue with empty data.
+    // Previously used resolverSettingsLoaded ref, but that is set before queue restoration
+    // completes (especially with no resolvers configured), causing a race condition where
+    // the save effect fires with empty queue state and overwrites persisted data.
+    if (!cacheLoaded) return;
     if (!rememberQueue) return;
 
     // Debounce the save to avoid saving too frequently
@@ -17580,7 +17583,7 @@ ${trackListXml}
 
       // Load new releases cache and show instantly on Home
       const newReleasesData = await window.electron.store.get('cache_new_releases');
-      if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp) {
+      if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp != null) {
         // Filter out broadcasts that may have been cached before the filter was added
         const filteredReleases = newReleasesData.releases.filter(r =>
           !(r.secondaryTypes || []).includes('broadcast')
@@ -17590,8 +17593,11 @@ ${trackListXml}
           newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
           console.log(`📦 Loaded ${filteredReleases.length} new releases from cache`);
         } else {
-          // Cache expired but still useful as stale data to show instantly
-          newReleasesCache.current = { releases: filteredReleases, timestamp: 0 };
+          // Cache expired but still useful as stale data to show instantly.
+          // Keep the original timestamp (not 0) so saveCacheToStore preserves a
+          // truthy value — a 0 sentinel would cause the loading guard to skip on
+          // next restart since 0 is falsy.
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
           console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
         }
         // Hydrate albumArt from albumArtCache for releases missing art
