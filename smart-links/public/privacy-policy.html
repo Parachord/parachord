@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Parachord Browser Extension</title>
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <meta name="description" content="Privacy policy for the Parachord browser extension">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 40px 20px;
+      line-height: 1.7;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 40px;
+      font-size: 0.95rem;
+    }
+    h2 {
+      color: #fff;
+      font-size: 1.25rem;
+      margin-top: 36px;
+      margin-bottom: 12px;
+    }
+    p, li {
+      color: #c0c0c0;
+      margin-bottom: 12px;
+    }
+    ul {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+    li { margin-bottom: 6px; }
+    strong { color: #e0e0e0; }
+    a {
+      color: #8b5cf6;
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    .back {
+      display: inline-block;
+      margin-bottom: 24px;
+      color: #888;
+      font-size: 0.9rem;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #2a2a2a;
+      margin: 32px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a class="back" href="https://parachord.app">&larr; parachord.app</a>
+    <h1>Privacy Policy</h1>
+    <p class="subtitle">Parachord Browser Extension &mdash; Last updated February 25, 2026</p>
+
+    <h2>Overview</h2>
+    <p>
+      The Parachord browser extension connects supported music websites to the
+      Parachord desktop application running on your computer. This policy
+      explains what information the extension accesses, how it is used, and
+      what protections are in place.
+    </p>
+
+    <h2>What the Extension Accesses</h2>
+    <p>The extension accesses the following information <strong>only on supported music sites</strong> (YouTube, Bandcamp, Spotify, Apple Music, SoundCloud, Last.fm, ListenBrainz, and Pitchfork):</p>
+    <ul>
+      <li><strong>Page URLs</strong> &mdash; to detect when you are on a supported site and to send music links to the desktop app when you choose to.</li>
+      <li><strong>Page content</strong> &mdash; content scripts read media playback state (play, pause, track title, artist, album, progress) so the desktop app can display and control what is playing.</li>
+      <li><strong>Tab information</strong> &mdash; tab IDs are used to route playback commands to the correct browser tab.</li>
+    </ul>
+
+    <h2>How Information Is Used</h2>
+    <p>
+      All information accessed by the extension is sent <strong>exclusively to
+      the Parachord desktop application running on your own computer</strong>
+      via Chrome&rsquo;s native messaging API. This is a direct, local-only
+      communication channel managed by the browser &mdash; no data leaves your
+      machine.
+    </p>
+    <p>The extension uses this information to:</p>
+    <ul>
+      <li>Show the currently playing track in the desktop app.</li>
+      <li>Forward playback commands (play, pause, skip) from the desktop app to the browser.</li>
+      <li>Send music URLs and playlist data you choose to share to the desktop app.</li>
+      <li>Display a badge icon indicating connection status and site support.</li>
+    </ul>
+
+    <h2>Local Storage</h2>
+    <p>
+      The extension stores a small amount of settings data locally in your
+      browser using <code>chrome.storage.local</code>. This includes
+      preferences such as whether Spotify or Apple Music link interception is
+      enabled. This data never leaves your browser.
+    </p>
+
+    <h2>What the Extension Does NOT Do</h2>
+    <ul>
+      <li>Does <strong>not</strong> collect, transmit, or store personal information.</li>
+      <li>Does <strong>not</strong> send any data to remote servers, analytics services, or third parties.</li>
+      <li>Does <strong>not</strong> track your browsing history or activity outside of supported music sites.</li>
+      <li>Does <strong>not</strong> inject advertisements or modify page content for commercial purposes.</li>
+      <li>Does <strong>not</strong> sell, share, or monetize any data.</li>
+    </ul>
+
+    <h2>Permissions Explained</h2>
+    <ul>
+      <li><strong>activeTab / tabs</strong> &mdash; needed to detect which tab is playing music and to send commands to it.</li>
+      <li><strong>scripting</strong> &mdash; needed to inject content scripts that read playback state on supported sites.</li>
+      <li><strong>nativeMessaging</strong> &mdash; needed to communicate with the Parachord desktop app via a secure, local-only channel.</li>
+      <li><strong>contextMenus</strong> &mdash; adds a &ldquo;Send to Parachord&rdquo; option when you right-click on supported links or pages.</li>
+      <li><strong>storage</strong> &mdash; stores your extension preferences locally.</li>
+      <li><strong>alarms</strong> &mdash; keeps the background service worker alive to maintain the connection with the desktop app.</li>
+      <li><strong>webNavigation</strong> &mdash; detects navigation to music URLs for optional link interception (Spotify, Apple Music).</li>
+      <li><strong>Host permissions</strong> &mdash; content scripts run only on the specific music sites listed in the manifest (YouTube, Bandcamp, Spotify, Apple Music, SoundCloud, Last.fm, ListenBrainz, Pitchfork).</li>
+    </ul>
+
+    <h2>Third-Party Services</h2>
+    <p>
+      The extension itself does not communicate with any third-party service.
+      The Parachord desktop application may connect to music services
+      (Spotify, Apple Music, Last.fm, etc.) based on your configuration, but
+      that is governed by the desktop application and each service&rsquo;s own
+      privacy policy &mdash; not this extension.
+    </p>
+
+    <h2>Data Security</h2>
+    <p>
+      Communication between the extension and the desktop app uses Chrome&rsquo;s
+      native messaging API, which ensures that only the registered Parachord
+      desktop application can exchange messages with the extension. No network
+      sockets or HTTP connections are used for this communication.
+    </p>
+
+    <h2>Children&rsquo;s Privacy</h2>
+    <p>
+      The extension does not knowingly collect any personal information from
+      anyone, including children under 13.
+    </p>
+
+    <h2>Changes to This Policy</h2>
+    <p>
+      We may update this privacy policy from time to time. Changes will be
+      posted on this page with an updated date. Continued use of the extension
+      after changes constitutes acceptance of the revised policy.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      If you have questions about this privacy policy, please open an issue on
+      the <a href="https://github.com/Parachord/parachord">Parachord GitHub repository</a>.
+    </p>
+
+    <hr>
+    <p style="color: #666; font-size: 0.85rem;">
+      &copy; 2026 Parachord. This privacy policy applies to the Parachord
+      browser extension distributed via the Chrome Web Store.
+    </p>
+  </div>
+</body>
+</html>
