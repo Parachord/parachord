@@ -23162,6 +23162,13 @@ ${tracks}
     let artistsProcessed = 0;
     const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
+    // Fetch with a timeout to prevent a single hanging request from stalling the loop
+    const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+    };
+
     for (const artist of artistList) {
       try {
         const cacheKey = artist.name.trim().toLowerCase();
@@ -23169,7 +23176,7 @@ ${tracks}
         let madeApiCall = false;
 
         if (!mbid) {
-          const searchResponse = await fetch(
+          const searchResponse = await fetchWithTimeout(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
             { headers: mbHeaders }
           );
@@ -23194,7 +23201,7 @@ ${tracks}
           continue;
         }
 
-        const releasesResponse = await fetch(
+        const releasesResponse = await fetchWithTimeout(
           `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
           { headers: mbHeaders }
         );
