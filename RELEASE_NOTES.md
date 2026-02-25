@@ -4,32 +4,54 @@
 
 ---
 
-## Browser Extension — Chrome Web Store Ready
+## Browser Extension v0.3.0 — Chrome & Firefox
 
-- **Native messaging** — extension now communicates via Chrome native messaging instead of WebSocket, improving reliability and security
-- **Chrome Web Store packaging** — new build script for packaging the extension for store submission
-- **Privacy policy** — added privacy policy pages covering the desktop app and browser extension
+The browser extension no longer uses WebSocket to talk to the desktop app. Communication now goes through Chrome's native messaging API — a secure, local-only channel verified by the browser.
 
-## Embedded Player — Large Embed
+- **Native messaging** — new relay host bridges Chrome's stdin/stdout protocol to the desktop app over a local IPC socket (Unix socket on macOS/Linux, named pipe on Windows)
+- **Auto-installer** — registers the host manifest for Chrome, Chromium, Edge, Brave, and Firefox on macOS, Linux, and Windows
+- **Firefox support** — packaging script produces both Chrome and Firefox zips; native messaging installer registers for both browser families
+- **Spotify URL lookup** — the Spotify resolver now handles `open.spotify.com` and `spotify:` URIs directly (tracks, albums, playlists), so link interception actually delivers tracks to the queue
+- **Link intercept fixes** — intercepted tabs only close when the URL is delivered to the desktop app; handles Chrome MV3 service worker restarts gracefully
+- **Chrome Web Store packaging** — `npm run package:extension` validates the manifest and produces store-ready zips
+- **Store listings** — Chrome Web Store and Firefox Add-ons store descriptions added
+- **Privacy policy** — comprehensive policy covering the desktop app and extension
 
-- **Large embed option** — albums and playlists can now be embedded with a full visible tracklist
-- **Play All button** — new play icon on the Play All button in embeds, with proper sizing across embed variants
+## Smart Links — Large Embed
+
+- **`?size=large` embed** — 600px-wide player with album art (or playlist mosaic), Play All button, streaming service icons, and the complete tracklist with per-track durations and service badges
+- **oEmbed support** — `?size=large` returns correct iframe dimensions (dynamic height based on track count)
+- **Favicon** — all go.parachord.com pages now have favicon.ico, icon.svg, and apple-touch-icon
+
+## Universal Mac Build
+
+The macOS build was producing arm64-only binaries, causing "not compatible" errors on Intel Macs.
+
+- **Universal binary** — DMG and zip now contain both Intel and Apple Silicon slices
+- **MusicKit helper** — Swift build updated to compile for both `arm64` and `x86_64`
+- **CI workflow** — now passes `--universal` to electron-builder
+- **x64ArchFiles** — tells `@electron/universal` how to merge native `.node` modules
+- **Bundle cleanup** — excluded `native/` source directory that was confusing the universal merge
+
+## Spotify Sync — Pre-resolved Sources
+
+- **Synced tracks skip re-resolution** — tracks from Spotify library sync now carry their Spotify source data, so the resolution system skips redundant Search API calls
+- **Token refresh retry** — Spotify API calls that fail with HTTP 400 now automatically refresh the token and retry
 
 ## Fresh Drops Reliability
 
-- **Cache persistence fixed** — Fresh Drops now correctly survives app restarts (fixed falsy-timestamp sentinel, cache ref overwrite on rebuild, and store key whitelist)
+- **Cache persistence fixed** — Fresh Drops now correctly survives app restarts (fixed falsy-timestamp sentinel, cache ref overwrite during rebuild, and missing store key whitelist entries)
 - **Faster loading** — releases stream in more quickly with a visible loading indicator
-- **"Coming" prefix** — upcoming releases are highlighted with a "Coming" badge
-- **10s timeout** — MusicBrainz fetch calls now have a timeout to prevent hangs
+- **"Coming" badge** — upcoming releases are highlighted with a "Coming" prefix
+- **10s fetch timeout** — MusicBrainz calls now have a timeout to prevent indefinite hangs
 
 ## Bug Fixes
 
 - Fixed queue not restoring on restart due to a race condition with resolver settings initialization
-- Fixed Spotify resolution failing with HTTP 400 by adding automatic token refresh retry
-- Fixed Spotify synced tracks not resolving
+- Fixed Spotify synced tracks not resolving (missing source data)
 - Fixed "Play Playlist Next" incorrectly creating a library playlist
-- Fixed AI Suggestions and New Releases caches not persisting across restarts (missing store key whitelist entries)
-- Added spinning refresh icon to AI Suggestions (replacing plain text link)
+- Fixed AI Suggestions and New Releases caches silently failing to persist (missing `ALLOWED_STORE_KEYS` entries)
+- Replaced text "Refresh" link with spinning refresh icon on AI Suggestions
 - Added favicon to go.parachord.com share pages
 
 ---
