@@ -1219,6 +1219,304 @@ class ParachordCarAppService : CarAppService() {
 
 ---
 
+## 16. Recent Desktop Features to Support
+
+These features were recently added to the desktop app and should be included in mobile:
+
+### Purchase/Buy Button (Bandcamp, Qobuz)
+
+The desktop app now shows a "Buy" button in the playbar when playing tracks from resolvers that support purchases (Bandcamp, Qobuz). This requires:
+
+1. **New `purchase` capability in .axe format** - Already supported by JS engine
+2. **Purchase URL detection** - Uses `bandcampUrl` or constructs from `qobuzId`
+3. **Confidence threshold** - Only shows when resolver confidence is high enough
+4. **Artist matching** - Validates artist name matches to avoid wrong purchases
+
+```kotlin
+// BuyButtonHandler.kt
+class BuyButtonHandler @Inject constructor(
+    private val context: Context
+) {
+    private val MIN_PURCHASE_CONFIDENCE = 0.7
+
+    fun getPurchasableSource(track: Track, resolvedSources: Map<String, ResolvedSource>): PurchaseInfo? {
+        // Check Bandcamp
+        val bandcamp = resolvedSources["bandcamp"]
+        if (bandcamp != null &&
+            bandcamp.confidence >= MIN_PURCHASE_CONFIDENCE &&
+            artistsMatch(track.artist, bandcamp.artist)) {
+            bandcamp.bandcampUrl?.let {
+                return PurchaseInfo("bandcamp", "Bandcamp", it)
+            }
+        }
+
+        // Check Qobuz
+        val qobuz = resolvedSources["qobuz"]
+        if (qobuz != null &&
+            qobuz.confidence >= MIN_PURCHASE_CONFIDENCE &&
+            artistsMatch(track.artist, qobuz.artist)) {
+            qobuz.qobuzId?.let {
+                return PurchaseInfo("qobuz", "Qobuz", "https://www.qobuz.com/us-en/track/$it")
+            }
+        }
+
+        return null
+    }
+
+    fun openPurchaseUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        context.startActivity(intent)
+    }
+}
+
+data class PurchaseInfo(
+    val resolverId: String,
+    val resolverName: String,
+    val purchaseUrl: String
+)
+```
+
+**UI Integration:**
+```kotlin
+// In MiniPlayerView or NowPlayingView
+@Composable
+fun BuyButton(purchaseInfo: PurchaseInfo?, onClick: () -> Unit) {
+    if (purchaseInfo != null) {
+        IconButton(onClick = onClick) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.ShoppingCart,
+                    contentDescription = "Buy"
+                )
+                Text(
+                    text = purchaseInfo.resolverName,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+```
+
+### Conversational DJ / AI Chat Integration
+
+The desktop app is adding a conversational AI DJ feature with pluggable AI backends. This introduces a new `chat` capability for .axe plugins:
+
+**New Plugin Capability:**
+```json
+{
+  "capabilities": {
+    "chat": true
+  },
+  "implementation": {
+    "chat": "async function(messages, tools, config) { ... }"
+  }
+}
+```
+
+**Supported Providers:**
+- **Ollama** (local, free, private)
+- **OpenAI** (cloud, GPT-4o)
+- **Google Gemini** (cloud, free tier)
+- **Anthropic Claude** (cloud)
+- **Groq** (cloud, fast inference)
+
+**Android Implementation:**
+
+```kotlin
+// AIChatService.kt
+class AIChatService @Inject constructor(
+    private val jsBridge: JSBridge
+) {
+    private val messages = mutableListOf<ChatMessage>()
+
+    suspend fun sendMessage(userMessage: String, context: PlaybackContext): ChatResponse {
+        messages.add(ChatMessage(role = "user", content = userMessage))
+
+        // Build system prompt with context
+        val systemPrompt = buildSystemPrompt(context)
+
+        // Call JS chat implementation
+        val response = jsBridge.callFunction(
+            "chatProvider.chat",
+            listOf(
+                mapOf("role" to "system", "content" to systemPrompt),
+                *messages.toTypedArray()
+            ),
+            DJ_TOOLS,
+            config
+        ).await<ChatResponse>()
+
+        // Handle tool calls
+        if (response.toolCalls.isNotEmpty()) {
+            val toolResults = executeTools(response.toolCalls)
+            // Get follow-up response after tool execution
+            return getFollowUp(response, toolResults)
+        }
+
+        messages.add(ChatMessage(role = "assistant", content = response.content))
+        return response
+    }
+
+    private suspend fun executeTools(toolCalls: List<ToolCall>): List<ToolResult> {
+        return toolCalls.map { call ->
+            when (call.name) {
+                "play" -> executePplay(call.arguments)
+                "control" -> executeControl(call.arguments)
+                "search" -> executeSearch(call.arguments)
+                "queue_add" -> executeQueueAdd(call.arguments)
+                "queue_clear" -> executeQueueClear()
+                "shuffle" -> executeShuffle(call.arguments)
+                else -> ToolResult(success = false, error = "Unknown tool")
+            }
+        }
+    }
+}
+
+// DJ Tool definitions (matching desktop)
+val DJ_TOOLS = listOf(
+    Tool(
+        name = "play",
+        description = "Play a specific track",
+        parameters = mapOf(
+            "artist" to ToolParam("string", "Artist name"),
+            "title" to ToolParam("string", "Track title")
+        )
+    ),
+    Tool(
+        name = "control",
+        description = "Control playback",
+        parameters = mapOf(
+            "action" to ToolParam("string", "pause|resume|skip|previous")
+        )
+    ),
+    Tool(
+        name = "search",
+        description = "Search for tracks",
+        parameters = mapOf(
+            "query" to ToolParam("string", "Search query"),
+            "limit" to ToolParam("number", "Max results", optional = true)
+        )
+    ),
+    Tool(
+        name = "queue_add",
+        description = "Add tracks to queue",
+        parameters = mapOf(
+            "tracks" to ToolParam("array", "Tracks to add"),
+            "position" to ToolParam("string", "next|last", optional = true)
+        )
+    ),
+    Tool(
+        name = "queue_clear",
+        description = "Clear the queue"
+    ),
+    Tool(
+        name = "shuffle",
+        description = "Toggle shuffle",
+        parameters = mapOf(
+            "enabled" to ToolParam("boolean", "Enable shuffle")
+        )
+    )
+)
+```
+
+**Chat UI:**
+```kotlin
+@Composable
+fun ChatPanel(
+    viewModel: ChatViewModel = hiltViewModel(),
+    onDismiss: () -> Unit
+) {
+    val messages by viewModel.messages.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header
+        TopAppBar(
+            title = { Text("AI DJ") },
+            navigationIcon = {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, "Close")
+                }
+            },
+            actions = {
+                // Provider selector
+                ProviderSelector(
+                    providers = viewModel.chatProviders,
+                    selected = viewModel.selectedProvider,
+                    onSelect = viewModel::selectProvider
+                )
+            }
+        )
+
+        // Messages
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            reverseLayout = true
+        ) {
+            items(messages.reversed()) { message ->
+                ChatBubble(message)
+            }
+        }
+
+        // Input
+        ChatInput(
+            onSend = viewModel::sendMessage,
+            isLoading = isLoading
+        )
+    }
+}
+```
+
+### Token Refresh Management
+
+The desktop app now proactively refreshes OAuth tokens (e.g., SoundCloud) before they expire:
+
+```kotlin
+// TokenRefreshManager.kt
+class TokenRefreshManager @Inject constructor(
+    private val settingsStore: SettingsStore,
+    private val workManager: WorkManager
+) {
+    fun scheduleTokenRefresh(providerId: String, expiresIn: Long) {
+        // Schedule refresh at 80% of expiry time
+        val refreshDelay = (expiresIn * 0.8).toLong()
+
+        val refreshWork = OneTimeWorkRequestBuilder<TokenRefreshWorker>()
+            .setInitialDelay(refreshDelay, TimeUnit.SECONDS)
+            .setInputData(workDataOf("providerId" to providerId))
+            .build()
+
+        workManager.enqueueUniqueWork(
+            "token_refresh_$providerId",
+            ExistingWorkPolicy.REPLACE,
+            refreshWork
+        )
+    }
+}
+
+@HiltWorker
+class TokenRefreshWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+    private val oAuthManager: OAuthManager
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val providerId = inputData.getString("providerId") ?: return Result.failure()
+
+        return try {
+            oAuthManager.refreshToken(providerId)
+            Result.success()
+        } catch (e: Exception) {
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+}
+```
+
+---
+
 ## Summary
 
 This architecture achieves **100% reuse** of:

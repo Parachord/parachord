@@ -2379,6 +2379,423 @@ struct NowPlayingWidgetView: View {
 
 ---
 
+## 16. Recent Desktop Features to Support
+
+These features were recently added to the desktop app and should be included in iOS:
+
+### Purchase/Buy Button (Bandcamp, Qobuz)
+
+The desktop app now shows a "Buy" button in the playbar when playing tracks from resolvers that support purchases (Bandcamp, Qobuz). This requires:
+
+1. **New `purchase` capability in .axe format** - Already supported by JS engine
+2. **Purchase URL detection** - Uses `bandcampUrl` or constructs from `qobuzId`
+3. **Confidence threshold** - Only shows when resolver confidence is high enough
+4. **Artist matching** - Validates artist name matches to avoid wrong purchases
+
+```swift
+// BuyButtonHandler.swift
+class BuyButtonHandler {
+    static let shared = BuyButtonHandler()
+    private let minPurchaseConfidence = 0.7
+
+    func getPurchasableSource(
+        track: Track,
+        resolvedSources: [String: ResolvedSource]
+    ) -> PurchaseInfo? {
+        // Check Bandcamp
+        if let bandcamp = resolvedSources["bandcamp"],
+           bandcamp.confidence >= minPurchaseConfidence,
+           artistsMatch(track.artist, bandcamp.artist),
+           let bandcampUrl = bandcamp.bandcampUrl {
+            return PurchaseInfo(
+                resolverId: "bandcamp",
+                resolverName: "Bandcamp",
+                purchaseUrl: bandcampUrl
+            )
+        }
+
+        // Check Qobuz
+        if let qobuz = resolvedSources["qobuz"],
+           qobuz.confidence >= minPurchaseConfidence,
+           artistsMatch(track.artist, qobuz.artist),
+           let qobuzId = qobuz.qobuzId {
+            return PurchaseInfo(
+                resolverId: "qobuz",
+                resolverName: "Qobuz",
+                purchaseUrl: "https://www.qobuz.com/us-en/track/\(qobuzId)"
+            )
+        }
+
+        return nil
+    }
+
+    func openPurchaseUrl(_ url: String) {
+        guard let url = URL(string: url) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func artistsMatch(_ a1: String, _ a2: String?) -> Bool {
+        guard let a2 = a2 else { return false }
+        let norm1 = a1.lowercased()
+        let norm2 = a2.lowercased()
+        return norm1 == norm2 || norm1.contains(norm2) || norm2.contains(norm1)
+    }
+}
+
+struct PurchaseInfo {
+    let resolverId: String
+    let resolverName: String
+    let purchaseUrl: String
+}
+```
+
+**SwiftUI Integration:**
+```swift
+// In MiniPlayerView or NowPlayingView
+struct BuyButton: View {
+    let purchaseInfo: PurchaseInfo?
+    let onTap: () -> Void
+
+    var body: some View {
+        if let info = purchaseInfo {
+            Button(action: onTap) {
+                HStack(spacing: 4) {
+                    Image(systemName: "cart")
+                    Text(info.resolverName)
+                        .font(.caption2)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(.cyan)
+        }
+    }
+}
+```
+
+### Conversational DJ / AI Chat Integration
+
+The desktop app is adding a conversational AI DJ feature with pluggable AI backends. This introduces a new `chat` capability for .axe plugins:
+
+**New Plugin Capability:**
+```json
+{
+  "capabilities": {
+    "chat": true
+  },
+  "implementation": {
+    "chat": "async function(messages, tools, config) { ... }"
+  }
+}
+```
+
+**Supported Providers:**
+- **Ollama** (local, free, private)
+- **OpenAI** (cloud, GPT-4o)
+- **Google Gemini** (cloud, free tier)
+- **Anthropic Claude** (cloud)
+- **Groq** (cloud, fast inference)
+
+**iOS Implementation:**
+
+```swift
+// AIChatService.swift
+@MainActor
+@Observable
+class AIChatService {
+    private let jsBridge: JSBridge
+    private var messages: [ChatMessage] = []
+
+    var isLoading = false
+
+    init(jsBridge: JSBridge = .shared) {
+        self.jsBridge = jsBridge
+    }
+
+    func sendMessage(_ userMessage: String, context: PlaybackContext) async throws -> ChatResponse {
+        messages.append(ChatMessage(role: .user, content: userMessage))
+        isLoading = true
+        defer { isLoading = false }
+
+        // Build system prompt with context
+        let systemPrompt = buildSystemPrompt(context)
+
+        // Call JS chat implementation
+        let allMessages = [ChatMessage(role: .system, content: systemPrompt)] + messages
+
+        let response = try await jsBridge.callFunction(
+            "chatProvider.chat",
+            arguments: [
+                allMessages.map { $0.toDictionary() },
+                DJ_TOOLS.map { $0.toDictionary() },
+                config
+            ]
+        )
+
+        guard let chatResponse = ChatResponse(jsValue: response) else {
+            throw ChatError.invalidResponse
+        }
+
+        // Handle tool calls
+        if !chatResponse.toolCalls.isEmpty {
+            let toolResults = try await executeTools(chatResponse.toolCalls)
+            return try await getFollowUp(chatResponse, toolResults: toolResults)
+        }
+
+        messages.append(ChatMessage(role: .assistant, content: chatResponse.content))
+        return chatResponse
+    }
+
+    private func executeTools(_ toolCalls: [ToolCall]) async throws -> [ToolResult] {
+        var results: [ToolResult] = []
+
+        for call in toolCalls {
+            let result: ToolResult = switch call.name {
+            case "play":
+                try await executePlay(call.arguments)
+            case "control":
+                try await executeControl(call.arguments)
+            case "search":
+                try await executeSearch(call.arguments)
+            case "queue_add":
+                try await executeQueueAdd(call.arguments)
+            case "queue_clear":
+                try await executeQueueClear()
+            case "shuffle":
+                try await executeShuffle(call.arguments)
+            default:
+                ToolResult(success: false, error: "Unknown tool")
+            }
+            results.append(result)
+        }
+
+        return results
+    }
+
+    func clearHistory() {
+        messages.removeAll()
+    }
+}
+
+// DJ Tool definitions (matching desktop)
+let DJ_TOOLS: [Tool] = [
+    Tool(
+        name: "play",
+        description: "Play a specific track",
+        parameters: [
+            "artist": ToolParam(type: "string", description: "Artist name"),
+            "title": ToolParam(type: "string", description: "Track title")
+        ],
+        required: ["artist", "title"]
+    ),
+    Tool(
+        name: "control",
+        description: "Control playback",
+        parameters: [
+            "action": ToolParam(type: "string", description: "pause|resume|skip|previous")
+        ],
+        required: ["action"]
+    ),
+    Tool(
+        name: "search",
+        description: "Search for tracks",
+        parameters: [
+            "query": ToolParam(type: "string", description: "Search query"),
+            "limit": ToolParam(type: "number", description: "Max results")
+        ],
+        required: ["query"]
+    ),
+    Tool(
+        name: "queue_add",
+        description: "Add tracks to queue",
+        parameters: [
+            "tracks": ToolParam(type: "array", description: "Tracks to add"),
+            "position": ToolParam(type: "string", description: "next|last")
+        ],
+        required: ["tracks"]
+    ),
+    Tool(
+        name: "queue_clear",
+        description: "Clear the queue",
+        parameters: [:],
+        required: []
+    ),
+    Tool(
+        name: "shuffle",
+        description: "Toggle shuffle",
+        parameters: [
+            "enabled": ToolParam(type: "boolean", description: "Enable shuffle")
+        ],
+        required: ["enabled"]
+    )
+]
+```
+
+**Chat UI:**
+```swift
+struct ChatPanelView: View {
+    @Environment(AIChatService.self) private var chatService
+    @State private var inputText = ""
+    @State private var selectedProvider: String = "ollama"
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Messages
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(chatService.messages) { message in
+                                ChatBubble(message: message)
+                                    .id(message.id)
+                            }
+                        }
+                        .padding()
+                    }
+                    .onChange(of: chatService.messages.count) { _, _ in
+                        if let lastMessage = chatService.messages.last {
+                            withAnimation {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                // Input
+                HStack {
+                    TextField("Ask the DJ...", text: $inputText)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        sendMessage()
+                    } label: {
+                        Image(systemName: chatService.isLoading ? "ellipsis" : "arrow.up.circle.fill")
+                            .font(.title2)
+                    }
+                    .disabled(inputText.isEmpty || chatService.isLoading)
+                }
+                .padding()
+            }
+            .navigationTitle("AI DJ")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ForEach(availableProviders, id: \.id) { provider in
+                            Button(provider.name) {
+                                selectedProvider = provider.id
+                            }
+                        }
+                    } label: {
+                        Label(selectedProvider, systemImage: "brain")
+                    }
+                }
+            }
+        }
+    }
+
+    private func sendMessage() {
+        let message = inputText
+        inputText = ""
+        Task {
+            try? await chatService.sendMessage(message, context: getContext())
+        }
+    }
+}
+
+struct ChatBubble: View {
+    let message: ChatMessage
+
+    var body: some View {
+        HStack {
+            if message.role == .user { Spacer() }
+
+            Text(message.content)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(message.role == .user ? Color.blue : Color(.systemGray5))
+                .foregroundStyle(message.role == .user ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+
+            if message.role == .assistant { Spacer() }
+        }
+    }
+}
+```
+
+### Token Refresh Management
+
+The desktop app now proactively refreshes OAuth tokens (e.g., SoundCloud) before they expire:
+
+```swift
+// TokenRefreshManager.swift
+class TokenRefreshManager {
+    static let shared = TokenRefreshManager()
+
+    private var refreshTasks: [String: Task<Void, Never>] = [:]
+
+    func scheduleTokenRefresh(providerId: String, expiresIn: TimeInterval) {
+        // Cancel existing task if any
+        refreshTasks[providerId]?.cancel()
+
+        // Schedule refresh at 80% of expiry time
+        let refreshDelay = expiresIn * 0.8
+
+        refreshTasks[providerId] = Task {
+            try? await Task.sleep(for: .seconds(refreshDelay))
+
+            guard !Task.isCancelled else { return }
+
+            do {
+                try await OAuthManager.shared.refreshToken(for: providerId)
+            } catch {
+                print("Token refresh failed for \(providerId): \(error)")
+                // Retry with exponential backoff
+                await retryRefresh(providerId: providerId, attempt: 1)
+            }
+        }
+    }
+
+    private func retryRefresh(providerId: String, attempt: Int) async {
+        guard attempt <= 3 else { return }
+
+        let delay = pow(2.0, Double(attempt)) // 2, 4, 8 seconds
+        try? await Task.sleep(for: .seconds(delay))
+
+        guard !Task.isCancelled else { return }
+
+        do {
+            try await OAuthManager.shared.refreshToken(for: providerId)
+        } catch {
+            await retryRefresh(providerId: providerId, attempt: attempt + 1)
+        }
+    }
+
+    func cancelRefresh(for providerId: String) {
+        refreshTasks[providerId]?.cancel()
+        refreshTasks.removeValue(forKey: providerId)
+    }
+}
+
+// Integration with OAuthManager
+extension OAuthManager {
+    func handleTokenResponse(_ tokens: SpotifyTokens, providerId: String) {
+        // Store tokens
+        SettingsStore.shared.setAccessToken(tokens.accessToken, for: providerId)
+        SettingsStore.shared.setRefreshToken(tokens.refreshToken, for: providerId)
+
+        // Schedule proactive refresh
+        TokenRefreshManager.shared.scheduleTokenRefresh(
+            providerId: providerId,
+            expiresIn: TimeInterval(tokens.expiresIn)
+        )
+    }
+}
+```
+
+---
+
 ## Summary
 
 This architecture achieves **100% reuse** of:
