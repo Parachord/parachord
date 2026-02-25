@@ -747,14 +747,17 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
     .header-actions {
       display: flex;
       justify-content: center;
+      align-items: center;
       gap: 8px;
       margin-bottom: 16px;
     }
     .btn {
       padding: 8px 16px;
       border-radius: 20px;
+      font-family: inherit;
       font-size: 13px;
       font-weight: 500;
+      line-height: 1;
       text-decoration: none;
       transition: all 0.2s;
       cursor: pointer;
