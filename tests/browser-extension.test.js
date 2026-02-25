@@ -267,12 +267,12 @@ try {
 }
 
 if (backgroundScript) {
-  test('Background script has WebSocket connection', () => {
-    assertTrue(backgroundScript.includes('WebSocket'));
+  test('Background script uses native messaging', () => {
+    assertTrue(backgroundScript.includes('connectNative') || backgroundScript.includes('nativeMessaging'));
   });
 
-  test('Background script connects to correct port', () => {
-    assertTrue(backgroundScript.includes('9876') || backgroundScript.includes('127.0.0.1'));
+  test('Background script connects to native host', () => {
+    assertTrue(backgroundScript.includes('com.parachord.desktop'));
   });
 
   test('Background script forwards messages from content scripts', () => {
@@ -290,8 +290,8 @@ if (backgroundScript) {
   test('Background script has reconnection logic', () => {
     assertTrue(
       backgroundScript.includes('reconnect') ||
-      backgroundScript.includes('onclose') ||
-      backgroundScript.includes('onerror')
+      backgroundScript.includes('onDisconnect') ||
+      backgroundScript.includes('scheduleReconnect')
     );
   });
 }
