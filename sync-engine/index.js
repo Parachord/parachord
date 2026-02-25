@@ -56,8 +56,10 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
       });
     } else if (!localItem.syncSources?.[providerId]) {
       // Item exists but doesn't have this provider as source - add source
+      // Merge remote sources (e.g., sources.spotify from sync) with local sources
       toUpdate.push({
         ...localItem,
+        sources: { ...localItem.sources, ...remoteItem.sources },
         syncSources: {
           ...localItem.syncSources,
           [providerId]: {
@@ -68,8 +70,11 @@ const calculateDiff = (remoteItems, localItems, providerId) => {
       });
     } else {
       // Item exists with this provider - update syncedAt
+      // Merge remote sources into local to ensure pre-populated resolution data
+      // (e.g., sources.spotify) is present even for previously synced tracks
       unchanged.push({
         ...localItem,
+        sources: { ...localItem.sources, ...remoteItem.sources },
         syncSources: {
           ...localItem.syncSources,
           [providerId]: {

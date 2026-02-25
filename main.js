@@ -2307,8 +2307,9 @@ ipcMain.handle('spotify-auth', async () => {
 });
 
 // Check if token exists and auto-refresh if expired
-ipcMain.handle('spotify-check-token', async () => {
-  console.log('=== Spotify Check Token Handler Called ===');
+// Pass { force: true } to skip expiry check and always refresh (e.g. after a 400/401 from Spotify API)
+ipcMain.handle('spotify-check-token', async (event, { force = false } = {}) => {
+  console.log('=== Spotify Check Token Handler Called ===', force ? '(forced)' : '');
   const token = store.get('spotify_token');
   const expiry = store.get('spotify_token_expiry');
   const refreshToken = store.get('spotify_refresh_token');
@@ -2319,8 +2320,8 @@ ipcMain.handle('spotify-check-token', async () => {
   console.log('Current time:', Date.now());
   console.log('Is expired:', expiry && Date.now() >= expiry);
 
-  // If token is valid, return it
-  if (token && expiry && Date.now() < expiry) {
+  // If token is valid and not a forced refresh, return it
+  if (!force && token && expiry && Date.now() < expiry) {
     console.log('✓ Returning valid token');
     return { token, expiresAt: expiry };
   }
