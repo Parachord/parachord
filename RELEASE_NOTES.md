@@ -1,3 +1,61 @@
+# Parachord v0.8.0-alpha.2
+
+**Release date:** 2026-02-25
+
+---
+
+## Browser Extension v0.3.0 — Chrome & Firefox
+
+The browser extension no longer uses WebSocket to talk to the desktop app. Communication now goes through Chrome's native messaging API — a secure, local-only channel verified by the browser.
+
+- **Native messaging** — new relay host bridges Chrome's stdin/stdout protocol to the desktop app over a local IPC socket (Unix socket on macOS/Linux, named pipe on Windows)
+- **Auto-installer** — registers the host manifest for Chrome, Chromium, Edge, Brave, and Firefox on macOS, Linux, and Windows
+- **Firefox support** — packaging script produces both Chrome and Firefox zips; native messaging installer registers for both browser families
+- **Spotify URL lookup** — the Spotify resolver now handles `open.spotify.com` and `spotify:` URIs directly (tracks, albums, playlists), so link interception actually delivers tracks to the queue
+- **Link intercept fixes** — intercepted tabs only close when the URL is delivered to the desktop app; handles Chrome MV3 service worker restarts gracefully
+- **Chrome Web Store packaging** — `npm run package:extension` validates the manifest and produces store-ready zips
+- **Store listings** — Chrome Web Store and Firefox Add-ons store descriptions added
+- **Privacy policy** — comprehensive policy covering the desktop app and extension
+
+## Smart Links — Large Embed
+
+- **`?size=large` embed** — 600px-wide player with album art (or playlist mosaic), Play All button, streaming service icons, and the complete tracklist with per-track durations and service badges
+- **oEmbed support** — `?size=large` returns correct iframe dimensions (dynamic height based on track count)
+- **Favicon** — all go.parachord.com pages now have favicon.ico, icon.svg, and apple-touch-icon
+
+## Universal Mac Build
+
+The macOS build was producing arm64-only binaries, causing "not compatible" errors on Intel Macs.
+
+- **Universal binary** — DMG and zip now contain both Intel and Apple Silicon slices
+- **MusicKit helper** — Swift build updated to compile for both `arm64` and `x86_64`
+- **CI workflow** — now passes `--universal` to electron-builder
+- **x64ArchFiles** — tells `@electron/universal` how to merge native `.node` modules
+- **Bundle cleanup** — excluded `native/` source directory that was confusing the universal merge
+
+## Spotify Sync — Pre-resolved Sources
+
+- **Synced tracks skip re-resolution** — tracks from Spotify library sync now carry their Spotify source data, so the resolution system skips redundant Search API calls
+- **Token refresh retry** — Spotify API calls that fail with HTTP 400 now automatically refresh the token and retry
+
+## Fresh Drops Reliability
+
+- **Cache persistence fixed** — Fresh Drops now correctly survives app restarts (fixed falsy-timestamp sentinel, cache ref overwrite during rebuild, and missing store key whitelist entries)
+- **Faster loading** — releases stream in more quickly with a visible loading indicator
+- **"Coming" badge** — upcoming releases are highlighted with a "Coming" prefix
+- **10s fetch timeout** — MusicBrainz calls now have a timeout to prevent indefinite hangs
+
+## Bug Fixes
+
+- Fixed queue not restoring on restart due to a race condition with resolver settings initialization
+- Fixed Spotify synced tracks not resolving (missing source data)
+- Fixed "Play Playlist Next" incorrectly creating a library playlist
+- Fixed AI Suggestions and New Releases caches silently failing to persist (missing `ALLOWED_STORE_KEYS` entries)
+- Replaced text "Refresh" link with spinning refresh icon on AI Suggestions
+- Added favicon to go.parachord.com share pages
+
+---
+
 # Parachord v0.8.0-alpha.1
 
 **Release date:** 2026-02-24
@@ -112,4 +170,4 @@ Third-party websites can embed a button that sends playlists directly into Parac
 
 ---
 
-**Full changelog:** `git log v0.7.0-alpha.15..v0.8.0-alpha.1`
+**Full changelog:** `git log v0.8.0-alpha.1..v0.8.0-alpha.2`
