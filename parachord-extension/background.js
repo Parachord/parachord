@@ -387,21 +387,25 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   // Only intercept main frame navigations (not iframes)
   if (details.frameId !== 0) return;
 
+  // Don't intercept if not connected — the URL would be lost
+  if (!isConnected || !port) return;
+
   const url = details.url;
 
   // Check Spotify
   if (spotifyInterceptEnabled && isSpotifyContentUrl(url)) {
     console.log('[Parachord] Intercepting Spotify navigation:', url);
 
-    // Send to Parachord
-    sendToDesktop({
+    const sent = sendToDesktop({
       type: 'sendToParachord',
       url: url,
       source: 'navigation-intercept'
     });
 
-    // Close the tab that was trying to navigate
-    chrome.tabs.remove(details.tabId).catch(() => {});
+    // Only close the tab if the message was actually sent
+    if (sent) {
+      chrome.tabs.remove(details.tabId).catch(() => {});
+    }
     return;
   }
 
@@ -409,15 +413,16 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (appleMusicInterceptEnabled && isAppleMusicContentUrl(url)) {
     console.log('[Parachord] Intercepting Apple Music navigation:', url);
 
-    // Send to Parachord
-    sendToDesktop({
+    const sent = sendToDesktop({
       type: 'sendToParachord',
       url: url,
       source: 'navigation-intercept'
     });
 
-    // Close the tab that was trying to navigate
-    chrome.tabs.remove(details.tabId).catch(() => {});
+    // Only close the tab if the message was actually sent
+    if (sent) {
+      chrome.tabs.remove(details.tabId).catch(() => {});
+    }
     return;
   }
 });
