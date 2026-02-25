@@ -10,8 +10,8 @@ cd "$SCRIPT_DIR"
 
 echo "Building MusicKit Helper App..."
 
-# Build release binary
-swift build -c release
+# Build universal (arm64 + x86_64) release binary
+swift build -c release --arch arm64 --arch x86_64
 
 # Get the built binary path
 BINARY_PATH=".build/release/musickit-helper"

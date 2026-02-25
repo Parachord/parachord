@@ -76,7 +76,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build for ${{ matrix.platform }}
-        run: npm run build:${{ matrix.platform }} -- --publish never
+        run: npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS code signing and notarization
