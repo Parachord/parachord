@@ -23351,6 +23351,10 @@ ${tracks}
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const cutoffDate = sixMonthsAgo.toISOString().split('T')[0];
 
+      // Snapshot existing cached releases BEFORE the fetch starts, so the
+      // progress callback (which updates the cache ref) can't overwrite them
+      const priorCachedReleases = [...(newReleasesCache.current.releases || [])];
+
       const { releases: allNewReleases, artistsProcessed } = await fetchReleasesForArtists(
         artistList,
         cutoffDate,
@@ -23366,19 +23370,26 @@ ${tracks}
             albumArtCache.current[r.id] = { url: coverUrl, timestamp: Date.now() };
             return { ...r, albumArt: coverUrl };
           });
-          const sorted = withArt.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-          setNewReleases(sorted);
+          // Merge in-progress results with prior cache so user sees all releases during loading
+          const progressMerged = [...withArt, ...priorCachedReleases];
+          const seen = new Set();
+          const deduped = progressMerged.filter(r => {
+            const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setNewReleases(deduped);
           // Keep cache ref in sync so periodic saveCacheToStore captures
           // in-progress results (prevents data loss on rebuild/crash)
-          newReleasesCache.current = { releases: sorted, timestamp: Date.now() };
+          newReleasesCache.current = { releases: deduped, timestamp: Date.now() };
         }
       );
 
-      // Merge with any existing cached releases so we don't lose results from
+      // Merge with prior cached releases so we don't lose results from
       // artists that weren't in this run's selection (the artist cap means each
       // full fetch only covers a subset of the user's library).
-      const existingReleases = newReleasesCache.current.releases || [];
-      const merged = [...allNewReleases, ...existingReleases];
+      const merged = [...allNewReleases, ...priorCachedReleases];
 
       // Sort and deduplicate (fresh results take priority since they come first)
       const seenReleases = new Set();
@@ -23391,7 +23402,7 @@ ${tracks}
         })
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-      console.log(`✨ Found ${allNewReleases.length} fresh + ${existingReleases.length} cached → ${uniqueReleases.length} unique releases from ${artistsProcessed} artists`);
+      console.log(`✨ Found ${allNewReleases.length} fresh + ${priorCachedReleases.length} cached → ${uniqueReleases.length} unique releases from ${artistsProcessed} artists`);
 
       setNewReleases(uniqueReleases);
       setNewReleasesLoaded(true);
