@@ -7,7 +7,7 @@
 
 Parachord integrates with approximately 20 third-party services spanning music streaming, metadata, AI, and chart aggregation. Since the initial review on 2026-02-05, significant progress has been made on the highest-priority compliance and security issues. The YouTube ad-skipping code has been removed, the Apple MusicKit private key has been removed from the repository and added to `.gitignore`, the Spotify client secret was replaced with PKCE, unnecessary OAuth scopes were removed, and the browser extension's communication channel was migrated from an unauthenticated WebSocket to Chrome native messaging with IPC sockets. A comprehensive privacy policy has also been added.
 
-**Remaining concerns** are limited to Bandcamp search scraping, Qobuz's shared demo App ID, and SoundCloud's deprecated API status.
+**Remaining concerns** are limited to Bandcamp search scraping, Qobuz's shared demo App ID, and SoundCloud's hardcoded fallback client secret.
 
 ---
 
@@ -22,6 +22,7 @@ Parachord integrates with approximately 20 third-party services spanning music s
 | Browser extension packaged for Chrome Web Store submission | 2026-02-25 | Distribution channel change |
 | Spotify resolver enhanced with URL lookup (tracks, albums, playlists) | 2026-02-25 | Uses existing compliant Spotify API |
 | Smart Links enrichment added using iTunes, Spotify, YouTube APIs | Post-2026-02-05 | Uses already-documented, compliant APIs |
+| SoundCloud OAuth 2.1 migration completed (PKCE mandatory) | 2026-02-25 | Resolves "deprecated API" concern; API actively maintained |
 
 ---
 
@@ -75,9 +76,19 @@ Parachord integrates with approximately 20 third-party services spanning music s
 
 ---
 
+#### 6. SoundCloud — Deprecated API (RESOLVED)
+
+**Previous Issue:** The SoundCloud integration relied on an API that SoundCloud had deprecated, with no new app registrations being accepted. The concern was that the API could stop working at any time.
+
+**Resolution:** SoundCloud officially migrated their developer platform to [OAuth 2.1 with mandatory PKCE](https://developers.soundcloud.com/blog/oauth-migration), confirming the API is actively maintained and not deprecated. Parachord's integration already implements the required OAuth 2.1 flow with PKCE (S256 code challenge via `secure.soundcloud.com/authorize` and `secure.soundcloud.com/oauth/token`), including token refresh and proactive re-authentication. The integration is fully compliant with SoundCloud's current authentication requirements.
+
+**Note:** Unlike Spotify's PKCE flow (which eliminated the client secret for public clients), SoundCloud's OAuth 2.1 still requires a `client_secret` for token exchange. A hardcoded fallback client secret remains in the codebase (`main.js`, line ~1970) — see item 9 below.
+
+---
+
 ### REMAINING CONCERNS
 
-#### 6. Bandcamp — Search Scraping (MEDIUM RISK)
+#### 7. Bandcamp — Search Scraping (MEDIUM RISK)
 
 **Issue:** The Bandcamp search function in `plugins/bandcamp.axe` scrapes Bandcamp's website:
 - Fetches raw HTML from `https://bandcamp.com/search`, parses with DOMParser, extracts `.searchresult` elements
@@ -98,7 +109,7 @@ Parachord integrates with approximately 20 third-party services spanning music s
 
 ---
 
-#### 7. Qobuz — Shared Demo App ID (MEDIUM RISK)
+#### 8. Qobuz — Shared Demo App ID (MEDIUM RISK)
 
 **Issue:** The Qobuz integration uses a hardcoded "public demo" App ID (`285473059`) in `app.js`.
 
@@ -110,34 +121,41 @@ Parachord integrates with approximately 20 third-party services spanning music s
 
 ---
 
-#### 8. SoundCloud — Deprecated API (MEDIUM RISK)
+#### 9. SoundCloud — Hardcoded Fallback Client Secret (LOW-MEDIUM RISK)
 
-**Issue:** The SoundCloud integration uses the official OAuth 2.0 API, but SoundCloud deprecated their public API and stopped accepting new app registrations. The documentation (`docs/setup/API_CREDENTIALS_SETUP.md`, line ~135) acknowledges this.
+**Issue:** A SoundCloud client secret is hardcoded in `main.js` (line ~1970) as a fallback credential (`FALLBACK_SOUNDCLOUD_CLIENT_SECRET`). Unlike Spotify's PKCE flow (which eliminated the need for a client secret), SoundCloud's OAuth 2.1 still requires a `client_secret` for token exchange.
 
-**Why this is a concern:** While existing credentials may still work, using a deprecated API means:
-- It could stop working at any time without notice
-- There is no support or recourse if issues arise
-- Continued use may not align with SoundCloud's current terms
+**Why this is a concern:**
+- Anyone with access to the source can use the app's SoundCloud credentials
+- The secret could be used to impersonate the application
+- SoundCloud's developer terms likely require protecting client secrets
 
-**Status Update:** No user-facing deprecation warnings have been added to the Settings UI yet, as was recommended in the prior review.
+**Mitigating factors:**
+- Users can override with their own credentials via Settings UI or environment variables
+- The credential fallback chain (`getSoundCloudCredentials()`) prioritizes user-stored credentials first, then env vars, then fallback
+- PKCE is also enforced, so the secret alone is not sufficient for auth
 
-**Risk Level:** MEDIUM — Not an active violation, but relying on a deprecated service is fragile.
+**Risk Level:** LOW-MEDIUM — Less severe than the previous Apple MusicKit key issue since SoundCloud client secrets have limited scope, but still a credential hygiene concern.
 
-**Recommendation:** Add prominent user-facing warnings about SoundCloud's deprecated status in the Settings UI. Consider the integration experimental/unsupported.
+**Recommendation:** Follow the same pattern used for Spotify: investigate whether SoundCloud supports public client PKCE (without client_secret). If not, remove the hardcoded fallback and require users to provide their own credentials.
 
 ---
 
 ### LOW RISK / COMPLIANT
 
-#### 9. Spotify — Playback via Spotify Connect (COMPLIANT)
+#### 10. SoundCloud — OAuth 2.1 + Streaming (COMPLIANT)
+
+Uses the official SoundCloud API with OAuth 2.1 and mandatory PKCE (S256). Supports search, URL resolution, and audio streaming via `api.soundcloud.com`. Token refresh is handled proactively. Fully compliant with SoundCloud's current developer requirements.
+
+#### 11. Spotify — Playback via Spotify Connect (COMPLIANT)
 
 Playback uses the official Spotify Connect API to control existing Spotify clients. No audio is extracted or cached locally. This is the intended use case for Spotify Connect and is compliant with their terms.
 
-#### 10. Spotify — URL Lookup (COMPLIANT)
+#### 12. Spotify — URL Lookup (COMPLIANT)
 
 The Spotify resolver now supports URL lookups for tracks, albums, and playlists via the official Web API (`/v1/tracks/`, `/v1/albums/`, `/v1/playlists/`). This uses proper OAuth tokens and is standard API usage.
 
-#### 11. Last.fm — Scrobbling (COMPLIANT)
+#### 13. Last.fm — Scrobbling (COMPLIANT)
 
 The Last.fm integration (`scrobblers/lastfm-scrobbler.js`) follows the official API correctly:
 - Proper MD5 signature generation on all requests
@@ -145,47 +163,47 @@ The Last.fm integration (`scrobblers/lastfm-scrobbler.js`) follows the official 
 - Correct use of `track.scrobble` and `track.updateNowPlaying` endpoints
 - Session-based authentication (no raw credential storage)
 
-#### 12. ListenBrainz — Scrobbling (COMPLIANT)
+#### 14. ListenBrainz — Scrobbling (COMPLIANT)
 
 Uses the official API with proper Bearer token authentication. ListenBrainz is an open-source project that encourages third-party integrations.
 
-#### 13. Libre.fm — Scrobbling (COMPLIANT)
+#### 15. Libre.fm — Scrobbling (COMPLIANT)
 
 Uses the Last.fm-compatible API as documented. Libre.fm is open-source and welcomes third-party clients.
 
-#### 14. MusicBrainz / Cover Art Archive (COMPLIANT)
+#### 16. MusicBrainz / Cover Art Archive (COMPLIANT)
 
 Uses the official API with proper `User-Agent` header (`Parachord/1.0`) as required by MusicBrainz's rate-limiting policy. Respects the ~1 request/second guideline.
 
-#### 15. Wikipedia / Wikidata (COMPLIANT)
+#### 17. Wikipedia / Wikidata (COMPLIANT)
 
 Uses public APIs as documented. No authentication required. These are open data projects that support third-party access.
 
-#### 16. Discogs (COMPLIANT)
+#### 18. Discogs (COMPLIANT)
 
 Uses the official public API. Optional authentication for higher rate limits.
 
-#### 17. Apple Music RSS Charts (COMPLIANT)
+#### 19. Apple Music RSS Charts (COMPLIANT)
 
 Uses Apple's public RSS feed generator API (`rss.applemarketingtools.com`). This is a public service intended for third-party use.
 
-#### 18. iTunes Search API (COMPLIANT)
+#### 20. iTunes Search API (COMPLIANT)
 
 Public API, no authentication required. The implementation includes appropriate rate limiting (500ms delays).
 
-#### 19. AI Plugins — OpenAI, Google Gemini, Anthropic, Ollama (COMPLIANT)
+#### 21. AI Plugins — OpenAI, Google Gemini, Anthropic, Ollama (COMPLIANT)
 
 All AI integrations use official APIs with user-provided API keys. No credentials are hardcoded. Users bring their own keys and are subject to their own API agreements.
 
-#### 20. GitHub (COMPLIANT)
+#### 22. GitHub (COMPLIANT)
 
 Standard use for version control, releases, and plugin distribution.
 
-#### 21. Pitchfork — Browser Extension Scraping (LOW RISK)
+#### 23. Pitchfork — Browser Extension Scraping (LOW RISK)
 
 The browser extension can scrape Pitchfork review pages, but this is limited to the user's own browser session and behaves similarly to a bookmarklet. Lower risk than server-side scraping.
 
-#### 22. Cloudflare — Smart Links (COMPLIANT)
+#### 24. Cloudflare — Smart Links (COMPLIANT)
 
 Smart Links (`go.parachord.com`) are hosted on Cloudflare Workers with KV storage. Server-side enrichment uses existing compliant APIs (iTunes Search, Spotify Client Credentials, YouTube) to fill in missing service URLs for shared links. This is standard Cloudflare platform usage.
 
@@ -202,7 +220,9 @@ Smart Links (`go.parachord.com`) are hosted on Cloudflare Workers with KV storag
 | Apple Music (key) | **RESOLVED** | — | Key removed; `.gitignore` added |
 | Extension C2 channel | **RESOLVED** | — | Migrated to native messaging |
 | Qobuz | **CONCERN** | Medium | Shared demo App ID in production |
-| SoundCloud | **CONCERN** | Medium | Using deprecated API; no UI warning |
+| SoundCloud (API status) | **RESOLVED** | — | OAuth 2.1 migration confirms API actively maintained |
+| SoundCloud (credentials) | **CONCERN** | Low-Med | Hardcoded fallback client secret |
+| SoundCloud (streaming) | Compliant | — | — |
 | Spotify (playback) | Compliant | — | — |
 | Spotify (URL lookup) | Compliant | — | — |
 | Last.fm | Compliant | — | — |
@@ -228,5 +248,6 @@ Smart Links (`go.parachord.com`) are hosted on Cloudflare Workers with KV storag
 4. ~~**Short-term:** Remove unnecessary Spotify OAuth scopes (`user-read-private`, `user-read-email`)~~ **DONE**
 5. **Short-term:** Replace Bandcamp search scraping with oEmbed or embedded player approach
 6. **Short-term:** Obtain a proper Qobuz production App ID or remove the integration
-7. **Short-term:** Add deprecation warnings for SoundCloud integration in the Settings UI
+7. ~~**Short-term:** Add deprecation warnings for SoundCloud integration in the Settings UI~~ **NO LONGER NEEDED** (SoundCloud OAuth 2.1 migration confirms API is actively maintained)
 8. **Recommended:** Use BFG Repo-Cleaner to scrub the Apple `.p8` key from git history before the repository is made public
+9. **Low priority:** Investigate removing hardcoded SoundCloud fallback client secret (follow Spotify PKCE pattern if SoundCloud supports public clients)

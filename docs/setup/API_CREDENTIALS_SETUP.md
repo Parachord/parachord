@@ -112,17 +112,16 @@ YOUTUBE_API_KEY=your_api_key_here
 
 ---
 
-### 🟡 **SoundCloud** (Partial Implementation)
+### 🟢 **SoundCloud** (OAuth 2.1 + PKCE)
 
-**Status:** Browser extension scraping works; desktop search resolver not yet implemented
+**Status:** Fully implemented with OAuth 2.1 authentication (PKCE mandatory)
 
-**What Works Now:**
+**What Works:**
+- OAuth 2.1 login with PKCE (S256 code challenge)
+- Search SoundCloud catalog from within Parachord
+- URL resolution for SoundCloud track links
+- Audio streaming via official API
 - Browser extension can scrape tracks, playlists, and artist pages from SoundCloud
-- Scraped content can be queued in Parachord
-
-**What's Not Implemented:**
-- Desktop app search (cannot search SoundCloud from within Parachord)
-- Direct URL resolution
 
 **How to Get Credentials:**
 1. Go to: https://soundcloud.com/you/apps
@@ -135,7 +134,7 @@ SOUNDCLOUD_CLIENT_ID=your_client_id_here
 SOUNDCLOUD_CLIENT_SECRET=your_client_secret_here
 ```
 
-**Note:** SoundCloud's official API has been deprecated, so full resolver implementation may require alternative approaches.
+**Note:** SoundCloud migrated to [OAuth 2.1 with mandatory PKCE](https://developers.soundcloud.com/blog/oauth-migration). Parachord's integration is fully compliant. Fallback credentials are included for convenience, but users can provide their own via Settings or environment variables.
 
 ---
 
