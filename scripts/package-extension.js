@@ -106,14 +106,14 @@ function toFirefoxManifest(manifest) {
   }
 
   // Add Firefox-specific settings.
-  // strict_min_version bumped to 140 — required for data_collection_permissions.
+  // strict_min_version 142 — minimum for data_collection_permissions on Android.
   fx.browser_specific_settings = {
     gecko: {
       id: FIREFOX_EXTENSION_ID,
-      strict_min_version: '140.0',
+      strict_min_version: '142.0',
       data_collection_permissions: {
-        data_not_collected: true,
-        required: false
+        required: [],
+        optional: []
       }
     }
   };
