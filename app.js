@@ -22825,27 +22825,45 @@ ${tracks}
     console.log(`🎵 Opening Chart Album: ${album.artist} - ${album.title}`);
 
     try {
-      // Search MusicBrainz for the release
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      let release;
+      const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
-      if (!mbResponse.ok) {
-        throw new Error('MusicBrainz search failed');
+      if (album.releaseGroupId) {
+        // Direct lookup by release-group ID (Fresh Drops — much more reliable than string search)
+        const rgResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${album.releaseGroupId}&fmt=json&limit=1&inc=artist-credits`,
+          { headers: mbHeaders }
+        );
+        if (rgResponse.ok) {
+          const rgData = await rgResponse.json();
+          release = rgData.releases?.[0];
+        }
       }
 
-      const mbData = await mbResponse.json();
+      if (!release) {
+        // Fallback: search by title + artist string (Charts, or release-group lookup failed)
+        const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
+        const mbResponse = await fetch(
+          `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
+          { headers: mbHeaders }
+        );
 
-      if (!mbData.releases || mbData.releases.length === 0) {
-        // Fallback: just navigate to artist page
-        console.log('Release not found in MusicBrainz, navigating to artist page');
-        fetchArtistData(album.artist);
-        return;
+        if (!mbResponse.ok) {
+          throw new Error('MusicBrainz search failed');
+        }
+
+        const mbData = await mbResponse.json();
+
+        if (!mbData.releases || mbData.releases.length === 0) {
+          // Fallback: just navigate to artist page
+          console.log('Release not found in MusicBrainz, navigating to artist page');
+          fetchArtistData(album.artist);
+          return;
+        }
+
+        release = mbData.releases[0];
       }
 
-      const release = mbData.releases[0];
       const artistCredit = release['artist-credit']?.[0];
 
       // Create artist object for the release page
@@ -23116,8 +23134,9 @@ ${tracks}
       });
     }
 
-    // Interleave sources so each gets fair representation in the artist limit
-    const maxArtists = 80;
+    // Interleave sources so each gets fair representation in the artist limit.
+    // Kept moderate since merge logic accumulates releases across sessions.
+    const maxArtists = 50;
     const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
     const artistList = [];
     let round = 0;
@@ -23141,21 +23160,32 @@ ${tracks}
   const fetchReleasesForArtists = async (artistList, cutoffDate, onProgress) => {
     const allNewReleases = [];
     let artistsProcessed = 0;
+    const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
     for (const artist of artistList) {
       try {
         const cacheKey = artist.name.trim().toLowerCase();
         let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
+        let madeApiCall = false;
 
         if (!mbid) {
           const searchResponse = await fetch(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+            { headers: mbHeaders }
           );
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
             mbid = searchData.artists?.[0]?.id;
+            // Cache the resolved MBID so future fetches skip the search call
+            if (mbid) {
+              artistDataCache.current[cacheKey] = {
+                ...(artistDataCache.current[cacheKey] || {}),
+                artist: { ...(artistDataCache.current[cacheKey]?.artist || {}), name: artist.name, mbid },
+                timestamp: Date.now()
+              };
+            }
           }
+          madeApiCall = true;
           await new Promise(resolve => setTimeout(resolve, 1100));
         }
 
@@ -23166,8 +23196,9 @@ ${tracks}
 
         const releasesResponse = await fetch(
           `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' } }
+          { headers: mbHeaders }
         );
+        madeApiCall = true;
 
         if (releasesResponse.ok) {
           const releasesData = await releasesResponse.json();
@@ -23197,11 +23228,15 @@ ${tracks}
         }
 
         artistsProcessed++;
-        if (onProgress && artistsProcessed % 5 === 0 && allNewReleases.length > 0) {
+        if (onProgress && artistsProcessed % 3 === 0 && allNewReleases.length > 0) {
           onProgress(allNewReleases, artistsProcessed);
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1100));
+        // Only rate-limit after actual API calls (skip delay when MBID was cached
+        // and only one API call was made — the release-groups fetch already waited)
+        if (madeApiCall) {
+          await new Promise(resolve => setTimeout(resolve, 1100));
+        }
       } catch (error) {
         console.error(`Error checking releases for ${artist.name}:`, error);
         artistsProcessed++;
@@ -23312,7 +23347,18 @@ ${tracks}
         artistList,
         cutoffDate,
         (results) => {
-          const sorted = [...results].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          // Assign deterministic cover art URLs during progress so art loads
+          // as releases appear, not only after the full fetch completes
+          const withArt = results.map(r => {
+            if (r.albumArt) return r;
+            const cached = albumArtCache.current[r.id];
+            if (cached?.url) return { ...r, albumArt: cached.url };
+            if (cached) return r; // known-missing
+            const coverUrl = `https://coverartarchive.org/release-group/${r.id}/front-250`;
+            albumArtCache.current[r.id] = { url: coverUrl, timestamp: Date.now() };
+            return { ...r, albumArt: coverUrl };
+          });
+          const sorted = withArt.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(sorted);
         }
       );
@@ -40294,7 +40340,7 @@ useEffect(() => {
                         cursor: 'pointer'
                       },
                       onMouseEnter: () => prefetchChartsTracks(release),
-                      onClick: () => openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt }),
+                      onClick: () => openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id }),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -40493,12 +40539,15 @@ useEffect(() => {
                               fetchArtistData(release.artist);
                             }
                           }, release.artist),
-                          release.date && React.createElement('p', {
-                            style: { fontSize: '11px', color: '#9ca3af', marginTop: '2px' }
-                          }, (() => {
+                          release.date && (() => {
                             const d = new Date(release.date + 'T00:00:00');
-                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                          })())
+                            const today = new Date(); today.setHours(0, 0, 0, 0);
+                            const isFuture = d > today;
+                            const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            return React.createElement('p', {
+                              style: { fontSize: '11px', color: isFuture ? '#8b5cf6' : '#9ca3af', marginTop: '2px' }
+                            }, isFuture ? `Coming ${formatted}` : formatted);
+                          })()
                         )
                       )
                     )
