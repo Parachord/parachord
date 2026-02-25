@@ -382,7 +382,11 @@ async function checkCurrentTab() {
   }
 }
 
-// Intercept navigation to Spotify/Apple Music URLs
+// Intercept navigation to Spotify/Apple Music URLs.
+// We always attempt to send (sendToDesktop queues if disconnected and triggers
+// reconnect), but only close the tab when the message was delivered immediately.
+// If not connected, the page loads normally and the queued message is sent once
+// the connection re-establishes.
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   // Only intercept main frame navigations (not iframes)
   if (details.frameId !== 0) return;
@@ -393,15 +397,16 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (spotifyInterceptEnabled && isSpotifyContentUrl(url)) {
     console.log('[Parachord] Intercepting Spotify navigation:', url);
 
-    // Send to Parachord
-    sendToDesktop({
+    const sent = sendToDesktop({
       type: 'sendToParachord',
       url: url,
       source: 'navigation-intercept'
     });
 
-    // Close the tab that was trying to navigate
-    chrome.tabs.remove(details.tabId).catch(() => {});
+    // Only close the tab if the message was delivered to the native port
+    if (sent) {
+      chrome.tabs.remove(details.tabId).catch(() => {});
+    }
     return;
   }
 
@@ -409,15 +414,15 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (appleMusicInterceptEnabled && isAppleMusicContentUrl(url)) {
     console.log('[Parachord] Intercepting Apple Music navigation:', url);
 
-    // Send to Parachord
-    sendToDesktop({
+    const sent = sendToDesktop({
       type: 'sendToParachord',
       url: url,
       source: 'navigation-intercept'
     });
 
-    // Close the tab that was trying to navigate
-    chrome.tabs.remove(details.tabId).catch(() => {});
+    if (sent) {
+      chrome.tabs.remove(details.tabId).catch(() => {});
+    }
     return;
   }
 });
