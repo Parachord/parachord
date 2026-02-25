@@ -123,17 +123,37 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, _retryCo
  */
 const transformTrack = (item, addedAt) => {
   const track = item.track || item;
+  const artistName = track.artists?.map(a => a.name).join(', ') || 'Unknown Artist';
+  const albumName = track.album?.name || 'Unknown Album';
+  const duration = Math.round((track.duration_ms || 0) / 1000);
+  const albumArt = track.album?.images?.[0]?.url || null;
   return {
     id: generateTrackId(track.artists?.[0]?.name, track.name, track.album?.name),
     externalId: track.id,
     title: track.name,
-    artist: track.artists?.map(a => a.name).join(', ') || 'Unknown Artist',
-    album: track.album?.name || 'Unknown Album',
-    duration: Math.round((track.duration_ms || 0) / 1000),
-    albumArt: track.album?.images?.[0]?.url || null,
+    artist: artistName,
+    album: albumName,
+    duration,
+    albumArt,
     addedAt: addedAt ? new Date(addedAt).getTime() : Date.now(),
     spotifyUri: track.uri,
-    spotifyId: track.id
+    spotifyId: track.id,
+    // Pre-populate sources so the resolution system recognizes synced tracks
+    // as already resolved for Spotify (avoids redundant Search API calls)
+    sources: {
+      spotify: {
+        id: `spotify-${track.id}`,
+        title: track.name,
+        artist: artistName,
+        album: albumName,
+        duration,
+        spotifyUri: track.uri,
+        spotifyId: track.id,
+        spotifyAlbumId: track.album?.id,
+        albumArt,
+        confidence: 1.0
+      }
+    }
   };
 };
 

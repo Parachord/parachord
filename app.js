@@ -19452,7 +19452,7 @@ ${trackListXml}
     // Filter to only include sources that are:
     // 1. From an active (enabled) resolver
     // 2. Within TTL (or from sync which has no resolvedAt)
-    const persistedSources = track.sources && typeof track.sources === 'object'
+    let persistedSources = track.sources && typeof track.sources === 'object'
       ? Object.fromEntries(
           Object.entries(track.sources).filter(([resolverId, sourceData]) => {
             // Must be from an active resolver
@@ -19464,6 +19464,23 @@ ${trackListXml}
           })
         )
       : {};
+    // For tracks synced from Spotify that have top-level spotifyUri/spotifyId but
+    // no sources.spotify yet (pre-existing synced tracks before sources were populated
+    // during sync), inject a Spotify source entry so the track is recognized as resolved.
+    if (track.spotifyUri && track.spotifyId && currentActiveResolvers.includes('spotify') && !persistedSources.spotify) {
+      persistedSources.spotify = {
+        id: `spotify-${track.spotifyId}`,
+        title: track.title,
+        artist: artistName,
+        album: track.album || '',
+        duration: track.duration || 0,
+        spotifyUri: track.spotifyUri,
+        spotifyId: track.spotifyId,
+        albumArt: track.albumArt,
+        confidence: 1.0
+      };
+    }
+
     const hasValidPersistedSources = Object.keys(persistedSources).length > 0;
 
     // Cache is valid if:
@@ -19536,6 +19553,21 @@ ${trackListXml}
         timestamp: now,
         resolverHash: currentResolverHash
       };
+
+      // If sources were injected from top-level track fields (e.g., spotifyUri from sync)
+      // and aren't yet in track.sources, persist them back to the collection/playlist
+      const trackSourceKeys = track.sources ? Object.keys(track.sources) : [];
+      const persistedKeys = Object.keys(persistedSources);
+      const hasNewSources = persistedKeys.some(k => !trackSourceKeys.includes(k));
+      if (hasNewSources) {
+        if (track.id && collectionTracksRef.current.some(t => t.id === track.id)) {
+          queueCollectionSourceUpdate(track.id, persistedSources);
+        }
+        const currentPlaylist = selectedPlaylistRef.current;
+        if (track.id && currentPlaylist?.id && currentPlaylist.tracks?.some(t => t.id === track.id)) {
+          queuePlaylistSourceUpdate(currentPlaylist.id, track.id, persistedSources);
+        }
+      }
 
       return realPersistedSources;
     }
