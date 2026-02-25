@@ -1,10 +1,9 @@
 // Parachord Browser Extension - Background Service Worker
-// Maintains WebSocket connection to Parachord desktop app
+// Communicates with Parachord desktop app via Chrome native messaging
 
-const PARACHORD_WS_URL = 'ws://127.0.0.1:9876';
+const NATIVE_HOST_NAME = 'com.parachord.desktop';
 
-let socket = null;
-let reconnectTimer = null;
+let port = null;
 let activeTabId = null;
 
 // Connection state
@@ -13,63 +12,64 @@ let isConnected = false;
 // Page support indicator state
 let currentPageSupported = false;
 
-// Queue for messages that arrive before WebSocket is connected
+// Queue for messages that arrive before native messaging is connected
 let pendingMessages = [];
 
 // Track tab ID being programmatically closed (to avoid clearing activeTabId)
 let programmaticCloseTabId = null;
 
-// Connect to Parachord desktop
+// Reconnection state
+let reconnectTimer = null;
+const RECONNECT_DELAY = 5000;
+
+// Connect to Parachord desktop via native messaging
 function connect() {
-  if (socket && socket.readyState === WebSocket.OPEN) {
+  if (port) {
     return;
   }
 
   try {
-    socket = new WebSocket(PARACHORD_WS_URL);
+    port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
-    socket.onopen = () => {
-      console.log('[Parachord] Connected to desktop app');
-      isConnected = true;
-      clearReconnectTimer();
+    port.onMessage.addListener((message) => {
+      console.log('[Parachord] Native message received:', message.type, message.action || message.event || '');
+      handleDesktopMessage(message);
+    });
 
-      // Update badge (shows page support indicator if on a supported page)
-      checkCurrentTab();
-
-      // Send any queued messages
-      if (pendingMessages.length > 0) {
-        pendingMessages.forEach(msg => {
-          socket.send(JSON.stringify(msg));
-        });
-        pendingMessages = [];
-      }
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('[Parachord] WebSocket received:', message.type, message.action || message.event || '');
-        handleDesktopMessage(message);
-      } catch (error) {
-        console.error('[Parachord] Failed to parse message:', error);
-      }
-    };
-
-    socket.onclose = () => {
+    port.onDisconnect.addListener(() => {
+      const error = chrome.runtime.lastError;
+      console.log('[Parachord] Native messaging disconnected', error ? error.message : '');
+      port = null;
       isConnected = false;
-      socket = null;
 
       // Update badge to show disconnected status
       updateBadge();
 
       // Schedule reconnection
       scheduleReconnect();
-    };
+    });
 
-    socket.onerror = () => {
-      // Error will trigger onclose, which handles reconnection
-    };
+    // Native messaging connection is established synchronously by connectNative;
+    // if the host is available the port stays open, otherwise onDisconnect fires.
+    // We consider ourselves connected after the port is created without immediate error.
+    isConnected = true;
+    clearReconnectTimer();
+
+    // Update badge
+    checkCurrentTab();
+
+    // Send any queued messages
+    if (pendingMessages.length > 0) {
+      pendingMessages.forEach(msg => {
+        port.postMessage(msg);
+      });
+      pendingMessages = [];
+    }
+
+    console.log('[Parachord] Connected to desktop app via native messaging');
   } catch (error) {
+    console.error('[Parachord] Failed to connect:', error);
+    port = null;
     scheduleReconnect();
   }
 }
@@ -78,7 +78,7 @@ function scheduleReconnect() {
   clearReconnectTimer();
   reconnectTimer = setTimeout(() => {
     connect();
-  }, 5000);
+  }, RECONNECT_DELAY);
 }
 
 function clearReconnectTimer() {
@@ -91,14 +91,13 @@ function clearReconnectTimer() {
 // Send message to desktop
 function sendToDesktop(message) {
   console.log('[Parachord] sendToDesktop called:', message.type, message.url || message.event || '');
-  console.log('[Parachord] Socket state:', socket ? socket.readyState : 'null', '(OPEN=1)');
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    console.log('[Parachord] Sending via WebSocket:', JSON.stringify(message));
-    socket.send(JSON.stringify(message));
+  if (port && isConnected) {
+    console.log('[Parachord] Sending via native messaging:', JSON.stringify(message));
+    port.postMessage(message);
     return true;
   }
   // Queue the message if not connected yet
-  console.log('[Parachord] WebSocket not open, queuing message');
+  console.log('[Parachord] Not connected, queuing message');
   pendingMessages.push(message);
   connect();
   return false;
@@ -132,31 +131,6 @@ function handleDesktopMessage(message) {
         chrome.tabs.sendMessage(activeTabId, message).catch(() => {});
       }
     }
-  } else if (message.type === 'injectCode') {
-    // Inject browser control code from resolver
-    if (activeTabId && message.code) {
-      injectBrowserControlCode(activeTabId, message.code);
-    }
-  }
-}
-
-// Inject browser control functions from resolver
-async function injectBrowserControlCode(tabId, code) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (codeObj) => {
-        // Store the injected functions on window for content script to use
-        window.__parachordControl = {
-          play: codeObj.browserPlay ? new Function('return (' + codeObj.browserPlay + ')();') : null,
-          pause: codeObj.browserPause ? new Function('return (' + codeObj.browserPause + ')();') : null,
-          getState: codeObj.browserGetState ? new Function('return (' + codeObj.browserGetState + ')();') : null
-        };
-      },
-      args: [code]
-    });
-  } catch (error) {
-    console.error('[Parachord] Failed to inject code:', error);
   }
 }
 
@@ -185,7 +159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Forward URL to desktop from popup
     console.log('[Parachord] Sending URL to desktop from popup:', message.url);
     const sent = sendToDesktop(message);
-    console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
+    console.log('[Parachord] Send result:', sent ? 'sent immediately' : 'queued (not connected)');
     sendResponse({ received: true, sent: sent });
     return true;
   } else if (message.type === 'sendScrapedPlaylist') {
@@ -219,7 +193,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       service: message.service,
       source: message.source || 'popup'
     });
-    console.log('[Parachord] WebSocket send result:', sent ? 'sent immediately' : 'queued (not connected)');
+    console.log('[Parachord] Send result:', sent ? 'sent immediately' : 'queued (not connected)');
     sendResponse({ received: true, sent: sent });
     return true;
   } else if (message.type === 'sendScrapedAlbum') {
@@ -556,7 +530,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 // Keep-alive mechanism using Chrome alarms API
-// This survives service worker restarts
+// When connected, the native messaging port keeps the service worker alive.
+// The alarm handles reconnection when disconnected.
 const KEEP_ALIVE_ALARM = 'parachord-keepalive';
 
 // Set up alarm for keep-alive (fires every 20 seconds)
@@ -564,29 +539,29 @@ chrome.alarms.create(KEEP_ALIVE_ALARM, { periodInMinutes: 0.33 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEP_ALIVE_ALARM) {
-    // Check connection and reconnect if needed
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    // Reconnect if needed
+    if (!port || !isConnected) {
       connect();
     } else {
       // Send ping to keep connection alive
-      socket.send(JSON.stringify({ type: 'ping' }));
+      port.postMessage({ type: 'ping' });
     }
 
     // Re-send heartbeat if we have an active tab
-    if (activeTabId && socket && socket.readyState === WebSocket.OPEN) {
+    if (activeTabId && port && isConnected) {
       chrome.tabs.get(activeTabId).then(tab => {
         if (tab && tab.url) {
           let site = 'unknown';
           if (tab.url.includes('youtube.com')) site = 'youtube';
           else if (tab.url.includes('bandcamp.com')) site = 'bandcamp';
 
-          socket.send(JSON.stringify({
+          port.postMessage({
             type: 'event',
             event: 'heartbeat',
             site: site,
             tabId: activeTabId,
             url: tab.url
-          }));
+          });
         }
       }).catch(() => {
         activeTabId = null;

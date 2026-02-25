@@ -52,8 +52,10 @@ if (autoUpdater) {
 const store = new Store();
 let mainWindow;
 let authServer;
-let wss; // WebSocket server for browser extension
-let extensionSocket = null; // Current connected extension
+const net = require('net');
+let wss; // WebSocket server for embed players
+let nmIpcServer = null; // IPC socket server for native messaging host
+let extensionSocket = null; // Current connected extension (native messaging IPC)
 let embedSockets = new Set(); // Connected embed players
 let pendingEmbedRequests = new Map(); // requestId -> { ws, resolve }
 let localFilesService = null;
@@ -857,7 +859,7 @@ function safeSendToRenderer(channel, ...args) {
   }
 }
 
-// WebSocket server for browser extension communication
+// WebSocket server for embed players (port 9876)
 function startExtensionServer() {
   if (wss) return;
 
@@ -916,57 +918,30 @@ function startExtensionServer() {
   });
 
   httpServer.listen(EXTENSION_PORT, '127.0.0.1', () => {
-    console.log(`Extension WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
+    console.log(`Embed WebSocket server running on ws://127.0.0.1:${EXTENSION_PORT}`);
   });
 
   wss = new WebSocket.Server({ server: httpServer });
 
   wss.on('connection', (ws) => {
-    // Track connection type - will be set on first message
-    let connectionType = null; // 'extension' or 'embed'
+    // Embed players connect here; browser extension now uses native messaging
+    embedSockets.add(ws);
+    console.log('Embed player connected');
 
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
-
-        // Detect connection type from first message
-        if (!connectionType) {
-          if (message.type === 'embed') {
-            connectionType = 'embed';
-            embedSockets.add(ws);
-            console.log('Embed player connected');
-          } else {
-            connectionType = 'extension';
-            extensionSocket = ws;
-            console.log('Browser extension connected');
-            safeSendToRenderer('extension-connected');
-          }
-        }
-
-        // Handle embed player messages
         if (message.type === 'embed') {
           handleEmbedMessage(ws, message);
-          return;
         }
-
-        // Handle extension messages (existing behavior)
-        console.log('Extension message:', message.type, message.event || message.action || message.url || '');
-        safeSendToRenderer('extension-message', message);
-        console.log('Forwarded to renderer');
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
       }
     });
 
     ws.on('close', () => {
-      if (connectionType === 'embed') {
-        embedSockets.delete(ws);
-        console.log('Embed player disconnected');
-      } else if (connectionType === 'extension') {
-        console.log('Browser extension disconnected');
-        extensionSocket = null;
-        safeSendToRenderer('extension-disconnected');
-      }
+      embedSockets.delete(ws);
+      console.log('Embed player disconnected');
     });
 
     ws.on('error', (error) => {
@@ -975,8 +950,122 @@ function startExtensionServer() {
   });
 
   wss.on('error', (error) => {
-    console.error('Extension server error:', error);
+    console.error('Embed server error:', error);
   });
+}
+
+// --- Native messaging IPC server ---
+// The browser extension communicates via Chrome's native messaging API.
+// Chrome spawns native-messaging/host.js which connects here over a local
+// IPC socket (Unix socket on macOS/Linux, named pipe on Windows).
+
+function getNativeMessagingSocketPath() {
+  if (process.platform === 'win32') {
+    return '\\\\.\\pipe\\parachord-native-messaging';
+  }
+  const os = require('os');
+  return path.join(os.homedir(), '.parachord', 'native-messaging.sock');
+}
+
+function readLengthPrefixedMessages(stream, callback) {
+  let buffer = Buffer.alloc(0);
+  let expectedLen = null;
+
+  stream.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+
+    while (true) {
+      if (expectedLen === null) {
+        if (buffer.length < 4) break;
+        expectedLen = buffer.readUInt32LE(0);
+        buffer = buffer.subarray(4);
+      }
+
+      if (buffer.length < expectedLen) break;
+
+      const json = buffer.subarray(0, expectedLen).toString('utf8');
+      buffer = buffer.subarray(expectedLen);
+      expectedLen = null;
+
+      try {
+        callback(JSON.parse(json));
+      } catch (e) {
+        // Skip malformed messages
+      }
+    }
+  });
+}
+
+function sendToExtensionSocket(message) {
+  if (!extensionSocket || extensionSocket.destroyed) return;
+  const json = JSON.stringify(message);
+  const payload = Buffer.from(json, 'utf8');
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(payload.length, 0);
+  extensionSocket.write(header);
+  extensionSocket.write(payload);
+}
+
+function startNativeMessagingServer() {
+  if (nmIpcServer) return;
+
+  const socketPath = getNativeMessagingSocketPath();
+
+  // Ensure directory exists
+  const socketDir = path.dirname(socketPath);
+  fs.mkdirSync(socketDir, { recursive: true });
+
+  // Clean up stale socket file (Unix only; named pipes clean themselves on Windows)
+  if (process.platform !== 'win32') {
+    try { fs.unlinkSync(socketPath); } catch (e) { /* not found — fine */ }
+  }
+
+  nmIpcServer = net.createServer((client) => {
+    console.log('Native messaging host connected');
+
+    readLengthPrefixedMessages(client, (message) => {
+      // The host sends a hello message on connect — use it to register
+      if (message.type === '_nm_hello') {
+        extensionSocket = client;
+        safeSendToRenderer('extension-connected');
+        return;
+      }
+
+      // Forward all other messages to the renderer
+      console.log('Extension message (NM):', message.type, message.event || message.action || message.url || '');
+      safeSendToRenderer('extension-message', message);
+    });
+
+    client.on('close', () => {
+      console.log('Native messaging host disconnected');
+      if (extensionSocket === client) {
+        extensionSocket = null;
+        safeSendToRenderer('extension-disconnected');
+      }
+    });
+
+    client.on('error', (error) => {
+      console.error('Native messaging IPC error:', error.message);
+    });
+  });
+
+  nmIpcServer.listen(socketPath, () => {
+    console.log(`Native messaging IPC server listening on ${socketPath}`);
+  });
+
+  nmIpcServer.on('error', (error) => {
+    console.error('Native messaging IPC server error:', error);
+  });
+}
+
+// Register the native messaging host manifest so Chrome can find the host
+function registerNativeMessagingHost() {
+  try {
+    const { install } = require('./native-messaging/install');
+    install(process.execPath, app.getAppPath());
+  } catch (error) {
+    console.error('Failed to register native messaging host:', error.message);
+  }
 }
 
 // Handle messages from embedded players
@@ -1465,6 +1554,8 @@ app.whenReady().then(() => {
   createWindow();
   startAuthServer();
   startExtensionServer();
+  startNativeMessagingServer();
+  registerNativeMessagingHost();
   startMcpServer(mainWindow);
   systemVolumeMonitor.start();
 
@@ -1787,6 +1878,13 @@ app.on('window-all-closed', async () => {
   }
   if (wss) {
     wss.close();
+  }
+  if (nmIpcServer) {
+    nmIpcServer.close();
+    // Clean up socket file on shutdown
+    if (process.platform !== 'win32') {
+      try { fs.unlinkSync(getNativeMessagingSocketPath()); } catch (e) { /* ignore */ }
+    }
   }
   stopMcpServer();
   if (localFilesService) {
@@ -4291,13 +4389,13 @@ ipcMain.handle('search-history-clear', async (event, entryQuery) => {
   }
 });
 
-// Browser extension IPC handlers
+// Browser extension IPC handlers (native messaging via IPC socket)
 ipcMain.handle('extension-send-command', (event, command) => {
   console.log('=== Send Extension Command ===');
   console.log('  Command:', command.type, command.action || '');
 
-  if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
-    extensionSocket.send(JSON.stringify(command));
+  if (extensionSocket && !extensionSocket.destroyed) {
+    sendToExtensionSocket(command);
     return { success: true };
   }
 
@@ -4307,7 +4405,7 @@ ipcMain.handle('extension-send-command', (event, command) => {
 
 ipcMain.handle('extension-get-status', () => {
   return {
-    connected: extensionSocket !== null && extensionSocket.readyState === WebSocket.OPEN
+    connected: extensionSocket !== null && !extensionSocket.destroyed
   };
 });
 
