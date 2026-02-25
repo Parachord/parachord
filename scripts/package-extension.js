@@ -98,19 +98,22 @@ function toFirefoxManifest(manifest) {
   // Remove Chrome-specific key
   delete fx.key;
 
-  // Firefox requires background.scripts alongside service_worker for compat.
-  // Use the same file — Firefox will load it as a background script.
+  // Firefox uses background.scripts, not service_worker.
+  // Replace service_worker with scripts pointing to the same file.
   if (fx.background?.service_worker) {
     fx.background.scripts = [fx.background.service_worker];
+    delete fx.background.service_worker;
   }
 
-  // Add Firefox-specific settings
+  // Add Firefox-specific settings.
+  // strict_min_version bumped to 140 — required for data_collection_permissions.
   fx.browser_specific_settings = {
     gecko: {
       id: FIREFOX_EXTENSION_ID,
-      strict_min_version: '127.0',
+      strict_min_version: '140.0',
       data_collection_permissions: {
-        data_not_collected: true
+        data_not_collected: true,
+        required: false
       }
     }
   };
