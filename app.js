@@ -17586,7 +17586,7 @@ ${trackListXml}
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp != null) {
         // Filter out broadcasts that may have been cached before the filter was added
         const filteredReleases = newReleasesData.releases.filter(r =>
-          !(r.secondaryTypes || []).includes('broadcast')
+          r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
         );
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
@@ -23116,8 +23116,8 @@ ${tracks}
       });
     }
 
-    // Interleave sources so each gets fair representation in the 40-artist limit
-    const maxArtists = 40;
+    // Interleave sources so each gets fair representation in the artist limit
+    const maxArtists = 80;
     const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
     const artistList = [];
     let round = 0;
@@ -23179,7 +23179,7 @@ ${tracks}
               const primaryType = (rg['primary-type'] || '').toLowerCase();
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
-              if (secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
+              if (primaryType === 'broadcast' || secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
 
               allNewReleases.push({
                 id: rg.id,
@@ -23317,9 +23317,15 @@ ${tracks}
         }
       );
 
-      // Sort and deduplicate
+      // Merge with any existing cached releases so we don't lose results from
+      // artists that weren't in this run's selection (the artist cap means each
+      // full fetch only covers a subset of the user's library).
+      const existingReleases = newReleasesCache.current.releases || [];
+      const merged = [...allNewReleases, ...existingReleases];
+
+      // Sort and deduplicate (fresh results take priority since they come first)
       const seenReleases = new Set();
-      const uniqueReleases = allNewReleases
+      const uniqueReleases = merged
         .filter(r => {
           const key = `${r.artist.toLowerCase()}-${r.title.toLowerCase()}`;
           if (seenReleases.has(key)) return false;
@@ -23328,7 +23334,7 @@ ${tracks}
         })
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-      console.log(`✨ Found ${uniqueReleases.length} new releases from ${artistsProcessed} artists`);
+      console.log(`✨ Found ${allNewReleases.length} fresh + ${existingReleases.length} cached → ${uniqueReleases.length} unique releases from ${artistsProcessed} artists`);
 
       setNewReleases(uniqueReleases);
       setNewReleasesLoaded(true);
