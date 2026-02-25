@@ -3,11 +3,12 @@
 
 // Parachord Native Messaging Host — Installer
 //
-// Registers the native messaging host manifest so Chrome (and other Chromium
-// browsers) can find and launch the host when the extension connects.
+// Registers the native messaging host manifest so Chrome, Chromium-based
+// browsers, and Firefox can find and launch the host when the extension
+// connects.
 //
 // Called automatically by the Electron app on startup, or manually:
-//   node native-messaging/install.js [--extension-id=ID]
+//   node native-messaging/install.js [--extension-id=ID] [--firefox-id=ID]
 
 const fs = require('fs');
 const path = require('path');
@@ -15,48 +16,57 @@ const os = require('os');
 
 const HOST_NAME = 'com.parachord.desktop';
 
-// Default extension ID derived from the key in manifest.json.
+// Default Chrome extension ID derived from the key in manifest.json.
 // Override with --extension-id=<id> for development with a different key.
 const DEFAULT_EXTENSION_ID = 'gffljdkpaclmggjjdkpanjddghmdogcb';
 
-function getExtensionId() {
-  const arg = process.argv.find(a => a.startsWith('--extension-id='));
+// Firefox extension ID — must match browser_specific_settings.gecko.id in the
+// Firefox manifest variant.
+const DEFAULT_FIREFOX_ID = 'parachord@parachord.com';
+
+function getArg(name, fallback) {
+  const arg = process.argv.find(a => a.startsWith(`--${name}=`));
   if (arg) return arg.split('=')[1];
-  return DEFAULT_EXTENSION_ID;
+  return fallback;
 }
 
 // --- Platform-specific manifest paths ---
-// Chrome and Chromium-based browsers share the same host lookup on most platforms.
 
-function getManifestDir() {
-  switch (process.platform) {
-    case 'darwin':
-      return path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts');
-    case 'linux':
-      return path.join(os.homedir(), '.config', 'google-chrome', 'NativeMessagingHosts');
-    case 'win32':
-      return path.join(os.homedir(), 'AppData', 'Roaming', 'Parachord', 'NativeMessagingHosts');
-    default:
-      throw new Error(`Unsupported platform: ${process.platform}`);
-  }
-}
-
-// Additional browser-specific directories to also install the manifest in
-function getAdditionalManifestDirs() {
+// Chromium browsers
+function getChromeManifestDirs() {
   const dirs = [];
   switch (process.platform) {
     case 'darwin':
+      dirs.push(path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), 'Library', 'Application Support', 'Chromium', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), 'Library', 'Application Support', 'Microsoft Edge', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'));
       break;
     case 'linux':
+      dirs.push(path.join(os.homedir(), '.config', 'google-chrome', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), '.config', 'chromium', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), '.config', 'microsoft-edge', 'NativeMessagingHosts'));
       dirs.push(path.join(os.homedir(), '.config', 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts'));
       break;
+    case 'win32':
+      dirs.push(path.join(os.homedir(), 'AppData', 'Roaming', 'Parachord', 'NativeMessagingHosts'));
+      break;
   }
   return dirs;
+}
+
+// Firefox
+function getFirefoxManifestDirs() {
+  switch (process.platform) {
+    case 'darwin':
+      return [path.join(os.homedir(), 'Library', 'Application Support', 'Mozilla', 'NativeMessagingHosts')];
+    case 'linux':
+      return [path.join(os.homedir(), '.mozilla', 'native-messaging-hosts')];
+    case 'win32':
+      return [path.join(os.homedir(), 'AppData', 'Roaming', 'Parachord', 'NativeMessagingHosts', 'Firefox')];
+    default:
+      return [];
+  }
 }
 
 // --- Launcher script ---
@@ -83,22 +93,39 @@ function createLauncher(electronPath, hostScriptPath) {
 
 // --- Windows registry ---
 
-function registerWindowsHost(manifestPath) {
+function registerWindowsHost(manifestPath, browser) {
   const { execSync } = require('child_process');
-  const regKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
-  try {
-    execSync(`reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'ignore' });
-    console.log(`  Registry: ${regKey}`);
-  } catch (e) {
-    console.error(`  Warning: failed to write registry key: ${e.message}`);
+
+  const regKeys = [];
+  if (browser === 'chrome') {
+    regKeys.push(`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`);
+    regKeys.push(`HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`);
+  } else if (browser === 'firefox') {
+    regKeys.push(`HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${HOST_NAME}`);
   }
 
-  // Also register for Edge
-  const edgeKey = `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`;
+  for (const regKey of regKeys) {
+    try {
+      execSync(`reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'ignore' });
+      console.log(`  Registry: ${regKey}`);
+    } catch (e) {
+      console.error(`  Warning: failed to write registry key: ${e.message}`);
+    }
+  }
+}
+
+// --- Manifest writers ---
+
+function writeManifest(dir, manifestJson) {
   try {
-    execSync(`reg add "${edgeKey}" /ve /t REG_SZ /d "${manifestPath}" /f`, { stdio: 'ignore' });
+    fs.mkdirSync(dir, { recursive: true });
+    const manifestPath = path.join(dir, `${HOST_NAME}.json`);
+    fs.writeFileSync(manifestPath, manifestJson);
+    console.log(`  Manifest:     ${manifestPath}`);
+    return manifestPath;
   } catch (e) {
-    // Non-critical
+    // Non-critical for additional directories
+    return null;
   }
 }
 
@@ -113,19 +140,21 @@ function install(electronPath, appPath) {
     appPath = path.resolve(__dirname, '..');
   }
 
-  const extensionId = getExtensionId();
+  const extensionId = getArg('extension-id', DEFAULT_EXTENSION_ID);
+  const firefoxId = getArg('firefox-id', DEFAULT_FIREFOX_ID);
   const hostScriptPath = path.join(appPath, 'native-messaging', 'host.js');
 
   console.log(`Installing native messaging host: ${HOST_NAME}`);
-  console.log(`  Extension ID: ${extensionId}`);
-  console.log(`  Host script:  ${hostScriptPath}`);
+  console.log(`  Chrome ext ID: ${extensionId}`);
+  console.log(`  Firefox ID:    ${firefoxId}`);
+  console.log(`  Host script:   ${hostScriptPath}`);
 
   // Create launcher script
   const launcherPath = createLauncher(electronPath, hostScriptPath);
-  console.log(`  Launcher:     ${launcherPath}`);
+  console.log(`  Launcher:      ${launcherPath}`);
 
-  // Build the native messaging host manifest
-  const manifest = {
+  // --- Chrome / Chromium manifest ---
+  const chromeManifest = JSON.stringify({
     name: HOST_NAME,
     description: 'Parachord Desktop — browser extension native messaging host',
     path: launcherPath,
@@ -133,41 +162,41 @@ function install(electronPath, appPath) {
     allowed_origins: [
       `chrome-extension://${extensionId}/`
     ]
-  };
+  }, null, 2) + '\n';
 
-  const manifestJson = JSON.stringify(manifest, null, 2) + '\n';
-
-  // Install to primary Chrome directory
-  const primaryDir = getManifestDir();
-  const manifestFilename = `${HOST_NAME}.json`;
-
-  function writeManifest(dir) {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      const manifestPath = path.join(dir, manifestFilename);
-      fs.writeFileSync(manifestPath, manifestJson);
-      console.log(`  Manifest:     ${manifestPath}`);
-      return manifestPath;
-    } catch (e) {
-      // Non-critical for additional directories
-      return null;
-    }
+  console.log('\n  Chromium browsers:');
+  let primaryChromePath = null;
+  for (const dir of getChromeManifestDirs()) {
+    const p = writeManifest(dir, chromeManifest);
+    if (!primaryChromePath && p) primaryChromePath = p;
   }
 
-  const primaryManifestPath = writeManifest(primaryDir);
+  // --- Firefox manifest ---
+  const firefoxManifest = JSON.stringify({
+    name: HOST_NAME,
+    description: 'Parachord Desktop — browser extension native messaging host',
+    path: launcherPath,
+    type: 'stdio',
+    allowed_extensions: [
+      firefoxId
+    ]
+  }, null, 2) + '\n';
 
-  // Install to additional browser directories
-  for (const dir of getAdditionalManifestDirs()) {
-    writeManifest(dir);
+  console.log('\n  Firefox:');
+  let primaryFirefoxPath = null;
+  for (const dir of getFirefoxManifestDirs()) {
+    const p = writeManifest(dir, firefoxManifest);
+    if (!primaryFirefoxPath && p) primaryFirefoxPath = p;
   }
 
-  // Windows: also register via registry
-  if (process.platform === 'win32' && primaryManifestPath) {
-    registerWindowsHost(primaryManifestPath);
+  // Windows: register via registry
+  if (process.platform === 'win32') {
+    if (primaryChromePath) registerWindowsHost(primaryChromePath, 'chrome');
+    if (primaryFirefoxPath) registerWindowsHost(primaryFirefoxPath, 'firefox');
   }
 
-  console.log('  Done.');
-  return { launcherPath, manifestPath: primaryManifestPath };
+  console.log('\n  Done.');
+  return { launcherPath, chromeManifestPath: primaryChromePath, firefoxManifestPath: primaryFirefoxPath };
 }
 
 // Export for use from main.js
