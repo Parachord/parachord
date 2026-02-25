@@ -382,13 +382,14 @@ async function checkCurrentTab() {
   }
 }
 
-// Intercept navigation to Spotify/Apple Music URLs
+// Intercept navigation to Spotify/Apple Music URLs.
+// We always attempt to send (sendToDesktop queues if disconnected and triggers
+// reconnect), but only close the tab when the message was delivered immediately.
+// If not connected, the page loads normally and the queued message is sent once
+// the connection re-establishes.
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   // Only intercept main frame navigations (not iframes)
   if (details.frameId !== 0) return;
-
-  // Don't intercept if not connected — the URL would be lost
-  if (!isConnected || !port) return;
 
   const url = details.url;
 
@@ -402,7 +403,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
       source: 'navigation-intercept'
     });
 
-    // Only close the tab if the message was actually sent
+    // Only close the tab if the message was delivered to the native port
     if (sent) {
       chrome.tabs.remove(details.tabId).catch(() => {});
     }
@@ -419,7 +420,6 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
       source: 'navigation-intercept'
     });
 
-    // Only close the tab if the message was actually sent
     if (sent) {
       chrome.tabs.remove(details.tabId).catch(() => {});
     }
