@@ -101,15 +101,29 @@ Returns the smart link page HTML.
 GET /:id/embed
 ```
 
-Returns a compact embeddable player (152px height).
+Returns a compact embeddable player (400×152px). Shows album art, title, artist, and Play button.
+
+#### Large Embed
+
+```
+GET /:id/embed?size=large
+```
+
+Returns a full-page embeddable player (600px wide) for albums and playlists. Includes album art (or playlist mosaic), title, artist, Play All button, streaming service icons, and the complete tracklist with per-track service badges and durations. Supports Parachord WebSocket integration for individual track playback.
+
+Example iframe:
+```html
+<iframe src="https://links.parachord.app/abc12345/embed?size=large" width="600" height="500" frameborder="0" style="border-radius: 8px;"></iframe>
+```
 
 ### oEmbed
 
 ```
 GET /api/oembed?url=https://links.parachord.app/abc12345
+GET /api/oembed?url=https://links.parachord.app/abc12345&size=large
 ```
 
-Returns oEmbed JSON for rich embeds.
+Returns oEmbed JSON for rich embeds. Pass `size=large` to get the large embed iframe dimensions and URL in the response.
 
 ## Project Structure
 
