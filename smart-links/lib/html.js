@@ -731,6 +731,14 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       transition: all 0.2s;
       cursor: pointer;
       border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn .play-icon {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
     }
     .btn-primary {
       background: #8b5cf6;
@@ -774,7 +782,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       <div class="title">${escapeHtml(title)}</div>
       ${subtitle ? `<div class="artist">${subtitle}</div>` : ''}
       <div class="actions">
-        <button id="play-btn" class="btn btn-primary" onclick="playTrack()">${isCollection ? 'Play All' : 'Play'}</button>
+        <button id="play-btn" class="btn btn-primary" onclick="playTrack()"><svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${isCollection ? 'Play All' : 'Play'}</button>
         <a href="${linkUrl}" target="_blank" class="btn btn-secondary">${isCollection ? 'View Tracks' : 'More'}</a>
       </div>
     </div>
@@ -787,11 +795,12 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
 
     function updatePlayButton() {
       const btn = document.getElementById('play-btn');
+      const playIcon = '<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
       if (parachordConnected) {
-        btn.innerHTML = '<span class="status-dot"></span>${isCollection ? 'Play All' : 'Play'}';
+        btn.innerHTML = '<span class="status-dot"></span>' + playIcon + '${isCollection ? 'Play All' : 'Play'}';
         btn.classList.add('btn-connected');
       } else {
-        btn.innerHTML = '${isCollection ? 'Play All' : 'Play'}';
+        btn.innerHTML = playIcon + '${isCollection ? 'Play All' : 'Play'}';
         btn.classList.remove('btn-connected');
       }
     }
