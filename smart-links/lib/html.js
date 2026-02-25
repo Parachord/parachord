@@ -972,7 +972,7 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
     ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
 
     <div class="header-actions">
-      <button id="play-btn" class="btn btn-primary" onclick="playAll()"><svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${isCollection ? 'Play All' : 'Play'}</button>
+      <a id="play-btn" class="btn btn-primary" href="#" onclick="playAll(); return false"><svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${isCollection ? 'Play All' : 'Play'}</a>
       <a href="${linkUrl}" target="_blank" class="btn btn-secondary">Open</a>
     </div>
 
