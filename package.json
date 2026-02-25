@@ -18,7 +18,8 @@
     "test:coverage": "jest --coverage",
     "test:playback": "jest tests/playback/",
     "test:resolver": "jest tests/resolver/",
-    "test:legacy": "node tests/resolution-scheduler.test.js && node tests/youtube-resolver.test.js && node tests/browser-extension.test.js"
+    "test:legacy": "node tests/resolution-scheduler.test.js && node tests/youtube-resolver.test.js && node tests/browser-extension.test.js",
+    "package:extension": "node scripts/package-extension.js"
   },
   "keywords": [
     "music",
