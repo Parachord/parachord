@@ -1,3 +1,39 @@
+# Parachord v0.8.0-alpha.2
+
+**Release date:** 2026-02-25
+
+---
+
+## Browser Extension — Chrome Web Store Ready
+
+- **Native messaging** — extension now communicates via Chrome native messaging instead of WebSocket, improving reliability and security
+- **Chrome Web Store packaging** — new build script for packaging the extension for store submission
+- **Privacy policy** — added privacy policy pages covering the desktop app and browser extension
+
+## Embedded Player — Large Embed
+
+- **Large embed option** — albums and playlists can now be embedded with a full visible tracklist
+- **Play All button** — new play icon on the Play All button in embeds, with proper sizing across embed variants
+
+## Fresh Drops Reliability
+
+- **Cache persistence fixed** — Fresh Drops now correctly survives app restarts (fixed falsy-timestamp sentinel, cache ref overwrite on rebuild, and store key whitelist)
+- **Faster loading** — releases stream in more quickly with a visible loading indicator
+- **"Coming" prefix** — upcoming releases are highlighted with a "Coming" badge
+- **10s timeout** — MusicBrainz fetch calls now have a timeout to prevent hangs
+
+## Bug Fixes
+
+- Fixed queue not restoring on restart due to a race condition with resolver settings initialization
+- Fixed Spotify resolution failing with HTTP 400 by adding automatic token refresh retry
+- Fixed Spotify synced tracks not resolving
+- Fixed "Play Playlist Next" incorrectly creating a library playlist
+- Fixed AI Suggestions and New Releases caches not persisting across restarts (missing store key whitelist entries)
+- Added spinning refresh icon to AI Suggestions (replacing plain text link)
+- Added favicon to go.parachord.com share pages
+
+---
+
 # Parachord v0.8.0-alpha.1
 
 **Release date:** 2026-02-24
@@ -112,4 +148,4 @@ Third-party websites can embed a button that sends playlists directly into Parac
 
 ---
 
-**Full changelog:** `git log v0.7.0-alpha.15..v0.8.0-alpha.1`
+**Full changelog:** `git log v0.8.0-alpha.1..v0.8.0-alpha.2`
