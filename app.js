@@ -23162,6 +23162,13 @@ ${tracks}
     let artistsProcessed = 0;
     const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
+    // Fetch with a timeout to prevent a single hanging request from stalling the loop
+    const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+    };
+
     for (const artist of artistList) {
       try {
         const cacheKey = artist.name.trim().toLowerCase();
@@ -23169,7 +23176,7 @@ ${tracks}
         let madeApiCall = false;
 
         if (!mbid) {
-          const searchResponse = await fetch(
+          const searchResponse = await fetchWithTimeout(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
             { headers: mbHeaders }
           );
@@ -23194,7 +23201,7 @@ ${tracks}
           continue;
         }
 
-        const releasesResponse = await fetch(
+        const releasesResponse = await fetchWithTimeout(
           `https://musicbrainz.org/ws/2/release-group?artist=${mbid}&fmt=json&limit=100`,
           { headers: mbHeaders }
         );
@@ -23311,6 +23318,7 @@ ${tracks}
 
           // Fetch art only for the new ones
           fetchNewReleasesAlbumArt(brandNew);
+          saveCacheToStore();
         } else {
           console.log(`✨ No new releases found (checked ${artistsProcessed} artists)`);
           newReleasesCache.current.timestamp = Date.now();
@@ -23360,6 +23368,9 @@ ${tracks}
           });
           const sorted = withArt.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(sorted);
+          // Keep cache ref in sync so periodic saveCacheToStore captures
+          // in-progress results (prevents data loss on rebuild/crash)
+          newReleasesCache.current = { releases: sorted, timestamp: Date.now() };
         }
       );
 
@@ -23391,6 +23402,9 @@ ${tracks}
       checkDiscoveryUnread('newReleases', hash);
 
       fetchNewReleasesAlbumArt(uniqueReleases);
+
+      // Persist immediately so data isn't lost if app is rebuilt/killed
+      saveCacheToStore();
 
     } catch (error) {
       console.error('Failed to load New Releases:', error);
@@ -40188,10 +40202,13 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => loadNewReleases(true),
               disabled: newReleasesLoading,
-              className: 'ml-2 p-1.5 text-gray-400 hover:text-gray-600 transition-colors',
-              title: 'Refresh'
+              className: `ml-2 p-1.5 transition-colors ${newReleasesLoading ? 'text-emerald-500' : 'text-gray-400 hover:text-gray-600'}`,
+              title: newReleasesLoading ? 'Loading...' : 'Refresh'
             },
-              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('svg', {
+                className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}`,
+                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+              },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
               )
             ),
