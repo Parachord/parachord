@@ -112,8 +112,7 @@ function toFirefoxManifest(manifest) {
       id: FIREFOX_EXTENSION_ID,
       strict_min_version: '142.0',
       data_collection_permissions: {
-        required: ["none"],
-        optional: ["none"]
+        required: ["none"]
       }
     }
   };
