@@ -9735,6 +9735,8 @@ ${trackListXml}
   // Each entry: { promise, timestamp }
   const resolverConfigCache = useRef({});
   const RESOLVER_CONFIG_CACHE_TTL = 10000; // 10s — tokens don't change that fast
+  // Deduplicates concurrent force-refresh calls (e.g. when many tracks get 400 at once)
+  const spotifyRefreshPromise = useRef(null);
 
   const getResolverConfig = async (resolverId) => {
     // Check if we have a recent cached result or in-flight promise
@@ -9770,7 +9772,30 @@ ${trackListXml}
         // Don't discard a working token just because refresh failed
       }
 
-      return { token };
+      return {
+        token,
+        // Called by the search function when Spotify returns 400/401 — forces a token refresh
+        // bypassing the expiry check (the stored expiry may be wrong, or Spotify revoked the token)
+        // Deduplicates concurrent calls so 20 tracks failing at once only trigger one refresh
+        refreshToken: async () => {
+          if (!window.electron?.spotify) return null;
+          if (spotifyRefreshPromise.current) return spotifyRefreshPromise.current;
+          spotifyRefreshPromise.current = (async () => {
+            try {
+              delete resolverConfigCache.current['spotify'];
+              const tokenData = await window.electron.spotify.checkToken({ force: true });
+              if (tokenData && tokenData.token) {
+                setSpotifyToken(tokenData.token);
+                return tokenData.token;
+              }
+              return null;
+            } finally {
+              spotifyRefreshPromise.current = null;
+            }
+          })();
+          return spotifyRefreshPromise.current;
+        }
+      };
     }
 
     // For SoundCloud, always get a fresh token from the IPC handler
