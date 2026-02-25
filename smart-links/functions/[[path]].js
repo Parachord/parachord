@@ -1,5 +1,5 @@
 // Dynamic route handler for /:id, /:id/embed, /:id/playlist.xspf
-import { generateLinkPageHtml, generateEmbedHtml, generateXspf } from '../lib/html.js';
+import { generateLinkPageHtml, generateEmbedHtml, generateLargeEmbedHtml, generateXspf } from '../lib/html.js';
 import { enrichLinkData } from '../lib/enrich.js';
 
 // Static file extensions to pass through to assets
@@ -99,8 +99,13 @@ async function handleEmbed(id, request, env, waitUntil) {
 
   const url = new URL(request.url);
   const baseUrl = `${url.protocol}//${url.host}`;
+  const size = url.searchParams.get('size');
 
-  return new Response(generateEmbedHtml(data, id, baseUrl), {
+  const html = size === 'large'
+    ? generateLargeEmbedHtml(data, id, baseUrl)
+    : generateEmbedHtml(data, id, baseUrl);
+
+  return new Response(html, {
     headers: {
       'Content-Type': 'text/html',
       'Cache-Control': 'public, max-age=300',

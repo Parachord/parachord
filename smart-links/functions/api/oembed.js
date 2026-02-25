@@ -50,6 +50,19 @@ export async function onRequestGet({ request, env }) {
     ? `${typeLabel} · ${data.tracks.length} tracks`
     : 'Listen on your favorite streaming service';
 
+  // Support large embed via ?size=large query parameter
+  const size = requestUrl.searchParams.get('size');
+  const isLarge = size === 'large' && isCollection;
+
+  const embedWidth = isLarge ? 600 : 400;
+  // Large embed: header (~280px) + ~44px per track row, capped at 600px
+  const embedHeight = isLarge
+    ? Math.min(280 + data.tracks.length * 44, 600)
+    : 152;
+  const embedSrc = isLarge
+    ? `${baseUrl}/${id}/embed?size=large`
+    : `${baseUrl}/${id}/embed`;
+
   // Return oEmbed response
   return Response.json({
     version: '1.0',
@@ -62,9 +75,9 @@ export async function onRequestGet({ request, env }) {
     thumbnail_url: data.albumArt || undefined,
     thumbnail_width: data.albumArt ? 300 : undefined,
     thumbnail_height: data.albumArt ? 300 : undefined,
-    html: `<iframe src="${baseUrl}/${id}/embed" width="400" height="152" frameborder="0" allowtransparency="true" allow="encrypted-media" style="border-radius: 8px;"></iframe>`,
-    width: 400,
-    height: 152
+    html: `<iframe src="${embedSrc}" width="${embedWidth}" height="${embedHeight}" frameborder="0" allowtransparency="true" allow="encrypted-media" style="border-radius: 8px;"></iframe>`,
+    width: embedWidth,
+    height: embedHeight
   }, {
     headers: {
       'Content-Type': 'application/json',

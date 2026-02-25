@@ -642,6 +642,427 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
 </html>`;
 }
 
+export function generateLargeEmbedHtml(data, linkId, baseUrl) {
+  const { title, artist, albumArt, type, urls, tracks, creator } = data;
+  const linkUrl = `${baseUrl}/${linkId}`;
+  const isPlaylist = type === 'playlist';
+  const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
+  const typeLabel = isPlaylist ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
+  const trackCount = isCollection ? tracks.length : 0;
+  const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
+
+  // For playlists, collect unique album art URLs for a 2x2 mosaic
+  const playlistCovers = isPlaylist && tracks ? [...new Set(tracks.map(t => t.albumArt).filter(Boolean))].slice(0, 4) : [];
+
+  // Service icon links for albums (not playlists)
+  const serviceLinksHtml = (!isPlaylist && urls) ? SERVICES.map(s => {
+    const url = urls[s.id];
+    if (!url) return '';
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="service-icon-link" style="--service-color: ${s.color}" title="${s.name}">${SERVICE_ICONS[s.id]}</a>`;
+  }).filter(Boolean).join('\n') : '';
+
+  const tracklistHtml = isCollection ? generateTracklistHtml(tracks) : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #252525;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
+      --accent: #8b5cf6;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow-y: auto;
+    }
+    .container {
+      max-width: 600px;
+      width: 100%;
+      margin: 0 auto;
+      text-align: center;
+      padding: 24px 16px;
+    }
+    .album-art {
+      width: 160px;
+      height: 160px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      object-fit: cover;
+    }
+    .album-art-placeholder {
+      width: 160px;
+      height: 160px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      background: var(--bg-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      color: var(--text-secondary);
+    }
+    .playlist-mosaic {
+      width: 160px;
+      height: 160px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .playlist-mosaic img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    h1 {
+      font-size: 1.25rem;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .artist-name {
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      font-size: 0.9rem;
+    }
+    .type-label {
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+    .header-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn .play-icon {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: #fff;
+    }
+    .btn-secondary:hover {
+      background: #333;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      display: inline-block;
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .btn-connected {
+      background: #22c55e;
+    }
+    .services-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .service-icon-link {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .service-icon-link:hover {
+      border-color: var(--service-color);
+      background: color-mix(in srgb, var(--service-color) 15%, var(--bg-secondary));
+    }
+    .service-icon-link svg {
+      width: 18px;
+      height: 18px;
+      color: var(--service-color);
+    }
+    .service-icon-link img {
+      width: 18px !important;
+      height: 18px !important;
+      object-fit: contain;
+    }
+    .tracklist {
+      text-align: left;
+    }
+    .tracklist-header {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      padding: 0 12px;
+    }
+    .track-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: background 0.15s ease;
+    }
+    .track-row:hover {
+      background: var(--bg-secondary);
+    }
+    .track-num-container {
+      width: 24px;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .track-num {
+      width: 24px;
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+    .track-play-btn {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-primary);
+      padding: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    .track-play-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .track-play-btn:hover {
+      color: var(--accent);
+    }
+    body.parachord-connected .track-row:hover .track-num {
+      display: none;
+    }
+    body.parachord-connected .track-row:hover .track-play-btn {
+      display: flex;
+    }
+    .track-row-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .track-row-title {
+      font-size: 0.85rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-row-artist {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-row-badges {
+      display: flex;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .resolver-badge {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--badge-color) 20%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .resolver-badge:hover {
+      background: color-mix(in srgb, var(--badge-color) 40%, transparent);
+      transform: scale(1.1);
+    }
+    .resolver-badge svg {
+      width: 12px;
+      height: 12px;
+      color: var(--badge-color);
+    }
+    .resolver-badge img {
+      width: 12px !important;
+      height: 12px !important;
+    }
+    .track-row-duration {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      min-width: 32px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${isPlaylist && playlistCovers.length >= 4
+      ? `<div class="playlist-mosaic">${playlistCovers.map(src => `<img src="${escapeHtml(src)}" alt="">`).join('')}</div>`
+      : (albumArt
+        ? `<img src="${escapeHtml(albumArt)}" alt="Album Art" class="album-art">`
+        : `<div class="album-art-placeholder">${isCollection ? '♫' : '♪'}</div>`)
+    }
+    <h1>${escapeHtml(title)}</h1>
+    ${isPlaylist && creator ? `<p class="artist-name">by ${escapeHtml(creator)}</p>` : (artist ? `<p class="artist-name">${escapeHtml(artist)}</p>` : '')}
+    ${isCollection ? `<p class="type-label">${typeLabel} · ${trackCount} tracks</p>` : ''}
+
+    <div class="header-actions">
+      <button id="play-btn" class="btn btn-primary" onclick="playAll()"><svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${isCollection ? 'Play All' : 'Play'}</button>
+      <a href="${linkUrl}" target="_blank" class="btn btn-secondary">Open</a>
+    </div>
+
+    ${serviceLinksHtml ? `<div class="services-row">${serviceLinksHtml}</div>` : ''}
+
+    ${isCollection ? `
+    <div class="tracklist">
+      <div class="tracklist-header">Tracklist</div>
+      ${tracklistHtml}
+    </div>
+    ` : ''}
+  </div>
+
+  <script>
+    const linkData = ${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
+    const fallbackUrl = ${JSON.stringify(firstUrl || '')};
+    let ws = null;
+    let parachordConnected = false;
+
+    function updatePlayButton() {
+      const btn = document.getElementById('play-btn');
+      const playIcon = '<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+      if (parachordConnected) {
+        btn.innerHTML = '<span class="status-dot"></span>' + playIcon + '${isCollection ? 'Play All' : 'Play'}';
+        btn.classList.add('btn-connected');
+      } else {
+        btn.innerHTML = playIcon + '${isCollection ? 'Play All' : 'Play'}';
+        btn.classList.remove('btn-connected');
+      }
+    }
+
+    function connectToParachord() {
+      try {
+        ws = new WebSocket('ws://localhost:9876');
+        ws.onopen = () => {
+          parachordConnected = true;
+          document.body.classList.add('parachord-connected');
+          updatePlayButton();
+        };
+        ws.onclose = () => {
+          parachordConnected = false;
+          document.body.classList.remove('parachord-connected');
+          updatePlayButton();
+          setTimeout(connectToParachord, 3000);
+        };
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch (e) {
+        setTimeout(connectToParachord, 3000);
+      }
+    }
+
+    function playAll() {
+      if (parachordConnected && ws && ws.readyState === WebSocket.OPEN) {
+        if (linkData.tracks && linkData.tracks.length > 0) {
+          const tracks = linkData.tracks.map(t => ({
+            title: t.title,
+            artist: t.artist || linkData.artist,
+            album: linkData.title,
+            albumArt: linkData.albumArt,
+            duration: t.duration,
+            trackNumber: t.trackNumber,
+            urls: t.urls
+          }));
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: tracks[0], queue: tracks.slice(1) } }));
+        } else {
+          ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track: linkData } }));
+        }
+      } else if (fallbackUrl) {
+        window.open(fallbackUrl, '_blank');
+      }
+    }
+
+    function playTrackInParachord(index) {
+      if (ws && ws.readyState === WebSocket.OPEN && linkData.tracks && linkData.tracks[index]) {
+        const t = linkData.tracks[index];
+        const track = {
+          title: t.title,
+          artist: t.artist || linkData.artist,
+          album: linkData.title,
+          albumArt: linkData.albumArt,
+          duration: t.duration,
+          trackNumber: t.trackNumber,
+          urls: t.urls
+        };
+        ws.send(JSON.stringify({ type: 'embed', action: 'play', payload: { track } }));
+      }
+    }
+
+    connectToParachord();
+  </script>
+</body>
+</html>`;
+}
+
 export function generateEmbedHtml(data, linkId, baseUrl) {
   const { title, artist, albumArt, type, urls, tracks } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
@@ -731,6 +1152,14 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       transition: all 0.2s;
       cursor: pointer;
       border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn .play-icon {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
     }
     .btn-primary {
       background: #8b5cf6;
@@ -774,7 +1203,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
       <div class="title">${escapeHtml(title)}</div>
       ${subtitle ? `<div class="artist">${subtitle}</div>` : ''}
       <div class="actions">
-        <button id="play-btn" class="btn btn-primary" onclick="playTrack()">${isCollection ? 'Play All' : 'Play'}</button>
+        <button id="play-btn" class="btn btn-primary" onclick="playTrack()"><svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>${isCollection ? 'Play All' : 'Play'}</button>
         <a href="${linkUrl}" target="_blank" class="btn btn-secondary">${isCollection ? 'View Tracks' : 'More'}</a>
       </div>
     </div>
@@ -787,11 +1216,12 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
 
     function updatePlayButton() {
       const btn = document.getElementById('play-btn');
+      const playIcon = '<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
       if (parachordConnected) {
-        btn.innerHTML = '<span class="status-dot"></span>${isCollection ? 'Play All' : 'Play'}';
+        btn.innerHTML = '<span class="status-dot"></span>' + playIcon + '${isCollection ? 'Play All' : 'Play'}';
         btn.classList.add('btn-connected');
       } else {
-        btn.innerHTML = '${isCollection ? 'Play All' : 'Play'}';
+        btn.innerHTML = playIcon + '${isCollection ? 'Play All' : 'Play'}';
         btn.classList.remove('btn-connected');
       }
     }
