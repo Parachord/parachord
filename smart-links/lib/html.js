@@ -752,7 +752,11 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
       margin-bottom: 16px;
     }
     .btn {
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 0;
       padding: 8px 16px;
+      border: none;
       border-radius: 20px;
       font-family: inherit;
       font-size: 13px;
@@ -761,7 +765,6 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
       text-decoration: none;
       transition: all 0.2s;
       cursor: pointer;
-      border: none;
       display: inline-flex;
       align-items: center;
       gap: 4px;
