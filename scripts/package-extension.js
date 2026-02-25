@@ -12,6 +12,7 @@ const OUT_DIR = path.join(ROOT, 'dist');
 const EXCLUDE = [
   'README.md',
   '.DS_Store',
+  '*/.DS_Store',
   '*.map',
 ];
 
@@ -97,11 +98,20 @@ function toFirefoxManifest(manifest) {
   // Remove Chrome-specific key
   delete fx.key;
 
+  // Firefox requires background.scripts alongside service_worker for compat.
+  // Use the same file — Firefox will load it as a background script.
+  if (fx.background?.service_worker) {
+    fx.background.scripts = [fx.background.service_worker];
+  }
+
   // Add Firefox-specific settings
   fx.browser_specific_settings = {
     gecko: {
       id: FIREFOX_EXTENSION_ID,
-      strict_min_version: '127.0'
+      strict_min_version: '127.0',
+      data_collection_permissions: {
+        data_not_collected: true
+      }
     }
   };
 
