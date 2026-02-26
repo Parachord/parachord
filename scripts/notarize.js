@@ -128,8 +128,17 @@ exports.default = async function afterSign(context) {
 
         console.log(`  Entitlements: ${path.basename(entitlements)}`);
 
-        // Re-sign the nested helper bundle (innermost first)
-        console.log(`  Signing MusicKitHelper.app with: ${identity}`);
+        // Re-sign the nested helper: inner binary first, then bundle
+        // (Apple recommends against --deep; explicit order is required)
+        const helperBinaryPath = path.join(helperAppPath, 'Contents', 'MacOS', 'MusicKitHelper');
+        console.log(`  Signing MusicKitHelper binary with: ${identity}`);
+        execSync(
+          `/usr/bin/codesign --force --sign "${identity}" ` +
+          `--entitlements "${entitlements}" --options runtime ` +
+          `--timestamp "${helperBinaryPath}"`,
+          { stdio: 'inherit', timeout: 60000 }
+        );
+        console.log(`  Signing MusicKitHelper.app bundle with: ${identity}`);
         execSync(
           `/usr/bin/codesign --force --sign "${identity}" ` +
           `--entitlements "${entitlements}" --options runtime ` +
