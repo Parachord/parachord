@@ -138,15 +138,19 @@ jobs:
         shell: bash
         run: |
           cd dist
+          label="${{ matrix.arch_label }}"
           for f in *.dmg *.zip *.blockmap *.yml; do
             [ -e "$f" ] || continue
-            newname=$(echo "$f" | sed "s/-arm64/-${{ matrix.arch_label }}/g; s/-mac\.zip/-${{ matrix.arch_label }}-mac.zip/")
-            # For x64 builds, the default names have no arch suffix — inject the label
-            if [ "${{ matrix.arch }}" = "x64" ]; then
+            newname="$f"
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              # arm64 files have "-arm64" in the name — replace with label
+              newname=$(echo "$f" | sed "s/-arm64/-${label}/g")
+            elif [ "${{ matrix.arch }}" = "x64" ]; then
+              # x64 files have NO arch suffix — inject the label before the extension
               newname=$(echo "$f" | sed \
-                "s/\(Parachord-[0-9.]*\)\.dmg/\1-${{ matrix.arch_label }}.dmg/
-                 s/\(Parachord-[0-9.]*\)-mac\.zip/\1-${{ matrix.arch_label }}-mac.zip/
-                 s/\(Parachord-[0-9.]*\)\.dmg\.blockmap/\1-${{ matrix.arch_label }}.dmg.blockmap/")
+                "s/\.dmg\.blockmap$/-${label}.dmg.blockmap/
+                 s/\.dmg$/-${label}.dmg/
+                 s/-mac\.zip$/-${label}-mac.zip/")
             fi
             if [ "$f" != "$newname" ]; then
               mv "$f" "$newname"
