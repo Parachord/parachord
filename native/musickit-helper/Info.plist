@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>MusicKitHelper</string>
     <key>CFBundleIdentifier</key>
-    <string>com.parachord.desktop.musickit-helper</string>
+    <string>dev.parachord.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
