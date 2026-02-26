@@ -1062,7 +1062,9 @@ function startNativeMessagingServer() {
 function registerNativeMessagingHost() {
   try {
     const { install } = require('./native-messaging/install');
-    install(process.execPath, app.getAppPath());
+    // In packaged builds, native-messaging/ is asarUnpacked so Chrome can spawn it
+    const hostAppPath = app.isPackaged ? app.getAppPath().replace('app.asar', 'app.asar.unpacked') : app.getAppPath();
+    install(process.execPath, hostAppPath);
   } catch (error) {
     console.error('Failed to register native messaging host:', error.message);
   }
@@ -4429,8 +4431,10 @@ ipcMain.handle('mcp-response', (event, { requestId, data }) => {
 
 // MCP server info - expose path for Claude Desktop config UI
 ipcMain.handle('mcp-get-info', () => {
+  // In packaged builds, mcp-stdio.js is asarUnpacked so external processes can access it
+  const basePath = app.isPackaged ? __dirname.replace('app.asar', 'app.asar.unpacked') : __dirname;
   return {
-    stdioPath: path.join(__dirname, 'mcp-stdio.js'),
+    stdioPath: path.join(basePath, 'mcp-stdio.js'),
     port: 9421
   };
 });
