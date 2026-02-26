@@ -12448,7 +12448,12 @@ ${trackListXml}
       // could contain stale sources from unrelated tracks (e.g. listen-along queue tracks)
       const resolvedSources = trackOrSource.id ? (trackSources[trackOrSource.id] || {}) : {};
       if (Object.keys(resolvedSources).length > 0) {
-        trackOrSource = { ...trackOrSource, sources: { ...trackOrSource.sources, ...resolvedSources } };
+        // Don't merge back sources that were explicitly removed by fallback logic
+        // (otherwise the fallback's filtered sources get overwritten and we loop)
+        const filteredResolved = { ...resolvedSources };
+        if (trackOrSource._appleMusicFallback) delete filteredResolved.applemusic;
+        if (trackOrSource._spotifyFallback) delete filteredResolved.spotify;
+        trackOrSource = { ...trackOrSource, sources: { ...trackOrSource.sources, ...filteredResolved } };
         sourceToPlay = trackOrSource;
       }
 
