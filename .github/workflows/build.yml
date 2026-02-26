@@ -21,15 +21,19 @@ jobs:
           - os: macos-latest
             platform: mac
             arch: arm64
+            arch_label: Apple-Silicon
           - os: macos-latest
             platform: mac
             arch: x64
+            arch_label: Intel
           - os: ubuntu-latest
             platform: linux
             arch: x64
+            arch_label: ''
           - os: windows-latest
             platform: win
             arch: x64
+            arch_label: ''
 
     runs-on: ${{ matrix.os }}
 
@@ -128,6 +132,27 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: node scripts/notarize-artifacts.js
+
+      - name: Rename Mac artifacts with friendly arch labels
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          cd dist
+          for f in *.dmg *.zip *.blockmap *.yml; do
+            [ -e "$f" ] || continue
+            newname=$(echo "$f" | sed "s/-arm64/-${{ matrix.arch_label }}/g; s/-mac\.zip/-${{ matrix.arch_label }}-mac.zip/")
+            # For x64 builds, the default names have no arch suffix — inject the label
+            if [ "${{ matrix.arch }}" = "x64" ]; then
+              newname=$(echo "$f" | sed \
+                "s/\(Parachord-[0-9.]*\)\.dmg/\1-${{ matrix.arch_label }}.dmg/
+                 s/\(Parachord-[0-9.]*\)-mac\.zip/\1-${{ matrix.arch_label }}-mac.zip/
+                 s/\(Parachord-[0-9.]*\)\.dmg\.blockmap/\1-${{ matrix.arch_label }}.dmg.blockmap/")
+            fi
+            if [ "$f" != "$newname" ]; then
+              mv "$f" "$newname"
+              echo "Renamed $f -> $newname"
+            fi
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
