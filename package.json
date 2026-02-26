@@ -98,7 +98,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "notarize": false,
-      "x64ArchFiles": "{Contents/Resources/app.asar.unpacked/node_modules/**/*.node,Contents/Resources/bin/darwin/MusicKitHelper.app/Contents/MacOS/MusicKitHelper}",
+      "x64ArchFiles": "{Contents/Resources/app.asar.unpacked/node_modules/**/*.node,Contents/Resources/bin/darwin/MusicKitHelper.app/**/*}",
       "signIgnore": ["MusicKitHelper\\.app"],
       "extendInfo": {
         "NSAppleMusicUsageDescription": "Parachord needs access to Apple Music to play songs from your library and subscription."

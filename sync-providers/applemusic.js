@@ -98,7 +98,7 @@ const transformTrack = (song) => {
     albumArt: attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
     addedAt: attrs.dateAdded ? new Date(attrs.dateAdded).getTime() : Date.now(),
     appleMusicId: attrs.playParams?.catalogId || song.id,
-    appleMusicUrl: null
+    appleMusicUrl: attrs.url || `https://music.apple.com/us/song/${attrs.playParams?.catalogId || song.id}`
   };
 };
 
