@@ -107,15 +107,25 @@ fi
 
 if [ -n "$SIGNING_IDENTITY" ]; then
     echo "Signing with identity: $SIGNING_IDENTITY"
-    codesign --force --deep --sign "$SIGNING_IDENTITY" \
+    # Sign the inner binary first, then the bundle (Apple recommends against --deep)
+    codesign --force --sign "$SIGNING_IDENTITY" \
         --entitlements MusicKitHelper.entitlements \
         --options runtime \
+        --timestamp \
+        "$APP_DIR/Contents/MacOS/MusicKitHelper"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --entitlements MusicKitHelper.entitlements \
+        --options runtime \
+        --timestamp \
         "$APP_DIR"
 else
     echo "Warning: No signing identity found, using ad-hoc signing"
     echo "  Ad-hoc signing won't work with MusicKit entitlement."
     echo "  Set APPLE_SIGNING_IDENTITY or install a Developer certificate."
-    codesign --force --deep --sign - \
+    codesign --force --sign - \
+        --entitlements MusicKitHelper.entitlements \
+        "$APP_DIR/Contents/MacOS/MusicKitHelper"
+    codesign --force --sign - \
         --entitlements MusicKitHelper.entitlements \
         "$APP_DIR"
 fi
