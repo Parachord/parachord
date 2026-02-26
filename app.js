@@ -114,7 +114,9 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
             duration: typeof song.duration === 'number' ? Math.floor(song.duration) : 0,
             sources: ['applemusic'],
             appleMusicId: String(song.id),
+            appleMusicUrl: song.url || `https://music.apple.com/${storefront}/song/${song.id}`,
             albumArt: song.artworkUrl || null,
+            previewUrl: song.previewUrl || null,
             isrc: song.isrc || null
           }));
         }
@@ -168,7 +170,9 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
           duration: song.duration || 0,
           sources: ['applemusic'],
           appleMusicId: String(song.id),
+          appleMusicUrl: song.url || `https://music.apple.com/${storefront}/song/${song.id}`,
           albumArt: song.artworkUrl,
+          previewUrl: song.previewUrl || null,
           isrc: song.isrc,
           audioTraits: song.audioTraits || []
         }));
