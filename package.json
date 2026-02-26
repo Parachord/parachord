@@ -112,13 +112,6 @@
           "filter": [
             "**/*"
           ]
-        },
-        {
-          "from": "resources/keys/",
-          "to": "keys/",
-          "filter": [
-            "*.p8"
-          ]
         }
       ],
       "entitlements": "build/entitlements.mac.plist",
