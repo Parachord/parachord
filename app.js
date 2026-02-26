@@ -1127,8 +1127,8 @@ const loadBuiltinResolvers = async () => {
       // First sync with marketplace (in background, don't block)
       syncPluginsWithMarketplace().then(async (pluginsUpdated) => {
         if (pluginsUpdated) {
-          // Plugins were updated, notify user they may want to restart
-          console.log('🔄 New plugin versions available - restart app to use them');
+          console.log('🔄 Plugins updated by marketplace sync — hot-reloading...');
+          window.dispatchEvent(new CustomEvent('parachord-plugins-updated'));
         }
       });
 
@@ -7709,6 +7709,67 @@ const Parachord = () => {
     
     initResolvers();
   }, []);
+
+  // Hot-reload meta services when marketplace sync downloads updated plugins
+  useEffect(() => {
+    const handlePluginsUpdated = async () => {
+      if (!window.electron?.resolvers?.loadBuiltin || !resolverLoaderRef.current) return;
+
+      try {
+        const freshAxeFiles = await window.electron.resolvers.loadBuiltin();
+        const metaServiceAxes = freshAxeFiles.filter(axe => axe.manifest?.type === 'meta-service');
+        if (metaServiceAxes.length === 0) return;
+
+        // Filter out user-uninstalled meta services (same logic as initial load)
+        const uninstalledResolvers = await (window.electron?.store?.get
+          ? window.electron.store.get('uninstalled_resolvers').catch(() => [])
+          : Promise.resolve([]));
+        const filteredAxes = metaServiceAxes.filter(axe => {
+          const id = axe.manifest?.id;
+          if (!uninstalledResolvers.includes(id)) return true;
+          const metaConfig = metaServiceConfigs[id];
+          return !!(metaConfig?.enabled || metaConfig?.apiKey);
+        });
+
+        // Re-load meta services with generate/chat capabilities into resolver loader
+        const withGenerate = filteredAxes.filter(axe =>
+          axe.capabilities?.generate && axe.implementation?.generate);
+        const withChat = filteredAxes.filter(axe =>
+          axe.capabilities?.chat && axe.implementation?.chat);
+
+        await Promise.all([
+          withGenerate.length > 0
+            ? resolverLoaderRef.current.loadResolvers(withGenerate) : Promise.resolve(),
+          withChat.length > 0
+            ? resolverLoaderRef.current.loadResolvers(withChat) : Promise.resolve()
+        ]);
+
+        // Update meta services state so UI reflects new capabilities
+        const metaServicesData = filteredAxes.map(axe => ({
+          id: axe.manifest.id,
+          name: axe.manifest.name,
+          type: axe.manifest.type,
+          version: axe.manifest.version,
+          author: axe.manifest.author,
+          description: axe.manifest.description,
+          icon: axe.manifest.icon,
+          color: axe.manifest.color,
+          homepage: axe.manifest.homepage,
+          capabilities: axe.capabilities,
+          settings: axe.settings,
+          _filename: axe._filename
+        }));
+
+        setMetaServices(metaServicesData);
+        console.log(`✅ Hot-reloaded ${metaServicesData.length} meta services after marketplace sync`);
+      } catch (error) {
+        console.error('Failed to hot-reload plugins after sync:', error);
+      }
+    };
+
+    window.addEventListener('parachord-plugins-updated', handlePluginsUpdated);
+    return () => window.removeEventListener('parachord-plugins-updated', handlePluginsUpdated);
+  }, [metaServiceConfigs]);
 
   // Initialize scrobblers (ListenBrainz, Last.fm, Libre.fm)
   useEffect(() => {
