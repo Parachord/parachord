@@ -14,10 +14,15 @@ echo "Building MusicKit Helper App..."
 swift build -c release --arch arm64 --arch x86_64
 
 # Get the built binary path
-BINARY_PATH=".build/release/musickit-helper"
+# When building with --arch flags, Swift PM outputs to .build/apple/Products/Release/
+# When building single-arch, it outputs to .build/release/
+BINARY_PATH=".build/apple/Products/Release/musickit-helper"
+if [ ! -f "$BINARY_PATH" ]; then
+    BINARY_PATH=".build/release/musickit-helper"
+fi
 
 if [ ! -f "$BINARY_PATH" ]; then
-    echo "Error: Binary not found at $BINARY_PATH"
+    echo "Error: Binary not found at .build/apple/Products/Release/musickit-helper or .build/release/musickit-helper"
     exit 1
 fi
 
