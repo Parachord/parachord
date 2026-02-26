@@ -79,6 +79,32 @@ else
     SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep -E "(Developer ID Application|Apple Development)" | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
 fi
 
+# Fallback: if CSC_LINK is available but identity wasn't found, import the
+# certificate into a temporary keychain (matches what electron-builder does)
+if [ -z "$SIGNING_IDENTITY" ] && [ -n "$CSC_LINK" ]; then
+    echo "Importing signing certificate from CSC_LINK..."
+    TEMP_P12="$(mktemp /tmp/codesign_cert.XXXXXX).p12"
+    TEMP_KEYCHAIN="$(mktemp /tmp/codesign_keychain.XXXXXX).keychain-db"
+    TEMP_KC_PASS="$(openssl rand -base64 12)"
+    trap 'rm -f "$TEMP_P12"; security delete-keychain "$TEMP_KEYCHAIN" 2>/dev/null || true' EXIT
+
+    echo "$CSC_LINK" | base64 --decode > "$TEMP_P12"
+    security create-keychain -p "$TEMP_KC_PASS" "$TEMP_KEYCHAIN"
+    security set-keychain-settings -lut 21600 "$TEMP_KEYCHAIN"
+    security unlock-keychain -p "$TEMP_KC_PASS" "$TEMP_KEYCHAIN"
+    security import "$TEMP_P12" -P "${CSC_KEY_PASSWORD:-}" -A -t cert -f pkcs12 -k "$TEMP_KEYCHAIN"
+    security set-key-partition-list -S apple-tool:,apple: -k "$TEMP_KC_PASS" "$TEMP_KEYCHAIN" 2>/dev/null || true
+    security list-keychains -d user -s "$TEMP_KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+    SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$TEMP_KEYCHAIN" | grep -E "(Developer ID Application|Apple Development)" | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
+    if [ -n "$SIGNING_IDENTITY" ]; then
+        echo "Imported signing identity: $SIGNING_IDENTITY"
+    else
+        echo "Warning: Could not extract signing identity from CSC_LINK"
+    fi
+    rm -f "$TEMP_P12"
+fi
+
 if [ -n "$SIGNING_IDENTITY" ]; then
     echo "Signing with identity: $SIGNING_IDENTITY"
     codesign --force --deep --sign "$SIGNING_IDENTITY" \
