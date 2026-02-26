@@ -20,7 +20,10 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            arch: universal
+            arch: arm64
+          - os: macos-13
+            platform: mac
+            arch: x64
           - os: ubuntu-latest
             platform: linux
             arch: x64
