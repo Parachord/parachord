@@ -4,7 +4,7 @@
  * Communicates with the native Swift MusicKit helper via stdin/stdout JSON
  */
 
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
@@ -149,6 +149,21 @@ class MusicKitBridge extends EventEmitter {
     console.log('[MusicKit] Starting helper:', helperPath);
     console.log('[MusicKit] Helper exists:', fs.existsSync(helperPath));
     console.log('[MusicKit] Helper stats:', fs.statSync(helperPath).mode.toString(8));
+
+    // Remove macOS quarantine xattr from the helper app bundle.
+    // When the user downloads the DMG, macOS sets com.apple.quarantine on
+    // everything inside. The main Parachord.app passes Gatekeeper (signed +
+    // notarized), but the quarantine xattr propagates to nested binaries.
+    // Removing it from the bundled helper is safe — the parent app was already
+    // verified by Gatekeeper.
+    const appBundlePath = path.dirname(path.dirname(path.dirname(helperPath))); // up from Contents/MacOS/MusicKitHelper
+    try {
+      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', appBundlePath], { timeout: 5000 });
+      console.log('[MusicKit] Cleared quarantine xattr from:', appBundlePath);
+    } catch (e) {
+      // Ignore — xattr may not exist (no quarantine) or we lack permission
+      console.log('[MusicKit] Could not clear quarantine (may not be set):', e.message);
+    }
 
     return new Promise((resolve) => {
       try {
