@@ -9,5 +9,15 @@
     <!-- App sandbox disabled for helper app (needed for stdin/stdout IPC) -->
     <key>com.apple.security.app-sandbox</key>
     <false/>
+
+    <!-- Required for ApplicationMusicPlayer to load MusicKit framework components
+         under hardened runtime. Without these, play() fails with
+         "Failed to request developer token". -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>
