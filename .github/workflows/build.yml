@@ -45,14 +45,43 @@ jobs:
         shell: bash
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-      # macOS: Import code signing certificate
+      # macOS: Import code signing certificate into keychain BEFORE the build
+      # so it's available during prebuild (native helper signing) as well as
+      # electron-builder's own signing step.
       - name: Import Code Signing Certificate
         if: matrix.platform == 'mac' && env.CSC_LINK != ''
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          echo "Code signing certificate configured"
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 12)"
+
+          # Decode the certificate from base64
+          echo "$CSC_LINK" | base64 --decode > "$CERTIFICATE_PATH"
+
+          # Create and configure a temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the certificate
+          security import "$CERTIFICATE_PATH" \
+            -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          # Allow codesign to access the key without prompting
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add temporary keychain to the search list (keep existing keychains)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" \
+            $(security list-keychains -d user | tr -d '"')
+
+          # Verify the identity is available
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "Code signing certificate imported successfully"
 
       # Restore MusicKit private key from secret (enables auto token generation)
       - name: Restore MusicKit key

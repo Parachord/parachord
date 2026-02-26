@@ -48,6 +48,10 @@ function buildMusicKitHelper() {
         ...process.env,
         // Pass through signing identity if set
         APPLE_SIGNING_IDENTITY: process.env.APPLE_SIGNING_IDENTITY || '',
+        // Pass through electron-builder's cert env vars so build.sh can
+        // extract the identity from the .p12 if it's not in the keychain yet
+        CSC_LINK: process.env.CSC_LINK || '',
+        CSC_KEY_PASSWORD: process.env.CSC_KEY_PASSWORD || '',
       }
     });
     console.log('✅ MusicKit helper built successfully');
