@@ -115,6 +115,16 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      # macOS: Notarize and staple the DMG so Gatekeeper on macOS Sequoia
+      # accepts the downloaded disk image (not just the .app inside it).
+      - name: Notarize DMG
+        if: matrix.platform == 'mac' && env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/notarize-artifacts.js
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
