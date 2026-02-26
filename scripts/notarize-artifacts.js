@@ -2,13 +2,16 @@
  * Post-build: notarize and staple distribution artifacts (DMG, ZIP).
  *
  * On macOS Sequoia (15+), Gatekeeper checks the downloaded artifact itself
- * (DMG/ZIP), not just the .app inside.  If the DMG is not notarized,
- * Gatekeeper shows "damaged and can't be opened" even though the .app
- * inside is properly signed and notarized.
+ * (DMG/ZIP), not just the .app inside.  If the outer container is not
+ * notarized, Gatekeeper shows "damaged and can't be opened" even though
+ * the .app inside is properly signed and notarized.
  *
  * This script runs AFTER electron-builder finishes creating the DMG/ZIP.
  * The .app is already notarized by the afterSign hook (scripts/notarize.js).
- * This script notarizes the outer DMG so Gatekeeper accepts it on Sequoia.
+ * This script notarizes both the DMG and ZIP so Gatekeeper accepts them.
+ *
+ * Note: stapling only works on DMG/PKG files, not ZIPs.  For ZIPs, macOS
+ * verifies the notarization ticket online when the quarantine flag is set.
  *
  * Usage:
  *   node scripts/notarize-artifacts.js
@@ -34,16 +37,19 @@ async function main() {
     return;
   }
 
-  // Find DMG files to notarize
-  const files = fs.readdirSync(DIST_DIR).filter(f => f.endsWith('.dmg'));
+  // Find DMG and ZIP files to notarize
+  const files = fs.readdirSync(DIST_DIR).filter(f =>
+    f.endsWith('.dmg') || f.endsWith('.zip')
+  );
 
   if (files.length === 0) {
-    console.log('No DMG files found in dist/ — nothing to notarize');
+    console.log('No DMG/ZIP files found in dist/ — nothing to notarize');
     return;
   }
 
   for (const file of files) {
     const filePath = path.join(DIST_DIR, file);
+    const canStaple = file.endsWith('.dmg');
     console.log(`Notarizing ${file}...`);
 
     try {
@@ -58,28 +64,31 @@ async function main() {
       );
       console.log(`✓ ${file} notarization accepted`);
 
-      // Staple the ticket to the DMG
-      execSync(`xcrun stapler staple "${filePath}"`, {
-        stdio: 'inherit',
-        timeout: 60000,
-      });
-      console.log(`✓ ${file} stapled`);
-
-      // Validate
-      try {
-        execSync(`xcrun stapler validate "${filePath}" 2>&1`, {
-          encoding: 'utf-8',
-          timeout: 30000,
+      // Staple the ticket (only works for DMG/PKG, not ZIP)
+      if (canStaple) {
+        execSync(`xcrun stapler staple "${filePath}"`, {
+          stdio: 'inherit',
+          timeout: 60000,
         });
-        console.log(`✓ ${file} staple validation passed`);
-      } catch {
-        console.warn(`⚠ ${file} staple validation failed (non-fatal)`);
+        console.log(`✓ ${file} stapled`);
+
+        // Validate
+        try {
+          execSync(`xcrun stapler validate "${filePath}" 2>&1`, {
+            encoding: 'utf-8',
+            timeout: 30000,
+          });
+          console.log(`✓ ${file} staple validation passed`);
+        } catch {
+          console.warn(`⚠ ${file} staple validation failed (non-fatal)`);
+        }
+      } else {
+        console.log(`ℹ ${file} — stapling not supported for this format (online ticket check will be used)`);
       }
     } catch (error) {
       console.error(`✗ Failed to notarize ${file}:`, error.message);
       // Log the notarization log for debugging
       try {
-        // Get the submission ID from the error output to fetch the log
         console.log('Fetching notarization log...');
         execSync(
           `xcrun notarytool log "${filePath}" ` +
