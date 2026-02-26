@@ -14,6 +14,9 @@ permissions:
 
 jobs:
   build:
+    env:
+      HAS_MUSICKIT_KEY: ${{ secrets.MUSICKIT_PRIVATE_KEY != '' }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +95,7 @@ jobs:
 
       # Restore MusicKit private key from secret (enables auto token generation)
       - name: Restore MusicKit key
-        if: env.MUSICKIT_PRIVATE_KEY != ''
+        if: env.HAS_MUSICKIT_KEY == 'true'
         env:
           MUSICKIT_PRIVATE_KEY: ${{ secrets.MUSICKIT_PRIVATE_KEY }}
         shell: bash
