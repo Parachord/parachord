@@ -28,7 +28,7 @@ function buildMusicKitHelper() {
   }
 
   // Check if already built (skip if up to date)
-  const sourceFile = path.join(helperDir, 'Sources', 'main.swift');
+  const sourceFile = path.join(helperDir, 'Sources', 'MusicKitHelperApp.swift');
   if (fs.existsSync(outputApp)) {
     const sourceStats = fs.statSync(sourceFile);
     const outputStats = fs.statSync(outputApp);
