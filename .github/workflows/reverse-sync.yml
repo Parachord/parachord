@@ -49,7 +49,10 @@ jobs:
       - name: Copy changes into monorepo
         run: |
           # Copy everything except .git and .github from the dedicated repo
-          rsync -a --delete \
+          # NOTE: Do NOT use --delete here. The monorepo is the source of truth
+          # and may contain files (e.g. store-descriptions.md) that only live
+          # in the monorepo and were never synced to the dedicated repo.
+          rsync -a \
             --exclude '.git' \
             --exclude '.github' \
             /tmp/browser-ext/ parachord-extension/
@@ -121,7 +124,9 @@ jobs:
 
       - name: Copy changes into monorepo
         run: |
-          rsync -a --delete \
+          # Do NOT use --delete — the monorepo may contain files not in the
+          # dedicated repo (monorepo-only docs, scripts, etc.).
+          rsync -a \
             --exclude '.git' \
             --exclude '.github' \
             /tmp/raycast-ext/ raycast-extension/
