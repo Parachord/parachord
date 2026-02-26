@@ -93,6 +93,17 @@ jobs:
           mkdir -p resources/keys
           echo "$MUSICKIT_PRIVATE_KEY" > resources/keys/AuthKey_437JVHZMMK.p8
 
+      # Install system fpm so electron-builder doesn't need to download its own
+      # bundled copy (the upstream binary host is unreliable and returns 503).
+      - name: Install fpm (Linux .deb/.rpm packaging)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby-dev build-essential
+          sudo gem install fpm
+        env:
+          USE_SYSTEM_FPM: 'true'
+
       - name: Install dependencies
         run: npm ci
 
@@ -108,6 +119,8 @@ jobs:
         run: npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use system fpm on Linux to avoid unreliable binary downloads
+          USE_SYSTEM_FPM: ${{ matrix.platform == 'linux' && 'true' || '' }}
           # macOS code signing
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
