@@ -331,7 +331,7 @@ class MusicKitBridge {
         // We need to get the song's catalog ID from the underlying item
         if let entry = player.queue.currentEntry {
             // Try to get the song's catalog ID and duration from the entry's item
-            if let song = entry.item as? Song {
+            if case .song(let song) = entry.item {
                 result["songId"] = song.id.rawValue
                 result["songTitle"] = song.title
                 // Include duration if available (in seconds)
@@ -632,7 +632,7 @@ struct MusicKitHelperApp {
                 .replacingOccurrences(of: "\"", with: "\\\"")
                 .replacingOccurrences(of: "\n", with: " ")
             let msg = "{\"id\":\"\(reqId)\",\"success\":false,\"data\":null,\"error\":\"MusicKit internal error: \(exception.name.rawValue) — \(reason)\"}\n"
-            msg.withCString { ptr in
+            _ = msg.withCString { ptr in
                 write(STDOUT_FILENO, ptr, strlen(ptr))
             }
         }
