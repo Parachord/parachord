@@ -21,7 +21,7 @@ jobs:
           - os: macos-latest
             platform: mac
             arch: arm64
-          - os: macos-13
+          - os: macos-latest
             platform: mac
             arch: x64
           - os: ubuntu-latest
