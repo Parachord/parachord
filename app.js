@@ -9549,7 +9549,13 @@ ${trackListXml}
         // Only update progress if Apple Music is the active resolver
         const track = currentTrackRef.current;
         if (track?._activeResolver === 'applemusic' && typeof data.position === 'number') {
-          setProgress(data.position);
+          // Skip if preview audio is actively playing (it has its own timeupdate listener)
+          const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
+          if (!previewPlaying) {
+            setProgress(data.position);
+          }
+          // Always update interpolation baseline for smooth progress between polls
+          appleMusicProgressBaselineRef.current = { progress: data.position, timestamp: Date.now(), isPlaying: true };
           // Notify scrobble manager of progress for scrobble threshold checking
           if (window.scrobbleManager) {
             window.scrobbleManager.onProgressUpdate(data.position);
@@ -9582,6 +9588,82 @@ ${trackListXml}
       window.removeEventListener('musickit-time-update', handleMusicKitTimeUpdate);
     };
   }, []);
+
+  // Apple Music preview audio progress tracking
+  // The preview audio element (window._appleMusicPreviewAudio) is created lazily in the
+  // resolver's play method, separate from audioRef.current, so it needs its own timeupdate listener.
+  // This covers the fallback path when both native MusicKit and MusicKit JS are unavailable.
+  useEffect(() => {
+    if (!currentTrack || currentTrack._activeResolver !== 'applemusic' || !isPlaying) return;
+
+    let listenerAttached = false;
+    let checkInterval = null;
+
+    const handlePreviewTimeUpdate = () => {
+      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+        const currentTime = window._appleMusicPreviewAudio.currentTime;
+        setProgress(currentTime);
+        if (window.scrobbleManager) {
+          window.scrobbleManager.onProgressUpdate(currentTime);
+        }
+      }
+    };
+
+    // Attach immediately if element exists, otherwise poll for lazy creation
+    if (window._appleMusicPreviewAudio) {
+      window._appleMusicPreviewAudio.addEventListener('timeupdate', handlePreviewTimeUpdate);
+      listenerAttached = true;
+    } else {
+      checkInterval = setInterval(() => {
+        if (window._appleMusicPreviewAudio && !listenerAttached) {
+          window._appleMusicPreviewAudio.addEventListener('timeupdate', handlePreviewTimeUpdate);
+          listenerAttached = true;
+          clearInterval(checkInterval);
+          checkInterval = null;
+        }
+      }, 200);
+    }
+
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+      if (window._appleMusicPreviewAudio && listenerAttached) {
+        window._appleMusicPreviewAudio.removeEventListener('timeupdate', handlePreviewTimeUpdate);
+      }
+    };
+  }, [currentTrack, isPlaying]);
+
+  // Apple Music native MusicKit smooth progress interpolation
+  // Native MusicKit polls every 5 seconds from the main process. This effect interpolates
+  // between polls for smooth 1-second progress bar updates (same pattern as Spotify).
+  // Skipped when preview audio or MusicKit JS is providing real-time updates.
+  useEffect(() => {
+    const isAppleMusicActive = currentTrack?._activeResolver === 'applemusic';
+    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
+
+    if (isPlaying && isAppleMusicActive && hasValidDuration) {
+      const interval = setInterval(() => {
+        const baseline = appleMusicProgressBaselineRef.current;
+        // Only interpolate when:
+        // 1. We have a valid baseline from native polling (timestamp > 0)
+        // 2. Preview audio is NOT actively playing (it has its own timeupdate)
+        // 3. Baseline indicates playback is happening
+        const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
+        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying) {
+          const elapsed = (Date.now() - baseline.timestamp) / 1000;
+          const interpolatedProgress = baseline.progress + elapsed;
+
+          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
+            setProgress(interpolatedProgress);
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
+            }
+          }
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentTrack]);
 
   // System volume/mute monitoring (macOS)
   // When the user mutes the system, pause Apple Music native playback and mute audio elements.
@@ -10123,6 +10205,11 @@ ${trackListXml}
   // API polling happens every 5 seconds, but we want smooth 1-second visual updates
   // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+
+  // Apple Music native MusicKit polling interpolation baseline
+  // Native MusicKit polls every 5 seconds from the main process. This baseline allows
+  // smooth 1-second interpolation between polls (same pattern as Spotify).
+  const appleMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
     // Only run interpolation if we're actually playing via Spotify
@@ -46112,9 +46199,29 @@ useEffect(() => {
                     if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
                     }
-                    // Handle seeking for Apple Music
-                    if (isAppleMusicActive && window.electron?.musicKit?.seek) {
-                      await window.electron.musicKit.seek(newPosition);
+                    // Handle seeking for Apple Music (native MusicKit, MusicKit JS, or preview audio)
+                    if (isAppleMusicActive) {
+                      // Seek on preview audio if it's the active playback method
+                      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+                        window._appleMusicPreviewAudio.currentTime = newPosition;
+                      }
+                      // Seek via native MusicKit (macOS)
+                      if (window.electron?.musicKit?.seek) {
+                        await window.electron.musicKit.seek(newPosition);
+                        // Reset interpolation baseline to new position
+                        appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+                      }
+                      // Seek via MusicKit JS web (cross-platform)
+                      if (window.getMusicKitWeb) {
+                        try {
+                          const musicKitWeb = window.getMusicKitWeb();
+                          if (musicKitWeb?.seek) {
+                            await musicKitWeb.seek(newPosition);
+                          }
+                        } catch (e) {
+                          // Ignore - may not be the active playback method
+                        }
+                      }
                     }
                   },
                   className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
