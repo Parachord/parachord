@@ -25053,11 +25053,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
 
   // Load concerts when navigating to the concerts page
+  // loadConcerts handles cache checks internally (state, ref, stale+refresh)
   useEffect(() => {
-    if (activeView === 'concerts' && cacheLoaded && !concertsLoaded && !concertsLoading) {
+    if (activeView === 'concerts' && cacheLoaded) {
       loadConcerts();
     }
-  }, [activeView, cacheLoaded, concertsLoaded, concertsLoading]);
+  }, [activeView, cacheLoaded]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
