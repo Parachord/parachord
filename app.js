@@ -46029,7 +46029,7 @@ useEffect(() => {
             },
               React.createElement(Tooltip, {
                 content: getTooltip(),
-                position: 'top',
+                position: 'top-end',
                 variant: 'dark'
               },
                 React.createElement('button', {
@@ -46051,7 +46051,7 @@ useEffect(() => {
               ),
               React.createElement(Tooltip, {
                 content: getTooltip(),
-                position: 'top',
+                position: 'top-end',
                 variant: 'dark'
               },
                 React.createElement('input', {
