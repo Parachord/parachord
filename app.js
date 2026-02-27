@@ -11774,7 +11774,7 @@ ${trackListXml}
       const newTracks = [...prev.tracks];
 
       tracks.forEach(track => {
-        const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const trackId = generateTrackId(track.artist, track.title, track.album);
 
         if (!newTracks.some(t => t.id === trackId)) {
           newTracks.push({
@@ -38758,7 +38758,7 @@ useEffect(() => {
               // Deduplicate by id
               const trackMap = new Map();
               allTracks.forEach(track => {
-                const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
                 if (!trackMap.has(trackId)) {
                   trackMap.set(trackId, { ...track, id: trackId });
                 }
