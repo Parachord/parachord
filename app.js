@@ -23950,7 +23950,10 @@ ${tracks}
     const concertServices = getConcertServices();
     const aiConcertServices = getAiConcertServices();
     if (concertServices.length === 0 && aiConcertServices.length === 0) {
-      setConcertsError('no_services');
+      // Only show the error if we have no cached data to display
+      if (!concertsCache.current.events || concertsCache.current.events.length === 0) {
+        setConcertsError('no_services');
+      }
       setConcertsLoaded(true);
       return;
     }
