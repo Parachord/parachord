@@ -437,6 +437,30 @@
         "events",
         "festivals"
       ]
+    },
+    {
+      "id": "seatgeek",
+      "name": "SeatGeek",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Find concerts and live events with ticket info. Powered by SeatGeek.",
+      "icon": "🎫",
+      "color": "#4DB84D",
+      "homepage": "https://seatgeek.com",
+      "capabilities": {
+        "concerts": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/seatgeek.axe",
+      "category": "concerts",
+      "tags": [
+        "concerts",
+        "tickets",
+        "live-music",
+        "events",
+        "festivals"
+      ]
     }
   ],
   "categories": [
