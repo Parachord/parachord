@@ -5264,12 +5264,26 @@ const Parachord = () => {
               console.log(`[Sync] Starting background sync for ${providerId}`);
               const result = await window.electron.sync.start(providerId, { settings });
               if (result.success) {
-                // Use collection from sync result for immediate UI update
                 if (result.collection) {
-                  setCollectionData({
+                  // Compare incoming collection against current state before updating UI.
+                  // If the sync result has significantly fewer tracks, the API likely
+                  // returned incomplete results (pagination timeout, rate limit).
+                  // Skip the UI update to avoid a visible flicker; the data on disk
+                  // was already saved by the sync engine with its mass-removal safeguard.
+                  const incoming = {
                     tracks: result.collection.tracks || [],
                     albums: result.collection.albums || [],
                     artists: result.collection.artists || []
+                  };
+                  setCollectionData(prev => {
+                    const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                    const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+
+                    if (netLoss > 50 && lossRatio > 0.1) {
+                      console.warn(`[Sync] Skipping UI update: sync result has ${incoming.tracks.length} tracks vs current ${prev.tracks?.length || 0} (net loss ${netLoss}, ${Math.round(lossRatio * 100)}%). Likely incomplete API response.`);
+                      return prev;
+                    }
+                    return incoming;
                   });
                 } else {
                   const newCollection = await window.electron.collection.load();
@@ -52767,12 +52781,21 @@ useEffect(() => {
                   }
                 }
               }
-              // Update UI with synced collection
+              // Update UI with synced collection (guard against incomplete API responses)
               if (latestCollection) {
-                setCollectionData({
+                const incoming = {
                   tracks: latestCollection.tracks || [],
                   albums: latestCollection.albums || [],
                   artists: latestCollection.artists || []
+                };
+                setCollectionData(prev => {
+                  const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                  const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                  if (netLoss > 50 && lossRatio > 0.1) {
+                    console.warn(`[Sync] Skipping UI update: sync result has ${incoming.tracks.length} tracks vs current ${prev.tracks?.length || 0} (net loss ${netLoss}, ${Math.round(lossRatio * 100)}%). Likely incomplete API response.`);
+                    return prev;
+                  }
+                  return incoming;
                 });
               } else {
                 const newCollection = await window.electron.collection.load();
