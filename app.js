@@ -4862,6 +4862,8 @@ const Parachord = () => {
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
   const [progress, setProgress] = useState(0);
+  const seekingRef = useRef(false); // True while user is dragging the progress slider
+  const seekTimeoutRef = useRef(null); // Debounce timeout for clearing seeking state
   const [volume, setVolume] = useState(70);
   const [isMuted, setIsMuted] = useState(false);
   const preMuteVolumeRef = useRef(70); // Remember volume before muting
@@ -9550,8 +9552,9 @@ ${trackListXml}
         const track = currentTrackRef.current;
         if (track?._activeResolver === 'applemusic' && typeof data.position === 'number') {
           // Skip if preview audio is actively playing (it has its own timeupdate listener)
+          // Skip if user is dragging the progress slider
           const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
-          if (!previewPlaying) {
+          if (!previewPlaying && !seekingRef.current) {
             setProgress(data.position);
           }
           // Always update interpolation baseline for smooth progress between polls
@@ -9570,8 +9573,8 @@ ${trackListXml}
   useEffect(() => {
     const handleMusicKitTimeUpdate = (event) => {
       const track = currentTrackRef.current;
-      // Only update if Apple Music is the active resolver
-      if (track?._activeResolver === 'applemusic') {
+      // Only update if Apple Music is the active resolver and user isn't seeking
+      if (track?._activeResolver === 'applemusic' && !seekingRef.current) {
         const { currentTime } = event.detail;
         if (typeof currentTime === 'number') {
           setProgress(currentTime);
@@ -9600,7 +9603,7 @@ ${trackListXml}
     let checkInterval = null;
 
     const handlePreviewTimeUpdate = () => {
-      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused && !seekingRef.current) {
         const currentTime = window._appleMusicPreviewAudio.currentTime;
         setProgress(currentTime);
         if (window.scrobbleManager) {
@@ -9648,7 +9651,7 @@ ${trackListXml}
         // 2. Preview audio is NOT actively playing (it has its own timeupdate)
         // 3. Baseline indicates playback is happening
         const previewPlaying = window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused;
-        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying) {
+        if (baseline.timestamp > 0 && baseline.isPlaying && !previewPlaying && !seekingRef.current) {
           const elapsed = (Date.now() - baseline.timestamp) / 1000;
           const interpolatedProgress = baseline.progress + elapsed;
 
@@ -10189,7 +10192,7 @@ ${trackListXml}
         if (elapsed >= currentTrack.duration) {
           // Use ref to avoid stale closure in interval callback
           if (handleNextRef.current) handleNextRef.current();
-        } else {
+        } else if (!seekingRef.current) {
           setProgress(elapsed);
           // Notify scrobble manager of progress for scrobble threshold checking
           if (window.scrobbleManager) {
@@ -10225,7 +10228,7 @@ ${trackListXml}
         // Only interpolate if:
         // 1. We have a valid baseline (timestamp > 0 means API has set it)
         // 2. Spotify reports that playback is actually happening (isPlaying from API)
-        if (baseline.timestamp > 0 && baseline.isPlaying) {
+        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
           const elapsed = (Date.now() - baseline.timestamp) / 1000;
           const interpolatedProgress = baseline.progress + elapsed;
 
@@ -12857,7 +12860,7 @@ ${trackListXml}
         console.log('🎵 Creating new Audio element');
         audioRef.current = new Audio();
         audioRef.current.addEventListener('timeupdate', () => {
-          if (audioRef.current) {
+          if (audioRef.current && !seekingRef.current) {
             const currentTime = audioRef.current.currentTime;
             setProgress(currentTime);
             // Notify scrobble manager of progress for scrobble threshold checking
@@ -13235,7 +13238,7 @@ ${trackListXml}
           console.log('🎵 Creating new Audio element for SoundCloud');
           audioRef.current = new Audio();
           audioRef.current.addEventListener('timeupdate', () => {
-            if (audioRef.current) {
+            if (audioRef.current && !seekingRef.current) {
               const currentTime = audioRef.current.currentTime;
               setProgress(currentTime);
               if (window.scrobbleManager) {
@@ -30037,7 +30040,9 @@ const getCurrentPlaybackState = async () => {
           timestamp: Date.now(),
           isPlaying: newIsPlaying
         };
-        setProgress(newProgress);
+        if (!seekingRef.current) {
+          setProgress(newProgress);
+        }
 
         // Check if Spotify is playing a different track than what we initiated
         // Use currentTrackRef to avoid stale closure issues
@@ -46191,8 +46196,43 @@ useEffect(() => {
                   max: currentTrack?.duration || 100,
                   value: currentTrack && !browserPlaybackActive ? progress : 0,
                   disabled: isSeekDisabled,
+                  onPointerDown: () => {
+                    seekingRef.current = true;
+                  },
                   onChange: async (e) => {
                     if (browserPlaybackActive || !currentTrack || isSpotifyActive) return;
+                    const newPosition = Number(e.target.value);
+                    setProgress(newPosition);
+                    // If not a pointer drag (e.g. keyboard arrow keys), seek immediately
+                    if (!seekingRef.current) {
+                      seekingRef.current = true;
+                      if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
+                        audioRef.current.currentTime = newPosition;
+                      }
+                      if (isAppleMusicActive) {
+                        if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+                          window._appleMusicPreviewAudio.currentTime = newPosition;
+                        }
+                        if (window.electron?.musicKit?.seek) {
+                          await window.electron.musicKit.seek(newPosition);
+                          appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+                        }
+                        if (window.getMusicKitWeb) {
+                          try {
+                            const musicKitWeb = window.getMusicKitWeb();
+                            if (musicKitWeb?.seek) await musicKitWeb.seek(newPosition);
+                          } catch (e) { /* ignore */ }
+                        }
+                      }
+                      if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
+                      seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
+                    }
+                  },
+                  onPointerUp: async (e) => {
+                    if (browserPlaybackActive || !currentTrack || isSpotifyActive) {
+                      seekingRef.current = false;
+                      return;
+                    }
                     const newPosition = Number(e.target.value);
                     setProgress(newPosition);
                     // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
@@ -46223,6 +46263,9 @@ useEffect(() => {
                         }
                       }
                     }
+                    // Allow external progress updates after a delay for the seek to propagate
+                    if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
+                    seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
                   },
                   className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
                 });
