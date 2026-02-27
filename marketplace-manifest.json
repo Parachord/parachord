@@ -174,7 +174,8 @@
       "color": "#D97757",
       "homepage": "https://anthropic.com",
       "capabilities": {
-        "chat": true
+        "chat": true,
+        "concerts": true
       },
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/claude.axe",
@@ -198,7 +199,8 @@
       "homepage": "https://platform.openai.com",
       "capabilities": {
         "generate": true,
-        "chat": true
+        "chat": true,
+        "concerts": true
       },
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/chatgpt.axe",
@@ -222,7 +224,8 @@
       "color": "#000000",
       "homepage": "https://ollama.ai",
       "capabilities": {
-        "chat": true
+        "chat": true,
+        "concerts": true
       },
       "requiresAuth": false,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/ollama.axe",
@@ -248,7 +251,8 @@
       "homepage": "https://ai.google.dev",
       "capabilities": {
         "generate": true,
-        "chat": true
+        "chat": true,
+        "concerts": true
       },
       "requiresAuth": true,
       "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/gemini.axe",
