@@ -4975,6 +4975,13 @@ const Parachord = () => {
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
   const [shareDropdownOpen, setShareDropdownOpen] = useState(false); // Share dropdown on album/playlist detail pages
+  const [parachordLinkMenu, setParachordLinkMenu] = useState(null); // { x, y, link } — right-click "Copy link" menu
+  useEffect(() => {
+    if (!parachordLinkMenu) return;
+    const dismiss = (e) => { if (e.key === 'Escape') setParachordLinkMenu(null); };
+    window.addEventListener('keydown', dismiss);
+    return () => window.removeEventListener('keydown', dismiss);
+  }, [parachordLinkMenu]);
   const [currentArtist, setCurrentArtist] = useState(null); // Artist page data
   const [artistImage, setArtistImage] = useState(null); // Artist image from Spotify
   const [artistImagePosition, setArtistImagePosition] = useState('center 25%'); // Face-centered position
@@ -28078,15 +28085,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Right-click handler for page headers — copies parachord:// link to clipboard
+  // Right-click handler for page headers — shows a tooltip-styled context menu
   const copyParachordLink = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const link = getParachordLink();
-    navigator.clipboard.writeText(link).then(() => {
-      showToast(`Copied ${link}`, 'success');
-    }).catch(() => {
-      showToast('Failed to copy link', 'error');
-    });
+    setParachordLinkMenu({ x: e.clientX, y: e.clientY, link });
   };
 
   const navigateBack = () => {
@@ -51728,6 +51732,56 @@ useEffect(() => {
             id3EditorSaving && React.createElement('span', { className: 'animate-spin' }, '⟳'),
             id3EditorSaving ? 'Saving...' : 'Save'
           )
+        )
+      )
+    ),
+
+    // Parachord:// link context menu (power-user feature, tooltip-styled)
+    parachordLinkMenu && React.createElement('div', {
+      className: 'fixed inset-0 z-[70]',
+      onClick: () => setParachordLinkMenu(null),
+      onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
+      style: { cursor: 'default' }
+    },
+      React.createElement('div', {
+        onClick: (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(parachordLinkMenu.link).then(() => {
+            showToast(`Copied ${parachordLinkMenu.link}`, 'success');
+          }).catch(() => {
+            showToast('Failed to copy link', 'error');
+          });
+          setParachordLinkMenu(null);
+        },
+        style: {
+          position: 'fixed',
+          left: `${parachordLinkMenu.x}px`,
+          top: `${parachordLinkMenu.y}px`,
+          padding: '8px 14px',
+          fontSize: '12px',
+          fontWeight: '500',
+          color: '#ffffff',
+          backgroundColor: '#1f2937',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
+          whiteSpace: 'nowrap',
+          cursor: 'pointer',
+          userSelect: 'none',
+          zIndex: 9999
+        },
+        onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#374151'; },
+        onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#1f2937'; }
+      },
+        React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+          React.createElement('svg', {
+            width: 14, height: 14, viewBox: '0 0 24 24',
+            fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+            strokeLinecap: 'round', strokeLinejoin: 'round'
+          },
+            React.createElement('rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }),
+            React.createElement('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' })
+          ),
+          'Copy Parachord:// link'
         )
       )
     ),
