@@ -24132,10 +24132,10 @@ ${tracks}
 
     const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
 {"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
-Provide exactly 10 albums and 5 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.
+Provide exactly 12 albums and 8 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.
 Variety guidance: ${theme} Be creative and surprising — avoid defaulting to the most obvious or popular choices.`;
 
-    const userPrompt = `Based on this listening profile, recommend 10 albums and 5 artists I should check out:\n\n${contextInfo}${exclusionNote}`;
+    const userPrompt = `Based on this listening profile, recommend 12 albums and 8 artists I should check out:\n\n${contextInfo}${exclusionNote}`;
 
     try {
       const response = await provider.chat(
@@ -24162,7 +24162,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       const parsed = JSON.parse(jsonStr);
-      const candidateAlbums = (parsed.albums || []).slice(0, 10).map(a => ({
+      const candidateAlbums = (parsed.albums || []).slice(0, 12).map(a => ({
         title: a.title || a.album || 'Unknown Album',
         artist: a.artist || 'Unknown Artist',
         reason: a.reason || '',
@@ -24220,31 +24220,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
       if (onUpdate) onUpdate({ artists });
 
-      // Validate albums concurrently (max 2 in-flight to respect MusicBrainz ~1 req/sec).
-      // Stream each valid album to the UI as it passes validation.
+      // Validate albums one at a time, respecting MusicBrainz rate limit (~1 req/sec).
+      // Each valid album streams to the UI immediately as it passes validation.
       const validAlbums = [];
-      let done = false;
-      const queue = [...freshCandidates];
-      let nextIndex = 0;
-
-      const runWorker = async () => {
-        while (!done && nextIndex < queue.length) {
-          const i = nextIndex++;
-          const album = queue[i];
-          const result = await validateAlbum(album);
-          if (done) return;
-          if (result && validAlbums.length < 5) {
-            validAlbums.push({ album, result });
-            const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-            albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
-            if (onUpdate) onUpdate({ newAlbum: album });
-            if (validAlbums.length >= 5) done = true;
-          }
+      for (let i = 0; i < freshCandidates.length && validAlbums.length < 5; i++) {
+        const album = freshCandidates[i];
+        const requestStart = Date.now();
+        const result = await validateAlbum(album);
+        if (result) {
+          validAlbums.push({ album, result });
+          const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
+          albumToReleaseIdCache.current[lookupKey] = { releaseId: null, releaseGroupId: result.releaseGroupId };
+          if (onUpdate) onUpdate({ newAlbum: album });
         }
-      };
-
-      // Run 2 concurrent workers — fast enough to stream results, light enough to avoid rate limits
-      await Promise.all([runWorker(), runWorker()]);
+        // Respect MusicBrainz rate limit: ensure >= 1.1s between request starts
+        if (i < freshCandidates.length - 1 && validAlbums.length < 5) {
+          const elapsed = Date.now() - requestStart;
+          const wait = 1100 - elapsed;
+          if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        }
+      }
 
       const albums = validAlbums.map(r => r.album);
 
