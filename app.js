@@ -10134,17 +10134,17 @@ ${trackListXml}
     }
   }, [isPlaying, currentTrack, browserPlaybackActive]);
 
-  // Auto-dismiss toast after 3 seconds (6 seconds if it has an action button)
+  // Auto-dismiss toast after 3 seconds (6 seconds if it has an action button, never if persistent)
   useEffect(() => {
-    if (toast) {
+    if (toast && !toast.persistent) {
       const timeout = toast.action ? 6000 : 3000;
       const timer = setTimeout(() => setToast(null), timeout);
       return () => clearTimeout(timer);
     }
   }, [toast]);
 
-  const showToast = useCallback((message, type = 'success', action = null) => {
-    setToast({ message, type, action });
+  const showToast = useCallback((message, type = 'success', action = null, { persistent = false } = {}) => {
+    setToast({ message, type, action, persistent });
   }, []);
 
   // Generate smart link for a track
@@ -10155,7 +10155,7 @@ ${trackListXml}
       return;
     }
 
-    showToast('Generating smart link...', 'info');
+    showToast('Generating smart link...', 'info', null, { persistent: true });
 
     // Search all active resolvers
     const resolvers = loadedResolversRef.current || [];
@@ -10548,7 +10548,7 @@ ${trackListXml}
       return;
     }
 
-    showToast('Publishing smart link...', 'info');
+    showToast('Publishing smart link...', 'info', null, { persistent: true });
 
     // Search all active resolvers to get URLs
     const resolvers = loadedResolversRef.current || [];
@@ -10667,7 +10667,7 @@ ${trackListXml}
       return;
     }
 
-    showToast('Creating embed code...', 'info');
+    showToast('Creating embed code...', 'info', null, { persistent: true });
 
     // Search all active resolvers to get URLs
     const resolvers = loadedResolversRef.current || [];
@@ -10916,11 +10916,11 @@ ${trackListXml}
 
     // If tracks weren't prefetched in time (race condition), fetch them now
     if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
-      showToast('Fetching album tracklist...', 'info');
+      showToast('Fetching album tracklist...', 'info', null, { persistent: true });
       tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
     }
 
-    showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info');
+    showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info', null, { persistent: true });
 
     try {
       // Resolve all tracks in parallel (much faster than sequential)
@@ -11004,11 +11004,11 @@ ${trackListXml}
 
     // If tracks weren't prefetched in time (race condition), fetch them now
     if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
-      showToast('Fetching album tracklist...', 'info');
+      showToast('Fetching album tracklist...', 'info', null, { persistent: true });
       tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
     }
 
-    showToast(`Creating ${typeLabel} embed code...`, 'info');
+    showToast(`Creating ${typeLabel} embed code...`, 'info', null, { persistent: true });
 
     // Resolve each track
     const resolvedTracks = [];
