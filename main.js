@@ -4012,6 +4012,67 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 });
 
 // Marketplace handlers
+ipcMain.handle('release-notes-get', async () => {
+  const fs = require('fs').promises;
+  const notesPath = require('path').join(__dirname, 'RELEASE_NOTES.md');
+
+  function parseHighlights(content) {
+    // Extract only the first release (up to the next "# Parachord" heading)
+    const firstRelease = content.split(/\n(?=# Parachord )/)[0] || '';
+
+    // Extract section highlights: each "## Title" with its first bullet or paragraph
+    const sections = firstRelease.split(/\n(?=## )/);
+    const highlights = [];
+    for (const section of sections) {
+      const titleMatch = section.match(/^## (.+)/);
+      if (!titleMatch) continue;
+      const title = titleMatch[1].trim();
+
+      // Get the first meaningful line after the heading: a bullet or a paragraph
+      const lines = section.split('\n').slice(1);
+      let text = '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === '---') continue;
+        // Strip markdown bold and bullet prefix
+        text = trimmed.replace(/^- /, '').replace(/\*\*([^*]+)\*\*/g, '$1');
+        break;
+      }
+      if (title && text) {
+        highlights.push({ title, text });
+      }
+    }
+    return highlights;
+  }
+
+  // Try fetching from GitHub first (may be updated after release)
+  try {
+    const { net } = require('electron');
+    const response = await net.fetch(
+      'https://raw.githubusercontent.com/Parachord/parachord/main/RELEASE_NOTES.md',
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (response.ok) {
+      const content = await response.text();
+      const highlights = parseHighlights(content);
+      if (highlights.length > 0) {
+        return { success: true, highlights };
+      }
+    }
+  } catch (e) {
+    // Network unavailable — fall through to bundled file
+  }
+
+  // Fall back to bundled file
+  try {
+    const content = await fs.readFile(notesPath, 'utf8');
+    return { success: true, highlights: parseHighlights(content) };
+  } catch (error) {
+    console.error('Failed to load release notes:', error.message);
+    return { success: false, highlights: [] };
+  }
+});
+
 ipcMain.handle('marketplace-get-manifest', async () => {
   console.log('=== Get Marketplace Manifest ===');
   const fs = require('fs').promises;

@@ -73,6 +73,7 @@
       "!npm-debug.log",
       "!dist",
       "!**/*.md",
+      "RELEASE_NOTES.md",
       "!collection.json",
       "!native"
     ],
