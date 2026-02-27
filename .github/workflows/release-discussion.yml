@@ -3,6 +3,11 @@ name: Sync Releases to Discussions
 on:
   release:
     types: [published, deleted]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to post (e.g. v0.8.0-alpha.4). Leave empty for latest.'
+        required: false
 
 permissions:
   contents: read
@@ -10,16 +15,37 @@ permissions:
 
 jobs:
   create-discussion:
-    if: github.event.action == 'published'
+    if: github.event.action == 'published' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "$INPUT_TAG" ]; then
+              RELEASE_JSON=$(gh release view "$INPUT_TAG" --json name,body,url,tagName)
+            else
+              RELEASE_JSON=$(gh release view --json name,body,url,tagName)
+            fi
+            echo "title=$(echo "$RELEASE_JSON" | jq -r '.name // .tagName')" >> "$GITHUB_OUTPUT"
+            echo "tag=$(echo "$RELEASE_JSON" | jq -r '.tagName')" >> "$GITHUB_OUTPUT"
+            echo "url=$(echo "$RELEASE_JSON" | jq -r '.url')" >> "$GITHUB_OUTPUT"
+
+            # Body can be multiline — write to a file
+            echo "$RELEASE_JSON" | jq -r '.body' > /tmp/release_body.txt
+          fi
+
       - name: Create discussion from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TITLE: ${{ github.event.release.name || github.event.release.tag_name }}
-          RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_TITLE: ${{ github.event_name == 'workflow_dispatch' && steps.release.outputs.title || github.event.release.name || github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event_name != 'workflow_dispatch' && github.event.release.body || '' }}
+          RELEASE_URL: ${{ github.event_name == 'workflow_dispatch' && steps.release.outputs.url || github.event.release.html_url }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_NODE_ID: ${{ github.event.repository.node_id }}
@@ -48,6 +74,9 @@ jobs:
           echo "Found Announcements category: $CATEGORY_ID"
 
           # Build the discussion body
+          if [ -f /tmp/release_body.txt ]; then
+            RELEASE_BODY=$(cat /tmp/release_body.txt)
+          fi
           BODY=$(printf '%s\n\n---\n\n[View the full release on GitHub](%s)' "$RELEASE_BODY" "$RELEASE_URL")
 
           # Create the discussion via GraphQL
