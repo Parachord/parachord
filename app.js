@@ -5335,6 +5335,8 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
+  const homeFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for Home tab friend activity
+  const sidebarFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for sidebar pinned friends
   const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
   const pinnedFriendIdsRef = useRef(pinnedFriendIds); // Ref for pinned IDs to avoid stale closures in polling
   const autoPinnedFriendIdsRef = useRef(autoPinnedFriendIds); // Ref for auto-pinned IDs to avoid stale closures in polling
@@ -25273,8 +25275,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const isOnAirNow = recentTrack.timestamp && (Date.now() - recentTrack.timestamp) < 10 * 60 * 1000;
         const wasOnAir = previousTrack?.timestamp && (Date.now() - previousTrack.timestamp) < 10 * 60 * 1000;
 
-        // Track on-air status change for animation (friend will move in sorted list)
-        if (isOnAirNow !== wasOnAir && pinnedFriendIdsRef.current.includes(friend.id)) {
+        // Animate when a friend starts a new song (not just on-air status change from time passing)
+        if (trackChanged && isOnAirNow && pinnedFriendIdsRef.current.includes(friend.id)) {
           setMovedFriendIds(prev => new Set([...prev, friend.id]));
           setTimeout(() => {
             setMovedFriendIds(prev => {
@@ -25301,11 +25303,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           });
         }
 
-        setFriends(prev => prev.map(f =>
-          f.id === friend.id
-            ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
-            : f
-        ));
+        // Only update state when the track actually changed or timestamp meaningfully differs
+        // This avoids unnecessary re-renders that cause sort reordering on every poll
+        if (trackChanged || !previousTrack?.timestamp || Math.abs(recentTrack.timestamp - previousTrack.timestamp) > 30000) {
+          setFriends(prev => prev.map(f =>
+            f.id === friend.id
+              ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
+              : f
+          ));
+        }
 
         // Auto-pin/unpin saved friends based on on-air status
         // Read from refs to get latest state (avoids stale closure in setInterval)
@@ -30414,15 +30420,30 @@ useEffect(() => {
             className: 'px-3 py-4 text-sm text-purple-600 text-center'
           }, 'Drop to pin'),
           // Sort pinned friends: active (on-air) friends first, then by original order
-          [...pinnedFriendIds].sort((a, b) => {
-            const friendA = friends.find(f => f.id === a);
-            const friendB = friends.find(f => f.id === b);
-            const aOnAir = friendA && isOnAir(friendA);
-            const bOnAir = friendB && isOnAir(friendB);
-            if (aOnAir && !bOnAir) return -1;
-            if (!aOnAir && bOnAir) return 1;
-            return 0; // Keep original order within same group
-          }).map((friendId, index) => {
+          // Use stable sort cache so sidebar only reorders when a friend starts a new song
+          (() => {
+            const sidebarFingerprint = pinnedFriendIds.map(id => {
+              const f = friends.find(fr => fr.id === id);
+              const track = f?.cachedRecentTrack;
+              return `${id}:${track?.name || ''}:${track?.artist || ''}`;
+            }).join('|');
+            let sortedIds;
+            if (sidebarFingerprint !== sidebarFriendsSortRef.current.fingerprint) {
+              sortedIds = [...pinnedFriendIds].sort((a, b) => {
+                const friendA = friends.find(f => f.id === a);
+                const friendB = friends.find(f => f.id === b);
+                const aOnAir = friendA && isOnAir(friendA);
+                const bOnAir = friendB && isOnAir(friendB);
+                if (aOnAir && !bOnAir) return -1;
+                if (!aOnAir && bOnAir) return 1;
+                return 0;
+              });
+              sidebarFriendsSortRef.current = { fingerprint: sidebarFingerprint, sorted: sortedIds };
+            } else {
+              sortedIds = sidebarFriendsSortRef.current.sorted;
+            }
+            return sortedIds;
+          })().map((friendId, index) => {
             const friend = friends.find(f => f.id === friendId);
             if (!friend) return null;
             const onAir = isOnAir(friend);
@@ -37290,16 +37311,32 @@ useEffect(() => {
               (() => {
                 const onlineFriends = friends.filter(f => isOnAir(f));
                 // Friends with recent listening activity (have a cached track), sorted: online first, then by most recent
-                const friendsWithActivity = friends
-                  .filter(f => f.cachedRecentTrack && f.savedToCollection)
-                  .sort((a, b) => {
-                    const aOnAir = isOnAir(a);
-                    const bOnAir = isOnAir(b);
-                    if (aOnAir && !bOnAir) return -1;
-                    if (!aOnAir && bOnAir) return 1;
-                    return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
-                  })
-                  .slice(0, 5);
+                // Use a stable sort cache so the list only reorders when a friend starts a new song
+                const eligibleFriends = friends.filter(f => f.cachedRecentTrack && f.savedToCollection);
+                // Build a fingerprint from track identity only — re-sort when a friend starts a new song,
+                // NOT when their on-air status changes from time passing
+                const fingerprint = eligibleFriends.map(f =>
+                  `${f.id}:${f.cachedRecentTrack?.name}:${f.cachedRecentTrack?.artist}`
+                ).join('|');
+                let friendsWithActivity;
+                if (fingerprint !== homeFriendsSortRef.current.fingerprint) {
+                  // A friend started a new song - re-sort
+                  friendsWithActivity = eligibleFriends
+                    .sort((a, b) => {
+                      const aOnAir = isOnAir(a);
+                      const bOnAir = isOnAir(b);
+                      if (aOnAir && !bOnAir) return -1;
+                      if (!aOnAir && bOnAir) return 1;
+                      return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
+                    })
+                    .slice(0, 5);
+                  homeFriendsSortRef.current = { fingerprint, sorted: friendsWithActivity };
+                } else {
+                  // No change in track data - use cached order, but refresh objects for updated props
+                  friendsWithActivity = homeFriendsSortRef.current.sorted.map(cached =>
+                    eligibleFriends.find(f => f.id === cached.id) || cached
+                  );
+                }
                 const showPlaylists = playlists.length > 0;
                 const showFriends = friendsWithActivity.length > 0;
 
