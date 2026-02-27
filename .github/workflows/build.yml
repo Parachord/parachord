@@ -177,12 +177,12 @@ jobs:
           for yml in latest-mac*.yml; do
             [ -e "$yml" ] || continue
             if [ "${{ matrix.arch }}" = "arm64" ]; then
-              sed -i "s/-arm64/-${label}/g" "$yml"
+              sed -i '' "s/-arm64/-${label}/g" "$yml"
             elif [ "${{ matrix.arch }}" = "x64" ]; then
-              sed -i \
-                "s/\.dmg\.blockmap/-${label}.dmg.blockmap/g
-                 s/\.dmg/-${label}.dmg/g
-                 s/-mac\.zip/-${label}-mac.zip/g" "$yml"
+              sed -i '' \
+                -e "s/\.dmg\.blockmap/-${label}.dmg.blockmap/g" \
+                -e "s/\.dmg/-${label}.dmg/g" \
+                -e "s/-mac\.zip/-${label}-mac.zip/g" "$yml"
             fi
             echo "Updated references in $yml"
           done
