@@ -2228,7 +2228,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'selected_chat_provider', 'show_discovery_badges',
   'skip_external_prompt', 'skip_unsaved_friend_warning',
   'suppressed_sync_playlists',
-  'tutorial_completed', 'uninstalled_resolvers',
+  'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
 ]);
 
 // Sensitive keys that should only be accessed by dedicated IPC handlers
