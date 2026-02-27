@@ -37506,7 +37506,7 @@ useEffect(() => {
                     React.createElement('div', { className: 'space-y-2 flex-1' },
                       [...playlists]
                         .sort((a, b) => (b.lastModified || b.addedAt || 0) - (a.lastModified || a.addedAt || 0))
-                        .slice(0, 3)
+                        .slice(0, 4)
                         .map((playlist, index) =>
                           React.createElement('button', {
                             key: playlist.id,
