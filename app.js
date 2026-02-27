@@ -37288,10 +37288,42 @@ useEffect(() => {
                                 style: { color: onAir ? '#16a34a' : '#9ca3af' }
                               }, onAir ? 'now' : formatTimeAgo(track?.timestamp))
                             ),
-                            // Track info - shows what they're listening to
+                            // Track info - click to play, right-click for context menu
                             track && React.createElement('p', {
-                              className: 'text-xs truncate mt-0.5',
-                              style: { color: onAir ? '#4b5563' : '#9ca3af' }
+                              className: 'text-xs truncate mt-0.5 cursor-pointer hover:underline',
+                              style: { color: onAir ? '#4b5563' : '#9ca3af' },
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+                                const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+                                const trackObj = {
+                                  title: track.name,
+                                  artist: track.artist,
+                                  album: track.album,
+                                  albumArt: track.albumArt,
+                                  sources: cachedSources
+                                };
+                                setQueueWithContext([], { type: 'friend-track', name: `${friend.displayName}'s track` });
+                                handlePlay(trackObj);
+                              },
+                              onContextMenu: (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (window.electron?.contextMenu?.showTrackMenu) {
+                                  const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+                                  const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+                                  window.electron.contextMenu.showTrackMenu({
+                                    type: 'friend-track',
+                                    track: {
+                                      title: track.name,
+                                      artist: track.artist,
+                                      album: track.album,
+                                      albumArt: track.albumArt,
+                                      sources: cachedSources
+                                    }
+                                  });
+                                }
+                              }
                             },
                               React.createElement('span', {
                                 style: { color: onAir ? '#22c55e' : '#d1d5db' }
