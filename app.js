@@ -37096,13 +37096,14 @@ useEffect(() => {
                 // Friends with recent listening activity (have a cached track), sorted: online first, then by most recent
                 // Use a stable sort cache so the list only reorders when a friend starts a new song
                 const eligibleFriends = friends.filter(f => f.cachedRecentTrack && f.savedToCollection);
-                // Build a fingerprint from track identity + on-air status to detect real changes
+                // Build a fingerprint from track identity only — re-sort when a friend starts a new song,
+                // NOT when their on-air status changes from time passing
                 const fingerprint = eligibleFriends.map(f =>
-                  `${f.id}:${f.cachedRecentTrack?.name}:${f.cachedRecentTrack?.artist}:${isOnAir(f)}`
+                  `${f.id}:${f.cachedRecentTrack?.name}:${f.cachedRecentTrack?.artist}`
                 ).join('|');
                 let friendsWithActivity;
                 if (fingerprint !== homeFriendsSortRef.current.fingerprint) {
-                  // Track data or on-air status actually changed - re-sort
+                  // A friend started a new song - re-sort
                   friendsWithActivity = eligibleFriends
                     .sort((a, b) => {
                       const aOnAir = isOnAir(a);
