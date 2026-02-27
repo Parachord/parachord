@@ -5408,6 +5408,8 @@ const Parachord = () => {
   const [concertsSearch, setConcertsSearch] = useState('');
   const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'ai'
   const [concertsSourceFilterDropdownOpen, setConcertsSourceFilterDropdownOpen] = useState(false);
+  const [concertsLocation, setConcertsLocation] = useState(''); // User's location for filtering (e.g. "New York", "London, UK")
+  const [concertsLocationOpen, setConcertsLocationOpen] = useState(false);
   const concertsCache = useRef({ events: null, timestamp: 0 });
 
   // Recommendations page state
@@ -12291,6 +12293,13 @@ ${trackListXml}
     }
   }, [playlistsViewMode, cacheLoaded]);
 
+  // Persist concerts location preference
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('concerts_location', concertsLocation);
+    }
+  }, [concertsLocation, cacheLoaded]);
+
   // Persist selected chat provider (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store && selectedChatProvider) {
@@ -18294,6 +18303,13 @@ ${trackListXml}
         console.log('📦 Loaded last used chat provider:', savedChatProvider);
       }
 
+      // Load concerts location preference
+      const savedConcertsLocation = await window.electron.store.get('concerts_location');
+      if (savedConcertsLocation) {
+        setConcertsLocation(savedConcertsLocation);
+        console.log('📦 Loaded concerts location:', savedConcertsLocation);
+      }
+
       // Load discovery feature seen hashes (for unread badges)
       const savedSeenRecommendations = await window.electron.store.get('discovery_seen_recommendations');
       const savedSeenCriticsPicks = await window.electron.store.get('discovery_seen_criticsPicks');
@@ -23908,16 +23924,26 @@ ${tracks}
   const loadConcerts = async (forceRefresh = false) => {
     if (concertsLoading) return;
 
-    // Check cache
+    // If we already have data in state and aren't force-refreshing, just show it
+    if (!forceRefresh && concerts.length > 0 && concertsLoaded) {
+      console.log(`🎤 Using ${concerts.length} cached concerts from state`);
+      return;
+    }
+
+    // Check ref cache as fallback
     const now = Date.now();
     if (!forceRefresh && concertsCache.current.events && concertsCache.current.events.length > 0) {
       const cacheAge = now - concertsCache.current.timestamp;
       if (cacheAge < CACHE_TTL.concerts) {
-        console.log(`🎤 Using cached concerts (${Math.round(cacheAge / 60000)}m old)`);
+        console.log(`🎤 Using ref-cached concerts (${Math.round(cacheAge / 60000)}m old)`);
         setConcerts(concertsCache.current.events);
         setConcertsLoaded(true);
         return;
       }
+      // Stale cache: show it immediately, then continue to refresh in background
+      console.log(`🎤 Showing ${concertsCache.current.events.length} stale cached concerts while refreshing...`);
+      setConcerts(concertsCache.current.events);
+      setConcertsLoaded(true);
     }
 
     // Check for enabled concert services (dedicated + AI)
@@ -23943,6 +23969,9 @@ ${tracks}
         setConcertsLoading(false);
         return;
       }
+
+      // Snapshot prior cached events for merging
+      const priorCachedEvents = [...(concertsCache.current.events || [])];
 
       const allEvents = [];
       const seenEventKeys = new Set();
@@ -23977,6 +24006,18 @@ ${tracks}
 
       const seenGeoKeys = new Set();
 
+      // Helper to add an event with dedup
+      const addEventDeduped = (event, artistName) => {
+        const key = makeEventKey(event, artistName);
+        if (seenEventKeys.has(key)) return false;
+        const gk = geoKey(event, artistName);
+        if (gk && seenGeoKeys.has(gk)) return false;
+        seenEventKeys.add(key);
+        if (gk) seenGeoKeys.add(gk);
+        allEvents.push(event);
+        return true;
+      };
+
       // Query each concert service for each artist (with rate limiting)
       for (const artist of artistList) {
         for (const service of concertServices) {
@@ -23985,17 +24026,7 @@ ${tracks}
             const events = await service.searchArtistEvents(artist.name, config);
             if (events && events.length > 0) {
               for (const event of events) {
-                // Primary dedup: date + artist + venue name prefix
-                const key = makeEventKey(event, artist.name);
-                if (seenEventKeys.has(key)) continue;
-
-                // Secondary dedup: date + artist + geo-proximity
-                const gk = geoKey(event, artist.name);
-                if (gk && seenGeoKeys.has(gk)) continue;
-
-                seenEventKeys.add(key);
-                if (gk) seenGeoKeys.add(gk);
-                allEvents.push(event);
+                addEventDeduped(event, artist.name);
               }
             }
           } catch (e) {
@@ -24006,102 +24037,125 @@ ${tracks}
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
-      // Query AI services for concert suggestions
+      // Query AI services for concert suggestions — batch artists in groups
+      // of 10 for more detailed results per artist
       if (aiConcertServices.length > 0) {
         try {
-          // Pick the preferred AI provider (use selectedChatProvider if it supports concerts, else first available)
           let aiService = aiConcertServices[0];
           if (selectedChatProvider) {
             const preferred = aiConcertServices.find(s => s.id === selectedChatProvider);
             if (preferred) aiService = preferred;
           }
 
-          const artistNames = artistList.map(a => a.name).join(', ');
           const today = new Date().toISOString().split('T')[0];
           const currentYear = new Date().getFullYear();
-          const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
+          const config = metaServiceConfigs[aiService.id] || {};
+          const providerName = aiService.name || aiService.id;
 
-Today's date is ${today}. Share any concert dates, announced tours, festival lineups, residencies, or live events you know about from ${currentYear} onward for these artists. Include events from known annual festivals (Coachella, Glastonbury, Lollapalooza, etc.) if these artists are on the lineup. If an artist has announced a tour, include the dates you know about.
+          // Split artists into batches of 10 for better per-artist coverage
+          const AI_BATCH_SIZE = 10;
+          const artistBatches = [];
+          for (let i = 0; i < artistList.length; i += AI_BATCH_SIZE) {
+            artistBatches.push(artistList.slice(i, i + AI_BATCH_SIZE));
+          }
+
+          let totalAiEvents = 0;
+          for (const batch of artistBatches) {
+            try {
+              const artistNames = batch.map(a => a.name).join(', ');
+              const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
+
+Today's date is ${today}. Share any concert dates, announced tours, festival lineups, residencies, or live events you know about from ${currentYear} onward for these artists. Include events from known annual festivals (Coachella, Glastonbury, Lollapalooza, etc.) if these artists are on the lineup. If an artist has announced a tour, include the dates you know about. Aim for multiple events per artist where possible.
 
 Return ONLY a JSON array. Each event object should have:
 - "artist": artist name
-- "title": event title (e.g. "Artist Name at Venue" or "Festival Name 2026")
+- "title": event title (e.g. "Artist Name at Venue" or "Festival Name ${currentYear}")
 - "date": date in YYYY-MM-DD format (use your best estimate if only month is known, e.g. first of the month)
 - "venue": object with "name", "city", "region", "country"
 - "url": ticket or event URL if known, or empty string
-- "description": brief note (e.g. "Part of World Tour 2026", "Festival headliner")
+- "description": brief note (e.g. "Part of World Tour ${currentYear}", "Festival headliner")
 
 Return ONLY the JSON array, no other text.`;
 
-          const config = metaServiceConfigs[aiService.id] || {};
-          const messages = [
-            { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
-            { role: 'user', content: prompt }
-          ];
+              const messages = [
+                { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
+                { role: 'user', content: prompt }
+              ];
 
-          const response = await aiService.chat(messages, [], config);
-          if (response && response.content) {
-            try {
-              const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-              const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
-              if (Array.isArray(aiEvents)) {
-                for (const aiEvent of aiEvents) {
-                  const normalized = {
-                    id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                    source: 'ai',
-                    aiProvider: aiService.id,
-                    artist: aiEvent.artist || '',
-                    title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
-                    datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
-                    date: aiEvent.date || '',
-                    venue: {
-                      name: aiEvent.venue?.name || 'Venue TBA',
-                      city: aiEvent.venue?.city || '',
-                      region: aiEvent.venue?.region || '',
-                      country: aiEvent.venue?.country || ''
-                    },
-                    ticketUrl: aiEvent.url || '',
-                    url: aiEvent.url || '',
-                    description: aiEvent.description || 'AI-suggested event'
-                  };
+              const response = await aiService.chat(messages, [], config);
+              if (response && response.content) {
+                try {
+                  const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+                  const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
+                  if (Array.isArray(aiEvents)) {
+                    for (const aiEvent of aiEvents) {
+                      const normalized = {
+                        id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                        source: 'ai',
+                        aiProvider: aiService.id,
+                        aiProviderName: providerName,
+                        artist: aiEvent.artist || '',
+                        title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
+                        datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
+                        date: aiEvent.date || '',
+                        venue: {
+                          name: aiEvent.venue?.name || 'Venue TBA',
+                          city: aiEvent.venue?.city || '',
+                          region: aiEvent.venue?.region || '',
+                          country: aiEvent.venue?.country || ''
+                        },
+                        ticketUrl: aiEvent.url || '',
+                        url: aiEvent.url || '',
+                        description: aiEvent.description || 'AI-suggested event'
+                      };
 
-                  // Apply same dedup logic
-                  const key = makeEventKey(normalized, normalized.artist);
-                  if (seenEventKeys.has(key)) continue;
-                  const gk = geoKey(normalized, normalized.artist);
-                  if (gk && seenGeoKeys.has(gk)) continue;
-
-                  seenEventKeys.add(key);
-                  if (gk) seenGeoKeys.add(gk);
-                  allEvents.push(normalized);
+                      addEventDeduped(normalized, normalized.artist);
+                    }
+                    totalAiEvents += aiEvents.length;
+                  }
+                } catch (parseErr) {
+                  console.log(`🎤 Could not parse AI concert response from ${aiService.id}:`, parseErr.message);
                 }
-                console.log(`🎤 AI service ${aiService.id} suggested ${aiEvents.length} concert events`);
               }
-            } catch (parseErr) {
-              console.log(`🎤 Could not parse AI concert response from ${aiService.id}:`, parseErr.message);
+            } catch (batchErr) {
+              console.log(`🎤 AI concert batch query failed:`, batchErr.message);
             }
           }
+          console.log(`🎤 AI service ${aiService.id} suggested ${totalAiEvents} concert events (${artistBatches.length} batches)`);
         } catch (aiErr) {
           console.log(`🎤 AI concert query failed:`, aiErr.message);
         }
       }
 
-      // Sort by date (soonest first)
-      allEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      // Merge fresh results with prior cached events (so we don't lose results
+      // from artists that weren't in this run's selection)
+      const merged = [...allEvents, ...priorCachedEvents];
+      const seenMergeKeys = new Set();
+      const today = new Date().toISOString().split('T')[0];
+      const uniqueEvents = merged
+        .filter(e => {
+          // Drop past events during merge
+          if (e.date && e.date < today) return false;
+          const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
+          if (seenMergeKeys.has(key)) return false;
+          seenMergeKeys.add(key);
+          return true;
+        })
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-      console.log(`🎤 Found ${allEvents.length} upcoming concerts for ${artistList.length} artists`);
+      console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
 
-      setConcerts(allEvents);
+      setConcerts(uniqueEvents);
       setConcertsLoaded(true);
 
-      concertsCache.current = { events: allEvents, timestamp: Date.now() };
+      concertsCache.current = { events: uniqueEvents, timestamp: Date.now() };
 
-      const hash = generateDiscoveryHash(allEvents);
+      const hash = generateDiscoveryHash(uniqueEvents);
       checkDiscoveryUnread('concerts', hash);
 
       // Persist to store
       try {
-        await window.electron.store.set('cache_concerts', { events: allEvents, timestamp: Date.now() });
+        await window.electron.store.set('cache_concerts', { events: uniqueEvents, timestamp: Date.now() });
       } catch (e) {
         console.log('🎤 Could not persist concerts cache:', e.message);
       }
@@ -42108,57 +42162,60 @@ useEffect(() => {
           },
             // Source filter dropdown
             React.createElement('div', { className: 'relative' },
-              React.createElement('button', {
-                onClick: (e) => { e.stopPropagation(); setConcertsSourceFilterDropdownOpen(!concertsSourceFilterDropdownOpen); },
-                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-              },
-                React.createElement('span', null,
-                  concertsSourceFilter === 'all' ? 'All Sources' :
-                  concertsSourceFilter === 'bandsintown' ? 'Bandsintown' :
-                  concertsSourceFilter === 'songkick' ? 'Songkick' : 'AI Suggested'
-                ),
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                )
-              ),
-              concertsSourceFilterDropdownOpen && React.createElement('div', {
-                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-              },
-                (() => {
-                  const options = [{ value: 'all', label: 'All Sources' }];
-                  const dedicatedServices = getConcertServices();
-                  const aiServices = getAiConcertServices();
-                  for (const s of dedicatedServices) {
-                    options.push({ value: s.id, label: s.name || s.id });
-                  }
-                  if (aiServices.length > 0) {
-                    options.push({ value: 'ai', label: 'AI Suggested' });
-                  }
-                  return options;
-                })().map(option =>
+              (() => {
+                // Build options list once for both display and dropdown
+                const sourceOptions = [{ value: 'all', label: 'All Sources' }];
+                const dedicatedServices = getConcertServices();
+                const aiServices = getAiConcertServices();
+                for (const s of dedicatedServices) {
+                  sourceOptions.push({ value: s.id, label: s.name || s.id });
+                }
+                for (const s of aiServices) {
+                  sourceOptions.push({ value: `ai:${s.id}`, label: s.name || s.id });
+                }
+                const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
+
+                return [
                   React.createElement('button', {
-                    key: option.value,
-                    onClick: (e) => {
-                      e.stopPropagation();
-                      setConcertsSourceFilter(option.value);
-                      setConcertsSourceFilterDropdownOpen(false);
-                    },
-                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                      concertsSourceFilter === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                    }`
+                    key: 'source-btn',
+                    onClick: (e) => { e.stopPropagation(); setConcertsSourceFilterDropdownOpen(!concertsSourceFilterDropdownOpen); },
+                    className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
                   },
-                    option.label,
-                    concertsSourceFilter === option.value && React.createElement('svg', {
-                      className: 'w-4 h-4',
-                      fill: 'none',
-                      viewBox: '0 0 24 24',
-                      stroke: 'currentColor'
-                    },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    React.createElement('span', null, selectedLabel),
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                    )
+                  ),
+                  concertsSourceFilterDropdownOpen && React.createElement('div', {
+                    key: 'source-dropdown',
+                    className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+                  },
+                    sourceOptions.map(option =>
+                      React.createElement('button', {
+                        key: option.value,
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          setConcertsSourceFilter(option.value);
+                          setConcertsSourceFilterDropdownOpen(false);
+                        },
+                        className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                          concertsSourceFilter === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                        }`
+                      },
+                        option.label,
+                        concertsSourceFilter === option.value && React.createElement('svg', {
+                          className: 'w-4 h-4',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor'
+                        },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                        )
+                      )
                     )
                   )
-                )
-              )
+                ];
+              })()
             ),
             // Refresh button
             React.createElement('button', {
@@ -42173,6 +42230,45 @@ useEffect(() => {
               },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
               )
+            ),
+            // Location filter
+            React.createElement('div', { className: 'relative ml-2' },
+              concertsLocationOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-1.5' },
+                  React.createElement('svg', { className: 'w-3.5 h-3.5 text-gray-400 mr-1.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' }),
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 11a3 3 0 11-6 0 3 3 0 016 0z' })
+                  ),
+                  React.createElement('input', {
+                    type: 'text',
+                    value: concertsLocation,
+                    onChange: (e) => setConcertsLocation(e.target.value),
+                    onBlur: () => { if (!concertsLocation.trim()) setConcertsLocationOpen(false); },
+                    autoFocus: true,
+                    placeholder: 'City or region...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '130px' }
+                  }),
+                  concertsLocation && React.createElement('button', {
+                    onClick: () => { setConcertsLocation(''); setConcertsLocationOpen(false); },
+                    className: 'ml-1.5 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setConcertsLocationOpen(true),
+                  className: `p-1.5 transition-colors ${concertsLocation ? 'text-violet-500' : 'text-gray-400 hover:text-gray-600'}`,
+                  title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
+                },
+                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' }),
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 11a3 3 0 11-6 0 3 3 0 016 0z' })
+                  )
+                )
             ),
             React.createElement('div', { className: 'flex-1' }),
             // Search
@@ -42302,9 +42398,24 @@ useEffect(() => {
             // Concert list
             !concertsError && concerts.length > 0 && (() => {
               const searchLower = concertsSearch.toLowerCase().trim();
+              const locationLower = concertsLocation.toLowerCase().trim();
               const filtered = concerts.filter(event => {
-                // Source filter
-                if (concertsSourceFilter !== 'all' && event.source !== concertsSourceFilter) return false;
+                // Source filter (supports 'all', dedicated service IDs, and 'ai:providerId')
+                if (concertsSourceFilter !== 'all') {
+                  if (concertsSourceFilter.startsWith('ai:')) {
+                    const aiProviderId = concertsSourceFilter.slice(3);
+                    if (event.source !== 'ai' || event.aiProvider !== aiProviderId) return false;
+                  } else if (event.source !== concertsSourceFilter) {
+                    return false;
+                  }
+                }
+                // Location filter
+                if (locationLower) {
+                  const matchesCity = event.venue?.city?.toLowerCase().includes(locationLower);
+                  const matchesRegion = event.venue?.region?.toLowerCase().includes(locationLower);
+                  const matchesCountry = event.venue?.country?.toLowerCase().includes(locationLower);
+                  if (!matchesCity && !matchesRegion && !matchesCountry) return false;
+                }
                 // Search filter
                 if (searchLower) {
                   const matchesArtist = event.artist?.toLowerCase().includes(searchLower);
@@ -42330,11 +42441,29 @@ useEffect(() => {
 
               const sortedMonths = Object.keys(grouped).sort();
 
+              const hasAiResults = filtered.some(e => e.source === 'ai');
+
               return React.createElement('div', { className: 'p-6' },
+                // AI disclaimer banner
+                hasAiResults && React.createElement('div', {
+                  className: 'flex items-start gap-2 px-3 py-2 mb-4 rounded-lg bg-violet-50 border border-violet-100 text-xs text-violet-600'
+                },
+                  React.createElement('svg', { className: 'w-3.5 h-3.5 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' })
+                  ),
+                  React.createElement('span', null, 'Some results are AI-generated and may not be accurate. Verify event details before purchasing tickets.')
+                ),
+
                 filtered.length === 0 && searchLower && React.createElement('div', {
                   className: 'flex flex-col items-center justify-center py-12'
                 },
                   React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts matching "${concertsSearch}"`)
+                ),
+
+                filtered.length === 0 && locationLower && !searchLower && React.createElement('div', {
+                  className: 'flex flex-col items-center justify-center py-12'
+                },
+                  React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts found near "${concertsLocation}"`)
                 ),
 
                 sortedMonths.map(monthKey =>
@@ -42368,10 +42497,13 @@ useEffect(() => {
                           },
                             React.createElement('span', {
                               className: 'text-xs font-medium text-violet-500 uppercase'
-                            }, `${monthShort} ${dayOfWeek}`),
+                            }, monthShort),
                             React.createElement('span', {
                               className: 'text-2xl font-bold text-gray-900 leading-tight'
-                            }, dayNum)
+                            }, dayNum),
+                            React.createElement('span', {
+                              className: 'text-xs text-gray-400 uppercase'
+                            }, dayOfWeek)
                           ),
 
                           // Event details
@@ -42395,7 +42527,7 @@ useEffect(() => {
                                   color: event.source === 'bandsintown' ? '#00B4B3' :
                                     event.source === 'songkick' ? '#F80046' : '#8b5cf6'
                                 }
-                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : 'AI')
+                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : (event.aiProviderName || 'AI'))
                             ),
                             React.createElement('div', {
                               className: 'text-sm text-gray-600 truncate'
