@@ -46196,44 +46196,11 @@ useEffect(() => {
                   max: currentTrack?.duration || 100,
                   value: currentTrack && !browserPlaybackActive ? progress : 0,
                   disabled: isSeekDisabled,
-                  onPointerDown: () => {
-                    seekingRef.current = true;
-                  },
                   onChange: async (e) => {
                     if (browserPlaybackActive || !currentTrack || isSpotifyActive) return;
                     const newPosition = Number(e.target.value);
-                    setProgress(newPosition);
-                    // If not a pointer drag (e.g. keyboard arrow keys), seek immediately
-                    if (!seekingRef.current) {
-                      seekingRef.current = true;
-                      if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
-                        audioRef.current.currentTime = newPosition;
-                      }
-                      if (isAppleMusicActive) {
-                        if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
-                          window._appleMusicPreviewAudio.currentTime = newPosition;
-                        }
-                        if (window.electron?.musicKit?.seek) {
-                          await window.electron.musicKit.seek(newPosition);
-                          appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
-                        }
-                        if (window.getMusicKitWeb) {
-                          try {
-                            const musicKitWeb = window.getMusicKitWeb();
-                            if (musicKitWeb?.seek) await musicKitWeb.seek(newPosition);
-                          } catch (e) { /* ignore */ }
-                        }
-                      }
-                      if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
-                      seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
-                    }
-                  },
-                  onPointerUp: async (e) => {
-                    if (browserPlaybackActive || !currentTrack || isSpotifyActive) {
-                      seekingRef.current = false;
-                      return;
-                    }
-                    const newPosition = Number(e.target.value);
+                    // Block external progress updates while user is interacting with the slider
+                    seekingRef.current = true;
                     setProgress(newPosition);
                     // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
                     if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
@@ -46263,7 +46230,9 @@ useEffect(() => {
                         }
                       }
                     }
-                    // Allow external progress updates after a delay for the seek to propagate
+                    // Allow external progress updates after user stops interacting.
+                    // Each change resets the timer, so seeking stays suppressed during a drag
+                    // and for 1 second after the last movement (gives the seek time to propagate).
                     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
                     seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
                   },
