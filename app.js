@@ -5264,12 +5264,26 @@ const Parachord = () => {
               console.log(`[Sync] Starting background sync for ${providerId}`);
               const result = await window.electron.sync.start(providerId, { settings });
               if (result.success) {
-                // Use collection from sync result for immediate UI update
                 if (result.collection) {
-                  setCollectionData({
+                  // Compare incoming collection against current state before updating UI.
+                  // If the sync result has significantly fewer tracks, the API likely
+                  // returned incomplete results (pagination timeout, rate limit).
+                  // Skip the UI update to avoid a visible flicker; the data on disk
+                  // was already saved by the sync engine with its mass-removal safeguard.
+                  const incoming = {
                     tracks: result.collection.tracks || [],
                     albums: result.collection.albums || [],
                     artists: result.collection.artists || []
+                  };
+                  setCollectionData(prev => {
+                    const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                    const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+
+                    if (netLoss > 50 && lossRatio > 0.1) {
+                      console.warn(`[Sync] Skipping UI update: sync result has ${incoming.tracks.length} tracks vs current ${prev.tracks?.length || 0} (net loss ${netLoss}, ${Math.round(lossRatio * 100)}%). Likely incomplete API response.`);
+                      return prev;
+                    }
+                    return incoming;
                   });
                 } else {
                   const newCollection = await window.electron.collection.load();
@@ -11298,11 +11312,21 @@ ${trackListXml}
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
-    // Always use generated ID to match how isInCollection checks are done
-    const trackId = generateTrackId(track.artist, track.title, track.album);
-
     setCollectionData(prev => {
-      const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
+      // Try to find by stored ID first (handles synced tracks where ID was generated
+      // from different metadata than the stored artist/title/album fields)
+      let existingIndex = -1;
+      let matchId = null;
+      if (track.id) {
+        existingIndex = prev.tracks.findIndex(t => t.id === track.id);
+        matchId = track.id;
+      }
+      // Fall back to generated ID (for tracks from playbar or other views without matching IDs)
+      if (existingIndex === -1) {
+        const generatedId = generateTrackId(track.artist, track.title, track.album);
+        existingIndex = prev.tracks.findIndex(t => t.id === generatedId);
+        matchId = generatedId;
+      }
       if (existingIndex === -1) {
         showToast(`${track.title} is not in your collection`);
         return prev;
@@ -11323,7 +11347,7 @@ ${trackListXml}
           .catch(err => console.error('Error removing from Spotify:', err));
       }
 
-      const newTracks = prev.tracks.filter(t => t.id !== trackId);
+      const newTracks = prev.tracks.filter(t => t.id !== matchId);
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
       saveCollection(newData);
@@ -11519,10 +11543,19 @@ ${trackListXml}
 
   // Remove album from collection
   const removeAlbumFromCollection = useCallback((album) => {
-    const albumId = generateAlbumId(album.artist, album.title);
-
     setCollectionData(prev => {
-      const existingIndex = prev.albums.findIndex(a => a.id === albumId);
+      // Try to find by stored ID first, then fall back to generated ID
+      let existingIndex = -1;
+      let matchId = null;
+      if (album.id) {
+        existingIndex = prev.albums.findIndex(a => a.id === album.id);
+        matchId = album.id;
+      }
+      if (existingIndex === -1) {
+        const generatedId = generateAlbumId(album.artist, album.title);
+        existingIndex = prev.albums.findIndex(a => a.id === generatedId);
+        matchId = generatedId;
+      }
       if (existingIndex === -1) {
         showToast(`${album.title} is not in your collection`);
         return prev;
@@ -11543,7 +11576,7 @@ ${trackListXml}
           .catch(err => console.error('Error removing from Spotify:', err));
       }
 
-      const newAlbums = prev.albums.filter(a => a.id !== albumId);
+      const newAlbums = prev.albums.filter(a => a.id !== matchId);
       const newData = { ...prev, albums: newAlbums };
       saveCollection(newData);
       showToast(`Removed ${album.title} from Collection`);
@@ -45463,7 +45496,7 @@ useEffect(() => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
                   const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-                  const isInCollection = collectionData.tracks.some(t => t.id === trackId);
+                  const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
                   window.electron.contextMenu.showTrackMenu({
                     type: 'track',
                     track: currentTrack,
@@ -45879,7 +45912,7 @@ useEffect(() => {
           (() => {
             if (!currentTrack) return null;
             const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-            const isInCollection = collectionData.tracks.some(t => t.id === trackId);
+            const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
             return React.createElement(Tooltip, {
               content: isInCollection ? 'Remove from collection' : 'Save to collection',
               position: 'top',
@@ -52756,12 +52789,21 @@ useEffect(() => {
                   }
                 }
               }
-              // Update UI with synced collection
+              // Update UI with synced collection (guard against incomplete API responses)
               if (latestCollection) {
-                setCollectionData({
+                const incoming = {
                   tracks: latestCollection.tracks || [],
                   albums: latestCollection.albums || [],
                   artists: latestCollection.artists || []
+                };
+                setCollectionData(prev => {
+                  const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                  const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                  if (netLoss > 50 && lossRatio > 0.1) {
+                    console.warn(`[Sync] Skipping UI update: sync result has ${incoming.tracks.length} tracks vs current ${prev.tracks?.length || 0} (net loss ${netLoss}, ${Math.round(lossRatio * 100)}%). Likely incomplete API response.`);
+                    return prev;
+                  }
+                  return incoming;
                 });
               } else {
                 const newCollection = await window.electron.collection.load();

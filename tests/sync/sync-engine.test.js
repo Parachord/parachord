@@ -949,3 +949,117 @@ describe('Collection Two-Way Sync', () => {
     });
   });
 });
+
+describe('Track Removal with Special Characters', () => {
+  // Replicate the normalizeForId and generateTrackId functions from app.js
+  const normalizeForId = (str) => {
+    return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  };
+
+  const generateTrackId = (artist, title, album) => {
+    return `${normalizeForId(artist || 'unknown')}-${normalizeForId(title || 'untitled')}-${normalizeForId(album || 'noalbum')}`;
+  };
+
+  // Replicate the fixed removeTrackFromCollection logic
+  const removeTrackFromCollection = (track, collectionTracks) => {
+    let existingIndex = -1;
+    let matchId = null;
+    if (track.id) {
+      existingIndex = collectionTracks.findIndex(t => t.id === track.id);
+      matchId = track.id;
+    }
+    if (existingIndex === -1) {
+      const generatedId = generateTrackId(track.artist, track.title, track.album);
+      existingIndex = collectionTracks.findIndex(t => t.id === generatedId);
+      matchId = generatedId;
+    }
+    if (existingIndex === -1) {
+      return { removed: false, tracks: collectionTracks };
+    }
+    return { removed: true, tracks: collectionTracks.filter(t => t.id !== matchId) };
+  };
+
+  test('removes track with # in title by stored ID', () => {
+    const collectionTracks = [
+      { id: 'artist-vo-01-album', title: 'VO#01', artist: 'Artist', album: 'Album' },
+      { id: 'artist-vo-02-album', title: 'VO#02', artist: 'Artist', album: 'Album' }
+    ];
+
+    const result = removeTrackFromCollection(
+      { id: 'artist-vo-01-album', title: 'VO#01', artist: 'Artist', album: 'Album' },
+      collectionTracks
+    );
+
+    expect(result.removed).toBe(true);
+    expect(result.tracks).toHaveLength(1);
+    expect(result.tracks[0].title).toBe('VO#02');
+  });
+
+  test('removes track with # in title by generated ID fallback', () => {
+    const collectionTracks = [
+      { id: 'artist-vo-01-album', title: 'VO#01', artist: 'Artist', album: 'Album' }
+    ];
+
+    // Track from playbar or other view may not have a matching id
+    const result = removeTrackFromCollection(
+      { title: 'VO#01', artist: 'Artist', album: 'Album' },
+      collectionTracks
+    );
+
+    expect(result.removed).toBe(true);
+    expect(result.tracks).toHaveLength(0);
+  });
+
+  test('removes multi-artist track synced from Spotify', () => {
+    // Spotify sync generates ID from first artist only, but stores all artists
+    const spotifyGeneratedId = generateTrackId('Artist A', 'Song Title', 'Album');
+    const collectionTracks = [
+      { id: spotifyGeneratedId, title: 'Song Title', artist: 'Artist A, Artist B', album: 'Album' }
+    ];
+
+    // The track object passed from the collection view has the stored id
+    const result = removeTrackFromCollection(
+      { id: spotifyGeneratedId, title: 'Song Title', artist: 'Artist A, Artist B', album: 'Album' },
+      collectionTracks
+    );
+
+    expect(result.removed).toBe(true);
+    expect(result.tracks).toHaveLength(0);
+  });
+
+  test('fails to remove multi-artist track when only using generated ID (old bug)', () => {
+    // This demonstrates why the old approach failed
+    const firstArtistId = generateTrackId('Artist A', 'Song Title', 'Album');
+    const allArtistsId = generateTrackId('Artist A, Artist B', 'Song Title', 'Album');
+
+    // These IDs are different - this was the root cause
+    expect(firstArtistId).not.toBe(allArtistsId);
+    expect(firstArtistId).toBe('artist-a-song-title-album');
+    expect(allArtistsId).toBe('artist-a-artist-b-song-title-album');
+  });
+
+  test('normalizeForId handles # and other special characters consistently', () => {
+    expect(normalizeForId('VO#01')).toBe('vo-01');
+    expect(normalizeForId('Track (feat. Other)')).toBe('track-feat-other');
+    expect(normalizeForId("Don't Stop Me Now!")).toBe('don-t-stop-me-now');
+    expect(normalizeForId('Artist & Friend')).toBe('artist-friend');
+    expect(normalizeForId('Café Après-midi')).toBe('caf-apr-s-midi');
+  });
+
+  test('removal works even when sync ID uses first artist only', () => {
+    // Spotify sync generates ID from first artist only (for backward compat),
+    // but stores all artists in the artist field. The dual-lookup in
+    // removeTrackFromCollection handles this by matching on stored track.id first.
+    const firstArtistId = generateTrackId('Artist A', 'VO#01', 'Test Album');
+    const collectionTracks = [
+      { id: firstArtistId, title: 'VO#01', artist: 'Artist A, Artist B', album: 'Test Album' }
+    ];
+
+    // Track from collection view has the stored id — removal works via ID match
+    const result = removeTrackFromCollection(
+      { id: firstArtistId, title: 'VO#01', artist: 'Artist A, Artist B', album: 'Test Album' },
+      collectionTracks
+    );
+    expect(result.removed).toBe(true);
+  });
+});
