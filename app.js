@@ -40795,9 +40795,15 @@ useEffect(() => {
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => {
                             e.target.style.display = 'none';
-                            // Mark as no-art in albumArtCache so we don't retry
-                            if (albumArtCache.current[release.id]) {
+                            // Only mark as no-art if we don't already have a valid URL cached.
+                            // A transient 404 from CAA shouldn't destroy a known-good URL,
+                            // since the URL is needed to re-derive art after a full refresh
+                            // replaces cached releases with fresh MusicBrainz data (no albumArt).
+                            const cached = albumArtCache.current[release.id];
+                            if (!cached) {
                               albumArtCache.current[release.id] = { url: null, timestamp: Date.now() };
+                            } else if (!cached.url) {
+                              cached.timestamp = Date.now();
                             }
                           }
                         }),
