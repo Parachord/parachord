@@ -12343,6 +12343,21 @@ ${trackListXml}
   };
 
   const handlePlay = async (trackOrSource) => {
+    // If user manually plays something while listening along, end the listen-along session
+    // Listen-along tracks are tagged with _playbackContext.type === 'listenAlong'
+    const listenAlongFriendNow = listenAlongFriendRef.current;
+    if (listenAlongFriendNow && trackOrSource?._playbackContext?.type !== 'listenAlong') {
+      console.log(`🎧 User played a different track - ending listen-along with ${listenAlongFriendNow.displayName}`);
+      showToast(`Stopped listening along with ${listenAlongFriendNow.displayName}`);
+      abortSchedulerContext('listen-along');
+      setListenAlongFriend(null);
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      listenAlongUserPausedRef.current = false;
+      listenAlongEndAfterSongRef.current = null;
+      setPlaybackContext(null);
+    }
+
     // Increment playback generation to mark this as the current play request
     // Any previously-started play request will detect this and abort
     playbackGenerationRef.current++;
