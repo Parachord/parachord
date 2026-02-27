@@ -37088,11 +37088,35 @@ useEffect(() => {
               // SECTION: Your Playlists & Friends Listening Now (side by side)
               (() => {
                 const onlineFriends = friends.filter(f => isOnAir(f));
+                // Friends with recent listening activity (have a cached track), sorted: online first, then by most recent
+                const friendsWithActivity = friends
+                  .filter(f => f.cachedRecentTrack && f.savedToCollection)
+                  .sort((a, b) => {
+                    const aOnAir = isOnAir(a);
+                    const bOnAir = isOnAir(b);
+                    if (aOnAir && !bOnAir) return -1;
+                    if (!aOnAir && bOnAir) return 1;
+                    return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
+                  })
+                  .slice(0, 5);
                 const showPlaylists = playlists.length > 0;
-                const showFriends = onlineFriends.length > 0;
+                const showFriends = friendsWithActivity.length > 0;
 
                 // Only render if at least one section has content
                 if (!showPlaylists && !showFriends) return null;
+
+                // Helper: format relative time
+                const formatTimeAgo = (timestamp) => {
+                  if (!timestamp) return '';
+                  const diff = Date.now() - timestamp;
+                  const minutes = Math.floor(diff / 60000);
+                  if (minutes < 1) return 'Just now';
+                  if (minutes < 60) return `${minutes}m ago`;
+                  const hours = Math.floor(minutes / 60);
+                  if (hours < 24) return `${hours}h ago`;
+                  const days = Math.floor(hours / 24);
+                  return `${days}d ago`;
+                };
 
                 return React.createElement('div', {
                   className: 'grid grid-cols-1 md:grid-cols-2 gap-6',
@@ -37201,18 +37225,25 @@ useEffect(() => {
                     )
                   ),
 
-                  // Right column: Friends Listening Now
+                  // Right column: Friends Listening
                   showFriends && React.createElement('div', { className: 'flex flex-col' },
                     React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friends Listening Now'),
-                      React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
-                        React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
-                        `${onlineFriends.length} online`
-                      )
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friend Activity'),
+                      onlineFriends.length > 0
+                        ? React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
+                            React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
+                            `${onlineFriends.length} listening now`
+                          )
+                        : React.createElement('button', {
+                            onClick: () => navigateTo('friends'),
+                            className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                          }, 'See all')
                     ),
                     React.createElement('div', { className: 'space-y-2 flex-1' },
-                      onlineFriends.map((friend, index) =>
-                        React.createElement('div', {
+                      friendsWithActivity.map((friend, index) => {
+                        const onAir = isOnAir(friend);
+                        const track = friend.cachedRecentTrack;
+                        return React.createElement('div', {
                           key: friend.id,
                           className: 'release-card card-fade-up flex items-center gap-3 p-3 cursor-pointer',
                           style: {
@@ -37239,22 +37270,37 @@ useEffect(() => {
                                     friend.displayName?.charAt(0).toUpperCase()
                                   )
                             ),
-                            // On-air indicator dot
+                            // On-air indicator dot (green for listening, gray for offline)
                             React.createElement('div', {
-                              className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white'
+                              className: `absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${onAir ? 'bg-green-500' : 'bg-gray-300'}`
                             })
                           ),
+                          // Friend info with track details
                           React.createElement('div', { className: 'flex-1 min-w-0' },
-                            React.createElement('p', {
-                              className: 'text-gray-900',
-                              style: { fontSize: '13px', fontWeight: 500 }
-                            }, friend.displayName),
-                            friend.currentTrack && React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
-                              `${friend.currentTrack.name || friend.currentTrack.title} · ${friend.currentTrack.artist}`
+                            React.createElement('div', { className: 'flex items-center gap-1.5' },
+                              React.createElement('p', {
+                                className: 'text-gray-900 truncate',
+                                style: { fontSize: '13px', fontWeight: 500 }
+                              }, friend.displayName),
+                              // Time indicator
+                              React.createElement('span', {
+                                className: 'text-xs flex-shrink-0',
+                                style: { color: onAir ? '#16a34a' : '#9ca3af' }
+                              }, onAir ? 'now' : formatTimeAgo(track?.timestamp))
+                            ),
+                            // Track info - shows what they're listening to
+                            track && React.createElement('p', {
+                              className: 'text-xs truncate mt-0.5',
+                              style: { color: onAir ? '#4b5563' : '#9ca3af' }
+                            },
+                              React.createElement('span', {
+                                style: { color: onAir ? '#22c55e' : '#d1d5db' }
+                              }, '\u266A '),
+                              `${track.name} \u00B7 ${track.artist}`
                             )
                           ),
-                          // Listen along button
-                          React.createElement('button', {
+                          // Listen along button (only for online friends)
+                          onAir && React.createElement('button', {
                             className: `px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
                               listenAlongFriend?.id === friend.id
                                 ? 'bg-purple-600 text-white'
@@ -37269,15 +37315,15 @@ useEffect(() => {
                               }
                             }
                           }, listenAlongFriend?.id === friend.id ? 'Listening' : 'Listen Along')
-                        )
-                      )
+                        );
+                      })
                     )
                   ),
 
                   // If only playlists but no friends, show placeholder in right column
                   showPlaylists && !showFriends && React.createElement('div', { className: 'flex flex-col' },
                     React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friends Listening Now')
+                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friend Activity')
                     ),
                     React.createElement('div', {
                       className: 'flex-1 flex flex-col items-center justify-center rounded-xl p-6',
