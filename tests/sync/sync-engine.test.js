@@ -1046,17 +1046,20 @@ describe('Track Removal with Special Characters', () => {
     expect(normalizeForId('Café Après-midi')).toBe('caf-apr-s-midi');
   });
 
-  test('Spotify transformTrack uses full artist name for ID generation', () => {
-    // This tests the fix to sync-providers/spotify.js
-    const artistName = 'Artist A, Artist B';
-    const trackName = 'VO#01';
-    const albumName = 'Test Album';
+  test('removal works even when sync ID uses first artist only', () => {
+    // Spotify sync generates ID from first artist only (for backward compat),
+    // but stores all artists in the artist field. The dual-lookup in
+    // removeTrackFromCollection handles this by matching on stored track.id first.
+    const firstArtistId = generateTrackId('Artist A', 'VO#01', 'Test Album');
+    const collectionTracks = [
+      { id: firstArtistId, title: 'VO#01', artist: 'Artist A, Artist B', album: 'Test Album' }
+    ];
 
-    const id = generateTrackId(artistName, trackName, albumName);
-
-    // ID should use full artist name, not just first artist
-    expect(id).toBe('artist-a-artist-b-vo-01-test-album');
-    // Verify regenerating from stored fields produces the same ID
-    expect(generateTrackId(artistName, trackName, albumName)).toBe(id);
+    // Track from collection view has the stored id — removal works via ID match
+    const result = removeTrackFromCollection(
+      { id: firstArtistId, title: 'VO#01', artist: 'Artist A, Artist B', album: 'Test Album' },
+      collectionTracks
+    );
+    expect(result.removed).toBe(true);
   });
 });
