@@ -128,7 +128,7 @@ const transformTrack = (item, addedAt) => {
   const duration = Math.round((track.duration_ms || 0) / 1000);
   const albumArt = track.album?.images?.[0]?.url || null;
   return {
-    id: generateTrackId(track.artists?.[0]?.name, track.name, track.album?.name),
+    id: generateTrackId(artistName, track.name, albumName),
     externalId: track.id,
     title: track.name,
     artist: artistName,
@@ -162,11 +162,12 @@ const transformTrack = (item, addedAt) => {
  */
 const transformAlbum = (item) => {
   const album = item.album || item;
+  const artistName = album.artists?.map(a => a.name).join(', ') || 'Unknown Artist';
   return {
-    id: `${normalizeForId(album.artists?.[0]?.name)}-${normalizeForId(album.name)}`,
+    id: `${normalizeForId(artistName)}-${normalizeForId(album.name)}`,
     externalId: album.id,
     title: album.name,
-    artist: album.artists?.map(a => a.name).join(', ') || 'Unknown Artist',
+    artist: artistName,
     year: album.release_date ? parseInt(album.release_date.substring(0, 4), 10) : null,
     art: album.images?.[0]?.url || null,
     addedAt: item.added_at ? new Date(item.added_at).getTime() : Date.now(),

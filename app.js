@@ -11298,11 +11298,21 @@ ${trackListXml}
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
-    // Always use generated ID to match how isInCollection checks are done
-    const trackId = generateTrackId(track.artist, track.title, track.album);
-
     setCollectionData(prev => {
-      const existingIndex = prev.tracks.findIndex(t => t.id === trackId);
+      // Try to find by stored ID first (handles synced tracks where ID was generated
+      // from different metadata than the stored artist/title/album fields)
+      let existingIndex = -1;
+      let matchId = null;
+      if (track.id) {
+        existingIndex = prev.tracks.findIndex(t => t.id === track.id);
+        matchId = track.id;
+      }
+      // Fall back to generated ID (for tracks from playbar or other views without matching IDs)
+      if (existingIndex === -1) {
+        const generatedId = generateTrackId(track.artist, track.title, track.album);
+        existingIndex = prev.tracks.findIndex(t => t.id === generatedId);
+        matchId = generatedId;
+      }
       if (existingIndex === -1) {
         showToast(`${track.title} is not in your collection`);
         return prev;
@@ -11323,7 +11333,7 @@ ${trackListXml}
           .catch(err => console.error('Error removing from Spotify:', err));
       }
 
-      const newTracks = prev.tracks.filter(t => t.id !== trackId);
+      const newTracks = prev.tracks.filter(t => t.id !== matchId);
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
       saveCollection(newData);
@@ -11519,10 +11529,19 @@ ${trackListXml}
 
   // Remove album from collection
   const removeAlbumFromCollection = useCallback((album) => {
-    const albumId = generateAlbumId(album.artist, album.title);
-
     setCollectionData(prev => {
-      const existingIndex = prev.albums.findIndex(a => a.id === albumId);
+      // Try to find by stored ID first, then fall back to generated ID
+      let existingIndex = -1;
+      let matchId = null;
+      if (album.id) {
+        existingIndex = prev.albums.findIndex(a => a.id === album.id);
+        matchId = album.id;
+      }
+      if (existingIndex === -1) {
+        const generatedId = generateAlbumId(album.artist, album.title);
+        existingIndex = prev.albums.findIndex(a => a.id === generatedId);
+        matchId = generatedId;
+      }
       if (existingIndex === -1) {
         showToast(`${album.title} is not in your collection`);
         return prev;
@@ -11543,7 +11562,7 @@ ${trackListXml}
           .catch(err => console.error('Error removing from Spotify:', err));
       }
 
-      const newAlbums = prev.albums.filter(a => a.id !== albumId);
+      const newAlbums = prev.albums.filter(a => a.id !== matchId);
       const newData = { ...prev, albums: newAlbums };
       saveCollection(newData);
       showToast(`Removed ${album.title} from Collection`);
@@ -45463,7 +45482,7 @@ useEffect(() => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
                   const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-                  const isInCollection = collectionData.tracks.some(t => t.id === trackId);
+                  const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
                   window.electron.contextMenu.showTrackMenu({
                     type: 'track',
                     track: currentTrack,
@@ -45879,7 +45898,7 @@ useEffect(() => {
           (() => {
             if (!currentTrack) return null;
             const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-            const isInCollection = collectionData.tracks.some(t => t.id === trackId);
+            const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
             return React.createElement(Tooltip, {
               content: isInCollection ? 'Remove from collection' : 'Save to collection',
               position: 'top',
