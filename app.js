@@ -8894,6 +8894,10 @@ const Parachord = () => {
         case 'open-settings':
           setActiveView('settings');
           break;
+        case 'open-about':
+          setActiveView('settings');
+          setSettingsTab('about');
+          break;
         case 'add-friend':
           setAddFriendModalOpen(true);
           setAddFriendInput('');
@@ -45397,7 +45401,7 @@ useEffect(() => {
                     color: '#374151',
                     marginBottom: '8px'
                   }
-                }, 'Version 1.0.0'),
+                }, appVersion ? `Version ${appVersion}` : 'Version'),
 
                 // Tagline
                 React.createElement('p', {
