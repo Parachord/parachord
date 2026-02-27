@@ -7450,7 +7450,6 @@ const Parachord = () => {
   // Cache TTLs (in milliseconds)
   const CACHE_TTL = {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
-    albumArtMissing: 7 * 24 * 60 * 60 * 1000, // 7 days (retry missing cover art sooner)
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
     trackSources: 7 * 24 * 60 * 60 * 1000, // 7 days (track availability changes)
     persistedSources: 30 * 24 * 60 * 60 * 1000, // 30 days (persisted to collection/playlists)
@@ -17592,8 +17591,7 @@ ${trackListXml}
         // Filter out expired entries
         const now = Date.now();
         const validEntries = Object.entries(albumArtData).filter(
-          ([_, entry]) => entry && entry.timestamp &&
-            (now - entry.timestamp) < (entry.url ? CACHE_TTL.albumArt : CACHE_TTL.albumArtMissing)
+          ([_, entry]) => entry && entry.timestamp && (now - entry.timestamp) < CACHE_TTL.albumArt
         );
         albumArtCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} album art entries from cache`);
@@ -17694,9 +17692,8 @@ ${trackListXml}
           if (release.albumArt) return release;
           const cached = albumArtCache.current[release.id];
           if (cached?.url) return { ...release, albumArt: cached.url };
-          // Assign deterministic CAA URL if not in cache, or if known-missing entry has expired
-          if (!cached || (cached && !cached.url && cached.timestamp && (now - cached.timestamp) >= CACHE_TTL.albumArtMissing)) {
-            if (cached) delete albumArtCache.current[release.id];
+          // Assign deterministic CAA URL if not in cache (and not known-missing)
+          if (!cached) {
             const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
             albumArtCache.current[release.id] = { url: coverUrl, timestamp: Date.now() };
             return { ...release, albumArt: coverUrl };
@@ -23527,14 +23524,9 @@ ${tracks}
       if (cached) {
         if (cached.url) {
           updates[release.id] = cached.url;
-          continue;
         }
-        // If cached.url is null but hasn't expired, skip (known missing)
-        if (cached.timestamp && (Date.now() - cached.timestamp) < CACHE_TTL.albumArtMissing) {
-          continue;
-        }
-        // Expired null entry — retry by falling through to assign a new URL
-        delete albumArtCache.current[release.id];
+        // If cached.url is null, we previously found no art - skip
+        continue;
       }
 
       // Assign deterministic Cover Art Archive URL (browser handles actual fetch)
@@ -40793,9 +40785,15 @@ useEffect(() => {
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => {
                             e.target.style.display = 'none';
-                            // Mark as no-art in albumArtCache so we don't retry
-                            if (albumArtCache.current[release.id]) {
+                            // Only mark as no-art if we don't already have a valid URL cached.
+                            // A transient 404 from CAA shouldn't destroy a known-good URL,
+                            // since the URL is needed to re-derive art after a full refresh
+                            // replaces cached releases with fresh MusicBrainz data (no albumArt).
+                            const cached = albumArtCache.current[release.id];
+                            if (!cached) {
                               albumArtCache.current[release.id] = { url: null, timestamp: Date.now() };
+                            } else if (!cached.url) {
+                              cached.timestamp = Date.now();
                             }
                           }
                         }),
