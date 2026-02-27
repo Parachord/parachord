@@ -3610,31 +3610,6 @@ const ReleasePage = ({
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
                 ),
                 'Copy Link'
-              ),
-              React.createElement('button', {
-                onClick: () => {
-                  setShareDropdownOpen(false);
-                  const collectionData = {
-                    title: release.title,
-                    artist: release.artist?.name || release.artist,
-                    albumArt: release.albumArt,
-                    type: 'album',
-                    tracks: (release.tracks || []).map((t, i) => ({
-                      title: t.title || 'Unknown',
-                      artist: t.artist || release.artist?.name || null,
-                      duration: t.duration || null,
-                      trackNumber: t.trackNumber || (i + 1)
-                    }))
-                  };
-                  copyCollectionEmbedCode(collectionData);
-                },
-                className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
-                style: { fontSize: '12px', fontWeight: 500 }
-              },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
-                ),
-                'Copy Embed Code'
               )
             )
           )
@@ -35399,32 +35374,6 @@ useEffect(() => {
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
                     ),
                     'Copy Link'
-                  ),
-                  React.createElement('button', {
-                    onClick: () => {
-                      setShareDropdownOpen(false);
-                      const collectionData = {
-                        title: selectedPlaylist.title,
-                        artist: null,
-                        creator: selectedPlaylist.creator || null,
-                        albumArt: playlistCoverArt?.[0] || null,
-                        type: 'playlist',
-                        tracks: (playlistTracks || []).map((t, i) => ({
-                          title: t.title || 'Unknown',
-                          artist: t.artist || null,
-                          duration: t.duration || null,
-                          trackNumber: t.trackNumber || (i + 1)
-                        }))
-                      };
-                      copyCollectionEmbedCode(collectionData);
-                    },
-                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
-                    style: { fontSize: '12px', fontWeight: 500 }
-                  },
-                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' })
-                    ),
-                    'Copy Embed Code'
                   )
                 )
               )
