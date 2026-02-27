@@ -31,7 +31,7 @@
 - [ ] **Themes** - Light/dark mode toggle
 
 ### Artist Pages
-- [ ] **Tour Dates/Tickets** - bandsintown/songkick
+- [x] **Tour Dates/Tickets** - bandsintown/songkick (Concerts tab in Discover section)
 
 ---
 

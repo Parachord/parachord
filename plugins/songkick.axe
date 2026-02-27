@@ -1,0 +1,33 @@
+{
+  "manifest": {
+    "id": "songkick",
+    "name": "Songkick",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Find live music events and concerts near you. Powered by Songkick.",
+    "icon": "🎶",
+    "color": "#F80046",
+    "homepage": "https://www.songkick.com"
+  },
+  "capabilities": {
+    "concerts": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "text",
+        "label": "API Key",
+        "description": "Your Songkick API key from songkick.com/developer",
+        "placeholder": "your-api-key",
+        "required": true
+      }
+    }
+  },
+  "implementation": {
+    "searchArtistEvents": "async function(artistName, config) {\n  if (!config.apiKey) {\n    throw new Error('Songkick API key is required. Apply at songkick.com/developer');\n  }\n\n  // Step 1: Search for the artist to get their Songkick ID\n  const searchUrl = `https://api.songkick.com/api/3.0/search/artists.json?apikey=${encodeURIComponent(config.apiKey)}&query=${encodeURIComponent(artistName)}`;\n\n  const searchResponse = await fetch(searchUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!searchResponse.ok) {\n    if (searchResponse.status === 404) return [];\n    throw new Error(`Songkick API error: ${searchResponse.status}`);\n  }\n\n  const searchData = await searchResponse.json();\n  const artists = searchData.resultsPage?.results?.artist;\n  if (!artists || artists.length === 0) return [];\n\n  // Find best match (case-insensitive)\n  const normalizedQuery = artistName.toLowerCase().trim();\n  const match = artists.find(a => a.displayName.toLowerCase().trim() === normalizedQuery) || artists[0];\n  const artistId = match.id;\n\n  // Step 2: Get upcoming events for this artist\n  const eventsUrl = `https://api.songkick.com/api/3.0/artists/${artistId}/calendar.json?apikey=${encodeURIComponent(config.apiKey)}`;\n\n  const eventsResponse = await fetch(eventsUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!eventsResponse.ok) {\n    if (eventsResponse.status === 404) return [];\n    throw new Error(`Songkick API error: ${eventsResponse.status}`);\n  }\n\n  const eventsData = await eventsResponse.json();\n  const events = eventsData.resultsPage?.results?.event;\n  if (!events || events.length === 0) return [];\n\n  return events.map(event => {\n    const startDate = event.start?.date || null;\n    const startTime = event.start?.time || null;\n    const datetime = startDate ? (startTime ? `${startDate}T${startTime}` : `${startDate}T00:00:00`) : null;\n\n    const venue = event.venue || {};\n    const location = event.location || {};\n\n    return {\n      id: `sk-${event.id}`,\n      source: 'songkick',\n      artist: artistName,\n      title: event.displayName || `${artistName} live`,\n      datetime: datetime,\n      date: startDate,\n      venue: {\n        name: venue.displayName || 'TBA',\n        city: location.city ? location.city.split(',')[0].trim() : '',\n        region: location.city && location.city.includes(',') ? location.city.split(',').slice(1).join(',').trim() : '',\n        country: '',\n        latitude: venue.lat ? parseFloat(venue.lat) : null,\n        longitude: venue.lng ? parseFloat(venue.lng) : null\n      },\n      lineup: (event.performance || []).map(p => p.displayName),\n      ticketUrl: event.uri,\n      url: event.uri,\n      onSale: event.status === 'ok',\n      description: event.type || ''\n    };\n  });\n}",
+    "searchArtist": "async function(artistName, config) {\n  if (!config.apiKey) {\n    throw new Error('Songkick API key is required');\n  }\n\n  const searchUrl = `https://api.songkick.com/api/3.0/search/artists.json?apikey=${encodeURIComponent(config.apiKey)}&query=${encodeURIComponent(artistName)}`;\n\n  const searchResponse = await fetch(searchUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!searchResponse.ok) {\n    if (searchResponse.status === 404) return null;\n    throw new Error(`Songkick API error: ${searchResponse.status}`);\n  }\n\n  const searchData = await searchResponse.json();\n  const artists = searchData.resultsPage?.results?.artist;\n  if (!artists || artists.length === 0) return null;\n\n  const normalizedQuery = artistName.toLowerCase().trim();\n  const match = artists.find(a => a.displayName.toLowerCase().trim() === normalizedQuery) || artists[0];\n\n  return {\n    id: match.id,\n    name: match.displayName,\n    url: match.uri,\n    onTourUntil: match.onTourUntil\n  };\n}"
+  }
+}
