@@ -3844,15 +3844,6 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         }
       });
 
-      menuItems.push({
-        label: 'Copy Embed Code',
-        click: () => {
-          safeSendToRenderer('track-context-menu-action', {
-            action: 'copy-embed-code',
-            track: data.track
-          });
-        }
-      });
     } else {
       // Album/playlist smart link with tracklist
       const isPlaylist = data.type === 'playlist';
@@ -3882,15 +3873,6 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         }
       });
 
-      menuItems.push({
-        label: 'Copy Embed Code',
-        click: () => {
-          safeSendToRenderer('track-context-menu-action', {
-            action: 'copy-collection-embed-code',
-            collection: collectionData
-          });
-        }
-      });
     }
   }
 

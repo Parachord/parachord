@@ -100,10 +100,13 @@ async function handleEmbed(id, request, env, waitUntil) {
   const url = new URL(request.url);
   const baseUrl = `${url.protocol}//${url.host}`;
   const size = url.searchParams.get('size');
+  const bg = url.searchParams.get('bg');
+
+  const options = { bg: bg || null };
 
   const html = size === 'large'
-    ? generateLargeEmbedHtml(data, id, baseUrl)
-    : generateEmbedHtml(data, id, baseUrl);
+    ? generateLargeEmbedHtml(data, id, baseUrl, options)
+    : generateEmbedHtml(data, id, baseUrl, options);
 
   return new Response(html, {
     headers: {

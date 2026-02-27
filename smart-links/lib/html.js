@@ -507,6 +507,203 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       height: 16px;
       color: var(--accent);
     }
+    .embed-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .embed-btn:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .embed-btn svg {
+      width: 16px;
+      height: 16px;
+      color: var(--accent);
+    }
+    .embed-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .embed-modal-overlay.open {
+      display: flex;
+    }
+    .embed-modal {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 560px;
+      width: calc(100% - 32px);
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .embed-modal h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .embed-modal-close {
+      float: right;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 4px;
+      line-height: 1;
+    }
+    .embed-modal-close:hover {
+      color: var(--text-primary);
+    }
+    .embed-option-group {
+      margin-bottom: 16px;
+    }
+    .embed-option-group label {
+      display: block;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .embed-size-options {
+      display: flex;
+      gap: 8px;
+    }
+    .embed-size-btn {
+      flex: 1;
+      padding: 10px 16px;
+      background: var(--bg-primary);
+      border: 2px solid transparent;
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .embed-size-btn:hover {
+      border-color: var(--bg-tertiary);
+    }
+    .embed-size-btn.active {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+    }
+    .embed-size-btn small {
+      display: block;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-weight: 400;
+      margin-top: 2px;
+    }
+    .embed-color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .embed-color-input {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 2px;
+      background: var(--bg-primary);
+    }
+    .embed-color-hex {
+      flex: 1;
+      background: var(--bg-primary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: monospace;
+      font-size: 0.85rem;
+      padding: 10px 12px;
+    }
+    .embed-color-hex:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .embed-color-reset {
+      background: none;
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      padding: 10px 12px;
+      cursor: pointer;
+    }
+    .embed-color-reset:hover {
+      color: var(--text-primary);
+      border-color: var(--text-secondary);
+    }
+    .embed-preview {
+      margin-top: 16px;
+      background: var(--bg-primary);
+      border-radius: 8px;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .embed-preview iframe {
+      border: none;
+      border-radius: 8px;
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+    }
+    .embed-code-area {
+      margin-top: 12px;
+      position: relative;
+    }
+    .embed-code-area code {
+      display: block;
+      background: var(--bg-primary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      word-break: break-all;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+    .embed-copy-btn {
+      margin-top: 12px;
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .embed-copy-btn:hover {
+      filter: brightness(1.1);
+    }
+    .embed-copy-btn.copied {
+      background: #22c55e;
+    }
     .parachord-btn {
       display: inline-flex;
       align-items: center;
@@ -566,6 +763,12 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
         <span class="status-dot"></span>
         Play in Parachord
       </button>
+      <div style="margin-top: 12px;">
+        <button class="embed-btn" onclick="openEmbedModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Embed
+        </button>
+      </div>
     </div>
 
     <div class="footer">
@@ -576,9 +779,57 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     </div>
   </div>
 
+  <div id="embed-modal-overlay" class="embed-modal-overlay" onclick="if(event.target===this)closeEmbedModal()">
+    <div class="embed-modal">
+      <button class="embed-modal-close" onclick="closeEmbedModal()">&times;</button>
+      <h2>Embed this ${isCollection ? typeLabel.toLowerCase() : 'track'}</h2>
+
+      ${isCollection ? `
+      <div class="embed-option-group">
+        <label>Size</label>
+        <div class="embed-size-options">
+          <button class="embed-size-btn active" id="size-standard" onclick="setEmbedSize('standard')">
+            Standard
+            <small>400 &times; 152px</small>
+          </button>
+          <button class="embed-size-btn" id="size-large" onclick="setEmbedSize('large')">
+            Large
+            <small>600 &times; auto</small>
+          </button>
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="embed-option-group">
+        <label>Background Color</label>
+        <div class="embed-color-row">
+          <input type="color" id="embed-color-picker" class="embed-color-input" value="#1a1a1a" oninput="setEmbedBg(this.value)">
+          <input type="text" id="embed-color-hex" class="embed-color-hex" value="#1a1a1a" placeholder="#1a1a1a" onchange="setEmbedBgHex(this.value)">
+          <button class="embed-color-reset" onclick="resetEmbedBg()">Reset</button>
+        </div>
+      </div>
+
+      <div class="embed-preview">
+        <iframe id="embed-preview-iframe" src="${linkUrl}/embed" width="400" height="152" style="border-radius: 8px;" allow="encrypted-media"></iframe>
+      </div>
+
+      <div class="embed-code-area">
+        <code id="embed-code-display"></code>
+      </div>
+
+      <button class="embed-copy-btn" id="embed-copy-btn" onclick="copyEmbedCode()">Copy Embed Code</button>
+    </div>
+  </div>
+
   <script>
     const linkData = ${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')};
+    const linkUrl = ${JSON.stringify(linkUrl)};
+    const isCollection = ${isCollection};
     let ws = null;
+
+    // Embed modal state
+    let embedSize = 'standard';
+    let embedBg = null; // null = default
 
     function connectToParachord() {
       try {
@@ -603,7 +854,6 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
     function playInParachord() {
       if (ws && ws.readyState === WebSocket.OPEN) {
         if (linkData.tracks && linkData.tracks.length > 0) {
-          // For albums/playlists, send all individual tracks with album context
           const tracks = linkData.tracks.map(t => ({
             title: t.title,
             artist: t.artist || linkData.artist,
@@ -636,13 +886,103 @@ export function generateLinkPageHtml(data, linkId, baseUrl) {
       }
     }
 
+    // Embed modal functions
+    function buildEmbedUrl() {
+      let url = linkUrl + '/embed';
+      const params = [];
+      if (embedSize === 'large' && isCollection) params.push('size=large');
+      if (embedBg) params.push('bg=' + embedBg.replace('#', ''));
+      if (params.length > 0) url += '?' + params.join('&');
+      return url;
+    }
+
+    function getEmbedDimensions() {
+      if (embedSize === 'large' && isCollection) {
+        const trackCount = (linkData.tracks || []).length;
+        const height = Math.min(280 + trackCount * 44, 600);
+        return { width: 600, height: height };
+      }
+      return { width: 400, height: 152 };
+    }
+
+    function updateEmbedPreview() {
+      const url = buildEmbedUrl();
+      const dims = getEmbedDimensions();
+      const iframe = document.getElementById('embed-preview-iframe');
+      iframe.src = url;
+      iframe.width = dims.width;
+      iframe.height = dims.height;
+      iframe.style.maxWidth = '100%';
+
+      const code = '<iframe src="' + url + '" width="' + dims.width + '" height="' + dims.height + '" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"><\\/iframe>';
+      document.getElementById('embed-code-display').textContent = code.replace('<\\/iframe>', '</iframe>');
+
+      // Reset copy button
+      const btn = document.getElementById('embed-copy-btn');
+      btn.textContent = 'Copy Embed Code';
+      btn.classList.remove('copied');
+    }
+
+    function openEmbedModal() {
+      document.getElementById('embed-modal-overlay').classList.add('open');
+      updateEmbedPreview();
+    }
+
+    function closeEmbedModal() {
+      document.getElementById('embed-modal-overlay').classList.remove('open');
+    }
+
+    function setEmbedSize(size) {
+      embedSize = size;
+      document.querySelectorAll('.embed-size-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('size-' + size).classList.add('active');
+      updateEmbedPreview();
+    }
+
+    function setEmbedBg(color) {
+      embedBg = color;
+      document.getElementById('embed-color-picker').value = color;
+      document.getElementById('embed-color-hex').value = color;
+      updateEmbedPreview();
+    }
+
+    function setEmbedBgHex(val) {
+      val = val.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        setEmbedBg(val);
+      }
+    }
+
+    function resetEmbedBg() {
+      embedBg = null;
+      document.getElementById('embed-color-picker').value = '#1a1a1a';
+      document.getElementById('embed-color-hex').value = '#1a1a1a';
+      updateEmbedPreview();
+    }
+
+    function copyEmbedCode() {
+      const code = document.getElementById('embed-code-display').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('embed-copy-btn');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy Embed Code';
+          btn.classList.remove('copied');
+        }, 2000);
+      }).catch(() => {
+        window.prompt('Copy this embed code:', code);
+      });
+    }
+
     connectToParachord();
   </script>
 </body>
 </html>`;
 }
 
-export function generateLargeEmbedHtml(data, linkId, baseUrl) {
+export function generateLargeEmbedHtml(data, linkId, baseUrl, options = {}) {
   const { title, artist, albumArt, type, urls, tracks, creator } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
   const isPlaylist = type === 'playlist';
@@ -650,6 +990,9 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
   const typeLabel = isPlaylist ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
   const trackCount = isCollection ? tracks.length : 0;
   const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
+
+  // Custom background color from query param (hex without #)
+  const bgColor = options.bg ? `#${escapeHtml(options.bg.replace(/[^a-fA-F0-9]/g, '').slice(0, 6))}` : null;
 
   // For playlists, collect unique album art URLs for a 2x2 mosaic
   const playlistCovers = isPlaylist && tracks ? [...new Set(tracks.map(t => t.albumArt).filter(Boolean))].slice(0, 4) : [];
@@ -671,9 +1014,9 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
-      --bg-primary: #0f0f0f;
-      --bg-secondary: #1a1a1a;
-      --bg-tertiary: #252525;
+      --bg-primary: ${bgColor || '#0f0f0f'};
+      --bg-secondary: ${bgColor ? `color-mix(in srgb, ${bgColor} 85%, #fff)` : '#1a1a1a'};
+      --bg-tertiary: ${bgColor ? `color-mix(in srgb, ${bgColor} 70%, #fff)` : '#252525'};
       --text-primary: #ffffff;
       --text-secondary: #a0a0a0;
       --accent: #8b5cf6;
@@ -1069,7 +1412,7 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl) {
 </html>`;
 }
 
-export function generateEmbedHtml(data, linkId, baseUrl) {
+export function generateEmbedHtml(data, linkId, baseUrl, options = {}) {
   const { title, artist, albumArt, type, urls, tracks } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
   const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
@@ -1077,6 +1420,9 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
 
   // Find the first available service URL for fallback
   const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
+
+  // Custom background color from query param (hex without #)
+  const bgColor = options.bg ? `#${escapeHtml(options.bg.replace(/[^a-fA-F0-9]/g, '').slice(0, 6))}` : '#1a1a1a';
 
   // For collections, show subtitle with track count
   const subtitle = isCollection
@@ -1092,7 +1438,7 @@ export function generateEmbedHtml(data, linkId, baseUrl) {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a1a;
+      background: ${bgColor};
       color: #fff;
       height: 152px;
       overflow: hidden;
