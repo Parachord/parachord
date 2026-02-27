@@ -45885,33 +45885,41 @@ useEffect(() => {
             ),
             React.createElement('div', { className: 'flex-1 w-24 flex items-center' },
               (() => {
-                // Check if current track is Spotify (seeking not supported)
-                const isSpotifyTrack = currentTrack && (currentTrack.sources?.spotify || currentTrack.spotifyUri || currentTrack.resolver === 'spotify');
-                const isAppleMusicTrack = currentTrack && (currentTrack.sources?.applemusic || currentTrack._activeResolver === 'applemusic');
-                const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyTrack;
+                // Check active resolver to determine seek support
+                const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
+                const isSpotifyActive = activeResolver === 'spotify';
+                const isAppleMusicActive = activeResolver === 'applemusic';
+                const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyActive;
 
-                return React.createElement('input', {
+                const seekTooltip = isSeekDisabled
+                  ? (isSpotifyActive ? 'Seeking not available for Spotify tracks' : undefined)
+                  : undefined;
+
+                const slider = React.createElement('input', {
                   type: 'range',
                   min: '0',
                   max: currentTrack?.duration || 100,
                   value: currentTrack && !browserPlaybackActive ? progress : 0,
                   disabled: isSeekDisabled,
                   onChange: async (e) => {
-                    if (browserPlaybackActive || !currentTrack || isSpotifyTrack) return;
+                    if (browserPlaybackActive || !currentTrack || isSpotifyActive) return;
                     const newPosition = Number(e.target.value);
                     setProgress(newPosition);
                     // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
-                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?._activeResolver === 'soundcloud') && audioRef.current) {
+                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
                     }
                     // Handle seeking for Apple Music
-                    if (isAppleMusicTrack && window.electron?.musicKit?.seek) {
+                    if (isAppleMusicActive && window.electron?.musicKit?.seek) {
                       await window.electron.musicKit.seek(newPosition);
                     }
                   },
-                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`,
-                  title: isSpotifyTrack ? 'Seeking not available for Spotify tracks' : undefined
+                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
                 });
+
+                return seekTooltip
+                  ? React.createElement(Tooltip, { content: seekTooltip, position: 'top', variant: 'dark' }, slider)
+                  : slider;
               })()
             ),
             React.createElement('span', {
