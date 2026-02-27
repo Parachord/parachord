@@ -561,7 +561,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 result = try await bridge.skipToPrevious()
 
             case "seek":
-                guard let position = params["position"] as? Double else {
+                // Accept both Int and Double: JSON "30" decodes as Int via AnyCodable,
+                // but Swift's `as? Double` can't coerce Int, so we need to check both.
+                let position: Double
+                if let d = params["position"] as? Double {
+                    position = d
+                } else if let i = params["position"] as? Int {
+                    position = Double(i)
+                } else {
                     return Response(id: request.id, success: false, data: nil, error: "Missing position parameter")
                 }
                 result = bridge.seek(position: position)
@@ -579,7 +586,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 result = try await bridge.addToQueue(songId: songId)
 
             case "setVolume":
-                guard let volume = params["volume"] as? Double else {
+                let volume: Double
+                if let d = params["volume"] as? Double {
+                    volume = d
+                } else if let i = params["volume"] as? Int {
+                    volume = Double(i)
+                } else {
                     return Response(id: request.id, success: false, data: nil, error: "Missing volume parameter")
                 }
                 result = bridge.setVolume(Float(volume))
