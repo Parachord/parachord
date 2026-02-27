@@ -45397,7 +45397,7 @@ useEffect(() => {
                     color: '#374151',
                     marginBottom: '8px'
                   }
-                }, 'Version 1.0.0'),
+                }, appVersion ? `Version ${appVersion}` : 'Version'),
 
                 // Tagline
                 React.createElement('p', {
