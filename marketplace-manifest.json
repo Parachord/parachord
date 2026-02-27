@@ -385,6 +385,54 @@
         "discography",
         "vinyl"
       ]
+    },
+    {
+      "id": "bandsintown",
+      "name": "Bandsintown",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Discover upcoming concerts and buy tickets for artists you love. Powered by Bandsintown.",
+      "icon": "🎤",
+      "color": "#00B4B3",
+      "homepage": "https://www.bandsintown.com",
+      "capabilities": {
+        "concerts": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/bandsintown.axe",
+      "category": "concerts",
+      "tags": [
+        "concerts",
+        "tickets",
+        "live-music",
+        "events",
+        "tours"
+      ]
+    },
+    {
+      "id": "songkick",
+      "name": "Songkick",
+      "type": "meta-service",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Find live music events and concerts near you. Powered by Songkick.",
+      "icon": "🎶",
+      "color": "#F80046",
+      "homepage": "https://www.songkick.com",
+      "capabilities": {
+        "concerts": true
+      },
+      "requiresAuth": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/songkick.axe",
+      "category": "concerts",
+      "tags": [
+        "concerts",
+        "tickets",
+        "live-music",
+        "events",
+        "festivals"
+      ]
     }
   ],
   "categories": [
@@ -393,6 +441,7 @@
     "metadata",
     "social",
     "local",
-    "ai"
+    "ai",
+    "concerts"
   ]
 }
