@@ -1,0 +1,33 @@
+{
+  "manifest": {
+    "id": "seatgeek",
+    "name": "SeatGeek",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Find concerts and live events with ticket info. Powered by SeatGeek.",
+    "icon": "🎫",
+    "color": "#4DB84D",
+    "homepage": "https://seatgeek.com"
+  },
+  "capabilities": {
+    "concerts": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "clientId": {
+        "type": "text",
+        "label": "Client ID",
+        "description": "Your SeatGeek API client ID from https://seatgeek.com/account/develop",
+        "placeholder": "your-client-id",
+        "required": true
+      }
+    }
+  },
+  "implementation": {
+    "searchArtistEvents": "async function(artistName, config) {\n  if (!config.clientId) {\n    throw new Error('SeatGeek Client ID is required. Get one at https://seatgeek.com/account/develop');\n  }\n\n  // Step 1: Search for the performer to get their slug\n  const searchUrl = `https://api.seatgeek.com/2/performers?q=${encodeURIComponent(artistName)}&client_id=${encodeURIComponent(config.clientId)}`;\n\n  const searchResponse = await fetch(searchUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!searchResponse.ok) {\n    if (searchResponse.status === 404) return [];\n    throw new Error(`SeatGeek API error: ${searchResponse.status}`);\n  }\n\n  const searchData = await searchResponse.json();\n  const performers = searchData.performers;\n  if (!performers || performers.length === 0) return [];\n\n  // Find best match (case-insensitive)\n  const normalizedQuery = artistName.toLowerCase().trim();\n  const match = performers.find(p => p.name.toLowerCase().trim() === normalizedQuery) || performers[0];\n  const performerSlug = match.slug;\n\n  // Step 2: Get upcoming events for this performer\n  const now = new Date().toISOString().split('T')[0];\n  const eventsUrl = `https://api.seatgeek.com/2/events?performers.slug=${encodeURIComponent(performerSlug)}&datetime_utc.gte=${now}&sort=datetime_utc.asc&per_page=50&client_id=${encodeURIComponent(config.clientId)}`;\n\n  const eventsResponse = await fetch(eventsUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!eventsResponse.ok) {\n    if (eventsResponse.status === 404) return [];\n    throw new Error(`SeatGeek API error: ${eventsResponse.status}`);\n  }\n\n  const eventsData = await eventsResponse.json();\n  const events = eventsData.events;\n  if (!events || events.length === 0) return [];\n\n  return events.map(event => {\n    const venue = event.venue || {};\n    const location = venue.location || {};\n\n    return {\n      id: `sg-${event.id}`,\n      source: 'seatgeek',\n      artist: artistName,\n      title: event.title || event.short_title || `${artistName} live`,\n      datetime: event.datetime_local || event.datetime_utc || null,\n      date: event.datetime_local ? event.datetime_local.split('T')[0] : (event.datetime_utc ? event.datetime_utc.split('T')[0] : null),\n      venue: {\n        name: venue.name || 'TBA',\n        city: venue.city || '',\n        region: venue.state || '',\n        country: venue.country || '',\n        latitude: location.lat ? parseFloat(location.lat) : null,\n        longitude: location.lon ? parseFloat(location.lon) : null\n      },\n      lineup: (event.performers || []).map(p => p.name),\n      ticketUrl: event.url,\n      url: event.url,\n      onSale: event.stats && event.stats.listing_count > 0,\n      description: event.type || ''\n    };\n  });\n}",
+    "searchArtist": "async function(artistName, config) {\n  if (!config.clientId) {\n    throw new Error('SeatGeek Client ID is required');\n  }\n\n  const searchUrl = `https://api.seatgeek.com/2/performers?q=${encodeURIComponent(artistName)}&client_id=${encodeURIComponent(config.clientId)}`;\n\n  const searchResponse = await fetch(searchUrl, {\n    headers: { 'Accept': 'application/json' }\n  });\n\n  if (!searchResponse.ok) {\n    if (searchResponse.status === 404) return null;\n    throw new Error(`SeatGeek API error: ${searchResponse.status}`);\n  }\n\n  const searchData = await searchResponse.json();\n  const performers = searchData.performers;\n  if (!performers || performers.length === 0) return null;\n\n  const normalizedQuery = artistName.toLowerCase().trim();\n  const match = performers.find(p => p.name.toLowerCase().trim() === normalizedQuery) || performers[0];\n\n  return {\n    id: match.id,\n    name: match.name,\n    slug: match.slug,\n    url: match.url,\n    imageUrl: match.image,\n    hasUpcomingEvents: match.has_upcoming_events,\n    score: match.score\n  };\n}"
+  }
+}
