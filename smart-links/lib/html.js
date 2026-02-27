@@ -1413,10 +1413,11 @@ export function generateLargeEmbedHtml(data, linkId, baseUrl, options = {}) {
 }
 
 export function generateEmbedHtml(data, linkId, baseUrl, options = {}) {
-  const { title, artist, albumArt, type, urls, tracks } = data;
+  const { title, artist, creator, albumArt, type, urls, tracks } = data;
   const linkUrl = `${baseUrl}/${linkId}`;
   const isCollection = (type === 'album' || type === 'playlist') && tracks && tracks.length > 0;
-  const typeLabel = type === 'playlist' ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
+  const isPlaylist = type === 'playlist';
+  const typeLabel = isPlaylist ? 'Playlist' : (type === 'album' ? 'Album' : 'Track');
 
   // Find the first available service URL for fallback
   const firstUrl = SERVICES.map(s => urls?.[s.id]).find(Boolean);
@@ -1424,9 +1425,10 @@ export function generateEmbedHtml(data, linkId, baseUrl, options = {}) {
   // Custom background color from query param (hex without #)
   const bgColor = options.bg ? `#${escapeHtml(options.bg.replace(/[^a-fA-F0-9]/g, '').slice(0, 6))}` : '#1a1a1a';
 
-  // For collections, show subtitle with track count
+  // For collections, show subtitle with track count; playlists use creator (playlist author), albums use artist
+  const displayArtist = isPlaylist && creator ? creator : artist;
   const subtitle = isCollection
-    ? `${artist ? escapeHtml(artist) + ' · ' : ''}${typeLabel} · ${tracks.length} tracks`
+    ? `${displayArtist ? escapeHtml(displayArtist) + ' · ' : ''}${typeLabel} · ${tracks.length} tracks`
     : (artist ? escapeHtml(artist) : '');
 
   return `<!DOCTYPE html>
