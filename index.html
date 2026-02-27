@@ -321,6 +321,23 @@
       transform: translateX(-50%) translateY(0);
     }
 
+    /* Top-end: right-aligned to prevent overflow at right edge of window */
+    .tooltip-top-end {
+      bottom: calc(100% + 8px);
+      right: 0;
+      transform: translateY(4px);
+    }
+
+    .tooltip-top-end::before {
+      bottom: -4px;
+      right: 12px;
+      transform: rotate(45deg);
+    }
+
+    .tooltip-container:hover .tooltip-top-end {
+      transform: translateY(0);
+    }
+
     .tooltip-bottom {
       top: calc(100% + 8px);
       left: 50%;
