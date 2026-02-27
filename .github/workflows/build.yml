@@ -106,6 +106,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Cache electron-builder binary downloads (NSIS, winCodeSign, electron zip)
+      # to avoid transient GitHub download failures during the build step.
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron-builder\Cache
+            ~/Library/Caches/electron-builder
+            ~/.cache/electron-builder
+          key: electron-builder-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-builder-cache-${{ runner.os }}-
+
       # Wrap codesign with retry logic for transient Apple timestamp server failures
       - name: Setup codesign retry wrapper
         if: matrix.platform == 'mac'
