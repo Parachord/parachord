@@ -42171,15 +42171,22 @@ useEffect(() => {
             // Source filter dropdown
             React.createElement('div', { className: 'relative' },
               (() => {
-                // Build options list once for both display and dropdown
+                // Build options from sources that actually returned results
                 const sourceOptions = [{ value: 'all', label: 'All Sources' }];
-                const dedicatedServices = getConcertServices();
-                const aiServices = getAiConcertServices();
-                for (const s of dedicatedServices) {
-                  sourceOptions.push({ value: s.id, label: s.name || s.id });
-                }
-                for (const s of aiServices) {
-                  sourceOptions.push({ value: `ai:${s.id}`, label: s.name || s.id });
+                const seenSources = new Set();
+                for (const event of concerts) {
+                  if (event.source === 'ai' && event.aiProvider) {
+                    const key = `ai:${event.aiProvider}`;
+                    if (!seenSources.has(key)) {
+                      seenSources.add(key);
+                      sourceOptions.push({ value: key, label: event.aiProviderName || event.aiProvider });
+                    }
+                  } else if (event.source && !seenSources.has(event.source)) {
+                    seenSources.add(event.source);
+                    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+                    const resolver = allResolvers.find(r => r.id === event.source);
+                    sourceOptions.push({ value: event.source, label: resolver?.name || event.source });
+                  }
                 }
                 const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
 
