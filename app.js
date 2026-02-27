@@ -51125,40 +51125,40 @@ useEffect(() => {
           // Release highlights
           [
             {
-              iconPath: 'M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839-1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4',
+              iconPath: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
               filled: false,
-              title: 'Browser Extension v0.3.0',
-              text: 'Native messaging for Chrome & Firefox — secure, local-only communication'
-            },
-            {
-              iconPath: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
-              filled: false,
-              title: 'Smart Links — Large Embed',
-              text: '600px embed player with album art, Play All, and full tracklist'
-            },
-            {
-              iconPath: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
-              filled: false,
-              title: 'Universal Mac Build',
-              text: 'DMG now includes both Intel and Apple Silicon'
+              title: 'Friends Listening Status',
+              text: 'See what friends are playing on the Home tab with listen-along and context menus'
             },
             {
               iconPath: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
               filled: false,
-              title: 'Spotify Sync',
-              text: 'Synced tracks carry source data — skips redundant API lookups'
+              title: 'Apple Music Playback',
+              text: 'Fixed playback, seeking, and progress bar across all three playback paths'
             },
             {
-              iconPath: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z',
+              iconPath: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4',
               filled: false,
-              title: 'Fresh Drops Reliability',
-              text: 'Cache persistence fixed, faster loading, and upcoming release badges'
+              title: 'Smart Link Embed Modal',
+              text: 'Customize and preview embed codes directly on the smart link page'
+            },
+            {
+              iconPath: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
+              filled: false,
+              title: 'Copy Parachord:// Links',
+              text: 'Right-click any page header to copy a deep link for sharing'
+            },
+            {
+              iconPath: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+              filled: false,
+              title: 'Album Cover Art Fix',
+              text: 'Fixed cover art disappearing after Fresh Drops refresh and cache improvements'
             },
             {
               iconPath: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
               filled: false,
               title: 'Bug Fixes',
-              text: 'Queue restore, Spotify sync, playlist handling, and cache fixes'
+              text: 'Volume tooltip, chat scroll, track removal, AI suggestions, and friend sorting'
             }
           ].map((item, i) =>
             React.createElement('div', {
