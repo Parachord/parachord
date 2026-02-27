@@ -23928,6 +23928,36 @@ ${tracks}
       const allEvents = [];
       const seenEventKeys = new Set();
 
+      // Normalize a string for dedup comparison: lowercase, strip common
+      // suffixes/punctuation, collapse whitespace so "Madison Square Garden"
+      // matches "Madison Square Garden, New York" from another source.
+      const normalizeForDedup = (str) =>
+        (str || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
+      // Build a dedup key that's resilient to minor venue name differences
+      // across providers.  Two events match if same date + same artist AND
+      // either (a) venue names share a long common prefix, or (b) both
+      // have lat/lng within ~1 km.
+      const makeEventKey = (event, artistName) => {
+        const date = event.date || '';
+        const artist = normalizeForDedup(artistName);
+        // Use first 20 chars of normalized venue as the key — long enough
+        // to distinguish venues but short enough to collapse minor trailing
+        // differences like city/state suffixes.
+        const venuePrefix = normalizeForDedup(event.venue?.name).slice(0, 20);
+        return `${date}-${artist}-${venuePrefix}`;
+      };
+
+      // Secondary dedup: same date + artist + geo-proximity (within ~2 km)
+      const geoKey = (event, artistName) => {
+        if (!event.venue?.latitude || !event.venue?.longitude) return null;
+        const lat = Math.round(event.venue.latitude * 50) / 50; // ~2 km buckets
+        const lng = Math.round(event.venue.longitude * 50) / 50;
+        return `${event.date || ''}-${normalizeForDedup(artistName)}-${lat},${lng}`;
+      };
+
+      const seenGeoKeys = new Set();
+
       // Query each concert service for each artist (with rate limiting)
       for (const artist of artistList) {
         for (const service of concertServices) {
@@ -23936,12 +23966,17 @@ ${tracks}
             const events = await service.searchArtistEvents(artist.name, config);
             if (events && events.length > 0) {
               for (const event of events) {
-                // Deduplicate by date + venue + artist
-                const eventKey = `${event.date || ''}-${event.venue?.name || ''}-${artist.name.toLowerCase()}`;
-                if (!seenEventKeys.has(eventKey)) {
-                  seenEventKeys.add(eventKey);
-                  allEvents.push(event);
-                }
+                // Primary dedup: date + artist + venue name prefix
+                const key = makeEventKey(event, artist.name);
+                if (seenEventKeys.has(key)) continue;
+
+                // Secondary dedup: date + artist + geo-proximity
+                const gk = geoKey(event, artist.name);
+                if (gk && seenGeoKeys.has(gk)) continue;
+
+                seenEventKeys.add(key);
+                if (gk) seenGeoKeys.add(gk);
+                allEvents.push(event);
               }
             }
           } catch (e) {
