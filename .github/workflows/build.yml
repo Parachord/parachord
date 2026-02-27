@@ -155,14 +155,13 @@ jobs:
         run: |
           cd dist
           label="${{ matrix.arch_label }}"
-          for f in *.dmg *.zip *.blockmap *.yml; do
+          # Rename binary artifacts only (not the YAML manifests electron-updater needs)
+          for f in *.dmg *.zip *.blockmap; do
             [ -e "$f" ] || continue
             newname="$f"
             if [ "${{ matrix.arch }}" = "arm64" ]; then
-              # arm64 files have "-arm64" in the name — replace with label
               newname=$(echo "$f" | sed "s/-arm64/-${label}/g")
             elif [ "${{ matrix.arch }}" = "x64" ]; then
-              # x64 files have NO arch suffix — inject the label before the extension
               newname=$(echo "$f" | sed \
                 "s/\.dmg\.blockmap$/-${label}.dmg.blockmap/
                  s/\.dmg$/-${label}.dmg/
@@ -172,6 +171,20 @@ jobs:
               mv "$f" "$newname"
               echo "Renamed $f -> $newname"
             fi
+          done
+          # Update filenames inside the YAML manifests so electron-updater
+          # downloads the renamed artifacts instead of 404ing.
+          for yml in latest-mac*.yml; do
+            [ -e "$yml" ] || continue
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              sed -i "s/-arm64/-${label}/g" "$yml"
+            elif [ "${{ matrix.arch }}" = "x64" ]; then
+              sed -i \
+                "s/\.dmg\.blockmap/-${label}.dmg.blockmap/g
+                 s/\.dmg/-${label}.dmg/g
+                 s/-mac\.zip/-${label}-mac.zip/g" "$yml"
+            fi
+            echo "Updated references in $yml"
           done
 
       - name: Upload artifacts
