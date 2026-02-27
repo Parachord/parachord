@@ -24018,21 +24018,24 @@ ${tracks}
 
           const artistNames = artistList.map(a => a.name).join(', ');
           const today = new Date().toISOString().split('T')[0];
-          const prompt = `I need upcoming concert dates for these artists: ${artistNames}
+          const currentYear = new Date().getFullYear();
+          const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
 
-Return ONLY a JSON array of upcoming concert events you know about. Each event should have these fields:
+Today's date is ${today}. Share any concert dates, announced tours, festival lineups, residencies, or live events you know about from ${currentYear} onward for these artists. Include events from known annual festivals (Coachella, Glastonbury, Lollapalooza, etc.) if these artists are on the lineup. If an artist has announced a tour, include the dates you know about.
+
+Return ONLY a JSON array. Each event object should have:
 - "artist": artist name
-- "title": event title (e.g. "Artist Name at Venue")
-- "date": date in YYYY-MM-DD format
+- "title": event title (e.g. "Artist Name at Venue" or "Festival Name 2026")
+- "date": date in YYYY-MM-DD format (use your best estimate if only month is known, e.g. first of the month)
 - "venue": object with "name", "city", "region", "country"
-- "url": ticket URL if known, or empty string
-- "description": brief note about the event
+- "url": ticket or event URL if known, or empty string
+- "description": brief note (e.g. "Part of World Tour 2026", "Festival headliner")
 
-Only include events from ${today} onward. If you don't know of any upcoming events for an artist, omit them. Return an empty array [] if you have no concert data. Return ONLY the JSON array, no other text.`;
+Return ONLY the JSON array, no other text.`;
 
           const config = metaServiceConfigs[aiService.id] || {};
           const messages = [
-            { role: 'system', content: 'You are a music events assistant. Return only valid JSON arrays of concert events. Do not fabricate events - only return concerts you are confident about.' },
+            { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
             { role: 'user', content: prompt }
           ];
 
