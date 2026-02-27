@@ -28020,6 +28020,75 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // Build a parachord:// deep link for the current page and tab
+  const getParachordLink = () => {
+    switch (activeView) {
+      case 'home':
+        return 'parachord://home';
+      case 'artist':
+        if (currentArtist?.name) {
+          const encoded = encodeURIComponent(currentArtist.name);
+          if (currentRelease) {
+            return `parachord://album/${encoded}/${encodeURIComponent(currentRelease.title)}`;
+          }
+          if (artistPageTab && artistPageTab !== 'music') {
+            return `parachord://artist/${encoded}/${artistPageTab}`;
+          }
+          return `parachord://artist/${encoded}`;
+        }
+        return 'parachord://home';
+      case 'library':
+        return collectionTab ? `parachord://library/${collectionTab}` : 'parachord://library';
+      case 'history': {
+        const tabMap = { topTracks: 'top-tracks', topAlbums: 'top-albums', topArtists: 'top-artists', recent: 'recent' };
+        const seg = tabMap[historyTab] || '';
+        const period = historyPeriod && historyPeriod !== '7day' ? `?period=${historyPeriod}` : '';
+        return `parachord://history${seg ? '/' + seg : ''}${period}`;
+      }
+      case 'friendHistory': {
+        if (currentFriend) {
+          const id = currentFriend.username || currentFriend.id || currentFriend.name;
+          const tabMap = { topTracks: 'top-tracks', topArtists: 'top-artists', recent: 'recent' };
+          const seg = tabMap[friendHistoryTab] || '';
+          return `parachord://friend/${encodeURIComponent(id)}${seg ? '/' + seg : ''}`;
+        }
+        return 'parachord://home';
+      }
+      case 'recommendations':
+        return recommendationsTab ? `parachord://recommendations/${recommendationsTab}` : 'parachord://recommendations';
+      case 'discover':
+        return 'parachord://charts';
+      case 'critics-picks':
+        return 'parachord://critics-picks';
+      case 'new-releases':
+        return 'parachord://new-releases';
+      case 'search':
+        return searchQuery ? `parachord://search?q=${encodeURIComponent(searchQuery)}` : 'parachord://search';
+      case 'playlists':
+        return 'parachord://playlists';
+      case 'playlist-view':
+        if (selectedPlaylist) {
+          return `parachord://playlist/${encodeURIComponent(selectedPlaylist.id || selectedPlaylist.name)}`;
+        }
+        return 'parachord://playlists';
+      case 'settings':
+        return settingsTab ? `parachord://settings/${settingsTab}` : 'parachord://settings';
+      default:
+        return 'parachord://home';
+    }
+  };
+
+  // Right-click handler for page headers — copies parachord:// link to clipboard
+  const copyParachordLink = (e) => {
+    e.preventDefault();
+    const link = getParachordLink();
+    navigator.clipboard.writeText(link).then(() => {
+      showToast(`Copied ${link}`, 'success');
+    }).catch(() => {
+      showToast('Failed to copy link', 'error');
+    });
+  };
+
   const navigateBack = () => {
     // If we're viewing a release/album opened directly (not from artist browsing),
     // close it and navigate back in one step
@@ -32921,7 +32990,8 @@ useEffect(() => {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, currentArtist.name),
               // Star button to add/remove artist from collection (absolute positioned wrapper)
               (() => {
@@ -33044,6 +33114,7 @@ useEffect(() => {
                   lineHeight: '1.2'
                 },
                 onClick: () => setIsHeaderCollapsed(false),
+                onContextMenu: copyParachordLink,
                 title: 'Click to expand'
               }, currentArtist.name),
               // Star button to add/remove artist from collection
@@ -34693,7 +34764,8 @@ useEffect(() => {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.1em',
                 textTransform: 'uppercase'
-              }
+              },
+              onContextMenu: copyParachordLink
             }, selectedPlaylist.title)
           )
         ),
@@ -35724,7 +35796,8 @@ useEffect(() => {
                 textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                 letterSpacing: '0.3em',
                 textTransform: 'uppercase'
-              }
+              },
+              onContextMenu: copyParachordLink
             }, 'PLAYLISTS'),
             React.createElement('div', {
               className: 'flex items-center gap-1 mt-6',
@@ -35753,7 +35826,8 @@ useEffect(() => {
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase'
-              }
+              },
+              onContextMenu: copyParachordLink
             }, 'PLAYLISTS')
           )
         ),
@@ -36487,7 +36561,8 @@ useEffect(() => {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'HOME'),
               // Subtitle with stats
               React.createElement('p', {
@@ -36505,7 +36580,8 @@ useEffect(() => {
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'HOME'),
               // Parachord wordmark on the right
               React.createElement('img', {
@@ -38187,7 +38263,8 @@ useEffect(() => {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'COLLECTION'),
                 // Stats row as tabs (matching Artist page styling)
                 React.createElement('div', {
@@ -38248,7 +38325,8 @@ useEffect(() => {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'COLLECTION'),
                 // Tabs (next to title, like artist page)
                 React.createElement('div', {
@@ -39316,7 +39394,8 @@ useEffect(() => {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'POP OF THE TOPS'),
                 // Tab switcher (Albums | Songs)
                 React.createElement('div', {
@@ -39371,7 +39450,8 @@ useEffect(() => {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'POP OF THE TOPS'),
                 // Inline tab switcher
                 React.createElement('div', {
@@ -40144,7 +40224,8 @@ useEffect(() => {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'FRESH DROPS'),
                 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
@@ -40172,7 +40253,8 @@ useEffect(() => {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'FRESH DROPS'),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
@@ -40646,7 +40728,8 @@ useEffect(() => {
                     textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                     letterSpacing: '0.3em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'CRITICAL DARLINGS'),
                 React.createElement('div', {
                   className: 'flex items-center gap-1 mt-6',
@@ -40674,7 +40757,8 @@ useEffect(() => {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, 'CRITICAL DARLINGS'),
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
@@ -41122,7 +41206,8 @@ useEffect(() => {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'RECOMMENDATIONS'),
               // Tabs in expanded state
               React.createElement('div', {
@@ -41172,7 +41257,8 @@ useEffect(() => {
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'RECOMMENDATIONS'),
               // Tabs (next to title, like artist page)
               React.createElement('div', {
@@ -41715,7 +41801,8 @@ useEffect(() => {
                   textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                   letterSpacing: '0.3em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'HISTORY'),
               // Tabs in expanded state
               React.createElement('div', {
@@ -41768,7 +41855,8 @@ useEffect(() => {
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase'
-                }
+                },
+                onContextMenu: copyParachordLink
               }, 'HISTORY'),
               React.createElement('div', {
                 className: 'flex items-center gap-1',
@@ -42728,7 +42816,8 @@ useEffect(() => {
                       textShadow: '0 2px 20px rgba(0,0,0,0.5)',
                       letterSpacing: '0.2em',
                       textTransform: 'uppercase'
-                    }
+                    },
+                    onContextMenu: copyParachordLink
                   }, currentFriend.displayName),
                   // On-air badge
                   isOnAir(currentFriend) && React.createElement('span', {
@@ -42802,7 +42891,8 @@ useEffect(() => {
                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                     letterSpacing: '0.2em',
                     textTransform: 'uppercase'
-                  }
+                  },
+                  onContextMenu: copyParachordLink
                 }, currentFriend.displayName),
                 // On-air dot
                 isOnAir(currentFriend) && React.createElement('span', {
@@ -43449,7 +43539,8 @@ useEffect(() => {
                 letterSpacing: '0.1em',
                 color: '#9ca3af',
                 textTransform: 'uppercase'
-              }
+              },
+              onContextMenu: copyParachordLink
             }, 'Settings'),
             React.createElement('button', {
               onClick: () => navigateBack(),
