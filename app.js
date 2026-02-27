@@ -45887,7 +45887,7 @@ useEffect(() => {
               className: 'flex items-center gap-1'
             },
               React.createElement(Tooltip, {
-                content: isMuted ? 'Unmute' : 'Mute',
+                content: getTooltip(),
                 position: 'top',
                 variant: 'dark'
               },
@@ -45908,13 +45908,18 @@ useEffect(() => {
                   )
                 )
               ),
-              React.createElement('input', {
-                type: 'range',
-                min: '0',
-                max: '100',
-                value: effectiveVolume,
-                disabled: isDisabled,
-                onChange: (e) => {
+              React.createElement(Tooltip, {
+                content: getTooltip(),
+                position: 'top',
+                variant: 'dark'
+              },
+                React.createElement('input', {
+                  type: 'range',
+                  min: '0',
+                  max: '100',
+                  value: effectiveVolume,
+                  disabled: isDisabled,
+                  onChange: (e) => {
                     const newVolume = Number(e.target.value);
                     // If user moves slider while muted, unmute
                     if (isMuted && newVolume > 0) {
@@ -45938,7 +45943,8 @@ useEffect(() => {
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
-              })
+                })
+              )
             );
           })()
         )
