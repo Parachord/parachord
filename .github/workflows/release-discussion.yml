@@ -1,0 +1,120 @@
+name: Sync Releases to Discussions
+
+on:
+  release:
+    types: [published, deleted]
+
+permissions:
+  contents: read
+  discussions: write
+
+jobs:
+  create-discussion:
+    if: github.event.action == 'published'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create discussion from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TITLE: ${{ github.event.release.name || github.event.release.tag_name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_NODE_ID: ${{ github.event.repository.node_id }}
+        run: |
+          # Fetch the discussion category ID for "Announcements"
+          CATEGORY_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                discussionCategories(first: 25) {
+                  nodes {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          ' -f owner="$REPO_OWNER" \
+            -f name="$REPO_NAME" \
+            --jq '.data.repository.discussionCategories.nodes[] | select(.name == "Announcements") | .id')
+
+          if [ -z "$CATEGORY_ID" ]; then
+            echo "::error::No 'Announcements' discussion category found. Please create one in your repository's Discussions settings."
+            exit 1
+          fi
+
+          echo "Found Announcements category: $CATEGORY_ID"
+
+          # Build the discussion body
+          BODY=$(printf '%s\n\n---\n\n[View the full release on GitHub](%s)' "$RELEASE_BODY" "$RELEASE_URL")
+
+          # Create the discussion via GraphQL
+          DISCUSSION_URL=$(gh api graphql -f query='
+            mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+              createDiscussion(input: {
+                repositoryId: $repositoryId,
+                categoryId: $categoryId,
+                title: $title,
+                body: $body
+              }) {
+                discussion {
+                  url
+                }
+              }
+            }
+          ' -f repositoryId="$REPO_NODE_ID" \
+            -f categoryId="$CATEGORY_ID" \
+            -f title="$RELEASE_TITLE" \
+            -f body="$BODY" \
+            --jq '.data.createDiscussion.discussion.url')
+
+          echo "Discussion created: $DISCUSSION_URL"
+
+  delete-discussion:
+    if: github.event.action == 'deleted'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and delete matching discussion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TITLE: ${{ github.event.release.name || github.event.release.tag_name }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          # Search for the discussion by exact title in this repo
+          DISCUSSION_ID=$(gh api graphql -f query='
+            query($query: String!) {
+              search(query: $query, type: DISCUSSION, first: 5) {
+                nodes {
+                  ... on Discussion {
+                    id
+                    title
+                    category { name }
+                    repository { nameWithOwner }
+                  }
+                }
+              }
+            }
+          ' -f query="repo:${REPO_OWNER}/${REPO_NAME} in:title ${RELEASE_TITLE}" \
+            --jq ".data.search.nodes[] | select(.title == \"${RELEASE_TITLE}\" and .category.name == \"Announcements\") | .id" \
+            | head -1)
+
+          if [ -z "$DISCUSSION_ID" ] || [ "$DISCUSSION_ID" = "null" ]; then
+            echo "No matching Announcements discussion found for: $RELEASE_TITLE"
+            exit 0
+          fi
+
+          echo "Deleting discussion: $DISCUSSION_ID"
+
+          gh api graphql -f query='
+            mutation($id: ID!) {
+              deleteDiscussion(input: { id: $id }) {
+                discussion { title }
+              }
+            }
+          ' -f id="$DISCUSSION_ID"
+
+          echo "Discussion deleted successfully"
