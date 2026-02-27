@@ -29067,6 +29067,35 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           });
 
           showToast('Apple Music connected successfully', 'success');
+
+          // If library sync was previously enabled for Apple Music, trigger an
+          // immediate sync now that we have a valid token (same rationale as Spotify).
+          if (window.electron?.sync?.start) {
+            window.electron.syncSettings?.load().then(syncSettings => {
+              if (syncSettings?.applemusic?.enabled) {
+                console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
+                window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
+                  if (result?.success && result.collection) {
+                    const incoming = {
+                      tracks: result.collection.tracks || [],
+                      albums: result.collection.albums || [],
+                      artists: result.collection.artists || []
+                    };
+                    setCollectionData(prev => {
+                      const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                      const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                      if (netLoss > 50 && lossRatio > 0.1) {
+                        console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
+                        return prev;
+                      }
+                      return incoming;
+                    });
+                  }
+                }).catch(err => console.error('[Sync] Post-auth Apple Music sync failed:', err));
+              }
+            }).catch(() => {});
+          }
+
           return;
         }
       } catch (error) {
@@ -29167,6 +29196,35 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
 
         showToast('Apple Music connected successfully', 'success');
+
+        // If library sync was previously enabled for Apple Music, trigger an
+        // immediate sync now that we have a valid token (same rationale as Spotify).
+        if (window.electron?.sync?.start) {
+          window.electron.syncSettings?.load().then(syncSettings => {
+            if (syncSettings?.applemusic?.enabled) {
+              console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
+              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
+                if (result?.success && result.collection) {
+                  const incoming = {
+                    tracks: result.collection.tracks || [],
+                    albums: result.collection.albums || [],
+                    artists: result.collection.artists || []
+                  };
+                  setCollectionData(prev => {
+                    const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                    const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                    if (netLoss > 50 && lossRatio > 0.1) {
+                      console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
+                      return prev;
+                    }
+                    return incoming;
+                  });
+                }
+              }).catch(err => console.error('[Sync] Post-auth Apple Music sync failed:', err));
+            }
+          }).catch(() => {});
+        }
+
       } else if (authResult.needsSystemSettings) {
         // Previously denied — user must toggle permission in System Settings
         showConfirmDialog({
@@ -29510,6 +29568,36 @@ useEffect(() => {
         return prev;
       });
       console.log('Spotify connected and enabled!');
+
+      // If library sync was previously enabled for Spotify, trigger an immediate
+      // sync now that we have a valid token. This handles the case where the user
+      // switches API keys or re-authenticates — the background sync timer won't
+      // fire until the next 15-minute interval, leaving the collection stale/empty.
+      if (window.electron?.sync?.start) {
+        window.electron.syncSettings?.load().then(syncSettings => {
+          if (syncSettings?.spotify?.enabled) {
+            console.log('[Sync] Spotify re-authenticated with sync enabled, triggering immediate sync');
+            window.electron.sync.start('spotify', { settings: syncSettings.spotify }).then(result => {
+              if (result?.success && result.collection) {
+                const incoming = {
+                  tracks: result.collection.tracks || [],
+                  albums: result.collection.albums || [],
+                  artists: result.collection.artists || []
+                };
+                setCollectionData(prev => {
+                  const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                  const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                  if (netLoss > 50 && lossRatio > 0.1) {
+                    console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
+                    return prev;
+                  }
+                  return incoming;
+                });
+              }
+            }).catch(err => console.error('[Sync] Post-auth sync failed:', err));
+          }
+        }).catch(() => {});
+      }
     });
     window.electron.spotify.onAuthError((error) => {
       console.error('Spotify auth failed:', error);
