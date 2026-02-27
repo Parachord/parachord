@@ -16860,8 +16860,21 @@ ${trackListXml}
   useEffect(() => { openAiChatRef.current = openAiChat; });
   useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
 
+  // Scroll to bottom when chat window is opened (after slide-in animation completes)
+  useEffect(() => {
+    if (aiChatOpen && chatMessagesRef.current) {
+      const timer = setTimeout(() => {
+        if (chatMessagesRef.current) {
+          chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        }
+      }, 220); // Wait for 200ms sidebar slide-in animation to finish
+      return () => clearTimeout(timer);
+    }
+  }, [aiChatOpen]);
+
   // Auto-scroll to keep messages visible when new messages arrive
   useEffect(() => {
+    if (!aiChatOpen) return;
     if (lastAssistantMessageRef.current) {
       // Scroll to show the assistant response from the top
       lastAssistantMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
