@@ -24018,52 +24018,53 @@ ${tracks}
         return true;
       };
 
-      // Query each concert service for each artist (with rate limiting)
-      for (const artist of artistList) {
-        for (const service of concertServices) {
-          try {
-            const config = metaServiceConfigs[service.id] || {};
-            const events = await service.searchArtistEvents(artist.name, config);
-            if (events && events.length > 0) {
-              for (const event of events) {
-                addEventDeduped(event, artist.name);
-              }
-            }
-          } catch (e) {
-            console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
-          }
-        }
-        // Rate limit: small delay between artists to avoid hammering APIs
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      // Query AI services for concert suggestions — batch artists in groups
-      // of 10 for more detailed results per artist
-      if (aiConcertServices.length > 0) {
-        try {
-          let aiService = aiConcertServices[0];
-          if (selectedChatProvider) {
-            const preferred = aiConcertServices.find(s => s.id === selectedChatProvider);
-            if (preferred) aiService = preferred;
-          }
-
-          const today = new Date().toISOString().split('T')[0];
-          const currentYear = new Date().getFullYear();
-          const config = metaServiceConfigs[aiService.id] || {};
-          const providerName = aiService.name || aiService.id;
-
-          // Split artists into batches of 10 for better per-artist coverage
-          const AI_BATCH_SIZE = 10;
-          const artistBatches = [];
-          for (let i = 0; i < artistList.length; i += AI_BATCH_SIZE) {
-            artistBatches.push(artistList.slice(i, i + AI_BATCH_SIZE));
-          }
-
-          let totalAiEvents = 0;
-          for (const batch of artistBatches) {
+      // Run dedicated service queries and AI queries in parallel
+      const dedicatedPromise = (async () => {
+        const dedicatedEvents = [];
+        for (const artist of artistList) {
+          for (const service of concertServices) {
             try {
-              const artistNames = batch.map(a => a.name).join(', ');
-              const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
+              const config = metaServiceConfigs[service.id] || {};
+              const events = await service.searchArtistEvents(artist.name, config);
+              if (events && events.length > 0) {
+                dedicatedEvents.push(...events.map(e => ({ event: e, artist: artist.name })));
+              }
+            } catch (e) {
+              console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
+            }
+          }
+          // Rate limit: small delay between artists to avoid hammering APIs
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        return dedicatedEvents;
+      })();
+
+      // AI queries — batch artists in groups of 15, run all batches in parallel
+      const aiPromise = (async () => {
+        if (aiConcertServices.length === 0) return [];
+
+        let aiService = aiConcertServices[0];
+        if (selectedChatProvider) {
+          const preferred = aiConcertServices.find(s => s.id === selectedChatProvider);
+          if (preferred) aiService = preferred;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const currentYear = new Date().getFullYear();
+        const config = metaServiceConfigs[aiService.id] || {};
+        const providerName = aiService.name || aiService.id;
+
+        // Split artists into batches of 15 for better per-artist coverage
+        const AI_BATCH_SIZE = 15;
+        const artistBatches = [];
+        for (let i = 0; i < artistList.length; i += AI_BATCH_SIZE) {
+          artistBatches.push(artistList.slice(i, i + AI_BATCH_SIZE));
+        }
+
+        // Run all batches in parallel
+        const batchResults = await Promise.allSettled(artistBatches.map(async (batch) => {
+          const artistNames = batch.map(a => a.name).join(', ');
+          const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
 
 Today's date is ${today}. Share any concert dates, announced tours, festival lineups, residencies, or live events you know about from ${currentYear} onward for these artists. Include events from known annual festivals (Coachella, Glastonbury, Lollapalooza, etc.) if these artists are on the lineup. If an artist has announced a tour, include the dates you know about. Aim for multiple events per artist where possible.
 
@@ -24077,54 +24078,61 @@ Return ONLY a JSON array. Each event object should have:
 
 Return ONLY the JSON array, no other text.`;
 
-              const messages = [
-                { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
-                { role: 'user', content: prompt }
-              ];
+          const messages = [
+            { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
+            { role: 'user', content: prompt }
+          ];
 
-              const response = await aiService.chat(messages, [], config);
-              if (response && response.content) {
-                try {
-                  const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-                  const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
-                  if (Array.isArray(aiEvents)) {
-                    for (const aiEvent of aiEvents) {
-                      const normalized = {
-                        id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                        source: 'ai',
-                        aiProvider: aiService.id,
-                        aiProviderName: providerName,
-                        artist: aiEvent.artist || '',
-                        title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
-                        datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
-                        date: aiEvent.date || '',
-                        venue: {
-                          name: aiEvent.venue?.name || 'Venue TBA',
-                          city: aiEvent.venue?.city || '',
-                          region: aiEvent.venue?.region || '',
-                          country: aiEvent.venue?.country || ''
-                        },
-                        ticketUrl: aiEvent.url || '',
-                        url: aiEvent.url || '',
-                        description: aiEvent.description || 'AI-suggested event'
-                      };
+          const response = await aiService.chat(messages, [], config);
+          if (!response?.content) return [];
 
-                      addEventDeduped(normalized, normalized.artist);
-                    }
-                    totalAiEvents += aiEvents.length;
-                  }
-                } catch (parseErr) {
-                  console.log(`🎤 Could not parse AI concert response from ${aiService.id}:`, parseErr.message);
-                }
-              }
-            } catch (batchErr) {
-              console.log(`🎤 AI concert batch query failed:`, batchErr.message);
-            }
+          const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
+          if (!Array.isArray(aiEvents)) return [];
+
+          return aiEvents.map(aiEvent => ({
+            id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            source: 'ai',
+            aiProvider: aiService.id,
+            aiProviderName: providerName,
+            artist: aiEvent.artist || '',
+            title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
+            datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
+            date: aiEvent.date || '',
+            venue: {
+              name: aiEvent.venue?.name || 'Venue TBA',
+              city: aiEvent.venue?.city || '',
+              region: aiEvent.venue?.region || '',
+              country: aiEvent.venue?.country || ''
+            },
+            ticketUrl: aiEvent.url || '',
+            url: aiEvent.url || '',
+            description: aiEvent.description || 'AI-suggested event'
+          }));
+        }));
+
+        const aiEvents = [];
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled' && result.value.length > 0) {
+            aiEvents.push(...result.value);
+          } else if (result.status === 'rejected') {
+            console.log(`🎤 AI concert batch failed:`, result.reason?.message || result.reason);
           }
-          console.log(`🎤 AI service ${aiService.id} suggested ${totalAiEvents} concert events (${artistBatches.length} batches)`);
-        } catch (aiErr) {
-          console.log(`🎤 AI concert query failed:`, aiErr.message);
         }
+        console.log(`🎤 AI service ${aiService.id} suggested ${aiEvents.length} concert events (${artistBatches.length} parallel batches)`);
+        return aiEvents;
+      })();
+
+      // Wait for both dedicated and AI queries to complete
+      const [dedicatedResults, aiResults] = await Promise.all([dedicatedPromise, aiPromise]);
+
+      // Add dedicated service results
+      for (const { event, artist } of dedicatedResults) {
+        addEventDeduped(event, artist);
+      }
+      // Add AI results
+      for (const aiEvent of aiResults) {
+        addEventDeduped(aiEvent, aiEvent.artist);
       }
 
       // Merge fresh results with prior cached events (so we don't lose results
