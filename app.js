@@ -46212,11 +46212,16 @@ useEffect(() => {
                       if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
                         window._appleMusicPreviewAudio.currentTime = newPosition;
                       }
+                      // Reset interpolation baseline to new position regardless of seek result,
+                      // so the progress bar stays at the dragged position until the next poll
+                      appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
                       // Seek via native MusicKit (macOS)
                       if (window.electron?.musicKit?.seek) {
-                        await window.electron.musicKit.seek(newPosition);
-                        // Reset interpolation baseline to new position
-                        appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+                        try {
+                          await window.electron.musicKit.seek(newPosition);
+                        } catch (e) {
+                          console.warn('[Seek] Native MusicKit seek failed:', e);
+                        }
                       }
                       // Seek via MusicKit JS web (cross-platform)
                       if (window.getMusicKitWeb) {

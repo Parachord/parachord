@@ -514,7 +514,12 @@ class MusicKitBridge extends EventEmitter {
   }
 
   async seek(position) {
-    return this.send('seek', { position });
+    // Ensure position serializes as a JSON float, not an integer.
+    // Swift's AnyCodable decodes "30" as Int, and `as? Double` fails,
+    // so whole-number positions silently fail.  Adding a tiny epsilon
+    // forces JSON.stringify to emit a decimal (e.g. "30.0000001").
+    const safePosition = Number.isInteger(position) ? position + 1e-7 : position;
+    return this.send('seek', { position: safePosition });
   }
 
   async getPlaybackState() {
