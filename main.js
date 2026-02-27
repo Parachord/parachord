@@ -1569,7 +1569,10 @@ app.whenReady().then(() => {
     ...(isMac ? [{
       label: app.name,
       submenu: [
-        { role: 'about' },
+        {
+          label: `About ${app.name}`,
+          click: () => safeSendToRenderer('menu-action', 'open-about')
+        },
         { type: 'separator' },
         {
           label: 'Settings...',

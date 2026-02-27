@@ -8894,6 +8894,10 @@ const Parachord = () => {
         case 'open-settings':
           setActiveView('settings');
           break;
+        case 'open-about':
+          setActiveView('settings');
+          setSettingsTab('about');
+          break;
         case 'add-friend':
           setAddFriendModalOpen(true);
           setAddFriendInput('');
