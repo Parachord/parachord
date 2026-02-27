@@ -1500,6 +1500,12 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   discogs: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z' })
+  ),
+  bandsintown: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M6.399 12.8v4.8H19.2v1.6H4.799V0H0v24h24V12.8H6.399Zm4.801-8H6.399v6.4H11.2V4.8Zm6.4 0h-4.8v6.4h4.8V4.8ZM24 0h-4.8v11.2H24V0Z' })
+  ),
+  songkick: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M6.55 18.779c-1.855 0-3.372-.339-4.598-1.602l1.92-1.908c.63.631 1.74.853 2.715.853 1.186 0 1.739-.391 1.739-1.089 0-.291-.06-.529-.239-.717-.15-.154-.404-.273-.795-.324l-1.455-.205c-1.064-.152-1.891-.51-2.43-1.072-.555-.578-.84-1.395-.84-2.434C2.536 8.066 4.2 6.45 6.96 6.45c1.74 0 3.048.407 4.086 1.448L9.171 9.77c-.765-.766-1.77-.715-2.295-.715-1.039 0-1.465.597-1.465 1.125 0 .152.051.375.24.561.15.153.404.307.832.359l1.467.203c1.09.153 1.875.495 2.385 1.005.645.63.9 1.53.9 2.655 0 2.47-2.127 3.819-4.68 3.819l-.005-.003zM20.813 2.651C19.178 1.432 17.37.612 15.089.237v10.875l3.261-4.539h3.565l-4.095 5.72s.944 1.51 1.515 2.405c.586.899 1.139 1.14 1.965 1.14h.57v2.806h-.872c-1.812 0-2.9-.33-3.72-1.575-.504-.811-2.175-3.436-2.175-3.436v4.995H12.12V-.001H12c-3.852 0-6.509.931-8.811 2.652C-.132 5.137.001 8.451.001 11.997c0 3.547-.133 6.867 3.188 9.352C5.491 23.074 8.148 24 12 24s6.51-.927 8.812-2.651C24.131 18.865 24 15.544 24 11.997c0-3.546.132-6.859-3.188-9.346h.001z' })
   )
 };
 
@@ -5400,7 +5406,7 @@ const Parachord = () => {
   const [concertsHeaderCollapsed, setConcertsHeaderCollapsed] = useState(false);
   const [concertsSearchOpen, setConcertsSearchOpen] = useState(false);
   const [concertsSearch, setConcertsSearch] = useState('');
-  const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick'
+  const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'ai'
   const [concertsSourceFilterDropdownOpen, setConcertsSourceFilterDropdownOpen] = useState(false);
   const concertsCache = useRef({ events: null, timestamp: 0 });
 
@@ -23880,10 +23886,22 @@ ${tracks}
     return artistList;
   };
 
-  // Get concert service plugins that are enabled and configured
+  // Get dedicated concert service plugins (Bandsintown, Songkick) that are enabled
   const getConcertServices = () => {
     const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
     return allResolvers.filter(r => r.capabilities?.concerts && r.searchArtistEvents);
+  };
+
+  // Get AI chat services that can suggest concerts
+  const getAiConcertServices = () => {
+    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+    return allResolvers.filter(r => {
+      if (!r.capabilities?.concerts || !r.capabilities?.chat || !r.chat) return false;
+      // Must be enabled with API key (or no auth needed like Ollama)
+      const config = metaServiceConfigs[r.id] || {};
+      const noKeyNeeded = r.requiresAuth === false || r.settings?.requiresAuth === false;
+      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
+    });
   };
 
   // Load concerts for user's favorite artists
@@ -23902,9 +23920,10 @@ ${tracks}
       }
     }
 
-    // Check for enabled concert services
+    // Check for enabled concert services (dedicated + AI)
     const concertServices = getConcertServices();
-    if (concertServices.length === 0) {
+    const aiConcertServices = getAiConcertServices();
+    if (concertServices.length === 0 && aiConcertServices.length === 0) {
       setConcertsError('no_services');
       setConcertsLoaded(true);
       return;
@@ -23912,7 +23931,7 @@ ${tracks}
 
     setConcertsLoading(true);
     setConcertsError(null);
-    console.log(`🎤 Loading concerts from ${concertServices.length} service(s)...`);
+    console.log(`🎤 Loading concerts from ${concertServices.length} dedicated + ${aiConcertServices.length} AI service(s)...`);
 
     try {
       const artistList = await gatherConcertsArtists();
@@ -23985,6 +24004,83 @@ ${tracks}
         }
         // Rate limit: small delay between artists to avoid hammering APIs
         await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      // Query AI services for concert suggestions
+      if (aiConcertServices.length > 0) {
+        try {
+          // Pick the preferred AI provider (use selectedChatProvider if it supports concerts, else first available)
+          let aiService = aiConcertServices[0];
+          if (selectedChatProvider) {
+            const preferred = aiConcertServices.find(s => s.id === selectedChatProvider);
+            if (preferred) aiService = preferred;
+          }
+
+          const artistNames = artistList.map(a => a.name).join(', ');
+          const today = new Date().toISOString().split('T')[0];
+          const prompt = `I need upcoming concert dates for these artists: ${artistNames}
+
+Return ONLY a JSON array of upcoming concert events you know about. Each event should have these fields:
+- "artist": artist name
+- "title": event title (e.g. "Artist Name at Venue")
+- "date": date in YYYY-MM-DD format
+- "venue": object with "name", "city", "region", "country"
+- "url": ticket URL if known, or empty string
+- "description": brief note about the event
+
+Only include events from ${today} onward. If you don't know of any upcoming events for an artist, omit them. Return an empty array [] if you have no concert data. Return ONLY the JSON array, no other text.`;
+
+          const config = metaServiceConfigs[aiService.id] || {};
+          const messages = [
+            { role: 'system', content: 'You are a music events assistant. Return only valid JSON arrays of concert events. Do not fabricate events - only return concerts you are confident about.' },
+            { role: 'user', content: prompt }
+          ];
+
+          const response = await aiService.chat(messages, [], config);
+          if (response && response.content) {
+            try {
+              const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+              const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
+              if (Array.isArray(aiEvents)) {
+                for (const aiEvent of aiEvents) {
+                  const normalized = {
+                    id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    source: 'ai',
+                    aiProvider: aiService.id,
+                    artist: aiEvent.artist || '',
+                    title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
+                    datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
+                    date: aiEvent.date || '',
+                    venue: {
+                      name: aiEvent.venue?.name || 'Venue TBA',
+                      city: aiEvent.venue?.city || '',
+                      region: aiEvent.venue?.region || '',
+                      country: aiEvent.venue?.country || ''
+                    },
+                    ticketUrl: aiEvent.url || '',
+                    url: aiEvent.url || '',
+                    description: aiEvent.description || 'AI-suggested event'
+                  };
+
+                  // Apply same dedup logic
+                  const key = makeEventKey(normalized, normalized.artist);
+                  if (seenEventKeys.has(key)) continue;
+                  const gk = geoKey(normalized, normalized.artist);
+                  if (gk && seenGeoKeys.has(gk)) continue;
+
+                  seenEventKeys.add(key);
+                  if (gk) seenGeoKeys.add(gk);
+                  allEvents.push(normalized);
+                }
+                console.log(`🎤 AI service ${aiService.id} suggested ${aiEvents.length} concert events`);
+              }
+            } catch (parseErr) {
+              console.log(`🎤 Could not parse AI concert response from ${aiService.id}:`, parseErr.message);
+            }
+          }
+        } catch (aiErr) {
+          console.log(`🎤 AI concert query failed:`, aiErr.message);
+        }
       }
 
       // Sort by date (soonest first)
@@ -37131,12 +37227,12 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView) ? '' : 'p-6'
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -37145,7 +37241,7 @@ useEffect(() => {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
+        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view', 'concerts'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'friends' ? 'Friends' :
@@ -42015,7 +42111,8 @@ useEffect(() => {
               },
                 React.createElement('span', null,
                   concertsSourceFilter === 'all' ? 'All Sources' :
-                  concertsSourceFilter === 'bandsintown' ? 'Bandsintown' : 'Songkick'
+                  concertsSourceFilter === 'bandsintown' ? 'Bandsintown' :
+                  concertsSourceFilter === 'songkick' ? 'Songkick' : 'AI Suggested'
                 ),
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
@@ -42024,7 +42121,18 @@ useEffect(() => {
               concertsSourceFilterDropdownOpen && React.createElement('div', {
                 className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
               },
-                [{ value: 'all', label: 'All Sources' }, { value: 'bandsintown', label: 'Bandsintown' }, { value: 'songkick', label: 'Songkick' }].map(option =>
+                (() => {
+                  const options = [{ value: 'all', label: 'All Sources' }];
+                  const dedicatedServices = getConcertServices();
+                  const aiServices = getAiConcertServices();
+                  for (const s of dedicatedServices) {
+                    options.push({ value: s.id, label: s.name || s.id });
+                  }
+                  if (aiServices.length > 0) {
+                    options.push({ value: 'ai', label: 'AI Suggested' });
+                  }
+                  return options;
+                })().map(option =>
                   React.createElement('button', {
                     key: option.value,
                     onClick: (e) => {
@@ -42279,10 +42387,12 @@ useEffect(() => {
                               React.createElement('span', {
                                 className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
                                 style: {
-                                  backgroundColor: event.source === 'bandsintown' ? 'rgba(0, 180, 179, 0.1)' : 'rgba(248, 0, 70, 0.1)',
-                                  color: event.source === 'bandsintown' ? '#00B4B3' : '#F80046'
+                                  backgroundColor: event.source === 'bandsintown' ? 'rgba(0, 180, 179, 0.1)' :
+                                    event.source === 'songkick' ? 'rgba(248, 0, 70, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                                  color: event.source === 'bandsintown' ? '#00B4B3' :
+                                    event.source === 'songkick' ? '#F80046' : '#8b5cf6'
                                 }
-                              }, event.source === 'bandsintown' ? 'BIT' : 'SK')
+                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : 'AI')
                             ),
                             React.createElement('div', {
                               className: 'text-sm text-gray-600 truncate'
@@ -45224,6 +45334,14 @@ useEffect(() => {
                           const isEnabled = !!config?.enabled || !!config?.username;
                           isServiceActive = !!config?.username;
                           needsConfiguration = isEnabled && !config?.username;
+                        } else if (service.capabilities?.concerts) {
+                          // Concert services (Bandsintown, Songkick): require API key
+                          const hasApiKey = !!(config?.apiKey || config?.appId);
+                          const isExplicitlyEnabled = config?.enabled === true;
+                          isServiceActive = hasApiKey || isExplicitlyEnabled;
+                          if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
+                            needsConfiguration = true;
+                          }
                         } else {
                           // Wikipedia, Discogs, etc.: always active
                           isServiceActive = true;
