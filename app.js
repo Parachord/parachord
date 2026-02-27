@@ -37313,7 +37313,7 @@ useEffect(() => {
                                   const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
                                   const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                                   window.electron.contextMenu.showTrackMenu({
-                                    type: 'friend-track',
+                                    type: 'track',
                                     track: {
                                       title: track.name,
                                       artist: track.artist,
