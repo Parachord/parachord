@@ -5314,6 +5314,7 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
+  const homeFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for Home tab friend activity
   const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
   const pinnedFriendIdsRef = useRef(pinnedFriendIds); // Ref for pinned IDs to avoid stale closures in polling
   const autoPinnedFriendIdsRef = useRef(autoPinnedFriendIds); // Ref for auto-pinned IDs to avoid stale closures in polling
@@ -25261,11 +25262,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           });
         }
 
-        setFriends(prev => prev.map(f =>
-          f.id === friend.id
-            ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
-            : f
-        ));
+        // Only update state when the track actually changed or timestamp meaningfully differs
+        // This avoids unnecessary re-renders that cause sort reordering on every poll
+        if (trackChanged || !previousTrack?.timestamp || Math.abs(recentTrack.timestamp - previousTrack.timestamp) > 30000) {
+          setFriends(prev => prev.map(f =>
+            f.id === friend.id
+              ? { ...f, cachedRecentTrack: recentTrack, lastFetched: Date.now() }
+              : f
+          ));
+        }
 
         // Auto-pin/unpin saved friends based on on-air status
         // Read from refs to get latest state (avoids stale closure in setInterval)
@@ -37089,16 +37094,31 @@ useEffect(() => {
               (() => {
                 const onlineFriends = friends.filter(f => isOnAir(f));
                 // Friends with recent listening activity (have a cached track), sorted: online first, then by most recent
-                const friendsWithActivity = friends
-                  .filter(f => f.cachedRecentTrack && f.savedToCollection)
-                  .sort((a, b) => {
-                    const aOnAir = isOnAir(a);
-                    const bOnAir = isOnAir(b);
-                    if (aOnAir && !bOnAir) return -1;
-                    if (!aOnAir && bOnAir) return 1;
-                    return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
-                  })
-                  .slice(0, 5);
+                // Use a stable sort cache so the list only reorders when a friend starts a new song
+                const eligibleFriends = friends.filter(f => f.cachedRecentTrack && f.savedToCollection);
+                // Build a fingerprint from track identity + on-air status to detect real changes
+                const fingerprint = eligibleFriends.map(f =>
+                  `${f.id}:${f.cachedRecentTrack?.name}:${f.cachedRecentTrack?.artist}:${isOnAir(f)}`
+                ).join('|');
+                let friendsWithActivity;
+                if (fingerprint !== homeFriendsSortRef.current.fingerprint) {
+                  // Track data or on-air status actually changed - re-sort
+                  friendsWithActivity = eligibleFriends
+                    .sort((a, b) => {
+                      const aOnAir = isOnAir(a);
+                      const bOnAir = isOnAir(b);
+                      if (aOnAir && !bOnAir) return -1;
+                      if (!aOnAir && bOnAir) return 1;
+                      return (b.cachedRecentTrack?.timestamp || 0) - (a.cachedRecentTrack?.timestamp || 0);
+                    })
+                    .slice(0, 5);
+                  homeFriendsSortRef.current = { fingerprint, sorted: friendsWithActivity };
+                } else {
+                  // No change in track data - use cached order, but refresh objects for updated props
+                  friendsWithActivity = homeFriendsSortRef.current.sorted.map(cached =>
+                    eligibleFriends.find(f => f.id === cached.id) || cached
+                  );
+                }
                 const showPlaylists = playlists.length > 0;
                 const showFriends = friendsWithActivity.length > 0;
 
