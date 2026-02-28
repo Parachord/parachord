@@ -1,12 +1,10 @@
 // Parachord Desktop App - Electron Version
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-// Platform detection: on macOS/Linux we use -webkit-app-region: drag for the title bar.
-// On Windows, titleBarOverlay handles dragging natively, so we skip the drag class
-// (which would block all mouse events including right-click context menus on Windows).
-// Linux has had the drag-region context menu fix since Electron 34+ (PR #45813).
-const isWindows = window.electron?.platform === 'win32';
-const useDragClass = !isWindows;
+// Platform detection: only macOS uses a hidden title bar (titleBarStyle: 'hidden'),
+// so only macOS needs the drag class and title bar spacer. Windows and Linux use the
+// native title bar with a visible menu bar.
+const isMac = window.electron?.platform === 'darwin';
 
 // Global rate limiter for iTunes API to prevent 403/429 errors
 // iTunes API has strict rate limits (~20 req/min)
@@ -30223,9 +30221,9 @@ useEffect(() => {
           }
         }
       },
-        // Title bar spacer (draggable on macOS for traffic lights; on Windows, titleBarOverlay handles dragging)
-        React.createElement('div', {
-          className: `h-8 flex-shrink-0${useDragClass ? ' drag' : ''}`
+        // Title bar spacer (macOS only — provides space for traffic lights and draggable area)
+        isMac && React.createElement('div', {
+          className: 'h-8 flex-shrink-0 drag'
         }),
         // Navigation arrows
         React.createElement('div', {
@@ -30841,10 +30839,10 @@ useEffect(() => {
         ref: mainContentRef,
         className: 'flex-1 flex flex-col overflow-hidden bg-white relative'
       },
-        // Title bar spacer (draggable on macOS; on Windows, titleBarOverlay handles dragging)
-        React.createElement('div', {
-          className: `h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10${useDragClass ? ' drag' : ''}`,
-          style: useDragClass ? { pointerEvents: 'auto' } : { pointerEvents: 'none' }
+        // Title bar spacer (macOS only — draggable area for traffic lights)
+        isMac && React.createElement('div', {
+          className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag',
+          style: { pointerEvents: 'auto' }
         }),
 
     // External Track Prompt Modal - refined styling
