@@ -22,7 +22,7 @@ permissions:
 
 env:
   FEED_URL: https://parachord.com/feed.xml
-  MAX_AGE_DAYS: 7
+  MAX_AGE_DAYS: 45
 
 jobs:
   sync-blog-posts:
