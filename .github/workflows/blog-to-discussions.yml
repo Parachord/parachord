@@ -21,7 +21,7 @@ permissions:
   discussions: write
 
 env:
-  FEED_URL: https://parachord.com/blog/rss.xml
+  FEED_URL: https://parachord.com/feed.xml
   MAX_AGE_DAYS: 7
 
 jobs:
