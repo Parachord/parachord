@@ -5190,6 +5190,8 @@ const Parachord = () => {
   const [resolverSyncSettings, setResolverSyncSettings] = useState({});
   const [syncStatus, setSyncStatus] = useState({});
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
+  const pendingSyncSetupRef = useRef(null); // Track pending sync setup after Spotify auth redirect
+  const openSyncSetupModalRef = useRef(null); // Ref for openSyncSetupModal to avoid stale closures
 
   // Provider branding for sync UI
   const syncProviderConfig = {
@@ -8208,8 +8210,9 @@ const Parachord = () => {
     let authStatus = await window.electron.sync.checkAuth(providerId);
     if (!authStatus.authenticated) {
       if (providerId === 'spotify') {
+        pendingSyncSetupRef.current = 'spotify';
         await window.electron.spotify.authenticate();
-        // Spotify opens external browser, user needs to re-trigger after auth
+        // Spotify opens external browser, auth flow continues in onAuthSuccess callback
         return;
       }
       // Apple Music: stored token may have expired — try re-authorizing for a fresh one
@@ -8302,6 +8305,7 @@ const Parachord = () => {
       error: null
     });
   };
+  openSyncSetupModalRef.current = openSyncSetupModal;
 
   // Start sync from modal
   const startSync = async () => {
@@ -29695,6 +29699,18 @@ useEffect(() => {
       });
       console.log('Spotify connected and enabled!');
 
+      // If sync setup was pending (user clicked "Set Up Library Sync" which triggered auth),
+      // automatically continue by opening the sync setup modal now that auth is complete
+      if (pendingSyncSetupRef.current === 'spotify') {
+        pendingSyncSetupRef.current = null;
+        // Short delay to let React process the state updates above before opening the modal
+        setTimeout(() => {
+          if (openSyncSetupModalRef.current) {
+            openSyncSetupModalRef.current('spotify');
+          }
+        }, 300);
+      }
+
       // If library sync was previously enabled for Spotify, trigger an immediate
       // sync now that we have a valid token. This handles the case where the user
       // switches API keys or re-authenticates — the background sync timer won't
@@ -29727,6 +29743,7 @@ useEffect(() => {
     });
     window.electron.spotify.onAuthError((error) => {
       console.error('Spotify auth failed:', error);
+      pendingSyncSetupRef.current = null; // Clear pending sync setup on auth failure
       showConfirmDialog({
         type: 'error',
         title: 'Spotify Authentication Failed',
