@@ -38,8 +38,8 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
           REPO_NODE_ID: ${{ github.event.repository.node_id }}
         run: |
-          FEED="${FEED_URL_OVERRIDE:-$FEED_URL}"
-          MAX_DAYS="${MAX_AGE_OVERRIDE:-$MAX_AGE_DAYS}"
+          export FEED="${FEED_URL_OVERRIDE:-$FEED_URL}"
+          export MAX_DAYS="${MAX_AGE_OVERRIDE:-$MAX_AGE_DAYS}"
 
           echo "Feed URL: $FEED"
           echo "Max age: ${MAX_DAYS} days"
