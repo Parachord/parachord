@@ -1,0 +1,236 @@
+name: Blog RSS to Announcements
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Check every 6 hours
+  workflow_dispatch:
+    inputs:
+      feed_url:
+        description: 'RSS feed URL override'
+        required: false
+      max_age_days:
+        description: 'Only post articles published within this many days (default: 7)'
+        required: false
+      dry_run:
+        description: 'Log what would be posted without creating discussions'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  discussions: write
+
+env:
+  FEED_URL: https://parachord.com/feed.xml
+  MAX_AGE_DAYS: 45
+
+jobs:
+  sync-blog-posts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch RSS and create announcements
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FEED_URL_OVERRIDE: ${{ github.event.inputs.feed_url }}
+          MAX_AGE_OVERRIDE: ${{ github.event.inputs.max_age_days }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_NODE_ID: ${{ github.event.repository.node_id }}
+        run: |
+          FEED="${FEED_URL_OVERRIDE:-$FEED_URL}"
+          MAX_DAYS="${MAX_AGE_OVERRIDE:-$MAX_AGE_DAYS}"
+
+          echo "Feed URL: $FEED"
+          echo "Max age: ${MAX_DAYS} days"
+          echo "Dry run: $DRY_RUN"
+
+          # ── Fetch the Announcements category ID ──────────────────────
+          CATEGORY_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                discussionCategories(first: 25) {
+                  nodes { id name }
+                }
+              }
+            }
+          ' -f owner="$REPO_OWNER" \
+            -f name="$REPO_NAME" \
+            --jq '.data.repository.discussionCategories.nodes[] | select(.name == "Announcements") | .id')
+
+          if [ -z "$CATEGORY_ID" ]; then
+            echo "::error::No 'Announcements' discussion category found."
+            exit 1
+          fi
+          echo "Announcements category: $CATEGORY_ID"
+
+          # ── Collect existing announcement titles for dedup ───────────
+          EXISTING_TITLES=$(gh api graphql --paginate -f query='
+            query($owner: String!, $name: String!, $cursor: String) {
+              repository(owner: $owner, name: $name) {
+                discussions(categoryId: "'"$CATEGORY_ID"'", first: 100, after: $cursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes { title }
+                }
+              }
+            }
+          ' -f owner="$REPO_OWNER" \
+            -f name="$REPO_NAME" \
+            --jq '.data.repository.discussions.nodes[].title')
+
+          echo "Found $(echo "$EXISTING_TITLES" | grep -c . || true) existing announcements"
+
+          # ── Fetch and parse the RSS feed ─────────────────────────────
+          python3 << 'PYEOF'
+          import json, os, sys, urllib.request, xml.etree.ElementTree as ET
+          from datetime import datetime, timedelta, timezone
+          from email.utils import parsedate_to_datetime
+
+          feed_url = os.environ["FEED"]
+          max_days = int(os.environ["MAX_DAYS"])
+          cutoff   = datetime.now(timezone.utc) - timedelta(days=max_days)
+
+          try:
+              req = urllib.request.Request(feed_url, headers={"User-Agent": "Parachord-Blog-Bot/1.0"})
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  xml_data = resp.read()
+          except Exception as e:
+              print(f"::warning::Could not fetch feed: {e}")
+              sys.exit(0)
+
+          root = ET.fromstring(xml_data)
+
+          # Support both RSS 2.0 (<channel><item>) and Atom (<entry>)
+          items = []
+          ns = {"atom": "http://www.w3.org/2005/Atom"}
+
+          # RSS 2.0
+          for item in root.findall(".//channel/item"):
+              title   = (item.findtext("title") or "").strip()
+              link    = (item.findtext("link") or "").strip()
+              desc    = (item.findtext("description") or "").strip()
+              content = (item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or "").strip()
+              pub     = (item.findtext("pubDate") or "").strip()
+
+              pub_dt = None
+              if pub:
+                  try:
+                      pub_dt = parsedate_to_datetime(pub)
+                  except Exception:
+                      pass
+
+              if title:
+                  items.append({"title": title, "link": link, "description": desc,
+                                "content": content, "pubDate": pub_dt.isoformat() if pub_dt else ""})
+
+          # Atom
+          if not items:
+              for entry in root.findall("atom:entry", ns):
+                  title   = (entry.findtext("atom:title", namespaces=ns) or "").strip()
+                  link_el = entry.find("atom:link[@rel='alternate']", ns) or entry.find("atom:link", ns)
+                  link    = link_el.get("href", "") if link_el is not None else ""
+                  summary = (entry.findtext("atom:summary", namespaces=ns) or "").strip()
+                  content = (entry.findtext("atom:content", namespaces=ns) or "").strip()
+                  updated = (entry.findtext("atom:updated", namespaces=ns) or "").strip()
+
+                  pub_dt = None
+                  if updated:
+                      try:
+                          pub_dt = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+                      except Exception:
+                          pass
+
+                  if title:
+                      items.append({"title": title, "link": link, "description": summary,
+                                    "content": content, "pubDate": pub_dt.isoformat() if pub_dt else ""})
+
+          # Filter by age
+          filtered = []
+          for item in items:
+              if item["pubDate"]:
+                  try:
+                      dt = datetime.fromisoformat(item["pubDate"])
+                      if dt < cutoff:
+                          continue
+                  except Exception:
+                      pass
+              filtered.append(item)
+
+          print(f"Parsed {len(items)} items, {len(filtered)} within last {max_days} days")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"items={json.dumps(filtered)}\n")
+          PYEOF
+
+          ITEMS='${{ steps.sync-blog-posts.outputs.items }}'
+
+          # Re-read from GITHUB_OUTPUT directly since we're in the same step
+          ITEMS=$(grep '^items=' "$GITHUB_OUTPUT" | sed 's/^items=//')
+
+          if [ -z "$ITEMS" ] || [ "$ITEMS" = "[]" ]; then
+            echo "No recent blog posts found."
+            exit 0
+          fi
+
+          # ── Create discussions for new posts ─────────────────────────
+          CREATED=0
+
+          echo "$ITEMS" | python3 -c "
+          import json, sys
+          items = json.loads(sys.stdin.read())
+          for item in items:
+              print(json.dumps(item))
+          " | while IFS= read -r ITEM; do
+            TITLE=$(echo "$ITEM" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['title'])")
+            LINK=$(echo "$ITEM"  | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['link'])")
+            DESC=$(echo "$ITEM"  | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['description'])")
+
+            # Dedup: skip if a discussion with this title already exists
+            if echo "$EXISTING_TITLES" | grep -qxF "$TITLE"; then
+              echo "Skipping (already exists): $TITLE"
+              continue
+            fi
+
+            DISC_TITLE="📝 $TITLE"
+
+            # Also check with the emoji prefix
+            if echo "$EXISTING_TITLES" | grep -qxF "$DISC_TITLE"; then
+              echo "Skipping (already exists): $DISC_TITLE"
+              continue
+            fi
+
+            # Build discussion body
+            BODY=$(printf '> %s\n\n[Read the full post on parachord.com](%s)' "$DESC" "$LINK")
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "Would create: $DISC_TITLE"
+              echo "  Link: $LINK"
+              echo "  Body: $BODY"
+              echo ""
+              continue
+            fi
+
+            DISCUSSION_URL=$(gh api graphql -f query='
+              mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+                createDiscussion(input: {
+                  repositoryId: $repositoryId,
+                  categoryId:   $categoryId,
+                  title:        $title,
+                  body:         $body
+                }) {
+                  discussion { url }
+                }
+              }
+            ' -f repositoryId="$REPO_NODE_ID" \
+              -f categoryId="$CATEGORY_ID" \
+              -f title="$DISC_TITLE" \
+              -f body="$BODY" \
+              --jq '.data.createDiscussion.discussion.url')
+
+            echo "Created discussion: $DISCUSSION_URL"
+            CREATED=$((CREATED + 1))
+
+            # Small delay to avoid rate limits
+            sleep 2
+          done
+
+          echo "Done. Created $CREATED new announcement(s)."
