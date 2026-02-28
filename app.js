@@ -3836,9 +3836,8 @@ const ReleasePage = ({
 
                         // Build queue from remaining tracks (after this one)
                         const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                          const tKey = `${t.position}-${t.title}`;
-                          const tSources = trackSources[tKey] || {};
                           const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const tSources = trackSources[tId] || {};
                           return {
                             ...t,
                             id: tId,
@@ -9813,7 +9812,7 @@ ${trackListXml}
           });
 
           // Clear from in-memory cache so re-resolution will find an alternative
-          const cacheKey = `${artist}|${title}|${currentTrack?.position || 0}`;
+          const cacheKey = `${artist}|${title}`;
           if (trackSourcesCache.current[cacheKey]?.sources?.[data.resolverId]) {
             const { [data.resolverId]: removed, ...rest } = trackSourcesCache.current[cacheKey].sources;
             trackSourcesCache.current[cacheKey].sources = rest;
@@ -25326,7 +25325,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const resolveFriendTrack = async (track) => {
     if (!track || !track.name || !track.artist) return;
 
-    const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+    const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}`;
     const currentResolverHash = getResolverSettingsHash();
 
     // Check if already cached and valid
@@ -25506,7 +25505,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
               // Wait a moment for track to resolve, then queue or play
               setTimeout(async () => {
-                const cacheKey = `${recentTrack.artist.toLowerCase()}|${recentTrack.name.toLowerCase()}|0`;
+                const cacheKey = `${recentTrack.artist.toLowerCase()}|${recentTrack.name.toLowerCase()}`;
                 const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                 const track = {
                   title: recentTrack.name,
@@ -25585,7 +25584,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     });
 
     // Play the friend's current track
-    const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+    const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}`;
     const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
     const track = {
       title: friend.cachedRecentTrack.name,
@@ -30709,7 +30708,7 @@ useEffect(() => {
                     onPlay: (e) => {
                       e.stopPropagation();
                       // Get cached sources for instant playback
-                      const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+                      const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}`;
                       const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                       const track = {
                         title: friend.cachedRecentTrack.name,
@@ -30727,7 +30726,7 @@ useEffect(() => {
                       e.stopPropagation();
                       if (window.electron?.contextMenu?.showTrackMenu) {
                         // Get cached sources for context menu actions too
-                        const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}|0`;
+                        const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}`;
                         const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                         window.electron.contextMenu.showTrackMenu({
                           type: 'friend-track',
@@ -34058,7 +34057,7 @@ useEffect(() => {
                             artist: currentArtist?.name,
                             album: rel.title,
                             albumArt: rel.albumArt,
-                            sources: trackSources[`${t.position}-${t.title}`] || {}
+                            sources: trackSources[trackId] || {}
                           };
                         });
                         window.electron.contextMenu.showTrackMenu({
@@ -34098,7 +34097,7 @@ useEffect(() => {
                           artist: currentArtist?.name,
                           album: rel.title,
                           albumArt: rel.albumArt,
-                          sources: trackSources[`${t.position}-${t.title}`] || {}
+                          sources: trackSources[trackId] || {}
                         };
                       });
                     }
@@ -34137,7 +34136,7 @@ useEffect(() => {
                           artist: currentArtist?.name,
                           album: rel.title,
                           albumArt: rel.albumArt,
-                          sources: trackSources[`${t.position}-${t.title}`] || {}
+                          sources: trackSources[trackId] || {}
                         };
                       });
                     }
@@ -34166,7 +34165,7 @@ useEffect(() => {
                           artist: currentArtist?.name,
                           album: rel.title,
                           albumArt: rel.albumArt,
-                          sources: trackSources[`${t.position}-${t.title}`] || {}
+                          sources: trackSources[trackId] || {}
                         };
                       });
                     }
@@ -37670,7 +37669,7 @@ useEffect(() => {
                               style: { color: onAir ? '#4b5563' : '#9ca3af' },
                               onClick: (e) => {
                                 e.stopPropagation();
-                                const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+                                const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}`;
                                 const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                                 const trackObj = {
                                   title: track.name,
@@ -37686,7 +37685,7 @@ useEffect(() => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 if (window.electron?.contextMenu?.showTrackMenu) {
-                                  const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}|0`;
+                                  const cacheKey = `${track.artist.toLowerCase()}|${track.name.toLowerCase()}`;
                                   const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
                                   window.electron.contextMenu.showTrackMenu({
                                     type: 'track',
@@ -46005,9 +46004,8 @@ useEffect(() => {
                     // Buy button - shows when track has a purchasable source (Bandcamp, Qobuz)
                     (() => {
                       // Merge sources from state, cache, and currentTrack (same pattern as Save to Collection)
-                      const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
-                      const stateSources = trackSources[trackSourceKey];
-                      const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
+                      const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
+                      const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}`;
                       const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
                       const effectiveSources = Object.fromEntries(
                         Object.entries({ ...(stateSources || {}), ...(cachedSources || {}), ...(currentTrack.sources || {}) }).filter(([, v]) => v && !v.noMatch)
@@ -46180,11 +46178,10 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: () => {
                   if (!isInCollection) {
-                    // Get sources from trackSources state as fallback (keyed by position-title)
-                    const trackSourceKey = `${currentTrack.position || 0}-${currentTrack.title}`;
-                    const stateSources = trackSources[trackSourceKey];
+                    // Get sources from trackSources state as fallback (keyed by track.id)
+                    const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
                     // Also check cache
-                    const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}|${currentTrack.position || 0}`;
+                    const cacheKey = `${(currentTrack.artist || '').toLowerCase()}|${(currentTrack.title || '').toLowerCase()}`;
                     const cachedSources = trackSourcesCache.current[cacheKey]?.sources;
                     // Merge sources: currentTrack.sources > cached > state
                     const effectiveSources = Object.fromEntries(
