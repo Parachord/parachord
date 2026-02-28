@@ -632,17 +632,10 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    titleBarStyle: 'hidden',
-    // On Windows, titleBarOverlay provides native window controls and a draggable
-    // title bar area without needing -webkit-app-region: drag (which blocks all
-    // mouse events including right-click context menus on Windows).
-    ...(process.platform === 'win32' ? {
-      titleBarOverlay: {
-        color: '#f9fafb',
-        symbolColor: '#374151',
-        height: 32
-      }
-    } : {}),
+    // Hidden title bar on macOS only — macOS menus live in the system menu bar,
+    // so hiding the title bar is purely cosmetic. On Windows, the menu bar is part
+    // of the window frame, so we use the default title bar to keep menus accessible.
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' } : {}),
     frame: true,
     backgroundColor: '#f3f4f6',
     icon: path.join(__dirname, 'assets/icons/icon512.png'),
