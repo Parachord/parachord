@@ -169,7 +169,11 @@ const manifest = validate();
 
 if (!target || target === 'chrome') {
   console.log('\n--- Chrome Web Store ---');
-  buildZip(manifest, '-chrome');
+  // Chrome Web Store rejects uploads with the "key" field — strip it for the store zip.
+  // The key is kept in the source manifest so unpacked dev installs get a stable extension ID.
+  const chromeManifest = JSON.parse(JSON.stringify(manifest));
+  delete chromeManifest.key;
+  buildZip(chromeManifest, '-chrome', chromeManifest);
 }
 
 if (!target || target === 'firefox') {
