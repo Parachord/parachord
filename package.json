@@ -1,6 +1,6 @@
 {
   "name": "parachord-desktop",
-  "version": "0.8.0-alpha.4",
+  "version": "0.8.0-alpha.5",
   "description": "Parachord Desktop - Multi-source music player with cross-platform resolver support",
   "main": "main.js",
   "scripts": {
@@ -20,7 +20,8 @@
     "test:playback": "jest tests/playback/",
     "test:resolver": "jest tests/resolver/",
     "test:legacy": "node tests/resolution-scheduler.test.js && node tests/youtube-resolver.test.js && node tests/browser-extension.test.js",
-    "package:extension": "node scripts/package-extension.js"
+    "package:extension": "node scripts/package-extension.js",
+    "publish:extension": "node scripts/package-extension.js && node scripts/publish-extension.js"
   },
   "keywords": [
     "music",
@@ -40,9 +41,11 @@
   "devDependencies": {
     "electron": "^39.2.7",
     "electron-builder": "^24.9.1",
+    "chrome-webstore-upload-cli": "^3.3.1",
     "jest": "^30.2.0",
     "jose": "^6.1.3",
-    "tailwindcss": "^3.4.19"
+    "tailwindcss": "^3.4.19",
+    "web-ext": "^8.4.0"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.18",

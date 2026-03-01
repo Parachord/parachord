@@ -230,9 +230,13 @@ class ResolverLoader {
    */
   matchUrlPattern(url, pattern) {
     try {
-      // Normalize URL - remove protocol, trailing slash, and query string
-      let normalizedUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\?.*$/, '');
+      // Normalize URL - remove protocol and trailing slash
+      // Only strip query string if the pattern doesn't use query params (e.g. YouTube watch?v=*)
+      let normalizedUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
       let normalizedPattern = pattern.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      if (!normalizedPattern.includes('?')) {
+        normalizedUrl = normalizedUrl.replace(/\?.*$/, '');
+      }
 
       // Handle spotify: URI scheme
       if (url.startsWith('spotify:') && pattern.startsWith('spotify:')) {

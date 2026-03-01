@@ -16,9 +16,11 @@ const os = require('os');
 
 const HOST_NAME = 'com.parachord.desktop';
 
-// Default Chrome extension ID derived from the key in manifest.json.
-// Override with --extension-id=<id> for development with a different key.
-const DEFAULT_EXTENSION_ID = 'gffljdkpaclmggjjdkpanjddghmdogcb';
+// Chrome Web Store extension ID + dev ID (from manifest.json key field).
+// Both are registered so native messaging works for store installs and
+// unpacked dev installs without needing --extension-id overrides.
+const CWS_EXTENSION_ID = 'gibkgapadebfoillbakpgmgpnppjlnie';
+const DEV_EXTENSION_ID = 'gffljdkpaclmggjjdkpanjddghmdogcb';
 
 // Firefox extension ID — must match browser_specific_settings.gecko.id in the
 // Firefox manifest variant.
@@ -140,12 +142,18 @@ function install(electronPath, appPath) {
     appPath = path.resolve(__dirname, '..');
   }
 
-  const extensionId = getArg('extension-id', DEFAULT_EXTENSION_ID);
+  const extraId = getArg('extension-id');
   const firefoxId = getArg('firefox-id', DEFAULT_FIREFOX_ID);
   const hostScriptPath = path.join(appPath, 'native-messaging', 'host.js');
 
+  // Build the list of allowed Chrome extension origins.
+  // Always include both the CWS and dev IDs so native messaging works
+  // regardless of how the extension was installed.
+  const chromeIds = new Set([CWS_EXTENSION_ID, DEV_EXTENSION_ID]);
+  if (extraId) chromeIds.add(extraId);
+
   console.log(`Installing native messaging host: ${HOST_NAME}`);
-  console.log(`  Chrome ext ID: ${extensionId}`);
+  for (const id of chromeIds) console.log(`  Chrome ext ID: ${id}`);
   console.log(`  Firefox ID:    ${firefoxId}`);
   console.log(`  Host script:   ${hostScriptPath}`);
 
@@ -159,9 +167,7 @@ function install(electronPath, appPath) {
     description: 'Parachord Desktop — browser extension native messaging host',
     path: launcherPath,
     type: 'stdio',
-    allowed_origins: [
-      `chrome-extension://${extensionId}/`
-    ]
+    allowed_origins: [...chromeIds].map(id => `chrome-extension://${id}/`)
   }, null, 2) + '\n';
 
   console.log('\n  Chromium browsers:');

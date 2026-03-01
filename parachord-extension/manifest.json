@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Parachord",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Connect your browser to Parachord desktop for playback control and content discovery",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnH3d205dKW4u0KLmU/8sjXnP/uAUb1BYXUPPSbnqmUMrck1MylNHx1E2gruONfuxCO+Q4c7KsfdHCvRIGpmVA0ME0FymJl+yLTsHfLhdXk2san7kdYcLVqO06f7QrLcXC+wu8uGs9rqNxzOZgkMbLBWq8ZN2as5eT7rmEA1BCpJ0+pMfQXY+/WOcrrWqUn9Zrdl0u19hk+lVTYzMHkqFtaHZ6kUoTxvtUXLvrW+c/5g0UWTqu8fZymR6Lne3aZLp3TBE6CXvjUjZfWtpqcSWWC1qUhEdBAfcczDNtS+nSdaDBSG1KfE4oGjGOoVLwiU4Sf6NEfGBQ6zvxTA6WtUnyQIDAQAB",
   "permissions": [
@@ -80,6 +80,24 @@
       ],
       "js": ["content-soundcloud.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*/*"],
+      "exclude_matches": [
+        "*://open.spotify.com/*",
+        "*://music.apple.com/*",
+        "*://www.youtube.com/*",
+        "*://youtube.com/*",
+        "*://soundcloud.com/*"
+      ],
+      "js": ["content-inline.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon16.png"],
+      "matches": ["*://*/*"]
     }
   ],
   "icons": {

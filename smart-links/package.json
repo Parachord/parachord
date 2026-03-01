@@ -10,6 +10,6 @@
     "kv:create:preview": "wrangler kv:namespace create LINKS --preview"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.68.0"
   }
 }
