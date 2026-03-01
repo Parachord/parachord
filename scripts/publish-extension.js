@@ -12,7 +12,6 @@
 //     WEB_EXT_API_SECRET   — JWT secret
 //
 //   Chrome Web Store:
-//     EXTENSION_ID         — Chrome extension ID
 //     CLIENT_ID            — OAuth2 client ID
 //     CLIENT_SECRET        — OAuth2 client secret
 //     REFRESH_TOKEN        — OAuth2 refresh token
@@ -72,8 +71,10 @@ function publishFirefox() {
 
 // ── Chrome Web Store ───────────────────────────────────────────────────
 
+const CHROME_EXTENSION_ID = 'gibkgapadebfoillbakpgmgpnppjlnie';
+
 function publishChrome() {
-  const required = ['EXTENSION_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'REFRESH_TOKEN'];
+  const required = ['CLIENT_ID', 'CLIENT_SECRET', 'REFRESH_TOKEN'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length > 0) {
     console.error(`ERROR: Missing environment variables: ${missing.join(', ')}`);
@@ -88,10 +89,10 @@ function publishChrome() {
   }
 
   console.log('\n--- Uploading to Chrome Web Store ---');
-  run(`npx chrome-webstore-upload-cli upload --source "${zip}"`);
+  run(`npx chrome-webstore-upload-cli upload --source "${zip}"`, { EXTENSION_ID: CHROME_EXTENSION_ID });
 
   console.log('\n--- Publishing on Chrome Web Store ---');
-  run('npx chrome-webstore-upload-cli publish');
+  run('npx chrome-webstore-upload-cli publish', { EXTENSION_ID: CHROME_EXTENSION_ID });
 }
 
 // ── Main ───────────────────────────────────────────────────────────────

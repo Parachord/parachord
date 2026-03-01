@@ -85,7 +85,7 @@ jobs:
           npx chrome-webstore-upload-cli upload \
             --source "dist/parachord-extension-v${{ steps.ext.outputs.version }}-chrome.zip"
         env:
-          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          EXTENSION_ID: gibkgapadebfoillbakpgmgpnppjlnie
           CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
@@ -96,7 +96,7 @@ jobs:
           && (inputs.target == 'chrome' || inputs.target == 'both' || inputs.target == '')
         run: npx chrome-webstore-upload-cli publish
         env:
-          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          EXTENSION_ID: gibkgapadebfoillbakpgmgpnppjlnie
           CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
