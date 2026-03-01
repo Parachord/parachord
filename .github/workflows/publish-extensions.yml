@@ -1,0 +1,102 @@
+name: Publish Browser Extensions
+
+on:
+  push:
+    tags:
+      # Use ext-v* tags to publish extensions independently of desktop releases.
+      # Example: git tag ext-v0.5.0 && git push origin ext-v0.5.0
+      - 'ext-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Package only — do not submit to stores'
+        type: boolean
+        default: false
+      target:
+        description: 'Which store to publish to'
+        type: choice
+        options:
+          - both
+          - chrome
+          - firefox
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get extension version
+        id: ext
+        run: echo "version=$(node -p "require('./parachord-extension/manifest.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Package extensions
+        run: npm run package:extension
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-v${{ steps.ext.outputs.version }}
+          path: dist/parachord-extension-*.zip
+          retention-days: 90
+
+      # ── Firefox Add-ons (AMO) ──────────────────────────────────────────
+      # web-ext sign --channel=listed submits the new version for AMO review.
+      # It returns immediately; approval happens asynchronously on Mozilla's side.
+      - name: Submit to Firefox Add-ons (AMO)
+        if: >-
+          !inputs.dry_run
+          && (inputs.target == 'firefox' || inputs.target == 'both' || inputs.target == '')
+        run: |
+          mkdir -p /tmp/firefox-ext
+          unzip -o "dist/parachord-extension-v${{ steps.ext.outputs.version }}-firefox.zip" -d /tmp/firefox-ext
+          npx web-ext sign \
+            --channel=listed \
+            --source-dir=/tmp/firefox-ext \
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET"
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+      # ── Chrome Web Store ───────────────────────────────────────────────
+      # Upload then publish as two separate steps so a failed publish doesn't
+      # lose the uploaded artifact (it stays as a draft in the CWS dashboard).
+      - name: Upload to Chrome Web Store
+        if: >-
+          !inputs.dry_run
+          && (inputs.target == 'chrome' || inputs.target == 'both' || inputs.target == '')
+        run: |
+          npx chrome-webstore-upload-cli upload \
+            --source "dist/parachord-extension-v${{ steps.ext.outputs.version }}-chrome.zip"
+        env:
+          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+
+      - name: Publish on Chrome Web Store
+        if: >-
+          !inputs.dry_run
+          && (inputs.target == 'chrome' || inputs.target == 'both' || inputs.target == '')
+        run: npx chrome-webstore-upload-cli publish
+        env:
+          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
