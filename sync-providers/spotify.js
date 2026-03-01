@@ -26,7 +26,7 @@ const MAX_RETRIES = 5;
 
 const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) => {
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
-  const { method = 'GET', body } = options;
+  const { method = 'GET', body, refreshToken } = options;
 
   const response = await fetch(url, {
     method,
@@ -46,6 +46,12 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyRequest(endpoint, token, options, _retryCount + 1);
     }
+    if ((response.status === 401 || response.status === 403) && refreshToken) {
+      const newToken = await refreshToken();
+      if (newToken) {
+        return spotifyRequest(endpoint, newToken, { ...options, refreshToken: null }, 0);
+      }
+    }
     if (response.status === 401) {
       throw new Error('Spotify token expired. Please reconnect your Spotify account.');
     }
@@ -63,7 +69,7 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
 /**
  * Make an authenticated Spotify API request with pagination support
  */
-const spotifyFetch = async (endpoint, token, allItems = [], onProgress, _retryCount = 0) => {
+const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshToken, _retryCount = 0) => {
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
 
   // Validate pagination URLs stay on the expected host
@@ -89,7 +95,14 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, _retryCo
       // Rate limited - get retry-after header
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return spotifyFetch(endpoint, token, allItems, onProgress, _retryCount + 1);
+      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
+    }
+    // On 401/403, try refreshing the token once before failing
+    if ((response.status === 401 || response.status === 403) && refreshToken) {
+      const newToken = await refreshToken();
+      if (newToken) {
+        return spotifyFetch(endpoint, newToken, allItems, onProgress, null, 0);
+      }
     }
     if (response.status === 401) {
       throw new Error('Spotify token expired. Please reconnect your Spotify account.');
@@ -112,7 +125,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, _retryCo
   if (data.next) {
     // Small delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 100));
-    return spotifyFetch(data.next, token, combined, onProgress, 0);
+    return spotifyFetch(data.next, token, combined, onProgress, refreshToken, 0);
   }
 
   return combined;
@@ -229,34 +242,44 @@ const SpotifySyncProvider = {
   /**
    * Fetch all liked/saved tracks from Spotify
    */
-  async fetchTracks(token, onProgress) {
-    const items = await spotifyFetch('/me/tracks?limit=50', token, [], onProgress);
+  async fetchTracks(token, onProgress, refreshToken) {
+    const items = await spotifyFetch('/me/tracks?limit=50', token, [], onProgress, refreshToken);
     return items.map(item => transformTrack(item, item.added_at));
   },
 
   /**
    * Fetch all saved albums from Spotify
    */
-  async fetchAlbums(token, onProgress) {
-    const items = await spotifyFetch('/me/albums?limit=50', token, [], onProgress);
+  async fetchAlbums(token, onProgress, refreshToken) {
+    const items = await spotifyFetch('/me/albums?limit=50', token, [], onProgress, refreshToken);
     return items.map(transformAlbum);
   },
 
   /**
    * Fetch all followed artists from Spotify
    */
-  async fetchArtists(token, onProgress) {
+  async fetchArtists(token, onProgress, refreshToken) {
     // Artists use cursor-based pagination, different from other endpoints
+    let currentToken = token;
     const fetchArtistsPage = async (after = null, allArtists = []) => {
       const url = `/me/following?type=artist&limit=50${after ? `&after=${after}` : ''}`;
       const response = await fetch(`${SPOTIFY_API_BASE}${url}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${currentToken}`,
           'Content-Type': 'application/json'
         }
       });
 
       if (!response.ok) {
+        // On 401/403, try refreshing the token once before failing
+        if ((response.status === 401 || response.status === 403) && refreshToken) {
+          const newToken = await refreshToken();
+          if (newToken) {
+            currentToken = newToken;
+            refreshToken = null; // Only retry once
+            return fetchArtistsPage(after, allArtists);
+          }
+        }
         if (response.status === 401) {
           throw new Error('Spotify token expired. Please reconnect your Spotify account.');
         }
@@ -291,8 +314,8 @@ const SpotifySyncProvider = {
    * Note: Spotify API doesn't expose folder structure directly via standard endpoints
    * Folders are only available in the desktop app's internal API
    */
-  async fetchPlaylists(token, onProgress) {
-    const items = await spotifyFetch('/me/playlists?limit=50', token, [], onProgress);
+  async fetchPlaylists(token, onProgress, refreshToken) {
+    const items = await spotifyFetch('/me/playlists?limit=50', token, [], onProgress, refreshToken);
 
     // Get current user ID for ownership check
     const userResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
@@ -317,8 +340,8 @@ const SpotifySyncProvider = {
   /**
    * Fetch tracks for a specific playlist
    */
-  async fetchPlaylistTracks(playlistId, token, onProgress) {
-    const items = await spotifyFetch(`/playlists/${playlistId}/tracks?limit=100`, token, [], onProgress);
+  async fetchPlaylistTracks(playlistId, token, onProgress, refreshToken) {
+    const items = await spotifyFetch(`/playlists/${playlistId}/tracks?limit=100`, token, [], onProgress, refreshToken);
     return items
       .filter(item => item.track) // Filter out null tracks (deleted/unavailable)
       .map(item => transformTrack(item, item.added_at));

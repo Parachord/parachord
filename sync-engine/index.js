@@ -155,18 +155,18 @@ const applyDiff = (collectionItems, diff) => {
 /**
  * Sync a specific data type (tracks, albums, artists) for a provider
  */
-const syncDataType = async (provider, token, dataType, localData, onProgress) => {
+const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken) => {
   // Fetch remote data
   let remoteData;
   switch (dataType) {
     case 'tracks':
-      remoteData = await provider.fetchTracks(token, onProgress);
+      remoteData = await provider.fetchTracks(token, onProgress, refreshToken);
       break;
     case 'albums':
-      remoteData = await provider.fetchAlbums(token, onProgress);
+      remoteData = await provider.fetchAlbums(token, onProgress, refreshToken);
       break;
     case 'artists':
-      remoteData = await provider.fetchArtists(token, onProgress);
+      remoteData = await provider.fetchArtists(token, onProgress, refreshToken);
       break;
     default:
       throw new Error(`Unknown data type: ${dataType}`);
