@@ -80,6 +80,24 @@
       ],
       "js": ["content-soundcloud.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*/*"],
+      "exclude_matches": [
+        "*://open.spotify.com/*",
+        "*://music.apple.com/*",
+        "*://www.youtube.com/*",
+        "*://youtube.com/*",
+        "*://*.bandcamp.com/*",
+        "*://bandcamp.com/*",
+        "*://soundcloud.com/*",
+        "*://pitchfork.com/*",
+        "*://www.last.fm/*",
+        "*://last.fm/*",
+        "*://listenbrainz.org/*"
+      ],
+      "js": ["content-inline.js"],
+      "run_at": "document_idle"
     }
   ],
   "icons": {

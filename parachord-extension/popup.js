@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const pageIndicatorName = document.getElementById('page-indicator-name');
   const spotifyInterceptToggle = document.getElementById('spotify-intercept');
   const appleMusicInterceptToggle = document.getElementById('applemusic-intercept');
+  const inlineButtonsToggle = document.getElementById('inline-buttons');
 
   // Detect page type from URL
   function detectPageType(url) {
@@ -498,13 +499,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Refresh status every 2 seconds
   setInterval(updateStatus, 2000);
 
-  // Load intercept settings
+  // Load settings
   chrome.storage.local.get(
-    ['spotifyInterceptEnabled', 'appleMusicInterceptEnabled'],
+    ['spotifyInterceptEnabled', 'appleMusicInterceptEnabled', 'inlineButtonsEnabled'],
     (result) => {
       // Default to true if not set
       spotifyInterceptToggle.checked = result.spotifyInterceptEnabled !== false;
       appleMusicInterceptToggle.checked = result.appleMusicInterceptEnabled !== false;
+      inlineButtonsToggle.checked = result.inlineButtonsEnabled !== false;
     }
   );
 
@@ -522,5 +524,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       appleMusicInterceptEnabled: appleMusicInterceptToggle.checked
     });
     console.log('[Popup] Apple Music intercept:', appleMusicInterceptToggle.checked);
+  });
+
+  // Save inline buttons setting
+  inlineButtonsToggle.addEventListener('change', () => {
+    chrome.storage.local.set({
+      inlineButtonsEnabled: inlineButtonsToggle.checked
+    });
+    console.log('[Popup] Inline buttons:', inlineButtonsToggle.checked);
   });
 });
