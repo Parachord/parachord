@@ -16,9 +16,9 @@ const os = require('os');
 
 const HOST_NAME = 'com.parachord.desktop';
 
-// Default Chrome extension ID derived from the key in manifest.json.
-// Override with --extension-id=<id> for development with a different key.
-const DEFAULT_EXTENSION_ID = 'gffljdkpaclmggjjdkpanjddghmdogcb';
+// Chrome Web Store extension ID.
+// Override with --extension-id=<id> for development with an unpacked extension.
+const DEFAULT_EXTENSION_ID = 'gibkgapadebfoillbakpgmgpnppjlnie';
 
 // Firefox extension ID — must match browser_specific_settings.gecko.id in the
 // Firefox manifest variant.
