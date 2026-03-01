@@ -18,15 +18,9 @@
 
   console.log('[Parachord] Content script loaded on:', site, 'hostname:', hostname, 'pathname:', pathname);
 
-  // Notify background that we're on a supported page
-  chrome.runtime.sendMessage({
-    type: 'event',
-    event: 'connected',
-    site: site,
-    url: window.location.href
-  }).catch(() => {
-    // Background script may not be ready yet, will retry via message queue
-  });
+  // Don't send 'connected' event on page load - wait until media is actually found.
+  // Sending it eagerly causes the desktop app to show the EXTERNAL indicator and
+  // potentially disrupt Spotify/other streaming playback.
 
   // Get video/audio element based on site
   function getMediaElement() {
@@ -126,6 +120,14 @@
   waitForMedia((media) => {
     setupMediaListeners(media);
     console.log('[Parachord] Media element found:', media.tagName);
+
+    // Now that media is found, notify background we're connected
+    chrome.runtime.sendMessage({
+      type: 'event',
+      event: 'connected',
+      site: site,
+      url: window.location.href
+    }).catch(() => {});
   });
 
   // Also handle dynamic page navigation (SPA)
@@ -133,15 +135,16 @@
   const observer = new MutationObserver(() => {
     if (window.location.href !== lastUrl) {
       lastUrl = window.location.href;
-      waitForMedia(setupMediaListeners);
-
-      // Notify about new page
-      chrome.runtime.sendMessage({
-        type: 'event',
-        event: 'connected',
-        site: site,
-        url: window.location.href
-      }).catch(() => {});
+      waitForMedia((media) => {
+        setupMediaListeners(media);
+        // Notify about new page only after media is found
+        chrome.runtime.sendMessage({
+          type: 'event',
+          event: 'connected',
+          site: site,
+          url: window.location.href
+        }).catch(() => {});
+      });
     }
   });
 

@@ -87,20 +87,13 @@
     btn.setAttribute('aria-label', 'Send to Parachord');
     btn.title = 'Send to Parachord';
 
-    // Inline Parachord "p" icon
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 128 128');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.style.cssText = 'pointer-events:none;display:block;';
-    svg.innerHTML =
-      '<g transform="translate(16,10) scale(.75)" fill="white">' +
-      '<path d="M104 52c0 18.8-12.2 35.5-31 35.5S40 70.8 40 52s14.3-34.5 33-34.5S104 33.2 104 52z" fill="#1f2937"/>' +
-      '<path d="M72.5 4.5c24.2 0 45 20.8 45 48s-20.8 48-45 48-45-20.8-45-48 20.8-48 45-48z" stroke="white" stroke-width="27" fill="none"/>' +
-      '<rect x="14" y="50" width="25" height="95"/>' +
-      '<path d="M29.3 92c.9 2.1 3.7 2.4 5.1.6L72 43.3V158H-31V-13h14.4L29.3 92z"/>' +
-      '</g>';
-    btn.appendChild(svg);
+    // Parachord icon
+    const img = document.createElement('img');
+    img.src = chrome.runtime.getURL('icons/icon16.png');
+    img.width = 14;
+    img.height = 14;
+    img.style.cssText = 'pointer-events:none;display:block;';
+    btn.appendChild(img);
 
     const handler = (e) => {
       e.preventDefault();
