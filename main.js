@@ -2114,6 +2114,63 @@ function getSpotifyCredentials() {
   };
 }
 
+/**
+ * Ensure we have a valid (non-expired) Spotify access token.
+ * Refreshes automatically if the stored token is expired.
+ * Returns the valid access token string, or null if unavailable.
+ */
+async function ensureValidSpotifyToken(force = false) {
+  const token = store.get('spotify_token');
+  const expiry = store.get('spotify_token_expiry');
+  const refreshToken = store.get('spotify_refresh_token');
+
+  // Token is still valid — return it (unless force-refresh requested)
+  if (!force && token && expiry && Date.now() < expiry) {
+    return token;
+  }
+
+  // Token expired or missing — try to refresh
+  if (refreshToken) {
+    const { clientId } = getSpotifyCredentials();
+    if (!clientId) return null;
+
+    try {
+      console.log('🔄 [Sync] Refreshing expired Spotify token...');
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId
+        })
+      });
+
+      if (!response.ok) {
+        console.error('❌ [Sync] Token refresh failed:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      const newExpiry = Date.now() + ((data.expires_in || 3600) * 1000);
+
+      store.set('spotify_token', data.access_token);
+      store.set('spotify_token_expiry', newExpiry);
+      if (data.refresh_token) {
+        store.set('spotify_refresh_token', data.refresh_token);
+      }
+
+      console.log('✅ [Sync] Token refreshed, expires:', new Date(newExpiry).toISOString());
+      return data.access_token;
+    } catch (error) {
+      console.error('❌ [Sync] Token refresh error:', error.message);
+      return null;
+    }
+  }
+
+  return token || null;
+}
+
 // Helper to get SoundCloud credentials with priority: user-stored > env > fallback
 function getSoundCloudCredentials() {
   // First check user-configured credentials (stored via UI)
@@ -4682,10 +4739,10 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     return { success: false, error: 'Sync already in progress' };
   }
 
-  // Get token
+  // Get token (refresh if expired)
   let token;
   if (providerId === 'spotify') {
-    token = store.get('spotify_token');
+    token = await ensureValidSpotifyToken();
   } else if (providerId === 'applemusic') {
     if (!generatedMusicKitToken) {
       await musicKitTokenReady;
@@ -4700,6 +4757,17 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
   if (!token) {
     return { success: false, error: 'Not authenticated' };
   }
+
+  // For Spotify, provide a token refresh callback that the sync provider can
+  // call mid-sync when it encounters a 401 (token expired during long syncs).
+  // Force-refreshes because a 401 means the current token was rejected.
+  const refreshToken = providerId === 'spotify'
+    ? async () => {
+        const newToken = await ensureValidSpotifyToken(true);
+        if (newToken) token = newToken;
+        return newToken;
+      }
+    : null;
 
   // Mark sync as active
   activeSyncs.set(providerId, { startedAt: Date.now(), cancelled: false });
@@ -4737,7 +4805,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         token,
         'tracks',
         collection.tracks || [],
-        (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p })
+        (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p }),
+        refreshToken
       );
       console.log(`[Sync] Track sync complete. Output: ${trackResult.data.length} tracks. Stats:`, trackResult.stats);
       collection.tracks = trackResult.data;
@@ -4755,7 +4824,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         token,
         'albums',
         collection.albums || [],
-        (p) => sendProgress({ phase: 'fetching', type: 'albums', ...p })
+        (p) => sendProgress({ phase: 'fetching', type: 'albums', ...p }),
+        refreshToken
       );
       console.log(`[Sync] Album sync complete. Output: ${albumResult.data.length} albums. Stats:`, albumResult.stats);
       collection.albums = albumResult.data;
@@ -4773,7 +4843,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         token,
         'artists',
         collection.artists || [],
-        (p) => sendProgress({ phase: 'fetching', type: 'artists', ...p })
+        (p) => sendProgress({ phase: 'fetching', type: 'artists', ...p }),
+        refreshToken
       );
       console.log(`[Sync] Artist sync complete. Output: ${artistResult.data.length} artists. Stats:`, artistResult.stats);
       collection.artists = artistResult.data;
@@ -4789,7 +4860,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
       // Fetch playlist metadata to check for updates
       sendProgress({ phase: 'playlists', current: 0, total: settings.selectedPlaylistIds.length, providerId });
-      const { playlists: remotePlaylists } = await provider.fetchPlaylists(token);
+      const { playlists: remotePlaylists } = await provider.fetchPlaylists(token, null, refreshToken);
       const suppressedPlaylists = store.get('suppressed_sync_playlists') || {};
       const suppressedForProvider = suppressedPlaylists[providerId] || [];
       const selectedRemote = remotePlaylists.filter(p =>
@@ -4815,7 +4886,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         if (!localPlaylist) {
           // New playlist - fetch tracks and add
           console.log(`[Sync] Importing playlist: ${remotePlaylist.name}`);
-          const tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token);
+          const tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token, null, refreshToken);
 
           // Use earliest track addedAt as playlist creation estimate (Spotify doesn't provide playlist follow date)
           const earliestTrackDate = tracks.length > 0
