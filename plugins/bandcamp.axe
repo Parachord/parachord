@@ -18,6 +18,10 @@
     "urlLookup": true,
     "purchase": true
   },
+  "urlPatterns": [
+    "*.bandcamp.com/track/*",
+    "*.bandcamp.com/album/*"
+  ],
   "settings": {
     "requiresAuth": false,
     "authType": "none",
