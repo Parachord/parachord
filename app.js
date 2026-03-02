@@ -5111,6 +5111,7 @@ const Parachord = () => {
   const [raycastInfoOpen, setRaycastInfoOpen] = useState(false); // Raycast extension info modal
   const [whatsNewOpen, setWhatsNewOpen] = useState(false); // What's New release notes modal
   const [whatsNewDismissedVersion, setWhatsNewDismissedVersion] = useState(null); // Last version user dismissed What's New for
+  const [whatsNewHighlights, setWhatsNewHighlights] = useState([]); // Parsed release note highlights
   const [appVersion, setAppVersion] = useState(null); // Current app version from electron
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
@@ -18319,7 +18320,7 @@ ${trackListXml}
         setFirstRunTutorial(prev => ({ ...prev, open: true }));
       }
 
-      // Load What's New dismissed version and current app version
+      // Load What's New dismissed version, current app version, and release highlights
       const dismissedVersion = await window.electron.store.get('whats_new_dismissed_version');
       if (dismissedVersion) {
         setWhatsNewDismissedVersion(dismissedVersion);
@@ -18328,6 +18329,12 @@ ${trackListXml}
         const version = await window.electron.updater.getVersion();
         setAppVersion(version);
         console.log(`📦 App version: ${version}, What's New dismissed for: ${dismissedVersion || 'never'}`);
+      }
+      if (window.electron?.releaseNotes?.get) {
+        const result = await window.electron.releaseNotes.get();
+        if (result.success && result.highlights.length > 0) {
+          setWhatsNewHighlights(result.highlights);
+        }
       }
 
       // Mark cache as loaded — resolver auth checks may still be in-flight (non-blocking).
@@ -51248,45 +51255,20 @@ useEffect(() => {
         React.createElement('div', {
           style: { padding: '24px', maxHeight: '50vh', overflowY: 'auto' }
         },
-          // Release highlights
-          [
-            {
-              iconPath: 'M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839-1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4',
-              filled: false,
-              title: 'Browser Extension v0.3.0',
-              text: 'Native messaging for Chrome & Firefox — secure, local-only communication'
-            },
-            {
-              iconPath: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
-              filled: false,
-              title: 'Smart Links — Large Embed',
-              text: '600px embed player with album art, Play All, and full tracklist'
-            },
-            {
-              iconPath: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
-              filled: false,
-              title: 'Universal Mac Build',
-              text: 'DMG now includes both Intel and Apple Silicon'
-            },
-            {
-              iconPath: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
-              filled: false,
-              title: 'Spotify Sync',
-              text: 'Synced tracks carry source data — skips redundant API lookups'
-            },
-            {
-              iconPath: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z',
-              filled: false,
-              title: 'Fresh Drops Reliability',
-              text: 'Cache persistence fixed, faster loading, and upcoming release badges'
-            },
-            {
-              iconPath: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
-              filled: false,
-              title: 'Bug Fixes',
-              text: 'Queue restore, Spotify sync, playlist handling, and cache fixes'
-            }
-          ].map((item, i) =>
+          // Release highlights — parsed from RELEASE_NOTES.md (GitHub or bundled fallback)
+          (() => {
+            const iconPaths = [
+              'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
+              'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
+              'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
+              'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+              'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+              'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4'
+            ];
+            return (whatsNewHighlights.length > 0 ? whatsNewHighlights : [
+              { title: 'See the latest changes', text: 'Click "Full Release Notes" below for details' }
+            ]).slice(0, 6).map((h, i) => ({ iconPath: iconPaths[i % iconPaths.length], filled: false, title: h.title, text: h.text }));
+          })().map((item, i) =>
             React.createElement('div', {
               key: i,
               style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }

@@ -385,6 +385,11 @@ contextBridge.exposeInMainWorld('electron', {
     get: (key) => ipcRenderer.invoke('config-get', key)
   },
 
+  // Release notes - load parsed highlights from RELEASE_NOTES.md
+  releaseNotes: {
+    get: () => ipcRenderer.invoke('release-notes-get')
+  },
+
   // Scrobbler config - get Last.fm API credentials from main process
   getScrobblerConfig: () => ipcRenderer.invoke('get-scrobbler-config'),
 

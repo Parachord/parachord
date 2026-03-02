@@ -81,6 +81,7 @@
       "!dist",
       "!**/*.md",
       "!**/*.map",
+      "RELEASE_NOTES.md",
       "!collection.json",
       "!native",
       "!tailwind.config.js",
