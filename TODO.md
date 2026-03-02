@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-02-12
+> Last updated: 2026-03-02
 
 ---
 
@@ -145,6 +145,9 @@
 
 ### Home Page
 - Dynamic home page of personlized content - both of stuff you love and stuff you may love
+- AI-powered album and artist suggestions with variety themes and MusicBrainz validation
+- Fresh Drops — new releases from artists you follow, cached between sessions
+- What's New card showing release highlights fetched from GitHub Releases API
 
 ### Artist Pages
 - Filterable discography (including studio albums, singles, compilations and live recordings)
@@ -155,7 +158,9 @@
 
 ### Library & History
 - Spotify library sync (tracks, albums, artists, playlists)
+- Apple Music library sync
 - Background sync with update detection
+- Incremental sync — skip full fetch when library count unchanged
 - Shuffle mode with Collection Station
 - Personal charts (over varying time frames), listening history
 - Persist library to disk for offline access
@@ -178,20 +183,25 @@
 - Inline error states for Charts and Critics Picks (replaced modal dialogs)
 - Home page: Songs card and improved AI card
 
-## Web
+### Web
 - Embedded web player with smart links
 - Browser extension for one-click imports and YT playback control
-- Parchord.com website
+- Inline "Send to Parachord" buttons on music sites (Bandcamp, Pitchfork, Last.fm, ListenBrainz)
+- Automated extension publishing to Chrome Web Store and Firefox Add-ons (AMO)
+- Embeddable "Send to Parachord" button for third-party websites (CDN-hosted on Cloudflare Pages)
+- Parachord.com website
 
 ### Platform
-- macOS build with Apple Silicon support
+- macOS universal build (Intel + Apple Silicon)
+- Windows builds (x64, arm64) with native title bar for menu access
 - Linux builds (.deb, .rpm, AppImage)
 - Auto-updates via Electron auto-updater
 - macOS dock icon properly renders without gray outline (square SVG source)
 - Icon generation scripts for all platforms
 - DMG installer with Applications folder icon
+- CDN libraries bundled locally for instant app startup
 
-### Smart Links (v0.7.x)
+### Smart Links (v0.7.x–v0.8.x)
 - Publish Smart Links from context menu — shareable web pages for any track
 - Cloudflare Workers backend with KV storage at go.parachord.com
 - Embedded player with WebSocket connection to Parachord desktop app ("Play in Parachord")
@@ -199,6 +209,10 @@
 - Official service logos (Spotify, YouTube, SoundCloud, Apple Music, Bandcamp)
 - Copy Embed Code for embedding smart link players in websites
 - Auto-copy link URL to clipboard on publish
+- Album & playlist smart links with service icons and full tracklist
+- Large embed (600px) with album art, Play All button, and per-track service badges
+- oEmbed discovery for rich embeds on Discord, Slack, etc.
+- Playlist smart links with 2×2 album art mosaic and .xspf download
 
 ### MCP Server (v0.7.x)
 - MCP server for Claude Desktop integration (playback control, search, queue management)
@@ -222,7 +236,7 @@
 - API credential fields masked with password input type
 - Spotify library sync migrated to unified /me/library endpoints (Feb 2026 API)
 
-### Stability & Performance (v0.7.x)
+### Stability & Performance (v0.7.x–v0.8.x)
 - Parallelized app startup for faster launch
 - Fixed track resolver constantly re-resolving cached tracks
 - Validate auth tokens when restoring saved resolver settings
@@ -238,23 +252,37 @@
 - Fixed app menu name from "parachord-desktop" to "Parachord"
 - Auto-updater now finds pre-release builds
 - SoundCloud credential error toast only shows when fallback also fails
+- Stabilized React.memo props to prevent unnecessary re-renders
+- Fixed updateVisibility infinite loop causing UI freeze
+- Slim release build with non-blocking collection save
+- Fixed Spotify token expiring mid-sync for large libraries
+- Fixed resolvers not re-enabling after auth token refresh
+- Fixed IPC listener accumulation for auth events
+- Fixed production build crash (tools/dj-tools.js excluded from ASAR)
+- Fixed invisible window on startup with show fallback and isolated service errors
 
-### Social (v0.7.x)
+### Social (v0.7.x–v0.8.x)
 - Friends section always visible in sidebar for discoverability
+- Friend track rows on Home clickable to play with full context menus
+- Stable friend sorting (re-sort only when track identity changes)
+- End listen-along session when user manually plays a different track
 
 ### Security (v0.6.x)
 - Comprehensive security and code review
 - Fixed critical, high, and medium severity vulnerabilities
 - MusicKit .p8 key removed from git tree, injected via GitHub Actions secret
 
-## Development
+### Development
 - Automated CI/CD pipeline
 - Automated builds for Mac/Windows/Linux
 - CI artifact names include version to prevent confusion
 - MusicKit key injected from `MUSICKIT_PRIVATE_KEY` GitHub secret during CI builds
-- Jest tests for charts utilities and comprehensive AI/chat test suite (130 tests)
+- Jest tests for charts, AI/chat, playback, queue, resolver, sync, scrobbling, and extension (200+ tests)
 - Auto-updates enabled (publish releases as non-draft)
 - Reverse sync workflow from dedicated plugin/extension repos to monorepo
+- Auto-label PRs by changed files with categorized release notes
+- Blog RSS feed to GitHub Discussions announcements workflow
+- Release notes auto-posted to GitHub Discussions
 
 ---
 
