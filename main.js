@@ -4988,7 +4988,15 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
     sendProgress({ phase: 'complete', message: 'Sync complete!' });
 
-    return { success: true, results, collection };
+    // Only send the full collection back to the renderer if there were
+    // meaningful changes (adds, removes, updates). For no-op syncs where
+    // everything is unchanged, skip the expensive IPC serialisation of
+    // the entire collection — the data is already saved to disk above.
+    const hasChanges = Object.values(results).some(r =>
+      (r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0
+    );
+
+    return { success: true, results, collection: hasChanges ? collection : null };
   } catch (error) {
     console.error(`❌ Sync error for ${providerId}:`, error);
     sendProgress({ phase: 'error', message: error.message });

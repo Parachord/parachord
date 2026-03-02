@@ -5255,13 +5255,25 @@ const Parachord = () => {
   });
 
   // Background sync timer (every 15 minutes)
+  // Use a ref so the sync callback always reads the latest settings
+  // without re-firing the effect (which would reset the timers).
+  const resolverSyncSettingsRef = useRef(resolverSyncSettings);
+  useEffect(() => { resolverSyncSettingsRef.current = resolverSyncSettings; }, [resolverSyncSettings]);
+
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
+    const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
 
     const runBackgroundSync = async () => {
+      const currentSettings = resolverSyncSettingsRef.current;
       // Check each enabled provider
-      for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
+      for (const [providerId, settings] of Object.entries(currentSettings)) {
         if (settings.enabled) {
+          // Skip if last sync was recent (within the sync interval)
+          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < SYNC_INTERVAL) {
+            console.log(`[Sync] Skipping background sync for ${providerId} — last sync was ${Math.round((Date.now() - settings.lastSyncAt) / 60000)}m ago`);
+            continue;
+          }
           try {
             const authStatus = await window.electron.sync.checkAuth(providerId);
             if (authStatus.authenticated) {
@@ -5289,10 +5301,10 @@ const Parachord = () => {
                     }
                     return incoming;
                   });
-                } else {
-                  const newCollection = await window.electron.collection.load();
-                  setCollectionData(newCollection);
                 }
+                // When collection is null, no meaningful changes occurred
+                // (only syncedAt timestamps updated). Skip reloading — the
+                // renderer already has the current data.
               } else {
                 console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
               }
@@ -5304,8 +5316,8 @@ const Parachord = () => {
       }
     };
 
-    // Run on app start (after initial load)
-    const initialSyncTimeout = setTimeout(runBackgroundSync, 5000);
+    // Delay initial sync to let the app fully load and become interactive
+    const initialSyncTimeout = setTimeout(runBackgroundSync, INITIAL_DELAY);
 
     // Set up interval
     const intervalId = setInterval(runBackgroundSync, SYNC_INTERVAL);
@@ -5314,7 +5326,7 @@ const Parachord = () => {
       clearTimeout(initialSyncTimeout);
       clearInterval(intervalId);
     };
-  }, [resolverSyncSettings]);
+  }, []); // Stable effect — reads settings from ref
 
   // Friends state
   const [friends, setFriends] = useState([]);
@@ -8338,11 +8350,9 @@ const Parachord = () => {
           albums: result.collection.albums || [],
           artists: result.collection.artists || []
         });
-      } else {
-        // Fallback to loading from disk if collection not in result
-        const newCollection = await window.electron.collection.load();
-        setCollectionData(newCollection);
       }
+      // When collection is null, sync succeeded but nothing meaningful changed
+      // (only syncedAt timestamps updated). Current UI state is already correct.
 
       // Reload playlists if they were synced
       if (settings.syncPlaylists && selectedPlaylists.length > 0) {
