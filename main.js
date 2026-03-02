@@ -4616,7 +4616,7 @@ ipcMain.handle('collection:save', async (event, collection) => {
 
   try {
     const collectionPath = path.join(app.getPath('userData'), 'collection.json');
-    await fsPromises.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
+    await fsPromises.writeFile(collectionPath, JSON.stringify(collection), 'utf8');
     console.log(`✅ Saved collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
     return { success: true };
   } catch (error) {
@@ -4976,7 +4976,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     // Save collection
     sendProgress({ phase: 'saving', message: 'Saving collection...' });
     console.log(`[Sync] Saving collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
-    await fsPromises.writeFile(collectionPath, JSON.stringify(collection, null, 2), 'utf8');
+    await fsPromises.writeFile(collectionPath, JSON.stringify(collection), 'utf8');
 
     // Update sync settings with last sync time
     const syncSettings = store.get('resolver_sync_settings') || {};
