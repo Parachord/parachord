@@ -1273,7 +1273,7 @@ const FixedTooltip = ({ children, content }) => {
           maxWidth: 280,
           minWidth: 180,
           backgroundColor: 'var(--tooltip-bg)',
-          color: '#ffffff',
+          color: 'var(--tooltip-text)',
           borderRadius: 8,
           padding: '10px 14px',
           fontSize: 12,
@@ -30476,13 +30476,13 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '4px 8px 12px',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
+            borderBottom: '1px solid var(--border-subtle)'
           }
         },
           React.createElement('button', {
             className: 'w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors rounded-lg',
             style: {
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               color: activeView === 'search' ? 'var(--text-primary)' : 'var(--text-tertiary)'
             },
             onClick: () => navigateTo('search')
@@ -30813,7 +30813,7 @@ useEffect(() => {
               className: `px-3 py-1 rounded cursor-pointer group transition-all duration-300 ease-in-out flex items-center ${isNewlyPinned ? 'friend-entry' : ''} ${wasMoved ? 'friend-moved' : ''}`,
               style: {
                 minHeight: '44px',
-                backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.06)' : 'transparent',
+                backgroundColor: isSelected ? 'var(--hover-bg-default)' : 'transparent',
                 color: isSelected ? 'var(--text-primary)' : 'inherit'
               },
               draggable: true,
@@ -30997,7 +30997,7 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '12px 16px 16px',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            borderTop: '1px solid var(--border-subtle)'
           }
         },
           React.createElement('button', {
@@ -31286,7 +31286,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -31430,7 +31430,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer'
@@ -34030,9 +34030,9 @@ useEffect(() => {
           artistPageTab === 'music' && React.createElement('div', {
             className: 'sticky top-0 z-10 flex items-center px-6 py-4',
             style: {
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              backgroundColor: 'var(--bg-secondary)',
               backdropFilter: 'blur(8px)',
-              borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
+              borderBottom: '1px solid var(--border-subtle)'
             }
           },
             // Release type filter pills
@@ -34063,7 +34063,7 @@ useEffect(() => {
                     borderRadius: '20px',
                     fontSize: '13px',
                     fontWeight: '500',
-                    backgroundColor: isActive ? '#7c3aed' : 'rgba(0, 0, 0, 0.04)',
+                    backgroundColor: isActive ? '#7c3aed' : 'var(--hover-bg-default)',
                     color: isActive ? '#ffffff' : 'var(--nav-inactive)',
                     border: 'none',
                     cursor: 'pointer',
@@ -34129,7 +34129,7 @@ useEffect(() => {
                   style: {
                     padding: '6px 14px',
                     borderRadius: '20px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                    backgroundColor: 'var(--hover-bg-default)',
                     border: '1px solid var(--border-subtle)'
                   }
                 },
@@ -39142,7 +39142,7 @@ useEffect(() => {
                         cursor: 'pointer',
                         transition: 'background-color 100ms ease'
                       },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)',
+                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
                     },
                       React.createElement('div', {
@@ -39835,7 +39835,7 @@ useEffect(() => {
                             clipPath: 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)',
                             background: onAir
                               ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                              : 'linear-gradient(135deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.04) 100%)',
+                              : 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
                             transition: 'all 0.3s ease'
                           },
                           className: 'group-hover:scale-105'
@@ -44137,8 +44137,8 @@ useEffect(() => {
           React.createElement('div', {
             className: 'flex items-center justify-between px-8 py-4 flex-shrink-0',
             style: {
-              borderBottom: '1px solid rgba(0, 0, 0, 0.06)',
-              backgroundColor: 'rgba(255, 255, 255, 0.8)'
+              borderBottom: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-secondary)'
             }
           },
             React.createElement('span', {
@@ -44159,7 +44159,7 @@ useEffect(() => {
                 fontSize: '12px',
                 fontWeight: '500',
                 color: 'var(--text-secondary)',
-                border: '1px solid rgba(0, 0, 0, 0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '6px',
                 backgroundColor: 'transparent',
                 cursor: 'pointer'
@@ -44176,9 +44176,9 @@ useEffect(() => {
               className: 'flex-shrink-0',
               style: {
                 width: '200px',
-                borderRight: '1px solid rgba(0, 0, 0, 0.06)',
+                borderRight: '1px solid var(--border-subtle)',
                 padding: '24px 0',
-                backgroundColor: 'rgba(249, 250, 251, 0.5)'
+                backgroundColor: 'var(--bg-secondary)'
               }
             },
               React.createElement('nav', { style: { padding: '0 12px' } },
@@ -44275,7 +44275,7 @@ useEffect(() => {
                     fontWeight: '500',
                     color: 'var(--text-primary)',
                     backgroundColor: 'var(--card-bg)',
-                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
@@ -44886,7 +44886,7 @@ useEffect(() => {
                         flex: 1,
                         padding: '10px 16px',
                         borderRadius: '8px',
-                        border: themePref === 'light' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        border: themePref === 'light' ? '2px solid #7c3aed' : '1px solid var(--border-subtle)',
                         backgroundColor: themePref === 'light' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
                         color: themePref === 'light' ? '#7c3aed' : 'var(--text-secondary)',
                         fontSize: '13px',
@@ -44908,7 +44908,7 @@ useEffect(() => {
                         flex: 1,
                         padding: '10px 16px',
                         borderRadius: '8px',
-                        border: themePref === 'dark' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        border: themePref === 'dark' ? '2px solid #7c3aed' : '1px solid var(--border-subtle)',
                         backgroundColor: themePref === 'dark' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
                         color: themePref === 'dark' ? '#7c3aed' : 'var(--text-secondary)',
                         fontSize: '13px',
@@ -44930,7 +44930,7 @@ useEffect(() => {
                         flex: 1,
                         padding: '10px 16px',
                         borderRadius: '8px',
-                        border: themePref === 'system' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        border: themePref === 'system' ? '2px solid #7c3aed' : '1px solid var(--border-subtle)',
                         backgroundColor: themePref === 'system' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
                         color: themePref === 'system' ? '#7c3aed' : 'var(--text-secondary)',
                         fontSize: '13px',
@@ -45075,7 +45075,7 @@ useEffect(() => {
                           style: {
                             padding: '10px 12px',
                             borderRadius: '8px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                            backgroundColor: 'var(--hover-bg-default)',
                             opacity: isVolumeDisabled ? 0.5 : 1
                           }
                         },
@@ -45118,7 +45118,7 @@ useEffect(() => {
                     }, 'No content resolvers enabled. Enable resolvers in Settings → Resolvers.'),
 
                   // Reset button - refined
-                  React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' } },
+                  React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
                     React.createElement('button', {
                       onClick: () => setResolverVolumeOffsets({
                         spotify: 0,
@@ -45136,7 +45136,7 @@ useEffect(() => {
                         fontWeight: '500',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--card-bg)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }
@@ -45250,7 +45250,7 @@ useEffect(() => {
                         gap: '12px',
                         padding: '12px',
                         borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'always' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: mediaKeyMode === 'always' ? 'rgba(124, 58, 237, 0.08)' : 'var(--hover-bg-default)',
                         cursor: 'pointer',
                         border: mediaKeyMode === 'always' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
                       }
@@ -45284,7 +45284,7 @@ useEffect(() => {
                         gap: '12px',
                         padding: '12px',
                         borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'non-spotify' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: mediaKeyMode === 'non-spotify' ? 'rgba(124, 58, 237, 0.08)' : 'var(--hover-bg-default)',
                         cursor: 'pointer',
                         border: mediaKeyMode === 'non-spotify' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
                       }
@@ -45322,7 +45322,7 @@ useEffect(() => {
                         gap: '12px',
                         padding: '12px',
                         borderRadius: '8px',
-                        backgroundColor: mediaKeyMode === 'never' ? 'rgba(124, 58, 237, 0.08)' : 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: mediaKeyMode === 'never' ? 'rgba(124, 58, 237, 0.08)' : 'var(--hover-bg-default)',
                         cursor: 'pointer',
                         border: mediaKeyMode === 'never' ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid transparent'
                       }
@@ -45753,7 +45753,7 @@ useEffect(() => {
                   style: {
                     width: '64px',
                     height: '1px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+                    backgroundColor: 'var(--border-subtle)',
                     margin: '0 auto 32px'
                   }
                 }),
@@ -47753,7 +47753,7 @@ useEffect(() => {
         // Header
         React.createElement('div', {
           className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
           React.createElement('h3', {
             style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)' }
@@ -47769,7 +47769,7 @@ useEffect(() => {
               color: 'var(--text-tertiary)',
               borderRadius: '8px'
             },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -47921,9 +47921,9 @@ useEffect(() => {
 
           // Divider
           React.createElement('div', { className: 'flex items-center gap-3', style: { marginBottom: '16px' } },
-            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } }),
+            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' } }),
             React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: '500' } }, 'or'),
-            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'rgba(0, 0, 0, 0.08)' } })
+            React.createElement('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' } })
           ),
 
           // Option 2: Load from file - Card style with dashed border
@@ -48005,7 +48005,7 @@ useEffect(() => {
         // Header
         React.createElement('div', {
           className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
           React.createElement('h3', {
             style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)' }
@@ -48021,7 +48021,7 @@ useEffect(() => {
               color: 'var(--text-tertiary)',
               borderRadius: '8px'
             },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -48074,7 +48074,7 @@ useEffect(() => {
         // Footer
         React.createElement('div', {
           className: 'flex justify-end gap-3',
-          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
           React.createElement('button', {
             onClick: () => {
@@ -48089,7 +48089,7 @@ useEffect(() => {
               color: 'var(--text-secondary)',
               borderRadius: '10px'
             },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           }, 'Cancel'),
           React.createElement('button', {
@@ -48267,7 +48267,7 @@ useEffect(() => {
             className: 'flex items-center justify-between',
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('div', null,
@@ -48306,7 +48306,7 @@ useEffect(() => {
           selectedResolver.id === 'spotify' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('div', { className: 'flex items-center justify-between' },
@@ -48374,7 +48374,7 @@ useEffect(() => {
               style: {
                 marginTop: '16px',
                 padding: '12px',
-                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                backgroundColor: 'var(--hover-bg-default)',
                 borderRadius: '8px'
               }
             },
@@ -48408,7 +48408,7 @@ useEffect(() => {
                   React.createElement('code', {
                     onClick: () => navigator.clipboard.writeText('http://127.0.0.1:8888/callback'),
                     title: 'Click to copy',
-                    style: { cursor: 'pointer', backgroundColor: 'rgba(0,0,0,0.05)', padding: '1px 4px', borderRadius: '3px' }
+                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px' }
                   }, 'http://127.0.0.1:8888/callback')
                 ),
                 React.createElement('div', null, '3. Copy your Client ID and paste it below')
@@ -48429,7 +48429,7 @@ useEffect(() => {
                     fontSize: '12px',
                     color: 'var(--text-primary)',
                     backgroundColor: 'var(--card-bg)',
-                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     outline: 'none'
                   }
@@ -48451,7 +48451,7 @@ useEffect(() => {
                       fontSize: '12px',
                       color: 'var(--text-secondary)',
                       backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      border: '1px solid var(--border-subtle)',
                       borderRadius: '6px',
                       outline: 'none'
                     }
@@ -48467,7 +48467,7 @@ useEffect(() => {
                       fontSize: '12px',
                       color: 'var(--text-secondary)',
                       backgroundColor: 'var(--bg-secondary)',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      border: '1px solid var(--border-subtle)',
                       borderRadius: '6px',
                       cursor: 'pointer'
                     }
@@ -48505,7 +48505,7 @@ useEffect(() => {
                     fontWeight: '500',
                     color: 'var(--text-secondary)',
                     backgroundColor: 'transparent',
-                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     cursor: 'pointer'
                   }
@@ -48532,7 +48532,7 @@ useEffect(() => {
               'Change Client ID'
             ),
             spotifyConnected && spotifyAdvancedOpen && React.createElement('div', {
-              style: { marginTop: '8px', padding: '12px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+              style: { marginTop: '8px', padding: '12px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
             },
               React.createElement('div', { style: { marginBottom: '10px' } },
                 React.createElement('label', {
@@ -48545,7 +48545,7 @@ useEffect(() => {
                   placeholder: 'Your Spotify Client ID',
                   style: {
                     width: '100%', padding: '8px 10px', fontSize: '12px', color: 'var(--text-primary)',
-                    backgroundColor: 'var(--card-bg)', border: '1px solid rgba(0, 0, 0, 0.1)',
+                    backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)',
                     borderRadius: '6px', outline: 'none'
                   }
                 })
@@ -48568,9 +48568,9 @@ useEffect(() => {
             style: {
               marginTop: '20px',
               padding: '16px',
-              backgroundColor: 'rgba(0, 0, 0, 0.02)',
+              backgroundColor: 'var(--hover-bg-default)',
               borderRadius: '12px',
-              border: '1px solid rgba(0, 0, 0, 0.04)'
+              border: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('h4', {
@@ -48626,7 +48626,7 @@ useEffect(() => {
                       onClick: () => openSyncSetupModal(selectedResolver.id),
                       style: {
                         padding: '8px 14px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         color: 'var(--text-primary)',
                         fontSize: '13px',
                         fontWeight: '500',
@@ -48635,8 +48635,8 @@ useEffect(() => {
                         cursor: 'pointer',
                         transition: 'all 150ms ease'
                       },
-                      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'; },
-                      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; }
+                      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
+                      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
                     }, 'Manage Sync'),
                     React.createElement('button', {
                       onClick: () => setStopSyncDialog({ open: true, providerId: selectedResolver.id }),
@@ -48679,9 +48679,9 @@ useEffect(() => {
             style: {
               marginTop: '20px',
               padding: '16px',
-              backgroundColor: 'rgba(0, 0, 0, 0.02)',
+              backgroundColor: 'var(--hover-bg-default)',
               borderRadius: '12px',
-              border: '1px solid rgba(0, 0, 0, 0.04)'
+              border: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('h4', {
@@ -48732,7 +48732,7 @@ useEffect(() => {
             return React.createElement('div', {
               style: {
                 padding: '16px 0',
-                borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+                borderTop: '1px solid var(--border-subtle)'
               }
             },
               React.createElement('div', { className: 'flex items-center justify-between' },
@@ -48833,7 +48833,7 @@ useEffect(() => {
                   style: {
                     marginTop: '12px',
                     padding: '12px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                    backgroundColor: 'var(--hover-bg-default)',
                     borderRadius: '8px'
                   }
                 },
@@ -48872,7 +48872,7 @@ useEffect(() => {
                         fontSize: '12px',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--card-bg)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         outline: 'none'
                       }
@@ -48899,7 +48899,7 @@ useEffect(() => {
                         fontSize: '12px',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--card-bg)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         outline: 'none'
                       }
@@ -48930,7 +48930,7 @@ useEffect(() => {
                           fontSize: '12px',
                           color: 'var(--text-secondary)',
                           backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
+                          border: '1px solid var(--border-subtle)',
                           borderRadius: '6px',
                           outline: 'none'
                         }
@@ -48946,7 +48946,7 @@ useEffect(() => {
                           fontSize: '12px',
                           color: 'var(--text-secondary)',
                           backgroundColor: 'var(--bg-secondary)',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
+                          border: '1px solid var(--border-subtle)',
                           borderRadius: '6px',
                           cursor: 'pointer'
                         }
@@ -48995,7 +48995,7 @@ useEffect(() => {
                         fontSize: '12px',
                         fontWeight: '500',
                         color: 'var(--text-secondary)',
-                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer'
@@ -49011,7 +49011,7 @@ useEffect(() => {
           selectedResolver.id === 'qobuz' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('div', null,
@@ -49039,7 +49039,7 @@ useEffect(() => {
           selectedResolver.id === 'applemusic' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             // Native MusicKit availability notice
@@ -49161,7 +49161,7 @@ useEffect(() => {
                 style: {
                   marginTop: '12px',
                   padding: '12px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                  backgroundColor: 'var(--hover-bg-default)',
                   borderRadius: '8px'
                 }
               },
@@ -49197,7 +49197,7 @@ useEffect(() => {
                       fontSize: '12px',
                       color: 'var(--text-primary)',
                       backgroundColor: 'var(--card-bg)',
-                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      border: '1px solid var(--border-subtle)',
                       borderRadius: '6px',
                       outline: 'none'
                     }
@@ -49232,7 +49232,7 @@ useEffect(() => {
           selectedResolver.id === 'lastfm' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             // Connected state
@@ -49306,7 +49306,7 @@ useEffect(() => {
                       style: {
                         marginTop: '12px',
                         padding: '12px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         borderRadius: '8px'
                       }
                     },
@@ -49343,7 +49343,7 @@ useEffect(() => {
                             fontSize: '12px',
                             color: 'var(--text-primary)',
                             backgroundColor: 'var(--card-bg)',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
                           }
@@ -49370,7 +49370,7 @@ useEffect(() => {
                             fontSize: '12px',
                             color: 'var(--text-primary)',
                             backgroundColor: 'var(--card-bg)',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
                           }
@@ -49418,7 +49418,7 @@ useEffect(() => {
                             fontSize: '12px',
                             fontWeight: '500',
                             color: 'var(--text-secondary)',
-                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            backgroundColor: 'var(--hover-bg-default)',
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer'
@@ -49433,7 +49433,7 @@ useEffect(() => {
                     style: {
                       marginTop: '16px',
                       paddingTop: '16px',
-                      borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+                      borderTop: '1px solid var(--border-subtle)'
                     }
                   },
                     React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
@@ -49509,7 +49509,7 @@ useEffect(() => {
                         fontSize: '13px',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--card-bg)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '8px',
                         outline: 'none'
                       }
@@ -49538,7 +49538,7 @@ useEffect(() => {
                       style: {
                         marginTop: '12px',
                         padding: '12px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         borderRadius: '8px'
                       }
                     },
@@ -49573,7 +49573,7 @@ useEffect(() => {
                             fontSize: '12px',
                             color: 'var(--text-primary)',
                             backgroundColor: 'var(--card-bg)',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
                           }
@@ -49600,7 +49600,7 @@ useEffect(() => {
                             fontSize: '12px',
                             color: 'var(--text-primary)',
                             backgroundColor: 'var(--card-bg)',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
                           }
@@ -49633,7 +49633,7 @@ useEffect(() => {
           selectedResolver.id === 'listenbrainz' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             // Connected state
@@ -49709,7 +49709,7 @@ useEffect(() => {
                         fontSize: '12px',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--bg-secondary)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         outline: 'none'
                       }
@@ -49721,7 +49721,7 @@ useEffect(() => {
                     style: {
                       marginTop: '16px',
                       paddingTop: '16px',
-                      borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+                      borderTop: '1px solid var(--border-subtle)'
                     }
                   },
                     React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
@@ -49797,7 +49797,7 @@ useEffect(() => {
                         fontSize: '13px',
                         color: 'var(--text-primary)',
                         backgroundColor: 'var(--card-bg)',
-                        border: '1px solid rgba(0, 0, 0, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '8px',
                         outline: 'none'
                       }
@@ -49826,7 +49826,7 @@ useEffect(() => {
                       style: {
                         marginTop: '12px',
                         padding: '12px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         borderRadius: '8px'
                       }
                     },
@@ -49861,7 +49861,7 @@ useEffect(() => {
                             fontSize: '12px',
                             color: 'var(--text-primary)',
                             backgroundColor: 'var(--card-bg)',
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             outline: 'none'
                           }
@@ -49896,7 +49896,7 @@ useEffect(() => {
            (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('span', {
@@ -49943,7 +49943,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
                 }
@@ -49994,7 +49994,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none',
                   cursor: 'pointer'
@@ -50028,7 +50028,7 @@ useEffect(() => {
           selectedResolver.id === 'ollama' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('span', {
@@ -50107,7 +50107,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
                 }
@@ -50138,7 +50138,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none',
                   cursor: 'pointer'
@@ -50236,7 +50236,7 @@ useEffect(() => {
           selectedResolver.id === 'localfiles' && React.createElement('div', {
             style: {
               padding: '16px 0',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('h3', {
@@ -50274,7 +50274,7 @@ useEffect(() => {
                       className: 'flex items-center justify-between',
                       style: {
                         padding: '12px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                        backgroundColor: 'var(--hover-bg-default)',
                         borderRadius: '8px',
                         marginBottom: '8px'
                       }
@@ -50346,7 +50346,7 @@ useEffect(() => {
                 fontWeight: '500',
                 color: 'var(--text-secondary)',
                 backgroundColor: 'transparent',
-                border: '1px dashed rgba(0, 0, 0, 0.15)',
+                border: '1px dashed var(--border-subtle)',
                 borderRadius: '8px',
                 cursor: isScanning ? 'not-allowed' : 'pointer',
                 opacity: isScanning ? 0.5 : 1
@@ -50379,7 +50379,7 @@ useEffect(() => {
               React.createElement('div', {
                 style: {
                   width: '100%',
-                  backgroundColor: 'rgba(0, 0, 0, 0.06)',
+                  backgroundColor: 'var(--border-subtle)',
                   borderRadius: '4px',
                   height: '6px'
                 }
@@ -50411,7 +50411,7 @@ useEffect(() => {
               style: {
                 marginTop: '24px',
                 paddingTop: '16px',
-                borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+                borderTop: '1px solid var(--border-subtle)'
               }
             },
               React.createElement('h4', {
@@ -50476,8 +50476,8 @@ useEffect(() => {
           className: 'flex items-center justify-between',
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)'
           }
         },
           // Left side: Remove button (only for user-installed resolvers)
@@ -50596,7 +50596,7 @@ useEffect(() => {
                   fontSize: '13px',
                   fontWeight: '500',
                   color: showEnable ? '#ffffff' : 'var(--text-primary)',
-                  backgroundColor: showEnable ? '#7c3aed' : 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: showEnable ? '#7c3aed' : 'var(--hover-bg-default)',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer'
@@ -50815,7 +50815,7 @@ useEffect(() => {
               className: 'flex items-center gap-2',
               style: {
                 padding: '12px 0',
-                borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+                borderTop: '1px solid var(--border-subtle)',
                 fontSize: '12px',
                 color: '#f97316'
               }
@@ -50829,8 +50829,8 @@ useEffect(() => {
           className: 'flex items-center justify-between',
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)'
           }
         },
           selectedMarketplaceItem.isInstalled
@@ -50890,7 +50890,7 @@ useEffect(() => {
                       fontSize: '13px',
                       fontWeight: '500',
                       color: 'var(--text-primary)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      backgroundColor: 'var(--hover-bg-default)',
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer'
@@ -50930,7 +50930,7 @@ useEffect(() => {
                       fontSize: '13px',
                       fontWeight: '500',
                       color: 'var(--text-primary)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      backgroundColor: 'var(--hover-bg-default)',
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer'
@@ -51099,8 +51099,8 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)',
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px'
@@ -51134,7 +51134,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer'
@@ -51320,8 +51320,8 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)',
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px'
@@ -51355,7 +51355,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer'
@@ -51496,8 +51496,8 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)',
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)',
             display: 'flex',
             justifyContent: 'flex-end',
             gap: '12px'
@@ -51539,7 +51539,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: 'var(--hover-bg-default)',
               border: 'none',
               borderRadius: '8px',
               cursor: 'pointer'
@@ -51605,7 +51605,7 @@ useEffect(() => {
           style: {
             padding: '20px 24px',
             background: 'linear-gradient(135deg, #f43f5e 0%, #ec4899 50%, #c026d3 100%)',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.1)'
+            borderBottom: '1px solid var(--border-subtle)'
           }
         },
           React.createElement('div', {
@@ -51653,8 +51653,8 @@ useEffect(() => {
         React.createElement('div', {
           style: {
             padding: '16px 20px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
+            backgroundColor: 'var(--hover-bg-default)',
+            borderBottom: '1px solid var(--border-subtle)'
           }
         },
           React.createElement('div', {
@@ -51747,7 +51747,7 @@ useEffect(() => {
                 fontSize: '13px',
                 fontWeight: '500',
                 color: '#ffffff',
-                backgroundColor: selectedPlaylistsForAdd.length > 0 ? '#7c3aed' : 'rgba(0, 0, 0, 0.04)',
+                backgroundColor: selectedPlaylistsForAdd.length > 0 ? '#7c3aed' : 'var(--hover-bg-default)',
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer'
@@ -51761,7 +51761,7 @@ useEffect(() => {
         // Filter bar (sticky) - sort dropdown and search
         React.createElement('div', {
           className: 'flex items-center px-5 py-2 bg-white',
-          style: { flexShrink: 0, borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }
         },
           // Sort dropdown
           React.createElement('div', { className: 'relative' },
@@ -51776,7 +51776,7 @@ useEffect(() => {
             ),
             addToPlaylistSortDropdownOpen && React.createElement('div', {
               className: 'absolute left-0 top-full mt-1 bg-white py-1 min-w-[140px] z-30',
-              style: { borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', border: '1px solid rgba(0, 0, 0, 0.1)' }
+              style: { borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)', border: '1px solid var(--border-subtle)' }
             },
               playlistsSortOptions.map(option =>
                 React.createElement('button', {
@@ -51807,7 +51807,7 @@ useEffect(() => {
           // Search
           React.createElement('div', { className: 'flex items-center' },
             addToPlaylistSearchOpen ?
-              React.createElement('div', { className: 'flex items-center px-2 py-1', style: { border: '1px solid rgba(0, 0, 0, 0.1)', borderRadius: '8px' } },
+              React.createElement('div', { className: 'flex items-center px-2 py-1', style: { border: '1px solid var(--border-subtle)', borderRadius: '8px' } },
                 React.createElement('input', {
                   type: 'text',
                   value: addToPlaylistSearch,
@@ -52299,7 +52299,7 @@ useEffect(() => {
                 fontSize: '13px',
                 color: 'var(--text-primary)',
                 backgroundColor: 'var(--card-bg)',
-                border: '1px solid rgba(0, 0, 0, 0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
               }
@@ -52327,7 +52327,7 @@ useEffect(() => {
                 fontSize: '13px',
                 color: 'var(--text-primary)',
                 backgroundColor: 'var(--card-bg)',
-                border: '1px solid rgba(0, 0, 0, 0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
               }
@@ -52355,7 +52355,7 @@ useEffect(() => {
                 fontSize: '13px',
                 color: 'var(--text-primary)',
                 backgroundColor: 'var(--card-bg)',
-                border: '1px solid rgba(0, 0, 0, 0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '8px',
                 outline: 'none'
               }
@@ -52385,7 +52385,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
                 }
@@ -52413,7 +52413,7 @@ useEffect(() => {
                   fontSize: '13px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   outline: 'none'
                 }
@@ -52425,7 +52425,7 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               paddingTop: '20px',
-              borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+              borderTop: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '12px' } },
@@ -52564,8 +52564,8 @@ useEffect(() => {
           className: 'flex justify-end gap-3',
           style: {
             padding: '16px 24px',
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderTop: '1px solid rgba(0, 0, 0, 0.06)'
+            backgroundColor: 'var(--hover-bg-default)',
+            borderTop: '1px solid var(--border-subtle)'
           }
         },
           React.createElement('button', {
@@ -52581,7 +52581,7 @@ useEffect(() => {
               fontWeight: '500',
               color: 'var(--text-primary)',
               backgroundColor: 'var(--card-bg)',
-              border: '1px solid rgba(0, 0, 0, 0.1)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '8px',
               cursor: id3EditorSaving ? 'not-allowed' : 'pointer',
               opacity: id3EditorSaving ? 0.5 : 1
@@ -52929,7 +52929,7 @@ useEffect(() => {
         }),
         React.createElement('div', {
           className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
           React.createElement('div', { className: 'flex items-center gap-3' },
             React.createElement('div', {
@@ -52958,7 +52958,7 @@ useEffect(() => {
             onClick: () => setSyncSetupModal(prev => ({ ...prev, open: false })),
             className: 'transition-colors',
             style: { padding: '6px', color: 'var(--text-tertiary)', borderRadius: '8px' },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -53004,9 +53004,9 @@ useEffect(() => {
                   className: 'flex items-center gap-3 cursor-pointer transition-colors',
                   style: {
                     padding: '14px 16px',
-                    backgroundColor: syncSetupModal.settings[option.key] ? `${providerColor}10` : 'rgba(0, 0, 0, 0.02)',
+                    backgroundColor: syncSetupModal.settings[option.key] ? `${providerColor}10` : 'var(--hover-bg-default)',
                     borderRadius: '12px',
-                    border: syncSetupModal.settings[option.key] ? `1px solid ${providerColor}4D` : '1px solid rgba(0, 0, 0, 0.06)'
+                    border: syncSetupModal.settings[option.key] ? `1px solid ${providerColor}4D` : '1px solid var(--border-subtle)'
                   }
                 },
                   React.createElement('input', {
@@ -53076,7 +53076,7 @@ useEffect(() => {
                       display: 'flex',
                       gap: '4px',
                       padding: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      backgroundColor: 'var(--hover-bg-default)',
                       borderRadius: '10px',
                       marginBottom: '4px'
                     }
@@ -53169,7 +53169,7 @@ useEffect(() => {
                             borderRadius: '10px',
                             backgroundColor: syncSetupModal.selectedPlaylists.includes(playlist.externalId) ? `${syncProviderConfig[syncSetupModal.providerId]?.color || '#1DB954'}10` : 'transparent'
                           },
-                          onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)'; },
+                          onMouseEnter: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
                           onMouseLeave: (e) => { if (!syncSetupModal.selectedPlaylists.includes(playlist.externalId)) e.currentTarget.style.backgroundColor = 'transparent'; }
                         },
                           React.createElement('input', {
@@ -53244,7 +53244,7 @@ useEffect(() => {
               style: { fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }
             }, `${syncSetupModal.progress.current} of ${syncSetupModal.progress.total}`),
             syncSetupModal.progress.total > 0 && React.createElement('div', {
-              style: { height: '6px', backgroundColor: 'rgba(0, 0, 0, 0.06)', borderRadius: '3px', overflow: 'hidden', marginTop: '16px' }
+              style: { height: '6px', backgroundColor: 'var(--border-subtle)', borderRadius: '3px', overflow: 'hidden', marginTop: '16px' }
             },
               React.createElement('div', {
                 style: {
@@ -53287,7 +53287,7 @@ useEffect(() => {
             // Results
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
               syncSetupModal.results.tracks && React.createElement('div', {
-                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
               },
                 React.createElement('span', { style: { color: 'var(--text-secondary)' } }, 'Tracks'),
                 React.createElement('span', { style: { color: 'var(--text-primary)', fontWeight: '500' } },
@@ -53295,7 +53295,7 @@ useEffect(() => {
                 )
               ),
               syncSetupModal.results.albums && React.createElement('div', {
-                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
               },
                 React.createElement('span', { style: { color: 'var(--text-secondary)' } }, 'Albums'),
                 React.createElement('span', { style: { color: 'var(--text-primary)', fontWeight: '500' } },
@@ -53303,7 +53303,7 @@ useEffect(() => {
                 )
               ),
               syncSetupModal.results.artists && React.createElement('div', {
-                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
               },
                 React.createElement('span', { style: { color: 'var(--text-secondary)' } }, 'Artists'),
                 React.createElement('span', { style: { color: 'var(--text-primary)', fontWeight: '500' } },
@@ -53311,7 +53311,7 @@ useEffect(() => {
                 )
               ),
               syncSetupModal.results.playlists && React.createElement('div', {
-                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }
+                style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '8px' }
               },
                 React.createElement('span', { style: { color: 'var(--text-secondary)' } }, 'Playlists'),
                 React.createElement('span', { style: { color: 'var(--text-primary)', fontWeight: '500' } },
@@ -53326,7 +53326,7 @@ useEffect(() => {
         // Footer
         React.createElement('div', {
           className: 'flex justify-end gap-3',
-          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
           // Options step buttons
           syncSetupModal.step === 'options' && React.createElement(React.Fragment, null,
@@ -53460,7 +53460,7 @@ useEffect(() => {
         // Header with close button
         React.createElement('div', {
           className: 'flex items-center justify-between',
-          style: { padding: '20px 24px 16px', borderBottom: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '20px 24px 16px', borderBottom: '1px solid var(--border-subtle)' }
         },
           React.createElement('h2', {
             style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)' }
@@ -53469,7 +53469,7 @@ useEffect(() => {
             onClick: () => setSyncStatusModal({ open: false }),
             className: 'transition-colors',
             style: { padding: '6px', color: 'var(--text-tertiary)', borderRadius: '8px' },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
             onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
           },
             React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -53495,9 +53495,9 @@ useEffect(() => {
                   key: providerId,
                   style: {
                     padding: '14px 16px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                    backgroundColor: 'var(--hover-bg-default)',
                     borderRadius: '12px',
-                    border: '1px solid rgba(0, 0, 0, 0.04)'
+                    border: '1px solid var(--border-subtle)'
                   }
                 },
                   React.createElement('div', {
@@ -53535,7 +53535,7 @@ useEffect(() => {
                   isInProgress && progress?.total > 0 && React.createElement('div', {
                     style: {
                       height: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.06)',
+                      backgroundColor: 'var(--border-subtle)',
                       borderRadius: '2px',
                       overflow: 'hidden',
                       marginTop: '10px',
@@ -53572,7 +53572,7 @@ useEffect(() => {
         // Footer
         React.createElement('div', {
           className: 'flex justify-between',
-          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)' }
+          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)' }
         },
           React.createElement('button', {
             onClick: () => {
@@ -53637,7 +53637,7 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--text-tertiary)' : '#ffffff',
-              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'rgba(0, 0, 0, 0.04)' : '#22c55e',
+              backgroundColor: Object.values(syncStatus).some(s => s?.inProgress) ? 'var(--hover-bg-default)' : '#22c55e',
               border: 'none',
               borderRadius: '8px',
               cursor: Object.values(syncStatus).some(s => s?.inProgress) ? 'not-allowed' : 'pointer',
@@ -53688,14 +53688,14 @@ useEffect(() => {
                 width: '100%',
                 padding: '14px 16px',
                 textAlign: 'left',
-                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                backgroundColor: 'var(--hover-bg-default)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '12px',
                 cursor: 'pointer',
                 transition: 'all 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'; e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.02)'; e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.06)'; }
+              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }
             },
               React.createElement('div', {
                 style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }
@@ -53732,7 +53732,7 @@ useEffect(() => {
 
         // Footer
         React.createElement('div', {
-          style: { padding: '16px 24px 20px', borderTop: '1px solid rgba(0, 0, 0, 0.06)', textAlign: 'center' }
+          style: { padding: '16px 24px 20px', borderTop: '1px solid var(--border-subtle)', textAlign: 'center' }
         },
           React.createElement('button', {
             onClick: () => setStopSyncDialog({ open: false, providerId: null }),
@@ -53781,7 +53781,7 @@ useEffect(() => {
             style: {
               padding: '32px 32px 24px',
               textAlign: 'center',
-              borderBottom: '1px solid rgba(0, 0, 0, 0.06)'
+              borderBottom: '1px solid var(--border-subtle)'
             }
           },
             // Parachord wordmark logo - centered
@@ -53846,7 +53846,7 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               padding: '16px 32px 24px',
-              borderTop: '1px solid rgba(0,0,0,0.06)',
+              borderTop: '1px solid var(--border-subtle)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center'
@@ -53899,7 +53899,7 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               padding: '24px 32px 20px',
-              borderBottom: '1px solid rgba(0,0,0,0.06)'
+              borderBottom: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('h2', {
@@ -53973,7 +53973,7 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               padding: '16px 32px 20px',
-              borderTop: '1px solid rgba(0,0,0,0.06)',
+              borderTop: '1px solid var(--border-subtle)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center'
@@ -54032,7 +54032,7 @@ useEffect(() => {
             style: {
               padding: '32px 32px 24px',
               textAlign: 'center',
-              borderBottom: '1px solid rgba(0,0,0,0.06)'
+              borderBottom: '1px solid var(--border-subtle)'
             }
           },
             React.createElement('div', {
@@ -54105,7 +54105,7 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               padding: '16px 32px 24px',
-              borderTop: '1px solid rgba(0,0,0,0.06)',
+              borderTop: '1px solid var(--border-subtle)',
               display: 'flex',
               justifyContent: 'center',
               gap: '12px'
@@ -54119,13 +54119,13 @@ useEffect(() => {
                 fontWeight: '500',
                 color: 'var(--text-secondary)',
                 backgroundColor: 'transparent',
-                border: '1px solid rgba(0,0,0,0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 transition: 'all 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.2)'; e.currentTarget.style.color = 'var(--text-primary)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.1)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
+              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-primary)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
             }, 'Back'),
             React.createElement('button', {
               onClick: async () => {
