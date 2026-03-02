@@ -93,7 +93,8 @@
       "!parachord-extension",
       "!raycast-extension",
       "!smart-links",
-      "!tools",
+      "!tools/generate-link.js",
+      "!tools/example-link.html",
       "!src",
       "!assets/*.png"
     ],

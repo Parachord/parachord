@@ -27,16 +27,16 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
-      ipcRenderer.on('spotify-auth-success', (event, data) => {
-        callback(data);
-      });
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('spotify-auth-success', handler);
+      return () => ipcRenderer.removeListener('spotify-auth-success', handler);
     },
 
     // Listen for auth error events from main process
     onAuthError: (callback) => {
-      ipcRenderer.on('spotify-auth-error', (event, error) => {
-        callback(error);
-      });
+      const handler = (event, error) => callback(error);
+      ipcRenderer.on('spotify-auth-error', handler);
+      return () => ipcRenderer.removeListener('spotify-auth-error', handler);
     },
 
     // Main process polling controls (background-safe)
@@ -76,16 +76,16 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Listen for auth success events from main process
     onAuthSuccess: (callback) => {
-      ipcRenderer.on('soundcloud-auth-success', (event, data) => {
-        callback(data);
-      });
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('soundcloud-auth-success', handler);
+      return () => ipcRenderer.removeListener('soundcloud-auth-success', handler);
     },
 
     // Listen for auth error events from main process
     onAuthError: (callback) => {
-      ipcRenderer.on('soundcloud-auth-error', (event, error) => {
-        callback(error);
-      });
+      const handler = (event, error) => callback(error);
+      ipcRenderer.on('soundcloud-auth-error', handler);
+      return () => ipcRenderer.removeListener('soundcloud-auth-error', handler);
     }
   },
 
