@@ -29720,8 +29720,9 @@ useEffect(() => {
     });
   }
 
+  let cleanupAuthSuccess, cleanupAuthError;
   if (window.electron?.spotify) {
-    window.electron.spotify.onAuthSuccess((data) => {
+    cleanupAuthSuccess = window.electron.spotify.onAuthSuccess((data) => {
       console.log('Spotify auth success!', {
         hasToken: !!data.token,
         tokenLength: data.token?.length,
@@ -29780,7 +29781,7 @@ useEffect(() => {
         }).catch(() => {});
       }
     });
-    window.electron.spotify.onAuthError((error) => {
+    cleanupAuthError = window.electron.spotify.onAuthError((error) => {
       console.error('Spotify auth failed:', error);
       pendingSyncSetupRef.current = null; // Clear pending sync setup on auth failure
       showConfirmDialog({
@@ -29797,7 +29798,11 @@ useEffect(() => {
     checkSpotifyToken();
   }, 5 * 60 * 1000); // 5 minutes
 
-  return () => clearInterval(tokenRefreshInterval);
+  return () => {
+    clearInterval(tokenRefreshInterval);
+    cleanupAuthSuccess?.();
+    cleanupAuthError?.();
+  };
 }, []);
 
 // Listen for SoundCloud auth events
@@ -29816,8 +29821,9 @@ useEffect(() => {
     });
   }
 
+  let cleanupScAuthSuccess, cleanupScAuthError;
   if (window.electron?.soundcloud) {
-    window.electron.soundcloud.onAuthSuccess((data) => {
+    cleanupScAuthSuccess = window.electron.soundcloud.onAuthSuccess((data) => {
       console.log('SoundCloud auth success!', {
         hasToken: !!data.token,
         tokenLength: data.token?.length,
@@ -29834,7 +29840,7 @@ useEffect(() => {
       });
       console.log('SoundCloud connected and enabled!');
     });
-    window.electron.soundcloud.onAuthError((error) => {
+    cleanupScAuthError = window.electron.soundcloud.onAuthError((error) => {
       console.error('SoundCloud auth failed:', error);
       showConfirmDialog({
         type: 'error',
@@ -29850,7 +29856,11 @@ useEffect(() => {
     checkSoundcloudToken();
   }, 30 * 60 * 1000); // 30 minutes
 
-  return () => clearInterval(tokenRefreshInterval);
+  return () => {
+    clearInterval(tokenRefreshInterval);
+    cleanupScAuthSuccess?.();
+    cleanupScAuthError?.();
+  };
 }, []);
 
 // Spotify Connect - Get available devices
