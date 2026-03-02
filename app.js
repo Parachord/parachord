@@ -1993,7 +1993,7 @@ const ResolverCard = React.memo(({
           borderRadius: '6px',
           fontSize: '11px',
           fontWeight: '600',
-          color: 'var(--text-primary)',
+          color: '#111827',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
         }
       }, priorityNumber),
@@ -2114,8 +2114,8 @@ const McpSettingsSection = () => {
     mcpInfo && React.createElement('div', { className: 'relative' },
       React.createElement('pre', {
         style: {
-          backgroundColor: '#f8f9fa',
-          border: '1px solid #e5e7eb',
+          backgroundColor: 'var(--bg-inset)',
+          border: '1px solid var(--border-default)',
           borderRadius: '8px',
           padding: '12px 16px',
           fontSize: '12px',
@@ -2999,8 +2999,8 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   }, [track.name, track.artist]);
 
   return React.createElement('div', {
-    className: 'mt-1 flex items-center bg-gray-800 rounded cursor-pointer hover:bg-gray-700 transition-colors pr-2',
-    style: { maxWidth: '180px', height: '20px' },
+    className: 'mt-1 flex items-center rounded cursor-pointer transition-colors pr-2',
+    style: { maxWidth: '180px', height: '20px', backgroundColor: 'var(--surface-dark)', color: '#d1d5db' },
     onClick: onPlay,
     onContextMenu: onContextMenu
   },
@@ -30351,22 +30351,34 @@ useEffect(() => {
         React.createElement('div', {
           className: 'flex items-center gap-2 px-4 pb-2'
         },
-          React.createElement('button', {
-            onClick: navigateBack,
-            disabled: viewHistory.length <= 1,
-            className: `p-1.5 rounded hover:bg-gray-200 transition-colors no-drag ${viewHistory.length <= 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600'}`
-          },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 19l-7-7 7-7' })
+          React.createElement(Tooltip, { content: 'Back', position: 'bottom' },
+            React.createElement('button', {
+              onClick: navigateBack,
+              disabled: viewHistory.length <= 1,
+              className: 'p-1.5 rounded transition-colors no-drag',
+              style: {
+                color: viewHistory.length <= 1 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                cursor: viewHistory.length <= 1 ? 'not-allowed' : 'pointer'
+              }
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 19l-7-7 7-7' })
+              )
             )
           ),
-          React.createElement('button', {
-            onClick: navigateForward,
-            disabled: forwardHistory.length === 0,
-            className: `p-1.5 rounded hover:bg-gray-200 transition-colors no-drag ${forwardHistory.length === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600'}`
-          },
-            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 5l7 7-7 7' })
+          React.createElement(Tooltip, { content: 'Forward', position: 'bottom' },
+            React.createElement('button', {
+              onClick: navigateForward,
+              disabled: forwardHistory.length === 0,
+              className: 'p-1.5 rounded transition-colors no-drag',
+              style: {
+                color: forwardHistory.length === 0 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                cursor: forwardHistory.length === 0 ? 'not-allowed' : 'pointer'
+              }
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 5l7 7-7 7' })
+              )
             )
           )
         ),
@@ -30773,7 +30785,8 @@ useEffect(() => {
                   ),
                   // On-air indicator dot
                   onAir && React.createElement('div', {
-                    className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-50'
+                    className: 'absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2',
+                    style: { borderColor: 'var(--bg-secondary)' }
                   })
                 ),
                 // Name and track info
@@ -43521,11 +43534,10 @@ useEffect(() => {
               // Pin/Unpin button on right side of filter bar
               React.createElement('button', {
                 onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
-                className: `flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors ${
-                  pinnedFriendIds.includes(currentFriend.id)
-                    ? 'bg-purple-100 text-purple-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`
+                className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
+                style: pinnedFriendIds.includes(currentFriend.id)
+                  ? { backgroundColor: 'var(--accent-primary)', color: '#ffffff' }
+                  : { backgroundColor: 'var(--hover-bg-default)', color: 'var(--text-secondary)' }
               },
                 React.createElement('svg', {
                   className: 'w-4 h-4',
@@ -45606,7 +45618,7 @@ useEffect(() => {
               },
                 // Parachord Logo
                 React.createElement('div', { style: { marginBottom: '20px', display: 'flex', justifyContent: 'center' } },
-                  React.createElement(ParachordWordmark, { fill: '#333', height: 56 })
+                  React.createElement(ParachordWordmark, { fill: 'var(--text-primary)', height: 56 })
                 ),
 
                 // Version
@@ -45728,8 +45740,8 @@ useEffect(() => {
     // Layout: [Left: transport + queue] [Center: track info] [Right: progress + shuffle + repeat + volume]
     // z-50 to stay above queue drawer
     React.createElement('div', {
-      className: 'bg-gray-800/95 backdrop-blur-xl border-t border-gray-700 py-3 no-drag flex-shrink-0 relative z-50',
-      style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px' }
+      className: 'backdrop-blur-xl py-3 no-drag flex-shrink-0 relative z-50',
+      style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px', backgroundColor: 'var(--surface-dark)', borderTop: '1px solid var(--surface-dark-border)' }
     },
       React.createElement('div', { className: 'flex items-center justify-between gap-4' },
         // LEFT: Transport controls + Queue button
@@ -45738,24 +45750,24 @@ useEffect(() => {
             React.createElement('button', {
               onClick: handlePrevious,
               disabled: !currentTrack,
-              className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+              className: 'p-2 rounded hover:bg-white/10 transition-colors',
+              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipBack, { size: 18 }))
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : 'Play', position: 'top', variant: 'dark' },
             React.createElement('button', {
               onClick: handlePlayPause,
               disabled: !currentTrack,
-              className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
-              style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+              className: 'p-2 rounded hover:bg-white/10 transition-colors',
+              style: { width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
             }, isPlaying ? React.createElement(Pause, { size: 22 }) : React.createElement(Play, { size: 22 }))
           ),
           React.createElement(Tooltip, { content: 'Next', position: 'top', variant: 'dark' },
             React.createElement('button', {
               onClick: () => handleNext(true),
               disabled: !currentTrack,
-              className: `p-2 rounded hover:bg-white/10 transition-colors ${!currentTrack ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`,
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+              className: 'p-2 rounded hover:bg-white/10 transition-colors',
+              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipForward, { size: 18 }))
           ),
           // Queue button (hamburger style)
@@ -45820,13 +45832,12 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: handleClick,
                 disabled: !hasAnyAi,
-                className: `p-2 ml-1 rounded transition-colors ${
-                  isActive
-                    ? 'bg-purple-500/30 text-purple-300'
-                    : hasAnyAi
-                      ? 'text-gray-400 hover:bg-white/10 hover:text-white'
-                      : 'text-gray-600 cursor-not-allowed'
-                }`
+                className: 'p-2 ml-1 rounded transition-colors',
+                style: {
+                  color: isActive ? '#d8b4fe' : hasAnyAi ? '#9ca3af' : '#4b5563',
+                  backgroundColor: isActive ? 'rgba(168, 85, 247, 0.3)' : 'transparent',
+                  cursor: !hasAnyAi ? 'not-allowed' : 'pointer'
+                }
               },
                 React.createElement('svg', {
                   className: 'w-4 h-4',
@@ -46361,12 +46372,14 @@ useEffect(() => {
                 }
               },
               disabled: !currentTrack || spinoffLoading || spinoffAvailable === false || spinoffAvailable === null,
-              className: `p-1.5 rounded-full transition-colors ${
-                !currentTrack || spinoffAvailable === false ? 'text-gray-600 cursor-not-allowed' :
-                spinoffLoading || spinoffAvailable === null ? 'text-gray-400' :
-                spinoffMode ? 'text-purple-400 hover:text-purple-300' :
-                'text-gray-400 hover:text-white'
-              }`
+              className: 'p-1.5 rounded-full transition-colors',
+              style: {
+                color: !currentTrack || spinoffAvailable === false ? '#4b5563' :
+                  spinoffLoading || spinoffAvailable === null ? '#9ca3af' :
+                  spinoffMode ? '#c084fc' : '#9ca3af',
+                cursor: !currentTrack || spinoffAvailable === false ? 'not-allowed' : 'pointer',
+                opacity: !currentTrack || spinoffAvailable === false ? 0.5 : 1
+              }
             },
               spinoffLoading
                 ? React.createElement('span', { className: 'animate-spin inline-block w-5 h-5' }, '◌')
@@ -46528,10 +46541,11 @@ useEffect(() => {
               React.createElement('button', {
                 onClick: shuffleDisabled ? undefined : toggleShuffle,
                 disabled: shuffleDisabled,
-                className: `p-2 rounded transition-colors ${
-                  shuffleDisabled ? 'text-gray-600 cursor-not-allowed' :
-                  shuffleMode ? 'text-purple-400 hover:text-purple-300' : 'text-gray-400 hover:text-white'
-                }`
+                className: 'p-2 rounded transition-colors',
+                style: {
+                  color: shuffleDisabled ? '#4b5563' : shuffleMode ? '#c084fc' : '#9ca3af',
+                  cursor: shuffleDisabled ? 'not-allowed' : 'pointer'
+                }
               },
                 React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
                   React.createElement('path', { d: 'M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z' })
@@ -46626,7 +46640,8 @@ useEffect(() => {
                 variant: 'dark'
               },
                 React.createElement('button', {
-                  className: `${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white cursor-pointer'} transition-colors`,
+                  className: 'transition-colors',
+                  style: { color: isDisabled ? '#4b5563' : '#9ca3af', cursor: isDisabled ? 'not-allowed' : 'pointer' },
                   onClick: handleMuteToggle,
                   disabled: isDisabled
                 },
@@ -46690,9 +46705,9 @@ useEffect(() => {
       className: 'fixed bottom-24 left-4 z-50',
       style: {
         width: '380px',
-        backgroundColor: 'rgba(17, 24, 39, 0.95)',
+        backgroundColor: 'var(--surface-dark-solid)',
         backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        border: '1px solid var(--surface-dark-border)',
         borderRadius: '14px',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
         padding: '16px'
@@ -46908,8 +46923,8 @@ useEffect(() => {
           }
         },
         style: {
-          backgroundColor: 'rgba(17, 24, 39, 0.98)',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--surface-dark-solid)',
+          borderLeft: '1px solid var(--surface-dark-border)',
           boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.3)',
           animation: sidebarClosing ? 'slideOutRight 0.2s ease-out forwards' : 'slideInRight 0.2s ease-out'
         }
@@ -47462,11 +47477,11 @@ useEffect(() => {
       React.createElement('div', {
         className: 'max-w-md w-full mx-4',
         style: {
-          backgroundColor: 'rgba(17, 24, 39, 0.98)',
+          backgroundColor: 'var(--surface-dark-solid)',
           borderRadius: '16px',
           padding: '24px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-          border: '1px solid rgba(255, 255, 255, 0.08)'
+          border: '1px solid var(--surface-dark-border)'
         }
       },
         // Header
@@ -47571,7 +47586,8 @@ useEffect(() => {
       }
     },
       React.createElement('div', {
-        className: 'bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl border border-gray-700'
+        className: 'rounded-xl p-6 max-w-md w-full mx-4 shadow-xl',
+        style: { backgroundColor: 'var(--surface-dark-solid)', border: '1px solid var(--surface-dark-border)' }
       },
         // Header
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
@@ -47683,9 +47699,9 @@ useEffect(() => {
           React.createElement('div', {
             style: {
               padding: '16px',
-              backgroundColor: '#faf5ff',
+              backgroundColor: 'var(--bg-inset)',
               borderRadius: '12px',
-              border: '1px solid #e9d5ff',
+              border: '1px solid var(--border-default)',
               marginBottom: '16px'
             }
           },
@@ -47757,13 +47773,13 @@ useEffect(() => {
                   fontSize: '14px',
                   color: 'var(--text-primary)',
                   backgroundColor: 'var(--card-bg)',
-                  border: '1px solid #d8b4fe',
+                  border: '1px solid var(--border-default)',
                   borderRadius: '8px',
                   outline: 'none',
                   transition: 'border-color 150ms ease, box-shadow 150ms ease'
                 },
-                onFocus: (e) => { e.target.style.borderColor = '#a78bfa'; e.target.style.boxShadow = '0 0 0 3px rgba(167, 139, 250, 0.15)'; },
-                onBlur: (e) => { e.target.style.borderColor = '#d8b4fe'; e.target.style.boxShadow = 'none'; },
+                onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
                 disabled: urlImportLoading,
                 autoFocus: true
               }),
@@ -47797,7 +47813,7 @@ useEffect(() => {
                   fontSize: '14px',
                   fontWeight: '500',
                   color: '#ffffff',
-                  backgroundColor: urlImportLoading || !urlImportValue.trim() ? '#c4b5fd' : '#7c3aed',
+                  backgroundColor: '#7c3aed',
                   borderRadius: '8px',
                   cursor: urlImportLoading || !urlImportValue.trim() ? 'not-allowed' : 'pointer',
                   opacity: urlImportLoading || !urlImportValue.trim() ? '0.6' : '1',
@@ -47836,16 +47852,16 @@ useEffect(() => {
               padding: '20px',
               backgroundColor: 'var(--bg-tertiary)',
               borderRadius: '12px',
-              border: '2px dashed #d1d5db',
+              border: '2px dashed var(--border-default)',
               cursor: 'pointer',
               textAlign: 'center'
             },
             onMouseEnter: (e) => {
-              e.currentTarget.style.backgroundColor = 'var(--placeholder-bg-light)';
+              e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)';
               e.currentTarget.style.borderColor = 'var(--text-tertiary)';
             },
             onMouseLeave: (e) => {
-              e.currentTarget.style.backgroundColor = '#fafafa';
+              e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
               e.currentTarget.style.borderColor = 'var(--border-default)';
             },
             disabled: urlImportLoading
@@ -47953,13 +47969,13 @@ useEffect(() => {
               fontSize: '14px',
               color: 'var(--text-primary)',
               backgroundColor: 'var(--card-bg)',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border-default)',
               borderRadius: '10px',
               outline: 'none',
               transition: 'border-color 150ms ease, box-shadow 150ms ease'
             },
-            onFocus: (e) => { e.target.style.borderColor = 'var(--text-tertiary)'; e.target.style.boxShadow = '0 0 0 3px rgba(156, 163, 175, 0.1)'; },
-            onBlur: (e) => { e.target.style.borderColor = 'var(--placeholder-bg)'; e.target.style.boxShadow = 'none'; },
+            onFocus: (e) => { e.target.style.borderColor = 'var(--accent-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.1)'; },
+            onBlur: (e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none'; },
             autoFocus: true
           }),
           // Example hints
@@ -48000,10 +48016,10 @@ useEffect(() => {
               fontSize: '14px',
               fontWeight: '500',
               color: '#ffffff',
-              backgroundColor: addFriendLoading || !addFriendInput.trim() ? '#c4b5fd' : '#7c3aed',
+              backgroundColor: '#7c3aed',
               borderRadius: '10px',
               cursor: addFriendLoading || !addFriendInput.trim() ? 'not-allowed' : 'pointer',
-              opacity: addFriendLoading || !addFriendInput.trim() ? '0.6' : '1'
+              opacity: addFriendLoading || !addFriendInput.trim() ? '0.35' : '1'
             },
             onMouseEnter: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#6d28d9'; },
             onMouseLeave: (e) => { if (!addFriendLoading && addFriendInput.trim()) e.currentTarget.style.backgroundColor = '#7c3aed'; }
@@ -48185,18 +48201,15 @@ useEffect(() => {
                 }
               }, 'Include in search and playback')
             ),
-            React.createElement('label', { className: 'relative inline-block w-12 h-6' },
-              React.createElement('input', {
-                type: 'checkbox',
-                checked: activeResolvers.includes(selectedResolver.id),
-                onChange: () => toggleResolver(selectedResolver.id),
-                className: 'sr-only peer'
+            React.createElement('div', {
+              className: 'relative w-11 h-6 cursor-pointer',
+              onClick: () => toggleResolver(selectedResolver.id)
+            },
+              React.createElement('div', {
+                className: `w-full h-full rounded-full transition-colors ${activeResolvers.includes(selectedResolver.id) ? 'bg-purple-600' : 'bg-gray-300'}`
               }),
               React.createElement('div', {
-                className: 'w-full h-full bg-gray-300 rounded-full peer-checked:bg-purple-600 transition-colors'
-              }),
-              React.createElement('div', {
-                className: 'absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-6'
+                className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${activeResolvers.includes(selectedResolver.id) ? 'translate-x-5' : 'translate-x-0'}`
               })
             )
           ),
@@ -52399,7 +52412,7 @@ useEffect(() => {
                   style: {
                     fontSize: '13px',
                     fontWeight: '500',
-                    color: '#166534'
+                    color: 'var(--success)'
                   }
                 }, id3SelectedArt.releaseName),
                 React.createElement('div', {
@@ -52690,8 +52703,8 @@ useEffect(() => {
             style: {
               fontSize: '16px',
               fontWeight: '600',
-              color: confirmDialog.type === 'success' ? '#166534' :
-                confirmDialog.type === 'error' ? '#991b1b' :
+              color: confirmDialog.type === 'success' ? 'var(--success)' :
+                confirmDialog.type === 'error' ? 'var(--error)' :
                 'var(--text-primary)',
               marginBottom: '8px'
             }
@@ -54049,17 +54062,19 @@ useEffect(() => {
     // Queue Drawer - slides up above the playbar with matching dark theme
     // Gradient transparency: more opaque near playbar, more transparent at top
     React.createElement('div', {
-      className: 'fixed left-0 right-0 backdrop-blur-md border-t border-gray-700/50 shadow-2xl transition-all duration-300 ease-in-out z-40',
+      className: 'fixed left-0 right-0 backdrop-blur-md shadow-2xl transition-all duration-300 ease-in-out z-40',
       style: {
         bottom: queueDrawerOpen ? '85px' : -queueDrawerHeight, // Position above the playbar (85px height)
         height: queueDrawerHeight + 'px',
-        background: 'linear-gradient(to top, rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.5))'
+        background: 'linear-gradient(to top, var(--surface-dark-gradient-from), var(--surface-dark-gradient-to))',
+        borderTop: '1px solid var(--surface-dark-border)'
       }
     },
       // Drawer header with drag handle - dark translucent theme
       // Clicking anywhere on header (except drag handle and Clear) closes drawer
       React.createElement('div', {
-        className: 'flex items-center justify-between px-4 py-2 bg-gray-900/60 border-b border-gray-700/50 cursor-pointer hover:bg-gray-800/60 transition-colors',
+        className: 'flex items-center justify-between px-4 py-2 cursor-pointer transition-colors',
+        style: { backgroundColor: 'var(--surface-dark-header)', borderBottom: '1px solid var(--surface-dark-border)' },
         onClick: () => setQueueDrawerOpen(false)
       },
         React.createElement('div', {
