@@ -20264,6 +20264,12 @@ ${trackListXml}
     resolutionScheduler.abortContext(contextId, options);
   }, []);
 
+  // Stable queue-specific callbacks (avoids new function refs on every render
+  // which would re-trigger VirtualizedQueueList's useEffect continuously)
+  const updateQueueVisibility = useCallback((tracks) => updateSchedulerVisibility('queue', tracks), [updateSchedulerVisibility]);
+  const setQueueHoverTrack = useCallback((trackId) => setSchedulerHoverTrack(trackId, 'queue'), [setSchedulerHoverTrack]);
+  const clearQueueHoverTrack = clearSchedulerHoverTrack;
+
   // Expose scheduler API for use in components
   const resolutionSchedulerAPI = useMemo(() => ({
     registerPageContext,
@@ -54011,9 +54017,9 @@ useEffect(() => {
             handleUrlDrop,
             formatTime,
             // Resolution scheduler integration
-            onVisibilityChange: (tracks) => updateSchedulerVisibility('queue', tracks),
-            onTrackHover: (trackId) => setSchedulerHoverTrack(trackId, 'queue'),
-            onTrackHoverEnd: () => clearSchedulerHoverTrack(),
+            onVisibilityChange: updateQueueVisibility,
+            onTrackHover: setQueueHoverTrack,
+            onTrackHoverEnd: clearQueueHoverTrack,
             currentTrackIndex: currentQueue.findIndex(t => t.id === currentTrack?.id)
           })
       ),
