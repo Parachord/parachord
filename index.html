@@ -86,6 +86,7 @@
       --tooltip-bg: #1f2937;
       --tooltip-text: #ffffff;
       --tooltip-hover: #374151;
+      --tooltip-border: transparent;
 
       /* Typography */
       --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -196,9 +197,10 @@
       --border-subtle: rgba(255, 255, 255, 0.06);
       --bg-tertiary: #1e1e1e;
 
-      --tooltip-bg: #2a2a2a;
+      --tooltip-bg: #3a3a3a;
       --tooltip-text: #f3f4f6;
-      --tooltip-hover: #383838;
+      --tooltip-hover: #484848;
+      --tooltip-border: rgba(255, 255, 255, 0.1);
 
       /* Always-dark surfaces — neutral in dark mode */
       --surface-dark: rgba(22, 22, 22, 0.95);
@@ -565,6 +567,7 @@
       font-weight: 500;
       color: var(--tooltip-text);
       background-color: var(--tooltip-bg);
+      border: 1px solid var(--tooltip-border);
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
       white-space: nowrap;
