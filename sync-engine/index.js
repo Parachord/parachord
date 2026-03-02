@@ -156,20 +156,32 @@ const applyDiff = (collectionItems, diff) => {
  * Sync a specific data type (tracks, albums, artists) for a provider
  */
 const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken) => {
+  // Count how many local items came from this provider (for incremental check)
+  const localSyncedCount = localData.filter(item => item.syncSources?.[provider.id]).length;
+  const fetchOptions = { localSyncedCount };
+
   // Fetch remote data
   let remoteData;
   switch (dataType) {
     case 'tracks':
-      remoteData = await provider.fetchTracks(token, onProgress, refreshToken);
+      remoteData = await provider.fetchTracks(token, onProgress, refreshToken, fetchOptions);
       break;
     case 'albums':
-      remoteData = await provider.fetchAlbums(token, onProgress, refreshToken);
+      remoteData = await provider.fetchAlbums(token, onProgress, refreshToken, fetchOptions);
       break;
     case 'artists':
-      remoteData = await provider.fetchArtists(token, onProgress, refreshToken);
+      remoteData = await provider.fetchArtists(token, onProgress, refreshToken, fetchOptions);
       break;
     default:
       throw new Error(`Unknown data type: ${dataType}`);
+  }
+
+  // Provider returned null → count check passed, nothing changed
+  if (remoteData === null) {
+    return {
+      data: localData,
+      stats: { added: 0, removed: 0, updated: 0, unchanged: localSyncedCount }
+    };
   }
 
   // Calculate diff

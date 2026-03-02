@@ -5255,13 +5255,25 @@ const Parachord = () => {
   });
 
   // Background sync timer (every 15 minutes)
+  // Use a ref so the sync callback always reads the latest settings
+  // without re-firing the effect (which would reset the timers).
+  const resolverSyncSettingsRef = useRef(resolverSyncSettings);
+  useEffect(() => { resolverSyncSettingsRef.current = resolverSyncSettings; }, [resolverSyncSettings]);
+
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
+    const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
 
     const runBackgroundSync = async () => {
+      const currentSettings = resolverSyncSettingsRef.current;
       // Check each enabled provider
-      for (const [providerId, settings] of Object.entries(resolverSyncSettings)) {
+      for (const [providerId, settings] of Object.entries(currentSettings)) {
         if (settings.enabled) {
+          // Skip if last sync was recent (within the sync interval)
+          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < SYNC_INTERVAL) {
+            console.log(`[Sync] Skipping background sync for ${providerId} — last sync was ${Math.round((Date.now() - settings.lastSyncAt) / 60000)}m ago`);
+            continue;
+          }
           try {
             const authStatus = await window.electron.sync.checkAuth(providerId);
             if (authStatus.authenticated) {
@@ -5289,10 +5301,10 @@ const Parachord = () => {
                     }
                     return incoming;
                   });
-                } else {
-                  const newCollection = await window.electron.collection.load();
-                  setCollectionData(newCollection);
                 }
+                // When collection is null, no meaningful changes occurred
+                // (only syncedAt timestamps updated). Skip reloading — the
+                // renderer already has the current data.
               } else {
                 console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
               }
@@ -5304,8 +5316,8 @@ const Parachord = () => {
       }
     };
 
-    // Run on app start (after initial load)
-    const initialSyncTimeout = setTimeout(runBackgroundSync, 5000);
+    // Delay initial sync to let the app fully load and become interactive
+    const initialSyncTimeout = setTimeout(runBackgroundSync, INITIAL_DELAY);
 
     // Set up interval
     const intervalId = setInterval(runBackgroundSync, SYNC_INTERVAL);
@@ -5314,7 +5326,7 @@ const Parachord = () => {
       clearTimeout(initialSyncTimeout);
       clearInterval(intervalId);
     };
-  }, [resolverSyncSettings]);
+  }, []); // Stable effect — reads settings from ref
 
   // Friends state
   const [friends, setFriends] = useState([]);
@@ -8338,11 +8350,9 @@ const Parachord = () => {
           albums: result.collection.albums || [],
           artists: result.collection.artists || []
         });
-      } else {
-        // Fallback to loading from disk if collection not in result
-        const newCollection = await window.electron.collection.load();
-        setCollectionData(newCollection);
       }
+      // When collection is null, sync succeeded but nothing meaningful changed
+      // (only syncedAt timestamps updated). Current UI state is already correct.
 
       // Reload playlists if they were synced
       if (settings.syncPlaylists && selectedPlaylists.length > 0) {
@@ -9851,8 +9861,9 @@ ${trackListXml}
     }
   }, []);
 
-  // Use loaded resolvers or fallback to empty array
-  const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
+  // Use loaded resolvers directly — loadedResolvers is already [] when empty,
+  // so no need for a conditional that creates a new [] reference every render.
+  const allResolvers = loadedResolvers;
 
   // Sync resolverOrder with activeResolvers - only active resolvers belong in
   // the priority order. Add any active resolvers that are missing, and remove
@@ -14833,16 +14844,16 @@ ${trackListXml}
   useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
   // Queue management functions
-  const removeFromQueue = (trackId) => {
+  const removeFromQueue = useCallback((trackId) => {
     setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
     // Also remove from original queue if shuffle is active
     if (shuffleMode && originalQueueRef.current) {
       originalQueueRef.current = originalQueueRef.current.filter(t => t.id !== trackId);
     }
     console.log(`🗑️ Removed track ${trackId} from queue`);
-  };
+  }, [shuffleMode]);
 
-  const moveInQueue = (fromIndex, toIndex) => {
+  const moveInQueue = useCallback((fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
     setCurrentQueue(prev => {
       const newQueue = [...prev];
@@ -14851,7 +14862,7 @@ ${trackListXml}
       console.log(`🔀 Moved track from index ${fromIndex} to ${toIndex}`);
       return newQueue;
     });
-  };
+  }, []);
 
   const moveInPlaylist = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
@@ -20270,6 +20281,24 @@ ${trackListXml}
   const setQueueHoverTrack = useCallback((trackId) => setSchedulerHoverTrack(trackId, 'queue'), [setSchedulerHoverTrack]);
   const clearQueueHoverTrack = clearSchedulerHoverTrack;
 
+  // Stable refs for complex callbacks passed to VirtualizedQueueList.
+  // These functions close over many state variables so direct useCallback
+  // would still recreate frequently. Using refs gives a truly stable identity.
+  const handlePlayRef = useRef(null);
+  const exitSpinoffRef = useRef(null);
+  const fetchArtistDataRef = useRef(null);
+  const handleUrlDropRef = useRef(null);
+  useEffect(() => {
+    handlePlayRef.current = handlePlay;
+    exitSpinoffRef.current = exitSpinoff;
+    fetchArtistDataRef.current = fetchArtistData;
+    handleUrlDropRef.current = handleUrlDrop;
+  });
+  const stableHandlePlay = useCallback((...args) => handlePlayRef.current(...args), []);
+  const stableExitSpinoff = useCallback((...args) => exitSpinoffRef.current(...args), []);
+  const stableFetchArtistData = useCallback((...args) => fetchArtistDataRef.current(...args), []);
+  const stableHandleUrlDrop = useCallback((...args) => handleUrlDropRef.current(...args), []);
+
   // Expose scheduler API for use in components
   const resolutionSchedulerAPI = useMemo(() => ({
     registerPageContext,
@@ -20537,6 +20566,10 @@ ${trackListXml}
 
     const releaseTracks = currentRelease.tracks;
     const artistName = currentRelease.artist?.name || currentArtist?.name || 'Unknown Artist';
+    // Capture mutable fields in closure so the observer has current values
+    // without needing the full currentRelease object in the effect deps.
+    const releaseTitle = currentRelease.title;
+    const releaseAlbumArt = currentRelease.albumArt;
 
     releaseObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -20562,14 +20595,14 @@ ${trackListXml}
             // Release tracks from API don't have id - we need to find by matching the computed ID
             // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
             const track = releaseTracks.find(t => {
-              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${currentRelease.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${releaseTitle || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
               return computedId === trackId;
             });
             if (track) {
               visibleTracks.push({
                 key: trackId,
                 data: {
-                  track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
+                  track: { ...track, id: trackId, artist: artistName, album: releaseTitle, albumArt: releaseAlbumArt },
                   artistName
                 }
               });
@@ -20587,7 +20620,7 @@ ${trackListXml}
     });
 
     return () => releaseObserverRef.current?.disconnect();
-  }, [activeView, currentRelease, currentArtist?.name, updateSchedulerVisibility]);
+  }, [activeView, currentRelease?.id, currentArtist?.name, updateSchedulerVisibility]);
 
   // Register sidebar context for friends sidebar visibility tracking
   useEffect(() => {
@@ -20629,8 +20662,9 @@ ${trackListXml}
 
         if (changed) {
           const visibleFriends = [];
+          const currentFriends = friendsRef.current;
           visibleFriendIds.current.forEach(friendId => {
-            const friend = friends.find(f => f.id === friendId);
+            const friend = currentFriends.find(f => f.id === friendId);
             if (friend?.cachedRecentTrack) {
               visibleFriends.push({
                 key: `friend-${friendId}`,
@@ -20653,7 +20687,7 @@ ${trackListXml}
     });
 
     return () => friendsObserverRef.current?.disconnect();
-  }, [pinnedFriendIds, friends, updateSchedulerVisibility]);
+  }, [pinnedFriendIds, updateSchedulerVisibility]);
 
   // Register page context for recommendations tracks resolution
   useEffect(() => {
@@ -30188,12 +30222,12 @@ useEffect(() => {
   return () => clearInterval(interval);
 }, [spotifyToken, isPlaying, currentTrack]);
 
-  const formatTime = (seconds) => {
+  const formatTime = useCallback((seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return '';
@@ -54010,11 +54044,11 @@ useEffect(() => {
             moveInQueue,
             setDroppingFromIndex,
             setCurrentQueue,
-            handlePlay,
-            exitSpinoff,
-            fetchArtistData,
+            handlePlay: stableHandlePlay,
+            exitSpinoff: stableExitSpinoff,
+            fetchArtistData: stableFetchArtistData,
             removeFromQueue,
-            handleUrlDrop,
+            handleUrlDrop: stableHandleUrlDrop,
             formatTime,
             // Resolution scheduler integration
             onVisibilityChange: updateQueueVisibility,
