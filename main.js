@@ -664,8 +664,19 @@ function createWindow() {
     }
   };
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once('ready-to-show', async () => {
     console.log('Window ready to show');
+    // Apply dark class before showing to prevent flash of light mode
+    try {
+      const themePref = store.get('theme_preference');
+      const shouldBeDark = themePref === 'dark' ||
+        (themePref !== 'light' && nativeTheme.shouldUseDarkColors);
+      if (shouldBeDark) {
+        await mainWindow.webContents.executeJavaScript(
+          "document.documentElement.classList.add('dark')"
+        );
+      }
+    } catch(e) { console.warn('Theme pre-apply failed:', e); }
     showWindow();
   });
 
