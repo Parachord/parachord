@@ -1274,6 +1274,7 @@ const FixedTooltip = ({ children, content }) => {
           minWidth: 180,
           backgroundColor: 'var(--tooltip-bg)',
           color: 'var(--tooltip-text)',
+          border: '1px solid var(--tooltip-border)',
           borderRadius: 8,
           padding: '10px 14px',
           fontSize: 12,
