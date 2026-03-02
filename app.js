@@ -9861,8 +9861,9 @@ ${trackListXml}
     }
   }, []);
 
-  // Use loaded resolvers or fallback to empty array
-  const allResolvers = loadedResolvers.length > 0 ? loadedResolvers : [];
+  // Use loaded resolvers directly — loadedResolvers is already [] when empty,
+  // so no need for a conditional that creates a new [] reference every render.
+  const allResolvers = loadedResolvers;
 
   // Sync resolverOrder with activeResolvers - only active resolvers belong in
   // the priority order. Add any active resolvers that are missing, and remove
@@ -14843,16 +14844,16 @@ ${trackListXml}
   useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
   // Queue management functions
-  const removeFromQueue = (trackId) => {
+  const removeFromQueue = useCallback((trackId) => {
     setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
     // Also remove from original queue if shuffle is active
     if (shuffleMode && originalQueueRef.current) {
       originalQueueRef.current = originalQueueRef.current.filter(t => t.id !== trackId);
     }
     console.log(`🗑️ Removed track ${trackId} from queue`);
-  };
+  }, [shuffleMode]);
 
-  const moveInQueue = (fromIndex, toIndex) => {
+  const moveInQueue = useCallback((fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
     setCurrentQueue(prev => {
       const newQueue = [...prev];
@@ -14861,7 +14862,7 @@ ${trackListXml}
       console.log(`🔀 Moved track from index ${fromIndex} to ${toIndex}`);
       return newQueue;
     });
-  };
+  }, []);
 
   const moveInPlaylist = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
@@ -20280,6 +20281,24 @@ ${trackListXml}
   const setQueueHoverTrack = useCallback((trackId) => setSchedulerHoverTrack(trackId, 'queue'), [setSchedulerHoverTrack]);
   const clearQueueHoverTrack = clearSchedulerHoverTrack;
 
+  // Stable refs for complex callbacks passed to VirtualizedQueueList.
+  // These functions close over many state variables so direct useCallback
+  // would still recreate frequently. Using refs gives a truly stable identity.
+  const handlePlayRef = useRef(null);
+  const exitSpinoffRef = useRef(null);
+  const fetchArtistDataRef = useRef(null);
+  const handleUrlDropRef = useRef(null);
+  useEffect(() => {
+    handlePlayRef.current = handlePlay;
+    exitSpinoffRef.current = exitSpinoff;
+    fetchArtistDataRef.current = fetchArtistData;
+    handleUrlDropRef.current = handleUrlDrop;
+  });
+  const stableHandlePlay = useCallback((...args) => handlePlayRef.current(...args), []);
+  const stableExitSpinoff = useCallback((...args) => exitSpinoffRef.current(...args), []);
+  const stableFetchArtistData = useCallback((...args) => fetchArtistDataRef.current(...args), []);
+  const stableHandleUrlDrop = useCallback((...args) => handleUrlDropRef.current(...args), []);
+
   // Expose scheduler API for use in components
   const resolutionSchedulerAPI = useMemo(() => ({
     registerPageContext,
@@ -20547,6 +20566,10 @@ ${trackListXml}
 
     const releaseTracks = currentRelease.tracks;
     const artistName = currentRelease.artist?.name || currentArtist?.name || 'Unknown Artist';
+    // Capture mutable fields in closure so the observer has current values
+    // without needing the full currentRelease object in the effect deps.
+    const releaseTitle = currentRelease.title;
+    const releaseAlbumArt = currentRelease.albumArt;
 
     releaseObserverRef.current = new IntersectionObserver(
       (entries) => {
@@ -20572,14 +20595,14 @@ ${trackListXml}
             // Release tracks from API don't have id - we need to find by matching the computed ID
             // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
             const track = releaseTracks.find(t => {
-              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${currentRelease.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${releaseTitle || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
               return computedId === trackId;
             });
             if (track) {
               visibleTracks.push({
                 key: trackId,
                 data: {
-                  track: { ...track, id: trackId, artist: artistName, album: currentRelease.title, albumArt: currentRelease.albumArt },
+                  track: { ...track, id: trackId, artist: artistName, album: releaseTitle, albumArt: releaseAlbumArt },
                   artistName
                 }
               });
@@ -20597,7 +20620,7 @@ ${trackListXml}
     });
 
     return () => releaseObserverRef.current?.disconnect();
-  }, [activeView, currentRelease, currentArtist?.name, updateSchedulerVisibility]);
+  }, [activeView, currentRelease?.id, currentArtist?.name, updateSchedulerVisibility]);
 
   // Register sidebar context for friends sidebar visibility tracking
   useEffect(() => {
@@ -20639,8 +20662,9 @@ ${trackListXml}
 
         if (changed) {
           const visibleFriends = [];
+          const currentFriends = friendsRef.current;
           visibleFriendIds.current.forEach(friendId => {
-            const friend = friends.find(f => f.id === friendId);
+            const friend = currentFriends.find(f => f.id === friendId);
             if (friend?.cachedRecentTrack) {
               visibleFriends.push({
                 key: `friend-${friendId}`,
@@ -20663,7 +20687,7 @@ ${trackListXml}
     });
 
     return () => friendsObserverRef.current?.disconnect();
-  }, [pinnedFriendIds, friends, updateSchedulerVisibility]);
+  }, [pinnedFriendIds, updateSchedulerVisibility]);
 
   // Register page context for recommendations tracks resolution
   useEffect(() => {
@@ -30198,12 +30222,12 @@ useEffect(() => {
   return () => clearInterval(interval);
 }, [spotifyToken, isPlaying, currentTrack]);
 
-  const formatTime = (seconds) => {
+  const formatTime = useCallback((seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return '';
@@ -54020,11 +54044,11 @@ useEffect(() => {
             moveInQueue,
             setDroppingFromIndex,
             setCurrentQueue,
-            handlePlay,
-            exitSpinoff,
-            fetchArtistData,
+            handlePlay: stableHandlePlay,
+            exitSpinoff: stableExitSpinoff,
+            fetchArtistData: stableFetchArtistData,
             removeFromQueue,
-            handleUrlDrop,
+            handleUrlDrop: stableHandleUrlDrop,
             formatTime,
             // Resolution scheduler integration
             onVisibilityChange: updateQueueVisibility,
