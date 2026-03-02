@@ -5098,6 +5098,8 @@ const Parachord = () => {
   const isAdvancingTrackRef = useRef(false); // Re-entrancy guard for handleNext()
   const waitingForBrowserPlaybackRef = useRef(false); // True when we're waiting for browser to connect after opening external track
   const [settingsTab, setSettingsTab] = useState('plugins'); // 'plugins' | 'general' | 'about'
+  const [themePref, setThemePref] = useState('system'); // 'light' | 'dark' | 'system'
+  const [effectiveTheme, setEffectiveTheme] = useState('light'); // resolved 'light' | 'dark'
   const [pluginsFilter, setPluginsFilter] = useState('all'); // 'all' | 'installed' | 'available'
   const [marketplaceManifest, setMarketplaceManifest] = useState(null);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -5509,6 +5511,46 @@ const Parachord = () => {
 
   // Responsive breakpoints
   const isCompactHeader = mainContentWidth < 700;
+
+  // Theme initialization and system theme change listener
+  useEffect(() => {
+    const initTheme = async () => {
+      // Load saved preference
+      const saved = await window.electron?.store?.get('theme_preference');
+      const pref = saved || 'system';
+      setThemePref(pref);
+
+      // Get effective theme from main process
+      if (pref === 'system') {
+        const systemTheme = await window.electron?.theme?.getSystem();
+        setEffectiveTheme(systemTheme || 'light');
+      } else {
+        setEffectiveTheme(pref);
+      }
+
+      // Set native theme source
+      await window.electron?.theme?.setNative(pref);
+    };
+
+    initTheme();
+
+    // Listen for system theme changes
+    const cleanup = window.electron?.theme?.onChanged((theme) => {
+      setEffectiveTheme(theme);
+    });
+
+    return () => { if (cleanup) cleanup(); };
+  }, []);
+
+  // Apply dark class to HTML element when theme changes
+  useEffect(() => {
+    const html = document.documentElement;
+    if (effectiveTheme === 'dark') {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
+    }
+  }, [effectiveTheme]);
 
   // Close playlists sort dropdown when clicking outside
   useEffect(() => {
@@ -6067,6 +6109,20 @@ const Parachord = () => {
       setCollectionTab(bestTab.key);
     }
   }, [activeView, collectionLoading, collectionTab, collectionData, library, friends]);
+
+  const handleThemeChange = async (newPref) => {
+    setThemePref(newPref);
+    await window.electron?.store?.set('theme_preference', newPref);
+
+    if (newPref === 'system') {
+      const systemTheme = await window.electron?.theme?.getSystem();
+      setEffectiveTheme(systemTheme || 'light');
+    } else {
+      setEffectiveTheme(newPref);
+    }
+
+    await window.electron?.theme?.setNative(newPref);
+  };
 
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
@@ -44693,6 +44749,103 @@ useEffect(() => {
 
               // Settings sections - refined
               React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '24px' } },
+                // Appearance Section
+                React.createElement('div', {
+                  style: {
+                    backgroundColor: '#ffffff',
+                    border: '1px solid rgba(0, 0, 0, 0.06)',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
+                  }
+                },
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('h3', {
+                      style: {
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#9ca3af',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em'
+                      }
+                    }, 'Appearance'),
+                    React.createElement('p', {
+                      style: {
+                        fontSize: '12px',
+                        color: '#9ca3af',
+                        marginTop: '4px'
+                      }
+                    }, 'Choose your preferred color theme')
+                  ),
+                  React.createElement('div', { style: { display: 'flex', gap: '8px' } },
+                    // Light button
+                    React.createElement('button', {
+                      onClick: () => handleThemeChange('light'),
+                      style: {
+                        flex: 1,
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        border: themePref === 'light' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        backgroundColor: themePref === 'light' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                        color: themePref === 'light' ? '#7c3aed' : '#6b7280',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }
+                    },
+                      React.createElement('span', null, '\u2600\uFE0F'),
+                      'Light'
+                    ),
+                    // Dark button
+                    React.createElement('button', {
+                      onClick: () => handleThemeChange('dark'),
+                      style: {
+                        flex: 1,
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        border: themePref === 'dark' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        backgroundColor: themePref === 'dark' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                        color: themePref === 'dark' ? '#7c3aed' : '#6b7280',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }
+                    },
+                      React.createElement('span', null, '\uD83C\uDF19'),
+                      'Dark'
+                    ),
+                    // System button
+                    React.createElement('button', {
+                      onClick: () => handleThemeChange('system'),
+                      style: {
+                        flex: 1,
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        border: themePref === 'system' ? '2px solid #7c3aed' : '1px solid rgba(0, 0, 0, 0.1)',
+                        backgroundColor: themePref === 'system' ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                        color: themePref === 'system' ? '#7c3aed' : '#6b7280',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }
+                    },
+                      React.createElement('span', null, '\uD83D\uDCBB'),
+                      'System'
+                    )
+                  )
+                ),
                 // Cache Management Section - refined card
                 React.createElement('div', {
                   style: {

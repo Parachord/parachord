@@ -17,7 +17,7 @@ console.log('SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? '✅ .env' : '
 console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? '✅ .env' : '⚪ Will generate from .p8 key');
 console.log('=========================');
 
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nativeTheme } = require('electron');
 const path = require('path');
 
 // Preserve the userData path before changing app.name, since Electron
@@ -2292,6 +2292,25 @@ ipcMain.handle('updater-get-version', () => {
   return app.getVersion();
 });
 
+// Theme IPC handlers
+ipcMain.handle('theme-get-system', () => {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+});
+
+ipcMain.handle('theme-set-native', (event, mode) => {
+  // mode: 'light', 'dark', or 'system'
+  nativeTheme.themeSource = mode;
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+});
+
+// Notify renderer when system theme changes
+nativeTheme.on('updated', () => {
+  const effectiveTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  BrowserWindow.getAllWindows().forEach(win => {
+    win.webContents.send('theme-changed', effectiveTheme);
+  });
+});
+
 // IPC handlers for storage — restricted to a whitelist of safe keys
 const ALLOWED_STORE_KEYS = new Set([
   'active_resolvers', 'ai_chat_histories', 'ai_include_history',
@@ -2310,6 +2329,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'selected_chat_provider', 'show_discovery_badges',
   'skip_external_prompt', 'skip_unsaved_friend_warning',
   'suppressed_sync_playlists',
+  'theme_preference',
   'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
 ]);
 

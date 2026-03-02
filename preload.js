@@ -469,5 +469,16 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Theme management
+  theme: {
+    getSystem: () => ipcRenderer.invoke('theme-get-system'),
+    setNative: (mode) => ipcRenderer.invoke('theme-set-native', mode),
+    onChanged: (callback) => {
+      const handler = (event, theme) => callback(theme);
+      ipcRenderer.on('theme-changed', handler);
+      return () => ipcRenderer.removeListener('theme-changed', handler);
+    }
+  },
+
   // Generic invoke removed for security — use specific API methods above
 });
