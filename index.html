@@ -28,6 +28,18 @@
       /* Accent */
       --accent-primary: #7c3aed;
       --accent-primary-hover: #6d28d9;
+      --accent-secondary: #8b5cf6;
+      --accent-tertiary: #a855f7;
+      --accent-soft: #a78bfa;
+      --accent-surface: #ede9fe;
+      --accent-primary-alpha-06: rgba(124, 58, 237, 0.06);
+      --accent-primary-alpha-08: rgba(124, 58, 237, 0.08);
+      --accent-primary-alpha-10: rgba(124, 58, 237, 0.10);
+      --accent-primary-alpha-15: rgba(124, 58, 237, 0.15);
+      --accent-primary-alpha-20: rgba(124, 58, 237, 0.20);
+      --accent-primary-alpha-30: rgba(124, 58, 237, 0.30);
+      --accent-primary-alpha-50: rgba(124, 58, 237, 0.50);
+      --accent-primary-alpha-60: rgba(124, 58, 237, 0.60);
 
       /* Semantic */
       --success: #10b981;
@@ -75,6 +87,47 @@
       --tooltip-text: #ffffff;
       --tooltip-hover: #374151;
 
+      /* Typography */
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+      --leading-tight: 1.2;
+      --leading-normal: 1.4;
+      --leading-body: 1.5;
+      --leading-relaxed: 1.6;
+      --tracking-tight: 0.005em;
+      --tracking-normal: 0.02em;
+      --tracking-wide: 0.05em;
+      --tracking-caps: 0.08em;
+      --tracking-display: 0.2em;
+      --tracking-display-wide: 0.3em;
+
+      /* Border radius */
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-xl: 10px;
+      --radius-2xl: 12px;
+      --radius-pill: 16px;
+      --radius-full: 9999px;
+
+      /* Z-index scale */
+      --z-base: 0;
+      --z-raised: 10;
+      --z-dropdown: 20;
+      --z-sticky: 30;
+      --z-overlay: 40;
+      --z-modal: 50;
+      --z-popover: 9999;
+      --z-toast: 99999;
+
+      /* Transitions */
+      --duration-fast: 100ms;
+      --duration-base: 150ms;
+      --duration-slow: 300ms;
+      --ease-default: ease;
+      --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
       /* Always-dark surfaces (player bar, queue drawer, AI panels) */
       --surface-dark: rgba(31, 41, 55, 0.95);
       --surface-dark-solid: rgba(17, 24, 39, 0.98);
@@ -100,6 +153,18 @@
 
       --accent-primary: #a78bfa;
       --accent-primary-hover: #8b5cf6;
+      --accent-secondary: #c4b5fd;
+      --accent-tertiary: #a855f7;
+      --accent-soft: #c4b5fd;
+      --accent-surface: rgba(139, 92, 246, 0.15);
+      --accent-primary-alpha-06: rgba(167, 139, 250, 0.06);
+      --accent-primary-alpha-08: rgba(167, 139, 250, 0.08);
+      --accent-primary-alpha-10: rgba(167, 139, 250, 0.10);
+      --accent-primary-alpha-15: rgba(167, 139, 250, 0.15);
+      --accent-primary-alpha-20: rgba(167, 139, 250, 0.20);
+      --accent-primary-alpha-30: rgba(167, 139, 250, 0.30);
+      --accent-primary-alpha-50: rgba(167, 139, 250, 0.50);
+      --accent-primary-alpha-60: rgba(167, 139, 250, 0.60);
 
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
       --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
@@ -206,9 +271,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-        sans-serif;
+      font-family: var(--font-sans);
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
@@ -216,6 +279,24 @@
     #root {
       width: 100%;
       height: 100%;
+    }
+
+    /* Focus-visible: keyboard-only focus ring */
+    :focus-visible {
+      outline: 2px solid var(--accent-primary);
+      outline-offset: 2px;
+    }
+
+    :focus:not(:focus-visible) {
+      outline: none;
+    }
+
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible {
+      outline: 2px solid var(--accent-primary);
+      outline-offset: -1px;
+      box-shadow: 0 0 0 3px var(--accent-primary-alpha-15);
     }
 
     /* Disable text selection in non-editable areas */
