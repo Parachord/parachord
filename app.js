@@ -20284,12 +20284,11 @@ ${trackListXml}
   // Stable refs for complex callbacks passed to VirtualizedQueueList.
   // These functions close over many state variables so direct useCallback
   // would still recreate frequently. Using refs gives a truly stable identity.
-  const handlePlayRef = useRef(null);
+  // NOTE: handlePlayRef already exists (line 6177) and is synced at line 14843.
   const exitSpinoffRef = useRef(null);
   const fetchArtistDataRef = useRef(null);
   const handleUrlDropRef = useRef(null);
   useEffect(() => {
-    handlePlayRef.current = handlePlay;
     exitSpinoffRef.current = exitSpinoff;
     fetchArtistDataRef.current = fetchArtistData;
     handleUrlDropRef.current = handleUrlDrop;
