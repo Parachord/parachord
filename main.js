@@ -4123,24 +4123,28 @@ ipcMain.handle('release-notes-get', async () => {
     return highlights;
   }
 
-  // Try GitHub Releases API for the current version's release notes
+  // Try GitHub Releases API — fetch the most recent release
   try {
     const { net } = require('electron');
     const response = await net.fetch(
-      `https://api.github.com/repos/Parachord/parachord/releases/tags/v${currentVersion}`,
+      'https://api.github.com/repos/Parachord/parachord/releases?per_page=1',
       { signal: AbortSignal.timeout(5000), headers: { 'Accept': 'application/vnd.github+json' } }
     );
     if (response.ok) {
-      const release = await response.json();
-      if (release.body) {
+      const releases = await response.json();
+      const release = releases[0];
+      if (release?.body) {
+        console.log(`📋 Loaded release notes from GitHub: ${release.tag_name}`);
         const highlights = parseHighlights(release.body);
         if (highlights.length > 0) {
           return { success: true, highlights };
         }
       }
+    } else {
+      console.log(`📋 GitHub releases API returned ${response.status}`);
     }
   } catch (e) {
-    // Network unavailable — fall through to bundled file
+    console.log('📋 GitHub releases fetch failed, using bundled notes:', e.message);
   }
 
   // Fall back to bundled RELEASE_NOTES.md (first release section only)
