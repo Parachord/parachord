@@ -8,6 +8,156 @@
   <title>Parachord Desktop</title>
   <link rel="stylesheet" href="vendor/tailwind.css">
   <style>
+    /* ========== Design Tokens (CSS Custom Properties) ========== */
+    :root {
+      /* Backgrounds */
+      --bg-primary: #ffffff;
+      --bg-secondary: #f9fafb;
+      --bg-elevated: #ffffff;
+      --bg-inset: #f3f4f6;
+
+      /* Text */
+      --text-primary: #111827;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+
+      /* Borders */
+      --border-default: #e5e7eb;
+      --border-light: #f3f4f6;
+
+      /* Accent */
+      --accent-primary: #7c3aed;
+      --accent-primary-hover: #6d28d9;
+
+      /* Semantic */
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+      --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+      /* Surfaces */
+      --card-bg: #ffffff;
+      --card-border: #e5e7eb;
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03);
+
+      /* Scrollbar */
+      --scrollbar-track: rgba(0, 0, 0, 0.03);
+      --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+      --scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
+
+      /* Loading / Shimmer / Skeleton */
+      --shimmer-from: #e5e7eb;
+      --shimmer-via: #f3f4f6;
+      --shimmer-to: #e5e7eb;
+      --shimmer-strong-from: #d1d5db;
+      --shimmer-strong-via: #e5e7eb;
+      --shimmer-strong-to: #d1d5db;
+      --placeholder-bg: #e5e7eb;
+      --placeholder-bg-light: #f3f4f6;
+
+      /* Interactive states */
+      --nav-inactive: #4b5563;
+      --text-on-resolved: #065f46;
+      --text-on-unresolved: #92400e;
+      --hover-bg-subtle: #e5e7eb;
+      --hover-bg-default: #f3f4f6;
+
+      /* Tooltips */
+      --tooltip-bg: #1f2937;
+      --tooltip-hover: #374151;
+    }
+
+    /* Dark theme overrides */
+    .dark {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #222222;
+      --bg-elevated: #2a2a2a;
+      --bg-inset: #1f1f1f;
+
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-tertiary: #6b7280;
+
+      --border-default: #333333;
+      --border-light: #2a2a2a;
+
+      --accent-primary: #a78bfa;
+      --accent-primary-hover: #8b5cf6;
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+      --card-bg: #2a2a2a;
+      --card-border: #333333;
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
+
+      --scrollbar-track: rgba(255, 255, 255, 0.05);
+      --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+      --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+
+      --shimmer-from: #2a2a2a;
+      --shimmer-via: #333333;
+      --shimmer-to: #2a2a2a;
+      --shimmer-strong-from: #333333;
+      --shimmer-strong-via: #3d3d3d;
+      --shimmer-strong-to: #333333;
+      --placeholder-bg: #2a2a2a;
+      --placeholder-bg-light: #252525;
+
+      --nav-inactive: #9ca3af;
+      --text-on-resolved: #6ee7b7;
+      --text-on-unresolved: #fcd34d;
+      --hover-bg-subtle: rgba(255, 255, 255, 0.08);
+      --hover-bg-default: rgba(255, 255, 255, 0.05);
+
+      --tooltip-bg: #e5e7eb;
+      --tooltip-hover: #d1d5db;
+    }
+
+    /* Theme-aware shimmer utility classes */
+    .shimmer-light {
+      background: linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to)) !important;
+      background-size: 200% 100% !important;
+    }
+
+    .shimmer-strong {
+      background: linear-gradient(to right, var(--shimmer-strong-from), var(--shimmer-strong-via), var(--shimmer-strong-to)) !important;
+      background-size: 200% 100% !important;
+    }
+
+    /* Tailwind dark mode overrides */
+    .dark .text-gray-900 { color: var(--text-primary) !important; }
+    .dark .text-gray-800 { color: var(--text-primary) !important; }
+    .dark .text-gray-700 { color: var(--text-secondary) !important; }
+    .dark .text-gray-600 { color: var(--text-secondary) !important; }
+    .dark .text-gray-500 { color: var(--text-tertiary) !important; }
+    .dark .text-gray-400 { color: var(--text-tertiary) !important; }
+    .dark .bg-white { background-color: var(--bg-elevated) !important; }
+    .dark .bg-gray-50 { background-color: var(--bg-secondary) !important; }
+    .dark .bg-gray-100 { background-color: var(--bg-inset) !important; }
+    .dark .bg-gray-200 { background-color: var(--border-default) !important; }
+    .dark .bg-gray-300 { background-color: #444444 !important; }
+    .dark .bg-gray-800 { background-color: #2a2a2a !important; }
+    .dark .border-gray-200 { border-color: var(--border-default) !important; }
+    .dark .border-gray-300 { border-color: var(--border-default) !important; }
+    .dark .border-gray-100 { border-color: var(--border-light) !important; }
+    .dark .shadow-sm { box-shadow: var(--shadow-sm) !important; }
+    .dark .shadow-md { box-shadow: var(--shadow-md) !important; }
+    .dark .shadow-lg { box-shadow: var(--shadow-lg) !important; }
+    .dark .hover\:bg-gray-200:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+    .dark .hover\:bg-gray-50\/80:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
+    .dark .hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.08) !important; }
+    .dark .hover\:bg-gray-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
+    .dark .divide-gray-100 > :not(:last-child) { border-color: var(--border-light) !important; }
+    .dark .divide-gray-200 > :not(:last-child) { border-color: var(--border-default) !important; }
+
+    /* ========== End Design Tokens ========== */
+
     * {
       margin: 0;
       padding: 0;
